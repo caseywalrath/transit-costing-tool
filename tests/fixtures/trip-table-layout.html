@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <title>Trips table layout fixture</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <div class="table-scroll schedule-table">
+        <table>
+          <thead>
+            <tr>
+              <th class="trip-selection-column"><input type="checkbox" aria-label="Select all trips" /></th>
+              <th class="trip-pattern-column">Pattern</th>
+              <th class="trip-timepoint-column">North Terminal</th>
+              <th class="trip-timepoint-column">Federal &amp; 32nd</th>
+              <th class="trip-timepoint-column">South Terminal</th>
+              <th class="trip-actions-column">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="draft-trip-row">
+              <td class="trip-selection-column"></td>
+              <td class="trip-pattern-column">
+                <span class="draft-trip-label">New trip</span>
+                <select class="trip-pattern-select" aria-label="New trip pattern">
+                  <option selected>Select pattern</option>
+                  <option>Southbound Express Pattern</option>
+                </select>
+              </td>
+              <td class="trip-timepoint-column"></td>
+              <td class="trip-timepoint-column"></td>
+              <td class="trip-timepoint-column"></td>
+              <td class="trip-actions-column"></td>
+            </tr>
+            <tr>
+              <td class="trip-selection-column"><input type="checkbox" aria-label="Select trip" /></td>
+              <td class="trip-pattern-column">
+                <select class="trip-pattern-select" aria-label="Trip pattern">
+                  <option selected>Southbound Express Pattern</option>
+                  <option>Southbound Short Turn Pattern</option>
+                </select>
+              </td>
+              <td class="trip-timepoint-column">06:00</td>
+              <td class="trip-timepoint-column">06:12</td>
+              <td class="trip-timepoint-column">06:26</td>
+              <td class="trip-actions-column">×</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </body>
+</html>

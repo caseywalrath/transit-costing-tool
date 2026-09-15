@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <title>Workflow section layout fixture</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="route-picker" aria-label="Workspace context">
+        <label>Route<select><option>Route 1</option></select></label>
+        <button>Add route</button>
+        <label>Day<select><option>Weekday</option></select></label>
+        <label>Direction<select><option>Outbound</option></select></label>
+      </section>
+      <div class="trips-workspace">
+        <section class="workflow-section" aria-label="Runtimes section">
+          <div class="section-title"><div><h2>Runtimes</h2><span>Enter travel times.</span></div><div class="section-actions section-header-actions"><label class="header-field">Pattern<select><option>Outbound</option></select></label><div class="menu-button"><button class="menu-trigger">Profile: Weekday ▾</button></div><span class="action-separator"></span><button>Add</button><span class="action-separator"></span><div class="menu-button"><button class="menu-trigger">Actions ▾</button></div></div></div>
+          <div class="runtime-editor">
+            <div class="table-scroll data-grid runtime-table">
+              <table><thead><tr><th>From</th><th>To</th><th>Segment</th></tr></thead><tbody><tr><td>06:00</td><td>09:00</td><td>:08</td></tr></tbody></table>
+            </div>
+          </div>
+        </section>
+        <section class="workflow-section" aria-label="Trips section">
+          <div class="section-title">
+            <div><h2>Trips</h2><span>Review the timetable.</span></div>
+            <div class="section-actions section-header-actions"><div class="menu-button"><button class="menu-trigger">Profile: Default ▾</button></div><span class="action-separator"></span><div class="menu-button"><button class="menu-trigger">Actions ▾</button></div></div>
+          </div>
+          <p class="section-status"><span class="runtime-change-indicator">Run Times Have Changed</span></p>
+          <div class="table-scroll data-grid schedule-table">
+            <table><thead><tr><th class="trip-selection-column">Select</th><th class="trip-pattern-column">Pattern</th><th class="trip-timepoint-column">Terminal</th></tr></thead><tbody><tr class="trip-row-runtime-changed"><td class="trip-selection-column">□</td><td class="trip-pattern-column">Outbound 1<span class="runtime-changed-note">Run times changed</span></td><td class="trip-timepoint-column">06:00</td></tr></tbody></table>
+          </div>
+        </section>
+      </div>
+    </main>
+    <aside class="shift-drawer" role="complementary" aria-labelledby="shift-drawer-title"><header><h2 id="shift-drawer-title">Shift selected Trips</h2><button class="icon-button" aria-label="Close Shift drawer">×</button></header><div class="shift-drawer-body"><div class="shift-drawer-controls"><button>− Back</button><input aria-label="Shift minutes" type="number" value="1" /><button>+ Forward</button></div><div class="shift-drawer-history"><button>Undo</button><button>Redo</button></div><p class="shift-drawer-summary">2 selected · 1 minute later</p></div><footer><button>Discard</button><button class="primary">Done</button></footer></aside>
+  </body>
+</html>

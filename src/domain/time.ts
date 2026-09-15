@@ -1,0 +1,5 @@
+import type { DurationSeconds, ServiceSeconds } from './types';
+export function parseServiceTime(value: string): ServiceSeconds { const match = /^(\d+):(\d{2})(?::(\d{2}))?$/.exec(value.trim()); if (!match) throw new Error(`Invalid service time: ${value}`); const minutes = Number(match[2]); const seconds = Number(match[3] ?? 0); if (minutes > 59 || seconds > 59) throw new Error(`Invalid service time: ${value}`); return Number(match[1]) * 3600 + minutes * 60 + seconds; }
+export function formatServiceTime(value: ServiceSeconds, includeSeconds = false): string { if (!Number.isInteger(value) || value < 0) throw new Error('Service time must be a non-negative integer'); const h = Math.floor(value / 3600); const m = Math.floor(value % 3600 / 60); const s = value % 60; return `${h}:${String(m).padStart(2, '0')}${includeSeconds ? `:${String(s).padStart(2, '0')}` : ''}`; }
+export const addDuration = (time: ServiceSeconds, duration: DurationSeconds): ServiceSeconds => time + duration;
+export { formatRuntimeDuration, parseRuntimeDuration, RuntimeDurationError, formatRuntimeDurationSeconds, parseRuntimeDurationSeconds } from './durations';

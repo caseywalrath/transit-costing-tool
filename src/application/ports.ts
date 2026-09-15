@@ -1,0 +1,165 @@
+import type { AddTripRequest, Block, GenerateTripsRequest, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceSeconds, Trip, TripGenerationSet, ValidationFinding } from '../domain/types';
+import type { BatchPatternChangePreview, BatchPatternChangeRequest, RuntimeCopyPreview, RuntimeCopyRequest, TripCopyPreview, TripCopyRequest } from '../domain/serviceDayCopy';
+import type { GenerateTripsPreview, PatternChangePreview, RecalculationPreview, RegenerationPreview, RegenerationResult } from '../domain/trips';
+import type { TripShiftPreview, TripShiftRequest } from '../domain/tripShift';
+import type { ScenarioRecords } from '../domain/project';
+
+export interface RouteDefinitionRepository {
+  listProjects(): Promise<Project[]>;
+  getProject(id: string): Promise<Project | undefined>;
+  saveProject(project: Project): Promise<void>;
+  listScenarios(projectId: string): Promise<Scenario[]>;
+  saveScenario(scenario: Scenario): Promise<void>;
+  getScenarioRecords(scenarioId: string): Promise<ScenarioRecords | undefined>;
+  saveScenarioRecords(records: ScenarioRecords): Promise<void>;
+  /** Writes a reviewed route edit and all affected runtimes, trips, and blocks atomically. */
+  commitRouteEdit(records: ScenarioRecords): Promise<void>;
+  getRouteDefinition(routeId: string): Promise<RouteDefinitionAggregate | undefined>;
+  saveRouteDefinition(aggregate: RouteDefinitionAggregate): Promise<void>;
+  getPattern(id: string): Promise<RoutePattern | undefined>;
+  listDirections(routeId: string): Promise<RouteDirection[]>;
+  getProjectSnapshot(projectId: string): Promise<ProjectSnapshot | undefined>;
+  saveProjectSnapshot(snapshot: ProjectSnapshot): Promise<void>;
+  getRuntimeProfile(id: string): Promise<RuntimeProfile | undefined>;
+  listRuntimeProfiles(routeId: string, patternId?: string): Promise<RuntimeProfile[]>;
+  saveRuntimeProfile(profile: RuntimeProfile): Promise<void>;
+  deleteRuntimeProfile(profileId: string, replacementProfileId?: string): Promise<void>;
+  listRuntimeAssignments(scenarioId: string, serviceDayId?: string, patternId?: string): Promise<RuntimeAssignment[]>;
+  saveRuntimeAssignment(assignment: RuntimeAssignment): Promise<void>;
+}
+
+export type BackupImportMode = 'replace' | 'copy' | 'reject';
+
+export interface BackupPort {
+  exportProject(projectId: string): Promise<string>;
+  importProject(payload: string, mode?: BackupImportMode): Promise<Project>;
+}
+
+export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
+export interface SaveStatus {
+  state: SaveState;
+  updatedAt?: string;
+  errorMessage?: string;
+}
+
+/** UI-facing ports describe behavior, not a particular page or table layout. */
+export interface RouteDefinitionCommands {
+  saveRouteDefinition(aggregate: RouteDefinitionAggregate): Promise<void>;
+  reversePattern(patternId: string): Promise<RouteDefinitionAggregate>;
+  assignPatternDirection(aggregate: RouteDefinitionAggregate, patternId: string, directionId: string): Promise<RouteDefinitionAggregate>;
+}
+
+export interface RouteDefinitionQueries {
+  loadRouteDefinition(routeId: string): Promise<RouteDefinitionAggregate | undefined>;
+  validateRouteDefinition(routeId: string): Promise<ValidationFinding[]>;
+  getSaveStatus(): SaveStatus;
+  subscribeToSaveStatus(listener: (status: SaveStatus) => void): () => void;
+}
+
+/** Runtime ports describe behavior required by the Trips workflow, not a visual layout. */
+export interface RuntimeCommands {
+  saveRuntimeProfile(profile: RuntimeProfile): Promise<void>;
+  renameRuntimeProfile(profileId: string, name: string): Promise<RuntimeProfile>;
+  saveRuntimeAssignment(assignment: RuntimeAssignment): Promise<void>;
+  copyRuntimeProfile(profileId: string, target: { patternId?: string; routeId?: string; scenarioId?: string; name: string }): Promise<RuntimeProfile>;
+  reverseCopyRuntimeProfile(profileId: string, sourcePatternId: string, targetPatternId: string, name: string): Promise<RuntimeProfile>;
+  ensureDefaultRuntimeProfile(pattern: RoutePattern): Promise<{ profile: RuntimeProfile; assignments: RuntimeAssignment[] }>;
+  deleteRuntimeProfile(profileId: string, replacementProfileId?: string): Promise<void>;
+}
+
+export interface RuntimeQueries {
+  listRuntimeProfiles(routeId: string, patternId?: string): Promise<RuntimeProfile[]>;
+  listRuntimeAssignments(scenarioId: string, serviceDayId?: string, patternId?: string): Promise<RuntimeAssignment[]>;
+  resolveRuntimeBand(profileId: string, departure: ServiceSeconds): Promise<{ band?: RuntimeProfile['bands'][number]; finding?: ValidationFinding }>;
+  validateRuntimeProfile(profileId: string, patternId: string): Promise<ValidationFinding[]>;
+  validateRuntimeAssignments(scenarioId: string): Promise<ValidationFinding[]>;
+  getRuntimePattern(patternId: string): Promise<RoutePattern | undefined>;
+}
+
+/** Historical generation-set ports retained only while the pre-2R UI is running. */
+export interface TripGenerationRepository {
+  getGenerationSet(id: string): Promise<TripGenerationSet | undefined>;
+  listGenerationSets(serviceDayId: string, routeId?: string, patternId?: string): Promise<TripGenerationSet[]>;
+  saveGenerationSet(set: TripGenerationSet): Promise<void>;
+  listTrips(serviceDayId: string, generationSetId?: string): Promise<Trip[]>;
+  getTrip(id: string): Promise<Trip | undefined>;
+  saveTrips(trips: Trip[]): Promise<void>;
+  listBlocks(serviceDayId: string): Promise<Block[]>;
+  saveBlocks(blocks: Block[]): Promise<void>;
+  /** Historical atomic generation-set replacement. */
+  replaceGenerationSet(set: TripGenerationSet, trips: Trip[], blocks: Block[]): Promise<void>;
+  listRuntimeAssignments(scenarioId: string, serviceDayId?: string, patternId?: string): Promise<RuntimeAssignment[]>;
+  getPattern(id: string): Promise<RoutePattern | undefined>;
+  getRuntimeProfile(id: string): Promise<RuntimeProfile | undefined>;
+  /** Added by the authoritative trip workflow; optional only for historical test doubles. */
+  insertTripsAtomically?(trips: Trip[]): Promise<void>;
+  saveTripChangesAtomically?(trips: Trip[], blocks?: Block[]): Promise<void>;
+  /** Atomically removes trips and updates blocks from which their activities were removed. */
+  deleteTripsAtomically?(tripIds: string[], blocks?: Block[]): Promise<void>;
+  listTripProfiles?(scenarioId: string): Promise<import('../domain/types').TripProfile[]>;
+  getTripProfile?(id: string): Promise<import('../domain/types').TripProfile | undefined>;
+  saveTripProfile?(profile: import('../domain/types').TripProfile): Promise<void>;
+  /** Atomically creates a Trip profile and its copied Trips. */
+  copyTripProfileAtomically?(profile: import('../domain/types').TripProfile, trips: Trip[]): Promise<void>;
+  deleteTripProfile?(profileId: string): Promise<void>;
+  listTripsForProfile?(tripProfileId: string): Promise<Trip[]>;
+  listBlocksForProfile?(tripProfileId: string): Promise<Block[]>;
+  /** Package 3A structural service-day operations. Optional for historical test doubles. */
+  getScenarioRecords?(scenarioId: string): Promise<ScenarioRecords | undefined>;
+  commitRuntimeCopyAtomically?(preview: RuntimeCopyPreview): Promise<void>;
+  replaceTripsForDayAtomically?(preview: TripCopyPreview): Promise<void>;
+}
+
+/** Persistence boundary for the authoritative trip workflow. Generation requests are transient. */
+export interface AuthoritativeTripRepository {
+  listTrips(serviceDayId: string, tripProfileId?: string): Promise<Trip[]>;
+  getTrip(id: string): Promise<Trip | undefined>;
+  listBlocks(serviceDayId: string, tripProfileId?: string): Promise<Block[]>;
+  insertTripsAtomically(trips: Trip[]): Promise<void>;
+  saveTripChangesAtomically(trips: Trip[], blocks?: Block[]): Promise<void>;
+  deleteTripsAtomically(tripIds: string[], blocks?: Block[]): Promise<void>;
+  listRuntimeAssignments(scenarioId: string, serviceDayId?: string, patternId?: string): Promise<RuntimeAssignment[]>;
+  getPattern(id: string): Promise<RoutePattern | undefined>;
+  getRuntimeProfile(id: string): Promise<RuntimeProfile | undefined>;
+}
+
+export interface TripGenerationCommands {
+  previewTripGeneration(set: TripGenerationSet, profileId: string): Promise<RegenerationPreview>;
+  applyTripGeneration(preview: RegenerationPreview): Promise<RegenerationResult>;
+  previewTripShift(tripIds: string[], offsetSeconds: ServiceSeconds): Promise<Trip[]>;
+  applyTripShift(tripIds: string[], offsetSeconds: ServiceSeconds): Promise<Trip[]>;
+  previewPatternChange(tripId: string, targetPatternId: string, profileId: string): Promise<PatternChangePreview>;
+  applyPatternChange(preview: PatternChangePreview): Promise<Trip>;
+}
+
+export interface AuthoritativeTripCommands {
+  previewGenerateTrips(request: GenerateTripsRequest): Promise<GenerateTripsPreview>;
+  generateTrips(request: GenerateTripsRequest): Promise<GenerateTripsPreview>;
+  addTrip(request: AddTripRequest): Promise<{ trip: Trip; warnings: ValidationFinding[] }>;
+  previewTripPatternChange(tripId: string, targetPatternId: string, directionId: string): Promise<PatternChangePreview>;
+  changeTripPattern(preview: PatternChangePreview): Promise<Trip>;
+  previewRecalculateTrips(tripIds: string[]): Promise<RecalculationPreview>;
+  recalculateTrips(tripIds: string[], confirm?: boolean): Promise<{ trips: Trip[]; impact: RecalculationPreview['impact'] }>;
+  previewTripDeletion(tripIds: string[]): Promise<{ deletedTripIds: string[]; affectedBlockIds: string[] }>;
+  deleteTrips(tripIds: string[]): Promise<{ deletedTripIds: string[]; affectedBlockIds: string[] }>;
+  listStaleTrips(serviceDayId: string, tripProfileId?: string): Promise<Trip[]>;
+  previewRuntimeCopy(request: RuntimeCopyRequest): Promise<RuntimeCopyPreview>;
+  applyRuntimeCopy(preview: RuntimeCopyPreview): Promise<RuntimeCopyPreview>;
+  previewTripCopy(request: TripCopyRequest): Promise<TripCopyPreview>;
+  applyTripCopy(preview: TripCopyPreview): Promise<TripCopyPreview>;
+  previewBatchPatternChange(request: BatchPatternChangeRequest): Promise<BatchPatternChangePreview>;
+  applyBatchPatternChange(preview: BatchPatternChangePreview): Promise<BatchPatternChangePreview>;
+  previewStagedTripShift(request: TripShiftRequest): Promise<TripShiftPreview>;
+  applyStagedTripShift(preview: TripShiftPreview): Promise<TripShiftPreview>;
+}
+
+export interface AuthoritativeTripQueries {
+  listScheduleTrips(serviceDayId: string, directionId?: string, tripProfileId?: string): Promise<Trip[]>;
+  listStaleTrips(serviceDayId: string, tripProfileId?: string): Promise<Trip[]>;
+}
+
+export interface TripGenerationQueries {
+  listServiceDayTrips(serviceDayId: string): Promise<Trip[]>;
+  validateTrip(tripId: string): Promise<ValidationFinding[]>;
+}

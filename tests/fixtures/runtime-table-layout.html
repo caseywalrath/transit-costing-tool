@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <title>Runtime table layout fixture</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <div class="table-scroll runtime-table">
+        <table>
+          <thead>
+            <tr>
+              <th>From</th>
+              <th>To</th>
+              <th><span class="segment-header">North Terminal → Federal &amp; 32nd</span></th>
+              <th><span class="segment-header">Federal &amp; 32nd → South Terminal</span></th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><input class="time-input" aria-label="From time" value="06:00" /></td>
+              <td><input class="time-input" aria-label="To time" value="09:00" /></td>
+              <td><input class="time-input" aria-label="First segment runtime" value=":08" /></td>
+              <td><input class="time-input" aria-label="Second segment runtime" value=":11" /></td>
+              <td>×</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </body>
+</html>
