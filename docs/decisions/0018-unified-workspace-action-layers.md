@@ -1,6 +1,6 @@
 # Decision 0018: Unified Workspace Action Layers
 
-- Status: Accepted for implementation planning
+- Status: Implemented
 - Date: 2026-09-14
 
 ## Context
@@ -42,4 +42,3 @@ Rejected because `Discard` would need compensating writes and could overwrite in
 ### One menu containing profile selection and every section command
 
 Rejected because it would mix current context, profile lifecycle, editing, and destructive schedule actions without a stable hierarchy.
-

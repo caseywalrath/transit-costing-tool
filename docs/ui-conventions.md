@@ -1,5 +1,9 @@
 # UI Conventions
 
+## Phase 3R acceptance
+
+The Runtime and Trip header-action conventions below are implemented and accepted through Phase 3R. They retain separate Runtime and Trip scopes, preserve the existing shared workflow-section system, and do not establish a convention for top-level Scenario/Data menus or Route-tab Node/Pattern menus.
+
 > Phase 2R is replacing the original Phase 2 trip-generation conventions below. Package 2R-B has established the structural direction and runtime contracts; Terra must replace the generation-set/materialized-schedule wording and interaction rules in the Phase 2 sections during Package 2R-D. The Phase 2 text is retained as historical implementation context until that package is accepted.
 
 ## Phase 1 route definition

@@ -2,7 +2,7 @@
 
 ## Status
 
-Package 3R-A was implemented and structurally verified on 2026-09-14. Package 3R-B was implemented and verified by typechecking, complete automated tests, browser-rendered layout tests, keyboard checks, and desktop/narrow visual review on 2026-09-14. User verification remains required. Decision 0018 defines the accepted direction. Package 3R-C is gated for the primary agent. Phase 4 remains deferred and is not part of this plan.
+Packages 3R-A and 3R-B were implemented on 2026-09-14. Package 3R-C completed integration and acceptance verification on 2026-09-16. Decision 0018 is implemented. Phase 3R is closed; Phase 4 remains deferred and is not part of this plan.
 
 ## Objective
 
@@ -389,6 +389,10 @@ Primary agent. Do not delegate automatically.
 - Existing copy, regeneration, Pattern-change, deletion, profile, and Runtime-editing behavior is unchanged.
 - Header alignment, 12px section buffers, 30px control heights, 5px action gaps, 8px group gaps, typography, menus, focus rings, and responsive behavior are consistent across like elements.
 - Automated tests, production build, keyboard review, accessibility review, reload, and visual inspection pass.
+
+### Gate
+
+Package 3R-C is complete. Integration confirmed that the UI keeps only menu, drawer, and staged-operation state, while the application layer retains authoritative Trip propagation and stale-source checks. The final browser test exercises Runtime editing, Build Trips, keyboard Actions access, staged Shift preview, scope-change discard confirmation, Undo, Redo, Discard, Done, and reload persistence. TypeScript, 119 Vitest tests, 8 Playwright tests, the production build, and 1280px/680px visual review passed. `New profile…` remains intentionally absent from the Trip Profile menu because no accepted Trip-profile creation command exists; Runtime reverse-copy remains available. Record the final result in `phase-03r-closeout.md`. Stop before Phase 4 or the deferred follow-on candidates.
 
 ## Deferred follow-on candidates
 

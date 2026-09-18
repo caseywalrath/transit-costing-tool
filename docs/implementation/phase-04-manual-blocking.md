@@ -2,7 +2,7 @@
 
 ## Status
 
-Drafted for sequencing only. It must be revised after Phase 2TP defines Trip-profile ownership. Do not begin until Phase 3 is accepted and the user approves Package 4A.
+Drafted for sequencing only. Trip-profile ownership is now defined and implemented, but this plan must be revised for current Phase 4 decisions before Package 4A begins. Do not begin until the revised plan is approved and the user approves Package 4A.
 
 ## Objective
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented and user-accepted on 2026-09-14. Package 2R-E remains the integration gate before Phase 3 or Blocking work.
+Implemented and user-accepted on 2026-09-14. The later Phase 2R integration work and Phase 3 gates are complete; Blocking remains deferred to Phase 4 planning.
 
 ## Delivered
 
@@ -25,4 +25,4 @@ Implemented and user-accepted on 2026-09-14. Package 2R-E remains the integratio
 
 ## Review gate
 
-Hands-on verification of profile creation through Copy, switching, Rename, Delete/cancel, last-profile protection, and profile isolation across Trips was accepted on 2026-09-14. Do not begin Blocking before the remaining Phase 2R-E and Phase 3 gates are complete.
+Hands-on verification of profile creation through Copy, switching, Rename, Delete/cancel, last-profile protection, and profile isolation across Trips was accepted on 2026-09-14. Blocking remains a separate Phase 4 effort and requires an updated plan and approved Package 4A before implementation.
