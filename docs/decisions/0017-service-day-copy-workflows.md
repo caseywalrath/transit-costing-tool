@@ -1,6 +1,6 @@
 # Decision 0017: Separate Service-Day Copy Workflows
 
-- Status: Accepted for implementation planning
+- Status: Implemented and accepted through Phase 3
 - Date: 2026-09-14
 
 ## Context

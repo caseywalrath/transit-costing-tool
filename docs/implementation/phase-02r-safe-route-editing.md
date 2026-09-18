@@ -8,7 +8,7 @@ Post-implementation lifecycle refinement on 2026-09-14: Route and Scenario delet
 
 The confirmed implementation decisions are: zero minutes from a predecessor to an inserted point; contradictory Direction orders block the save; ambiguous Pattern edits require reset of that Pattern's dependent service; and a new Node must be saved before a Pattern draft can use it.
 
-This corrective package is complete and accepted. Package 2R-E remains the integration gate before Phase 3.
+This corrective package is complete and accepted. Its later integration dependencies were closed through the accepted Trip-profile, Phase 3, and Phase 3R records.
 
 ## Required model and ownership
 

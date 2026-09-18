@@ -4,7 +4,7 @@
 
 Implementation complete and user-accepted on 2026-09-14. See `phase-02tp-closeout.md` for the implementation record and verification results.
 
-This package must be completed before Phase 2R-E closeout, the rewritten service-day workflow, or manual blocking.
+This package is complete. Its later Phase 2R integration and the rewritten service-day workflow are also complete; manual Blocking remains deferred to Phase 4.
 
 ## Model and ownership
 
@@ -338,7 +338,7 @@ Primary agent.
 - Route/Pattern/runtime lifecycle behavior remains complete across profiles.
 - Database version 3, export schema version 4, legacy import, scenario duplication, CSV, reload, and visual verification pass.
 
-Record a Phase 2TP closeout and then complete Phase 2R-E. Do not start the service-day or Blocking phase automatically.
+The Phase 2TP closeout and later Phase 2R integration records are complete. Do not start the service-day or Blocking phase automatically from this historical plan.
 
 ## Decisions to confirm at the review gate
 

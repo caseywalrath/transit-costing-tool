@@ -2,9 +2,11 @@
 
 ## Status
 
-Approved for implementation planning on 2026-09-11. Package 2R-A, Package 2R-B, and Package 2R-C are complete. Package 2R-D is implemented and awaiting user verification. The safe route-editing corrective package and Phase 2TP Trip profiles are implemented and user-accepted. Package 2R-E remains the final integration and Phase 2 revision acceptance gate.
+Approved for implementation planning on 2026-09-11. The Phase 2R replacement workflow is implemented and accepted through the subsequent safe-route-editing, Trip-profile, Phase 3, and Phase 3R integration records. The package-level 2R-D and 2R-E gates are closed by that later acceptance work.
 
 This revision supersedes the generation-set-centered portions of the accepted Phase 2 implementation. The existing Phase 2 code remains the running implementation until the packages below replace it.
+
+The package descriptions below are retained as the historical implementation record. Their original package gates and recommendations are superseded by the completed safe-route-editing, Trip-profile, Phase 3, and Phase 3R records.
 
 ## Objective
 
@@ -327,7 +329,7 @@ Implemented in the structural layer:
 - idempotent Default-profile provisioning for the four standard service days;
 - explicit profile rename and safe-delete/replacement commands.
 
-Verification: TypeScript typechecking passed; Vitest passed 75 tests across 14 files. No React layout, CSS, focus, keyboard, accessibility, or other UX decisions were made. Package 2R-C followed this gate and is now complete; Package 2R-D remains the Terra UI package after the current structural gate.
+Verification: TypeScript typechecking passed; Vitest passed 75 tests across 14 files. No React layout, CSS, focus, keyboard, accessibility, or other UX decisions were made. Package 2R-C followed this historical structural gate; Package 2R-D was the subsequent Terra UI package.
 
 ## Package 2R-C: Authoritative trip commands and persistence replacement
 

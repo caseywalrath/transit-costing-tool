@@ -2,7 +2,7 @@
 
 ## Status
 
-Superseded in part by the approved Phase 2R Trips workflow revision. The safe route-editing package and Phase 2TP Trip profiles are implemented and user-accepted. Phase 2R-D remains at its user-verification gate and Phase 2R-E remains the final integration gate. Phase 3 service-day workflows are implemented and accepted through Package 3C; see `phase-03-closeout.md`. Phase 3R is implemented and accepted through Package 3R-C; see `phase-03r-closeout.md`. Phase 4 remains draft work and is deferred to a later user-approved session. See `phase-02r-trips-workflow-revision.md`, `phase-02tp-trip-profiles.md`, and `phase-03-service-day-workflows.md`.
+Superseded in part by the approved Phase 2R Trips workflow revision. The Phase 2R replacement workflow, safe route-editing package, and Phase 2TP Trip profiles are implemented and user-accepted. Phase 3 service-day workflows are implemented and accepted through Package 3C; see `phase-03-closeout.md`. Phase 3R is implemented and accepted through Package 3R-C; see `phase-03r-closeout.md`. Phase 4 remains draft work and is deferred to a later user-approved session. See `phase-02r-trips-workflow-revision.md`, `phase-02tp-trip-profiles.md`, and `phase-03-service-day-workflows.md`.
 
 ## Objective
 
