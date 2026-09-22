@@ -5,6 +5,7 @@ import {
   normalizeRuntimeProfile,
   propagatePatternTimes,
   reverseCopyRuntimeProfile,
+  runtimeBandTotalSeconds,
   resolveRuntimeForDeparture,
   selectRuntimeBand,
   validateRuntimeAssignments,
@@ -43,6 +44,10 @@ const profile: RuntimeProfile = {
 };
 
 describe('runtime profiles', () => {
+  it('totals a band’s segment runtimes', () => {
+    expect(runtimeBandTotalSeconds(profile.bands[0])).toBe(900);
+  });
+
   it('selects half-open bands and supports extended service time', () => {
     expect(selectRuntimeBand(profile, 21600)?.id).toBe('band-am');
     expect(selectRuntimeBand(profile, 43199)?.id).toBe('band-am');

@@ -1,4 +1,5 @@
-import type { Block, DirectionTimepointColumn, Node, Route, RouteDirection, RoutePattern, RuntimeProfile, Trip, TripGenerationSet, TripProfile } from '../domain/types';
+import type { Block, BlockingBlock, BlockingScenario, DirectionTimepointColumn, Node, Route, RouteDirection, RoutePattern, RuntimeProfile, Trip, TripGenerationSet, TripProfile } from '../domain/types';
+import type { BlockSummary, BlockingSummary } from '../domain/blocking';
 import { formatServiceTime } from '../domain/time';
 export function csvEscape(value: unknown): string { const s = String(value ?? ''); return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s; }
 export function toCsv(headers: string[], rows: Array<object>): string { return [headers, ...rows.map(r => { const record = r as Record<string, unknown>; return headers.map(h => csvEscape(record[h])); })] .map(row => row.join(',')).join('\r\n') + '\r\n'; }
@@ -49,4 +50,62 @@ export const blocksCsv = (blocks: Block[], tripProfiles: TripProfile[] = []) => 
     blocks.map((block) => ({ ...block, tripProfileName: block.tripProfileId ? names.get(block.tripProfileId) : undefined })),
   );
 };
-export const blockActivitiesCsv = (blocks: Block[]) => toCsv(['blockId', 'activityId', 'type', 'sequence', 'tripId', 'startTime', 'endTime', 'fromNodeId', 'toNodeId', 'miles'], blocks.flatMap(block => block.activities.map(activity => ({ blockId: block.id, activityId: activity.id, type: activity.type, sequence: activity.sequence, tripId: activity.type === 'revenueTrip' ? activity.tripId : undefined, startTime: 'startTime' in activity ? formatServiceTime(activity.startTime) : undefined, endTime: 'endTime' in activity ? formatServiceTime(activity.endTime) : undefined, fromNodeId: 'fromNodeId' in activity ? activity.fromNodeId : undefined, toNodeId: 'toNodeId' in activity ? activity.toNodeId : undefined, miles: 'miles' in activity ? activity.miles : undefined }))));
+export const blockActivitiesCsv = (blocks: Block[]) => toCsv(
+  ['blockId', 'activityId', 'type', 'sequence', 'tripId', 'startTime', 'endTime', 'minutesBeforeFirstTrip', 'minutesAfterPreviousTrip', 'minutesAfterLastTrip', 'fromNodeId', 'toNodeId', 'miles'],
+  blocks.flatMap((block) => block.activities.map((activity) => ({
+    blockId: block.id,
+    activityId: activity.id,
+    type: activity.type,
+    sequence: activity.sequence,
+    tripId: activity.type === 'revenueTrip' ? activity.tripId : undefined,
+    startTime: 'startTime' in activity && typeof activity.startTime === 'number' ? formatServiceTime(activity.startTime) : undefined,
+    endTime: 'endTime' in activity && typeof activity.endTime === 'number' ? formatServiceTime(activity.endTime) : undefined,
+    minutesBeforeFirstTrip: activity.type === 'pullOut' ? activity.minutesBeforeFirstTrip : undefined,
+    minutesAfterPreviousTrip: activity.type === 'deadhead' ? activity.minutesAfterPreviousTrip : undefined,
+    minutesAfterLastTrip: activity.type === 'pullIn' ? activity.minutesAfterLastTrip : undefined,
+    fromNodeId: 'fromNodeId' in activity ? activity.fromNodeId : undefined,
+    toNodeId: 'toNodeId' in activity ? activity.toNodeId : undefined,
+    miles: 'miles' in activity ? activity.miles : undefined,
+  }))),
+);
+
+/** Phase 4 Blocking Scenario export. These serializers are report-only; CSV import is intentionally deferred. */
+export const blockingScenariosCsv = (scenarios: BlockingScenario[], tripProfiles: TripProfile[] = []) => {
+  const names = new Map(tripProfiles.map((profile) => [profile.id, profile.name]));
+  return toCsv(['id', 'scenarioId', 'tripProfileId', 'tripProfileName', 'name', 'description'], scenarios.map((scenario) => ({ id: scenario.id, scenarioId: scenario.scenarioId, tripProfileId: scenario.tripProfileId, tripProfileName: names.get(scenario.tripProfileId), name: scenario.name, description: scenario.description })));
+};
+
+export const blockingBlocksCsv = (blocks: BlockingBlock[]) => toCsv(['id', 'scenarioId', 'blockingScenarioId', 'serviceDayId', 'label', 'notes'], [...blocks].sort((a, b) => a.serviceDayId.localeCompare(b.serviceDayId) || a.label.localeCompare(b.label) || a.id.localeCompare(b.id)));
+
+export const blockingActivitiesCsv = (blocks: BlockingBlock[]) => toCsv(
+  ['blockingScenarioId', 'blockId', 'activityId', 'type', 'sequence', 'tripId', 'startTime', 'endTime', 'minutesBeforeFirstTrip', 'minutesAfterPreviousTrip', 'minutesAfterLastTrip', 'fromNodeId', 'toNodeId', 'miles'],
+  [...blocks]
+    .sort((a, b) => a.serviceDayId.localeCompare(b.serviceDayId) || a.label.localeCompare(b.label) || a.id.localeCompare(b.id))
+    .flatMap((block) => [...block.activities]
+      .sort((a, b) => a.sequence - b.sequence || a.id.localeCompare(b.id))
+      .map((activity) => ({
+        blockingScenarioId: block.blockingScenarioId,
+        blockId: block.id,
+        activityId: activity.id,
+        type: activity.type,
+        sequence: activity.sequence,
+        tripId: activity.type === 'revenueTrip' ? activity.tripId : undefined,
+        startTime: 'startTime' in activity && typeof activity.startTime === 'number' ? formatServiceTime(activity.startTime) : undefined,
+        endTime: 'endTime' in activity && typeof activity.endTime === 'number' ? formatServiceTime(activity.endTime) : undefined,
+        minutesBeforeFirstTrip: activity.type === 'pullOut' ? activity.minutesBeforeFirstTrip : undefined,
+        minutesAfterPreviousTrip: activity.type === 'deadhead' ? activity.minutesAfterPreviousTrip : undefined,
+        minutesAfterLastTrip: activity.type === 'pullIn' ? activity.minutesAfterLastTrip : undefined,
+        fromNodeId: 'fromNodeId' in activity ? activity.fromNodeId : undefined,
+        toNodeId: 'toNodeId' in activity ? activity.toNodeId : undefined,
+        miles: 'miles' in activity ? activity.miles : undefined,
+      }))),
+);
+
+export const blockingSummariesCsv = (summaries: Array<BlockSummary | BlockingSummary>) => {
+  const headers = ['id', 'kind', 'revenueHours', 'runningHours', 'platformHours', 'deadheadHours', 'layoverHours', 'revenueMiles', 'platformMiles', 'status', 'complete', 'valid', 'invalidBlockCount', 'incompleteBlockCount'];
+  if (!summaries.length) return toCsv(headers, []);
+  const rows: Array<Record<string, unknown>> = summaries.flatMap((summary) => 'blockId' in summary
+    ? [{ id: summary.blockId, kind: 'block', revenueHours: summary.revenueHours, runningHours: summary.runningHours, platformHours: summary.platformHours, deadheadHours: summary.deadheadHours, layoverHours: summary.layoverHours, revenueMiles: summary.revenueMiles, platformMiles: summary.platformMiles, status: summary.status, complete: summary.complete, valid: summary.valid }]
+    : [{ id: summary.blockingScenarioId, kind: 'blockingScenario', revenueHours: summary.revenueHours, runningHours: summary.runningHours, platformHours: summary.platformHours, deadheadHours: summary.deadheadHours, layoverHours: summary.layoverHours, revenueMiles: summary.revenueMiles, platformMiles: summary.platformMiles, status: summary.complete ? ('complete' as const) : ('incomplete' as const), complete: summary.complete, valid: summary.invalidBlockCount === 0, invalidBlockCount: summary.invalidBlockCount, incompleteBlockCount: summary.incompleteBlockCount }]);
+  return toCsv(headers, rows);
+};

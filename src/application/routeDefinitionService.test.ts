@@ -172,10 +172,10 @@ describe('RouteDefinitionService', () => {
     const pattern = aggregate.patterns[0];
     const runtime = await service.ensureDefaultRuntimeProfile(pattern);
     const trip = { id: 'route-trip', scenarioId: created.records.scenario.id, routeId: aggregate.route.id, serviceDayId: created.records.serviceDays[0].id, patternId: pattern.id, stopTimes: [{ id: 'point', patternPointId: pattern.points[0].id, sequence: 0, time: 0 }], provenance: { kind: 'manual' as const, creationMethod: 'manual' as const, runtimeProfileId: runtime.profile.id, runtimeCalculationRevision: 0, calculationSource: { runtimeProfileId: runtime.profile.id, runtimeCalculationRevision: 0 }, manuallyChangedFields: [] }, ...metadata() };
-    const block = { id: 'shared-block', scenarioId: created.records.scenario.id, serviceDayId: created.records.serviceDays[0].id, label: '1', activities: [{ id: 'route-activity', type: 'revenueTrip' as const, sequence: 0, tripId: trip.id }], ...metadata() };
+    const block = { id: 'shared-block', scenarioId: created.records.scenario.id, serviceDayId: created.records.serviceDays[0].id, label: '1', activities: [{ id: 'route-activity', type: 'revenueTrip' as const, sequence: 0, tripId: trip.id }, { id: 'route-deadhead', type: 'deadhead' as const, sequence: 1, startTime: 100, endTime: 200, fromNodeId: aggregate.nodes[0].id, toNodeId: aggregate.nodes[1].id }], ...metadata() };
     repository.trips.set(trip.id, trip); repository.blocks.set(block.id, block);
 
-    await expect(service.getRouteDeletionImpact(aggregate.route.id)).resolves.toMatchObject({ nodeCount: 2, patternCount: 1, runtimeProfileCount: 1, tripCount: 1, affectedBlockCount: 1, removedBlockActivityCount: 1 });
+    await expect(service.getRouteDeletionImpact(aggregate.route.id)).resolves.toMatchObject({ nodeCount: 2, patternCount: 1, runtimeProfileCount: 1, tripCount: 1, affectedBlockCount: 1, removedBlockActivityCount: 1, removedNonRevenueActivityCount: 1 });
     await service.deleteRoute(aggregate.route.id);
 
     expect(await repository.getRouteDefinition(aggregate.route.id)).toBeUndefined();

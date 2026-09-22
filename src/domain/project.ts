@@ -14,6 +14,7 @@ import type {
   Block,
   Scenario,
   ServiceDayDefinition,
+  BlockingScenario,
 } from './types';
 import { metadata, newId } from './ids';
 import { createStandardServiceDays } from './serviceDays';
@@ -43,6 +44,7 @@ export interface ScenarioRecords {
   generationSets: TripGenerationSet[];
   trips: Trip[];
   blocks: Block[];
+  blockingScenarios?: BlockingScenario[];
 }
 
 export function createScenarioRecords(projectId: string, name: string, now = new Date().toISOString()): ScenarioRecords {
@@ -131,8 +133,11 @@ export function duplicateScenario(source: ScenarioRecords, targetName: string, n
   const defaultProfileId = tripProfiles[0]?.id;
   const trips = source.trips.map((trip) => ({ ...trip, id: tripIds.get(trip.id)!, scenarioId: scenario.id, routeId: routeIds.get(trip.routeId) ?? trip.routeId, serviceDayId: serviceDayIds.get(trip.serviceDayId) ?? trip.serviceDayId, patternId: patternIds.get(trip.patternId) ?? trip.patternId, tripProfileId: trip.tripProfileId ? tripProfileIds.get(trip.tripProfileId) ?? defaultProfileId : defaultProfileId, provenance: { ...trip.provenance, generationSetId: trip.provenance.generationSetId ? generationSetIds.get(trip.provenance.generationSetId) : undefined, runtimeProfileId: trip.provenance.runtimeProfileId ? profileIds.get(trip.provenance.runtimeProfileId) : undefined, calculationSource: trip.provenance.calculationSource ? { ...trip.provenance.calculationSource, runtimeProfileId: profileIds.get(trip.provenance.calculationSource.runtimeProfileId) ?? trip.provenance.calculationSource.runtimeProfileId } : undefined }, stopTimes: trip.stopTimes.map((point) => ({ ...point, patternPointId: pointIds.get(point.patternPointId) ?? point.patternPointId })), ...metadata(now) }));
   const blocks = source.blocks.map((block) => ({ ...block, id: blockIds.get(block.id)!, scenarioId: scenario.id, serviceDayId: serviceDayIds.get(block.serviceDayId) ?? block.serviceDayId, tripProfileId: block.tripProfileId ? tripProfileIds.get(block.tripProfileId) ?? defaultProfileId : defaultProfileId, activities: block.activities.map((activity) => activity.type === 'revenueTrip' ? { ...activity, id: newId(), tripId: tripIds.get(activity.tripId) ?? activity.tripId } : { ...activity, id: newId() }), ...metadata(now) }));
+  const blockingScenarioIds = new Map((source.blockingScenarios ?? []).map((blockingScenario) => [blockingScenario.id, newId()]));
+  const blockingScenarios = (source.blockingScenarios ?? []).map((blockingScenario) => ({ ...blockingScenario, id: blockingScenarioIds.get(blockingScenario.id)!, scenarioId: scenario.id, tripProfileId: tripProfileIds.get(blockingScenario.tripProfileId) ?? defaultProfileId!, ...metadata(now) }));
+  const normalizedBlocks = blocks.map((block) => ({ ...block, ...(block.blockingScenarioId ? { blockingScenarioId: blockingScenarioIds.get(block.blockingScenarioId) } : {}) }));
 
-  return { scenario, serviceDays, routes, nodes, patterns: copiedPatterns, ...(source.directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, generationSets, trips, blocks };
+  return { scenario, serviceDays, routes, nodes, patterns: copiedPatterns, ...(source.directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), generationSets, trips, blocks: normalizedBlocks };
 }
 
 export function snapshotForScenario(snapshot: ProjectSnapshot, scenarioId: string): ScenarioRecords | undefined {
@@ -149,6 +154,7 @@ export function snapshotForScenario(snapshot: ProjectSnapshot, scenarioId: strin
     runtimeProfiles: snapshot.runtimeProfiles.filter((profile) => routeIds.has(profile.routeId)),
     runtimeAssignments: snapshot.runtimeAssignments.filter((assignment) => assignment.scenarioId === scenarioId),
     tripProfiles: (snapshot.tripProfiles ?? []).filter((profile) => profile.scenarioId === scenarioId),
+    blockingScenarios: (snapshot.blockingScenarios ?? []).filter((blockingScenario) => blockingScenario.scenarioId === scenarioId),
     generationSets: snapshot.generationSets.filter((set) => set.scenarioId === scenarioId),
     trips: snapshot.trips.filter((trip) => trip.scenarioId === scenarioId),
     blocks: snapshot.blocks.filter((block) => block.scenarioId === scenarioId),
@@ -169,6 +175,7 @@ export function projectSnapshotWithScenario(snapshot: ProjectSnapshot, records: 
     runtimeProfiles: [...snapshot.runtimeProfiles.filter((profile) => otherRouteIds.has(profile.routeId)), ...records.runtimeProfiles],
     runtimeAssignments: [...snapshot.runtimeAssignments.filter((assignment) => otherScenarioIds.has(assignment.scenarioId)), ...records.runtimeAssignments],
     tripProfiles: [...(snapshot.tripProfiles ?? []).filter((profile) => otherScenarioIds.has(profile.scenarioId)), ...(records.tripProfiles ?? [])],
+    blockingScenarios: [...(snapshot.blockingScenarios ?? []).filter((blockingScenario) => otherScenarioIds.has(blockingScenario.scenarioId)), ...(records.blockingScenarios ?? [])],
     generationSets: [...snapshot.generationSets.filter((set) => otherScenarioIds.has(set.scenarioId)), ...records.generationSets],
     trips: [...snapshot.trips.filter((trip) => otherScenarioIds.has(trip.scenarioId)), ...records.trips],
     blocks: [...snapshot.blocks.filter((block) => otherScenarioIds.has(block.scenarioId)), ...records.blocks],

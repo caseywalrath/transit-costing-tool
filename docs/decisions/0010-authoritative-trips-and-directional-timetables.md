@@ -13,7 +13,7 @@ The Federal Boulevard reference also demonstrates that multiple patterns in the 
 
 Trips and their scheduled points are the authoritative saved schedule records.
 
-A Generate Trips request is transient and contains a pattern, First Trip, Headway, and Last Trip. It creates trips additively and is not persisted as a generation set. Existing trips do not change when runtime data changes.
+A Generate Trips request is transient and contains a pattern, First Trip, Headway, and exactly one generation limit: an inclusive Last Trip or a Number of Trips. It creates trips additively and is not persisted as a generation set. Existing trips do not change when runtime data changes. A single request is limited to 500 trips.
 
 Users may explicitly recalculate selected trips. Recalculation preserves trip IDs and requires impact confirmation only when it would overwrite manual changes or affect block relationships.
 
@@ -21,7 +21,7 @@ Routes contain application-managed Outbound and Inbound direction groups. Every 
 
 Runtime profiles remain complete and pattern-specific. One Default profile is available without requiring initial profile creation. It may be assigned to multiple service days, and the interface must make shared use visible.
 
-Runtime segment durations accept decimal minutes or `MM:SS`, convert to integer seconds, and display as `:MM` or `:MM:SS` as required.
+Runtime segment durations accept decimal minutes, standard `MM:SS`, and the displayed `:MM` / `:MM:SS` forms, convert to integer seconds, and display as `:MM` or `:MM:SS` as required.
 
 The four standard service days always sort as Weekday, Saturday, Sunday, Holiday.
 

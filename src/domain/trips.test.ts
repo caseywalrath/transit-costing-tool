@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
-import type { Block, RoutePattern, RuntimeProfile, Trip, TripGenerationSet } from './types';
-import { applyPatternChange, applyRegeneration, generateTrips, previewPatternChange, previewRegeneration, shiftTrips, validateTrip, validateTripGenerationSet } from './trips';
+import type { Block, GenerateTripsRequest, RoutePattern, RuntimeProfile, Trip, TripGenerationSet } from './types';
+import { adjustBlockReferences, applyPatternChange, applyRegeneration, generateRequestDepartures, generateTrips, MAX_TRIPS_PER_GENERATION, previewPatternChange, previewRegeneration, shiftTrips, validateGenerateTripsRequest, validateTrip, validateTripGenerationSet } from './trips';
 
 const pattern: RoutePattern = { ...metadata(), id: 'p1', scenarioId: 's1', routeId: 'r1', name: 'Outbound', points: [
   { id: 'a', nodeId: 'na', sequence: 0, cumulativeMiles: 0 }, { id: 'b', nodeId: 'nb', sequence: 1, cumulativeMiles: 1 }, { id: 'c', nodeId: 'nc', sequence: 2, cumulativeMiles: 2 },
@@ -17,6 +17,17 @@ describe('trip generation and overrides', () => {
     expect(validateTripGenerationSet(set({ mode: 'endTime', endTime: 4700 }))).toEqual([]);
     expect(generateTrips(set({ mode: 'endTime', endTime: 4700 }), pattern, profile).map((trip) => trip.stopTimes[0].time)).toEqual([3500, 4100, 4700]);
     expect(validateTripGenerationSet({ ...set({ mode: 'tripCount', tripCount: 0 }), headwaySeconds: 0 }).length).toBeGreaterThan(1);
+  });
+
+  it('generates an inclusive Last Trip or an exact requested trip count', () => {
+    const common = { scenarioId: 's1', routeId: 'r1', serviceDayId: 'weekday', patternId: 'p1', firstTrip: 5 * 60 * 60, headwaySeconds: 15 * 60 };
+    const byLastTrip: GenerateTripsRequest = { ...common, lastTrip: 6 * 60 * 60 };
+    const byTripCount: GenerateTripsRequest = { ...common, tripCount: 4 };
+    expect(generateRequestDepartures(byLastTrip)).toEqual([18000, 18900, 19800, 20700, 21600]);
+    expect(generateRequestDepartures(byTripCount)).toEqual([18000, 18900, 19800, 20700]);
+    expect(validateGenerateTripsRequest({ ...common })).toHaveLength(1);
+    expect(validateGenerateTripsRequest({ ...common, lastTrip: 21600, tripCount: 4 })).toHaveLength(1);
+    expect(validateGenerateTripsRequest({ ...common, tripCount: MAX_TRIPS_PER_GENERATION + 1 }).map((finding) => finding.messageKey)).toContain('tripGeneration.tripCountTooLarge');
   });
 
   it('selects runtime bands for each departure and rejects gaps', () => {
@@ -60,6 +71,16 @@ describe('trip generation and overrides', () => {
     expect(result.trips.map((trip) => trip.id)).toEqual([original[0].id, original[1].id]);
     expect(result.blocks[0].activities).toEqual([]);
     expect(validateTrip(result.trips[0], pattern)).toEqual([]);
+  });
+
+  it('removes a connection deadhead when either adjacent revenue Trip is removed', () => {
+    const blocks: Block[] = [{ ...metadata(), id: 'b1', scenarioId: 's1', serviceDayId: 'weekday', label: '1', activities: [
+      { id: 'first', type: 'revenueTrip', sequence: 0, tripId: 'first' },
+      { id: 'deadhead', type: 'deadhead', sequence: 1, minutesAfterPreviousTrip: 8, fromNodeId: 'nb', toNodeId: 'na' },
+      { id: 'last', type: 'revenueTrip', sequence: 2, tripId: 'last' },
+    ] }];
+    const adjusted = adjustBlockReferences(blocks, ['last']);
+    expect(adjusted.blocks[0].activities.map((activity) => activity.id)).toEqual(['first']);
   });
 
   it('generates the Phase 2 capacity target of 500 trips', () => {

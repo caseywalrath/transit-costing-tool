@@ -49,6 +49,14 @@ describe('backup', () => {
     expect(importProjectJson(JSON.stringify(legacy)).runtimeAssignments).toEqual([]);
   });
 
+  it('keeps version 4 backups readable at the normalized import boundary', () => {
+    const payload = JSON.parse(exportProjectJson({ project: { id: 'p', name: 'Legacy 4', distanceUnit: 'miles', currencyCode: 'USD', ...metadata() }, scenarios: [], serviceDays: [], routes: [], nodes: [], patterns: [], runtimeProfiles: [], runtimeAssignments: [], generationSets: [], trips: [], blocks: [] }));
+    payload.exportSchemaVersion = 4;
+    delete payload.blockingScenarios;
+    expect(importProjectJson(JSON.stringify(payload)).blockingScenarios).toBeUndefined();
+    expect(importProjectJson(JSON.stringify(payload)).blocks).toEqual([]);
+  });
+
   it('clones runtime records with remapped references and independent bands', () => {
     const source = {
       project: { id: 'p', name: 'Demo', distanceUnit: 'miles' as const, currencyCode: 'USD', ...metadata() },
@@ -89,5 +97,26 @@ describe('backup', () => {
     expect(copy.trips[0].provenance.generationSetId).toBe(copy.generationSets[0].id);
     expect(copy.trips[0].stopTimes[0].patternPointId).toBe(copy.patterns[0].points[0].id);
     expect(copy.blocks[0].activities[0].type === 'revenueTrip' && copy.blocks[0].activities[0].tripId).toBe(copy.trips[0].id);
+  });
+
+  it('round trips normalized Blocking Scenarios and remaps ownership, Trips, and Nodes', () => {
+    const source = {
+      project: { id: 'p', name: 'Demo', distanceUnit: 'miles' as const, currencyCode: 'USD', ...metadata() },
+      scenarios: [{ id: 's', projectId: 'p', name: 'Base', ...metadata() }],
+      serviceDays: [{ id: 'd', scenarioId: 's', kind: 'weekday' as const, name: 'Weekday', annualServiceDays: 260, sequence: 0, ...metadata() }],
+      routes: [{ id: 'r', scenarioId: 's', name: 'Route', ...metadata() }],
+      nodes: [{ id: 'a', scenarioId: 's', routeId: 'r', name: 'A', kind: 'terminal' as const, ...metadata() }, { id: 'b', scenarioId: 's', routeId: 'r', name: 'B', kind: 'terminal' as const, ...metadata() }],
+      patterns: [{ id: 'pat', scenarioId: 's', routeId: 'r', name: 'A-B', points: [{ id: 'pa', nodeId: 'a', sequence: 0, cumulativeMiles: 0 }, { id: 'pb', nodeId: 'b', sequence: 1, cumulativeMiles: 1 }], ...metadata() }],
+      runtimeProfiles: [], runtimeAssignments: [], tripProfiles: [{ id: 'tp', scenarioId: 's', name: 'Weekday', ...metadata() }],
+      blockingScenarios: [{ id: 'bs', scenarioId: 's', tripProfileId: 'tp', name: 'Base blocks', ...metadata() }],
+      generationSets: [], trips: [], blocks: [{ id: 'b', scenarioId: 's', blockingScenarioId: 'bs', serviceDayId: 'd', label: '1', activities: [{ id: 'po', type: 'pullOut' as const, sequence: 0, minutesBeforeFirstTrip: 10, toNodeId: 'a', miles: 1 }], ...metadata() }],
+    };
+    const restored = importProjectJson(exportProjectJson(source));
+    expect(restored.blockingScenarios?.[0].tripProfileId).toBe('tp');
+    const copy = cloneProjectSnapshot(source, '2026-01-01T00:00:00.000Z');
+    expect(copy.blockingScenarios?.[0].id).not.toBe('bs');
+    expect(copy.blocks[0].blockingScenarioId).toBe(copy.blockingScenarios?.[0].id);
+    expect(copy.blocks[0].activities[0].type === 'pullOut' && copy.blocks[0].activities[0].toNodeId).toBe(copy.nodes.find((node) => node.name === 'A')?.id);
+    expect(copy.blocks[0].activities[0].type === 'pullOut' && copy.blocks[0].activities[0].minutesBeforeFirstTrip).toBe(10);
   });
 });

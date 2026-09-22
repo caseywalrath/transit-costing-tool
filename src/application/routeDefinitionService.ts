@@ -6,7 +6,7 @@ import { createDirectionColumn, createManagedDirections, createRouteDirection, e
 import { classifyPatternEdit, describePatternPointChange, getPatternServiceImpact, rebalanceRuntimeProfile, rebalanceTripForPattern, reconcileRouteTimetables, resetPatternService, type DirectionOrderConflict, type PatternServiceImpact, type RouteEditClassification, type RouteEditMode } from '../domain/safeRouteEditing';
 import { sortServiceDays } from '../domain/serviceDays';
 import { copyRuntimeProfile, normalizeRuntimeProfile, resolveRuntimeForDeparture, reverseCopyRuntimeProfile, validateRuntimeAssignments, validateRuntimeProfile, withRuntimeCalculationRevision, RuntimeProfileDeletionError } from '../domain/runtime';
-import type { DirectionTimepointColumn, Node, Project, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, ValidationFinding } from '../domain/types';
+import type { Block, BlockActivity, DirectionTimepointColumn, Node, Project, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, ValidationFinding } from '../domain/types';
 import { validateNodeDeletion, validateRouteDefinition } from '../domain/validation';
 import { adjustBlockReferences } from '../domain/trips';
 import { authoritativeTripsCsv, blockActivitiesCsv, blocksCsv, directionColumnsCsv, directionsCsv, generationSetsCsv, nodesCsv, patternPointsCsv, patternsCsv, routeCsv, runtimeBandsCsv, scheduledPointsCsv, tripsCsv } from '../persistence/csv';
@@ -56,6 +56,14 @@ export interface RouteDeletionImpact {
   tripCount: number;
   affectedBlockCount: number;
   removedBlockActivityCount: number;
+  removedNonRevenueActivityCount: number;
+}
+
+export interface NodeDeletionImpact {
+  nodeId: string;
+  patternCount: number;
+  affectedBlockCount: number;
+  removedNonRevenueActivityCount: number;
 }
 
 /** A Scenario owns all listed records; blocks themselves are deleted with it. */
@@ -72,6 +80,24 @@ export interface ScenarioDeletionImpact {
   generationSetCount: number;
   tripCount: number;
   blockCount: number;
+}
+
+function nonRevenueActivityReferencesAnyNode(activity: BlockActivity, nodeIds: Set<string>): boolean {
+  return activity.type !== 'revenueTrip' && ((activity.fromNodeId !== undefined && nodeIds.has(activity.fromNodeId)) || (activity.toNodeId !== undefined && nodeIds.has(activity.toNodeId)));
+}
+
+function removeNonRevenueActivitiesForNodes(blocks: Block[], nodeIds: Set<string>): { blocks: Block[]; affectedBlockCount: number; removedActivityCount: number } {
+  let affectedBlockCount = 0;
+  let removedActivityCount = 0;
+  const updated = blocks.map((block) => {
+    const activities = block.activities.filter((activity) => !nonRevenueActivityReferencesAnyNode(activity, nodeIds));
+    const removed = block.activities.length - activities.length;
+    if (!removed) return block;
+    affectedBlockCount += 1;
+    removedActivityCount += removed;
+    return { ...block, activities: activities.map((activity, sequence) => ({ ...activity, sequence })) };
+  });
+  return { blocks: updated, affectedBlockCount, removedActivityCount };
 }
 
 export interface RouteEditCommitResult {
@@ -315,18 +341,24 @@ export class RouteDefinitionService {
     const patternIds = new Set(records.patterns.filter((pattern) => pattern.routeId === routeId).map((pattern) => pattern.id));
     const profileIds = new Set(records.runtimeProfiles.filter((profile) => profile.routeId === routeId).map((profile) => profile.id));
     const tripIds = records.trips.filter((trip) => trip.routeId === routeId).map((trip) => trip.id);
-    const blocks = adjustBlockReferences(records.blocks, tripIds);
+    const nodeIds = new Set(records.nodes.filter((node) => node.routeId === routeId).map((node) => node.id));
+    const revenueAdjusted = adjustBlockReferences(records.blocks, tripIds);
+    const nonRevenueAdjusted = removeNonRevenueActivitiesForNodes(revenueAdjusted.blocks, nodeIds);
+    const removedConnectionActivityCount = records.blocks.reduce((count, block, index) => count + block.activities.filter((activity) => activity.type !== 'revenueTrip').length - revenueAdjusted.blocks[index].activities.filter((activity) => activity.type !== 'revenueTrip').length, 0);
+    const revenueAffectedBlockIds = new Set(revenueAdjusted.adjustments.map((adjustment) => adjustment.blockId));
+    const affectedBlockCount = new Set([...revenueAffectedBlockIds, ...nonRevenueAdjusted.blocks.filter((block, index) => block !== revenueAdjusted.blocks[index]).map((block) => block.id)]).size;
     return {
       routeId,
-      nodeCount: records.nodes.filter((node) => node.routeId === routeId).length,
+      nodeCount: nodeIds.size,
       directionCount: (records.directions ?? []).filter((direction) => direction.routeId === routeId).length,
       patternCount: patternIds.size,
       runtimeProfileCount: profileIds.size,
       runtimeAssignmentCount: records.runtimeAssignments.filter((assignment) => patternIds.has(assignment.patternId) || profileIds.has(assignment.runtimeProfileId)).length,
       generationSetCount: records.generationSets.filter((set) => set.routeId === routeId).length,
       tripCount: tripIds.length,
-      affectedBlockCount: blocks.adjustments.length,
-      removedBlockActivityCount: blocks.adjustments.reduce((count, adjustment) => count + adjustment.removedTripIds.length, 0),
+      affectedBlockCount,
+      removedBlockActivityCount: revenueAdjusted.adjustments.reduce((count, adjustment) => count + adjustment.removedTripIds.length, 0),
+      removedNonRevenueActivityCount: removedConnectionActivityCount + nonRevenueAdjusted.removedActivityCount,
     };
   }
   async deleteRoute(routeId: string): Promise<ScenarioRecords> {
@@ -334,7 +366,9 @@ export class RouteDefinitionService {
     const patternIds = new Set(records.patterns.filter((pattern) => pattern.routeId === routeId).map((pattern) => pattern.id));
     const profileIds = new Set(records.runtimeProfiles.filter((profile) => profile.routeId === routeId).map((profile) => profile.id));
     const removedTripIds = records.trips.filter((trip) => trip.routeId === routeId).map((trip) => trip.id);
-    const adjustedBlocks = adjustBlockReferences(records.blocks, removedTripIds);
+    const nodeIds = new Set(records.nodes.filter((node) => node.routeId === routeId).map((node) => node.id));
+    const revenueAdjusted = adjustBlockReferences(records.blocks, removedTripIds);
+    const adjustedBlocks = removeNonRevenueActivitiesForNodes(revenueAdjusted.blocks, nodeIds);
     return this.saveScenarioRecords({
       ...records,
       routes: records.routes.filter((route) => route.id !== routeId),
@@ -416,6 +450,16 @@ export class RouteDefinitionService {
   getNodeDeletionFindings(aggregate: RouteDefinitionAggregate, nodeId: string): ValidationFinding[] {
     return validateNodeDeletion(nodeId, aggregate.patterns);
   }
+  async getNodeDeletionImpact(aggregate: RouteDefinitionAggregate, nodeId: string): Promise<NodeDeletionImpact> {
+    const records = await this.repository.getScenarioRecords(aggregate.route.scenarioId);
+    const nonRevenueAdjusted = records ? removeNonRevenueActivitiesForNodes(records.blocks, new Set([nodeId])) : { blocks: [], affectedBlockCount: 0, removedActivityCount: 0 };
+    return {
+      nodeId,
+      patternCount: validateNodeDeletion(nodeId, aggregate.patterns)[0]?.parameters?.patternCount as number ?? 0,
+      affectedBlockCount: nonRevenueAdjusted.affectedBlockCount,
+      removedNonRevenueActivityCount: nonRevenueAdjusted.removedActivityCount,
+    };
+  }
   async deleteNode(aggregate: RouteDefinitionAggregate, nodeId: string): Promise<RouteDefinitionAggregate> {
     const nodes = aggregate.nodes.filter((node) => node.id !== nodeId);
     const directions = (aggregate.directions ?? []).map((direction) => withUpdatedAt({ ...direction, columns: direction.columns.filter((column) => column.nodeId !== nodeId).map((column, sequence) => ({ ...column, sequence })) }, this.now()));
@@ -424,7 +468,13 @@ export class RouteDefinitionService {
       const direction = directions.find((item) => item.id === filtered.directionId);
       return direction ? mapPatternPointsToDirection(filtered, direction, this.now()).pattern : filtered;
     });
-    return this.saveAggregate({ ...aggregate, nodes, patterns, ...(aggregate.directions ? { directions: normalizeDirections(directions) } : {}) });
+    const nextAggregate = await this.saveAggregate({ ...aggregate, nodes, patterns, ...(aggregate.directions ? { directions: normalizeDirections(directions) } : {}) });
+    const records = await this.repository.getScenarioRecords(aggregate.route.scenarioId);
+    if (records) {
+      const blocks = removeNonRevenueActivitiesForNodes(records.blocks, new Set([nodeId])).blocks;
+      await this.repository.saveScenarioRecords({ ...records, nodes, patterns, directions: aggregate.directions ? normalizeDirections(directions) : records.directions, blocks });
+    }
+    return nextAggregate;
   }
 
   async addPattern(aggregate: RouteDefinitionAggregate): Promise<{ aggregate: RouteDefinitionAggregate; pattern: RoutePattern }> {
@@ -950,6 +1000,7 @@ export type RouteDefinitionApplication = Pick<RouteDefinitionService,
   | 'addNode'
   | 'updateNode'
   | 'getNodeDeletionFindings'
+  | 'getNodeDeletionImpact'
   | 'deleteNode'
   | 'addPattern'
   | 'updatePattern'

@@ -16,7 +16,7 @@ Runtime profiles are Pattern-owned calculation inputs, while Trips are authorita
 5. Runtime copy replaces target assignments after impact review but does not alter or recalculate existing Trips.
 6. Trip copy applies to one selected Route and Trip profile, includes both Directions, and replaces the target Day's Trips within that scope.
 7. Trip copy preserves authoritative times and provenance but allocates new Trip IDs and target-Day ownership.
-8. Trip copy does not copy Runtime assignments, Blocks, or Blocking scenarios. Revenue-trip activities referencing replaced target Trips are removed atomically; Block records remain.
+8. Trip copy does not copy Runtime assignments, Blocks, or Blocking Scenarios. Revenue-trip activities referencing replaced target Trips are removed atomically; Block and Blocking Scenario records remain.
 9. An empty Trip source is an explicit clear-target operation and requires a complete destructive-impact review.
 10. Each command has separate validation, preview, stale-review protection, and transaction boundaries.
 

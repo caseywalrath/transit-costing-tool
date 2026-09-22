@@ -1,8 +1,9 @@
-import type { AddTripRequest, Block, GenerateTripsRequest, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceSeconds, Trip, TripGenerationSet, ValidationFinding } from '../domain/types';
+import type { AddTripRequest, Block, BlockingBlock, BlockingScenario, GenerateTripsRequest, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceSeconds, Trip, TripGenerationSet, TripProfile, ValidationFinding } from '../domain/types';
 import type { BatchPatternChangePreview, BatchPatternChangeRequest, RuntimeCopyPreview, RuntimeCopyRequest, TripCopyPreview, TripCopyRequest } from '../domain/serviceDayCopy';
 import type { GenerateTripsPreview, PatternChangePreview, RecalculationPreview, RegenerationPreview, RegenerationResult } from '../domain/trips';
 import type { TripShiftPreview, TripShiftRequest } from '../domain/tripShift';
 import type { ScenarioRecords } from '../domain/project';
+import type { BlockSummary, BlockingAssignmentRequest, BlockingCompatibility, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingActivityEditRequest, BlockingTripsAssignmentRequest } from '../domain/blocking';
 
 export interface RouteDefinitionRepository {
   listProjects(): Promise<Project[]>;
@@ -162,4 +163,48 @@ export interface AuthoritativeTripQueries {
 export interface TripGenerationQueries {
   listServiceDayTrips(serviceDayId: string): Promise<Trip[]>;
   validateTrip(tripId: string): Promise<ValidationFinding[]>;
+}
+
+/** Persistence contract for normalized Phase 4 Blocking records implemented by Package 4B repositories. */
+export interface BlockingRepository {
+  listBlockingScenarios(scenarioId: string): Promise<BlockingScenario[]>;
+  getBlockingScenario(id: string): Promise<BlockingScenario | undefined>;
+  saveBlockingScenario(scenario: BlockingScenario): Promise<void>;
+  saveBlockingScenarioGraphAtomically(scenario: BlockingScenario, blocks: BlockingBlock[], expectedSourceSignature?: string, sourceBlockingScenarioId?: string): Promise<void>;
+  deleteBlockingScenarioAtomically(scenarioId: string, sourceSignature: string): Promise<BlockingScenarioDeletionImpact>;
+  listBlockingBlocks(blockingScenarioId: string, serviceDayId?: string): Promise<BlockingBlock[]>;
+  getBlockingBlock(id: string): Promise<BlockingBlock | undefined>;
+  saveBlockingBlocksAtomically(blocks: BlockingBlock[], sourceSignature: string, blockingScenarioId?: string): Promise<void>;
+}
+
+/** Behavior-oriented command contract consumed by the future Blocking workspace. */
+export interface BlockingCommands {
+  createBlockingScenario(request: BlockingScenarioCreateRequest): Promise<BlockingScenario>;
+  renameBlockingScenario(blockingScenarioId: string, name: string, sourceSignature: string): Promise<BlockingScenario>;
+  duplicateBlockingScenario(blockingScenarioId: string, targetName: string, sourceSignature: string): Promise<BlockingScenario>;
+  deleteBlockingScenario(blockingScenarioId: string, sourceSignature: string): Promise<BlockingScenarioDeletionImpact>;
+  createBlock(blockingScenarioId: string, serviceDayId: string, label: string, sourceSignature: string): Promise<BlockingBlock>;
+  updateBlock(block: BlockingBlock, sourceSignature: string): Promise<BlockingBlock>;
+  deleteBlock(blockingScenarioId: string, blockId: string, sourceSignature: string): Promise<void>;
+  assignTrip(request: BlockingAssignmentRequest): Promise<{ blocks: BlockingBlock[]; findings: ValidationFinding[] }>;
+  reassignTrips(request: import('../domain/blocking').BlockingBulkAssignmentRequest): Promise<{ blocks: BlockingBlock[]; findings: ValidationFinding[] }>;
+  assignTripsToBlock(request: BlockingTripsAssignmentRequest): Promise<{ blocks: BlockingBlock[]; findings: ValidationFinding[] }>;
+  removeTrip(blockingScenarioId: string, serviceDayId: string, tripId: string, sourceSignature: string): Promise<{ blocks: BlockingBlock[] }>;
+  removeTrips(blockingScenarioId: string, serviceDayId: string, tripIds: string[], sourceSignature: string): Promise<{ blocks: BlockingBlock[] }>;
+  editActivity(request: BlockingActivityEditRequest): Promise<BlockingBlock>;
+  previewBulkBoundaryActivities(request: import('../domain/blocking').BulkBoundaryRequest): Promise<import('../domain/blocking').BulkBoundaryPreview>;
+  applyBulkBoundaryActivities(request: import('../domain/blocking').BulkBoundaryRequest): Promise<import('../domain/blocking').BulkBoundaryPreview>;
+  reorderActivities(blockingScenarioId: string, blockId: string, activityIds: string[], sourceSignature: string): Promise<BlockingBlock>;
+}
+
+/** Query contract exposes derived results without prescribing layout or interaction design. */
+export interface BlockingQueries {
+  listBlockingScenarios(scenarioId: string): Promise<BlockingScenario[]>;
+  listBlockingBlocks(blockingScenarioId: string, serviceDayId?: string): Promise<BlockingBlock[]>;
+  getBlockSummary(blockingScenarioId: string, blockId: string): Promise<BlockSummary | undefined>;
+  getScenarioSummary(blockingScenarioId: string, serviceDayId?: string): Promise<import('../domain/blocking').BlockingSummary | undefined>;
+  validateBlock(blockingScenarioId: string, blockId: string): Promise<ValidationFinding[]>;
+  classifyInsertion(blockingScenarioId: string, blockId: string, tripId: string, insertAt?: number, minimumLayover?: import('../domain/blocking').MinimumLayoverRule): Promise<BlockingCompatibility>;
+  getTripBlockingContext(tripId: string, blockingScenarioId: string): Promise<{ block?: BlockingBlock; blockingScenario?: BlockingScenario; tripProfile?: TripProfile }>;
+  exportBlockingScenarioCsv(blockingScenarioId: string): Promise<Array<{ suffix: 'blocking-scenarios' | 'blocking-blocks' | 'blocking-activities' | 'blocking-summaries'; contents: string }>>;
 }

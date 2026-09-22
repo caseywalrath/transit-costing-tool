@@ -1,4 +1,4 @@
-import type { Block, Node, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, Trip, TripGenerationSet, TripProfile } from '../domain/types';
+import type { Block, BlockingScenario, Node, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, Trip, TripGenerationSet, TripProfile } from '../domain/types';
 import type { ScenarioRecords } from '../domain/project';
 import type { RouteDefinitionRepository } from '../application/ports';
 import type { RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
@@ -18,6 +18,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
   runtimeProfiles = new Map<string, RuntimeProfile>();
   runtimeAssignments = new Map<string, RuntimeAssignment>();
   tripProfiles = new Map<string, TripProfile>();
+  blockingScenarios = new Map<string, BlockingScenario>();
   generationSets = new Map<string, TripGenerationSet>();
   trips = new Map<string, Trip>();
   blocks = new Map<string, Block>();
@@ -43,6 +44,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
       runtimeProfiles: [...this.runtimeProfiles.values()].filter((profile) => routeIds.has(profile.routeId)),
       runtimeAssignments: [...this.runtimeAssignments.values()].filter((assignment) => assignment.scenarioId === scenarioId),
       ...((() => { const profiles = [...this.tripProfiles.values()].filter((profile) => profile.scenarioId === scenarioId); return profiles.length ? { tripProfiles: profiles } : {}; })()),
+      ...((() => { const scenarios = [...this.blockingScenarios.values()].filter((blockingScenario) => blockingScenario.scenarioId === scenarioId); return scenarios.length ? { blockingScenarios: scenarios } : {}; })()),
       generationSets: [...this.generationSets.values()].filter((set) => set.scenarioId === scenarioId),
       trips: [...this.trips.values()].filter((trip) => trip.scenarioId === scenarioId),
       blocks: [...this.blocks.values()].filter((block) => block.scenarioId === scenarioId),
@@ -67,6 +69,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     for (const [id, profile] of this.runtimeProfiles) if (profile.scenarioId === records.scenario.id && !records.runtimeProfiles.some((candidate) => candidate.id === id)) this.runtimeProfiles.delete(id);
     for (const [id, assignment] of this.runtimeAssignments) if (assignment.scenarioId === records.scenario.id && !records.runtimeAssignments.some((candidate) => candidate.id === id)) this.runtimeAssignments.delete(id);
     for (const [id, profile] of this.tripProfiles) if (profile.scenarioId === records.scenario.id && !(records.tripProfiles ?? []).some((candidate) => candidate.id === id)) this.tripProfiles.delete(id);
+    for (const [id, blockingScenario] of this.blockingScenarios) if (blockingScenario.scenarioId === records.scenario.id && !(records.blockingScenarios ?? []).some((candidate) => candidate.id === id)) this.blockingScenarios.delete(id);
     for (const [id, set] of this.generationSets) if (set.scenarioId === records.scenario.id && !records.generationSets.some((candidate) => candidate.id === id)) this.generationSets.delete(id);
     for (const [id, trip] of this.trips) if (trip.scenarioId === records.scenario.id && !records.trips.some((candidate) => candidate.id === id)) this.trips.delete(id);
     for (const [id, block] of this.blocks) if (block.scenarioId === records.scenario.id && !records.blocks.some((candidate) => candidate.id === id)) this.blocks.delete(id);
@@ -79,6 +82,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     for (const profile of records.runtimeProfiles) this.runtimeProfiles.set(profile.id, profile);
     for (const assignment of records.runtimeAssignments) this.runtimeAssignments.set(assignment.id, assignment);
     for (const profile of records.tripProfiles ?? []) this.tripProfiles.set(profile.id, profile);
+    for (const blockingScenario of records.blockingScenarios ?? []) this.blockingScenarios.set(blockingScenario.id, blockingScenario);
     for (const set of records.generationSets) this.generationSets.set(set.id, set);
     for (const trip of records.trips) this.trips.set(trip.id, trip);
     for (const block of records.blocks) this.blocks.set(block.id, block);
@@ -130,6 +134,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
       runtimeProfiles: [...this.runtimeProfiles.values()].filter((profile) => routeIds.has(profile.routeId)),
       runtimeAssignments: [...this.runtimeAssignments.values()].filter((assignment) => scenarioIds.has(assignment.scenarioId)),
       ...((() => { const profiles = [...this.tripProfiles.values()].filter((profile) => scenarioIds.has(profile.scenarioId)); return profiles.length ? { tripProfiles: profiles } : {}; })()),
+      ...((() => { const blockingScenarios = [...this.blockingScenarios.values()].filter((blockingScenario) => scenarioIds.has(blockingScenario.scenarioId)); return blockingScenarios.length ? { blockingScenarios } : {}; })()),
       generationSets: [...this.generationSets.values()].filter((set) => scenarioIds.has(set.scenarioId)),
       trips: [...this.trips.values()].filter((trip) => scenarioIds.has(trip.scenarioId)),
       blocks: [...this.blocks.values()].filter((block) => scenarioIds.has(block.scenarioId)),
@@ -151,6 +156,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     for (const [id, profile] of this.runtimeProfiles) if (ownedScenarioIds.has(profile.scenarioId) && !snapshot.runtimeProfiles.some((candidate) => candidate.id === id)) this.runtimeProfiles.delete(id);
     for (const [id, assignment] of this.runtimeAssignments) if (ownedScenarioIds.has(assignment.scenarioId) && !snapshot.runtimeAssignments.some((candidate) => candidate.id === id)) this.runtimeAssignments.delete(id);
     for (const [id, profile] of this.tripProfiles) if (ownedScenarioIds.has(profile.scenarioId) && !(snapshot.tripProfiles ?? []).some((candidate) => candidate.id === id)) this.tripProfiles.delete(id);
+    for (const [id, blockingScenario] of this.blockingScenarios) if (ownedScenarioIds.has(blockingScenario.scenarioId) && !(snapshot.blockingScenarios ?? []).some((candidate) => candidate.id === id)) this.blockingScenarios.delete(id);
     for (const [id, set] of this.generationSets) if (ownedScenarioIds.has(set.scenarioId) && !snapshot.generationSets.some((candidate) => candidate.id === id)) this.generationSets.delete(id);
     for (const [id, trip] of this.trips) if (ownedScenarioIds.has(trip.scenarioId) && !snapshot.trips.some((candidate) => candidate.id === id)) this.trips.delete(id);
     for (const [id, block] of this.blocks) if (ownedScenarioIds.has(block.scenarioId) && !snapshot.blocks.some((candidate) => candidate.id === id)) this.blocks.delete(id);
@@ -164,6 +170,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     for (const profile of snapshot.runtimeProfiles) this.runtimeProfiles.set(profile.id, profile);
     for (const assignment of snapshot.runtimeAssignments) this.runtimeAssignments.set(assignment.id, assignment);
     for (const profile of snapshot.tripProfiles ?? []) this.tripProfiles.set(profile.id, profile);
+    for (const blockingScenario of snapshot.blockingScenarios ?? []) this.blockingScenarios.set(blockingScenario.id, blockingScenario);
     for (const set of snapshot.generationSets) this.generationSets.set(set.id, set);
     for (const trip of snapshot.trips) this.trips.set(trip.id, trip);
     for (const block of snapshot.blocks) this.blocks.set(block.id, block);
@@ -202,9 +209,15 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     catch (error) { this.tripProfiles = previousProfiles; this.trips = previousTrips; throw error; }
   }
   async deleteTripProfile(profileId: string): Promise<void> {
-    const previousProfiles = new Map(this.tripProfiles); const previousTrips = new Map(this.trips); const previousBlocks = new Map(this.blocks);
-    try { this.tripProfiles.delete(profileId); for (const [id, trip] of this.trips) if (trip.tripProfileId === profileId) this.trips.delete(id); for (const [id, block] of this.blocks) if (block.tripProfileId === profileId) this.blocks.delete(id); }
-    catch (error) { this.tripProfiles = previousProfiles; this.trips = previousTrips; this.blocks = previousBlocks; throw error; }
+    const previousProfiles = new Map(this.tripProfiles); const previousBlockingScenarios = new Map(this.blockingScenarios); const previousTrips = new Map(this.trips); const previousBlocks = new Map(this.blocks);
+    try {
+      this.tripProfiles.delete(profileId);
+      for (const [id, trip] of this.trips) if (trip.tripProfileId === profileId) this.trips.delete(id);
+      const ownedBlockingScenarioIds = new Set([...this.blockingScenarios.values()].filter((scenario) => scenario.tripProfileId === profileId).map((scenario) => scenario.id));
+      for (const id of ownedBlockingScenarioIds) this.blockingScenarios.delete(id);
+      for (const [id, block] of this.blocks) if (block.tripProfileId === profileId || (block.blockingScenarioId && ownedBlockingScenarioIds.has(block.blockingScenarioId))) this.blocks.delete(id);
+    }
+    catch (error) { this.tripProfiles = previousProfiles; this.blockingScenarios = previousBlockingScenarios; this.trips = previousTrips; this.blocks = previousBlocks; throw error; }
   }
   async listRuntimeAssignments(scenarioId: string, serviceDayId?: string, patternId?: string): Promise<RuntimeAssignment[]> { return [...this.runtimeAssignments.values()].filter((assignment) => assignment.scenarioId === scenarioId && (!serviceDayId || assignment.serviceDayId === serviceDayId) && (!patternId || assignment.patternId === patternId)); }
   async saveRuntimeAssignment(assignment: RuntimeAssignment): Promise<void> {
@@ -271,7 +284,10 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
   }
   async listBlocks(serviceDayId: string, tripProfileId?: string): Promise<Block[]> { return [...this.blocks.values()].filter((block) => block.serviceDayId === serviceDayId && (!tripProfileId || block.tripProfileId === tripProfileId)); }
   async listTripsForProfile(tripProfileId: string): Promise<Trip[]> { return [...this.trips.values()].filter((trip) => trip.tripProfileId === tripProfileId); }
-  async listBlocksForProfile(tripProfileId: string): Promise<Block[]> { return [...this.blocks.values()].filter((block) => block.tripProfileId === tripProfileId); }
+  async listBlocksForProfile(tripProfileId: string): Promise<Block[]> {
+    const scenarioIds = new Set([...this.blockingScenarios.values()].filter((scenario) => scenario.tripProfileId === tripProfileId).map((scenario) => scenario.id));
+    return [...this.blocks.values()].filter((block) => block.tripProfileId === tripProfileId || (block.blockingScenarioId !== undefined && scenarioIds.has(block.blockingScenarioId)));
+  }
   async saveBlocks(blocks: Block[]): Promise<void> { assertTripProfileReferences([...this.trips.values()], blocks); for (const block of blocks) this.blocks.set(block.id, block); }
   async replaceTripsForDayAtomically(preview: TripCopyPreview): Promise<void> {
     const previousTrips = new Map(this.trips);
