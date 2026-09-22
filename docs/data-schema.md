@@ -155,6 +155,8 @@ interface ProjectSnapshot {
   runtimeAssignments: RuntimeAssignment[];
   /** Scenario-wide timetable alternatives. */
   tripProfiles: TripProfile[];
+  /** Phase 4 named arrangements sourced from one Trip profile. */
+  blockingScenarios: BlockingScenario[];
   /** Historical Phase 2 collection; current authoritative exports leave it empty or omit it. */
   generationSets: TripGenerationSet[];
   trips: Trip[];
@@ -299,14 +301,26 @@ Generation requests are not saved. `generateTrips` inserts all calculated trips 
 ## Block entities
 
 ```typescript
+interface BlockingScenario extends EntityMetadata {
+  id: EntityId;
+  scenarioId: EntityId;
+  tripProfileId: EntityId;
+  name: string;
+  sourceBlockingScenarioId?: EntityId;
+}
+
 interface PullOutActivity {
   id: EntityId;
   type: "pullOut";
   sequence: number;
-  startTime: ServiceSeconds;
-  endTime: ServiceSeconds;
+  // New records use this relative, whole-minute input.
+  minutesBeforeFirstTrip?: number;
+  // Legacy/import compatibility only; paired when relative input is absent.
+  startTime?: ServiceSeconds;
+  endTime?: ServiceSeconds;
   fromNodeId?: EntityId;
   toNodeId: EntityId;
+  miles?: Miles;
 }
 
 interface RevenueTripActivity {
@@ -320,8 +334,11 @@ interface DeadheadActivity {
   id: EntityId;
   type: "deadhead";
   sequence: number;
-  startTime: ServiceSeconds;
-  endTime: ServiceSeconds;
+  // New records use this whole-minute duration from the preceding revenue Trip.
+  minutesAfterPreviousTrip?: number;
+  // Legacy/imported records may retain paired explicit times instead.
+  startTime?: ServiceSeconds;
+  endTime?: ServiceSeconds;
   fromNodeId: EntityId;
   toNodeId: EntityId;
   miles?: Miles;
@@ -331,10 +348,14 @@ interface PullInActivity {
   id: EntityId;
   type: "pullIn";
   sequence: number;
-  startTime: ServiceSeconds;
-  endTime: ServiceSeconds;
+  // New records use this relative, whole-minute input.
+  minutesAfterLastTrip?: number;
+  // Legacy/import compatibility only; paired when relative input is absent.
+  startTime?: ServiceSeconds;
+  endTime?: ServiceSeconds;
   fromNodeId: EntityId;
   toNodeId?: EntityId;
+  miles?: Miles;
 }
 
 type BlockActivity =
@@ -346,7 +367,7 @@ type BlockActivity =
 interface Block extends EntityMetadata {
   id: EntityId;
   scenarioId: EntityId;
-  tripProfileId: EntityId;
+  blockingScenarioId: EntityId;
   serviceDayId: EntityId;
   label: string;
   activities: BlockActivity[];
@@ -354,7 +375,9 @@ interface Block extends EntityMetadata {
 }
 ```
 
-Blocks do not contain a route ID. This permits later interlining. Decision 0016 proposes required Trip-profile ownership so a Block cannot combine competing timetable alternatives. Layover is derived from activity timing and is not persisted.
+Blocks do not contain a Route ID or duplicate Trip Profile ID. The Block derives its immutable source Trip Profile through its Blocking Scenario. This preserves one ownership authority and permits later interlining. The initial Phase 4 UI filters candidate Trips to one Route and prevents intentional cross-route assignment. Pull-out, pull-in, and deadhead use one timing mode for new and edited records: a non-negative whole-minute offset from their adjacent revenue Trip. Pull-out and pull-in anchor to the first and last revenue Trips; a deadhead anchors to its preceding Trip and must occupy a connection before a successor Trip. Legacy or imported records may retain paired explicit service times. Resolved activity times, layover, compatibility, summaries, validity, and completeness are derived and are not persisted. Revenue hours and Running Time are derived summary measures; Revenue equals Running Time plus usable Layover. The additive nested offset fields are backward compatible and require no database or backup-schema migration.
+
+Blocking Scenario names are unique within a Scenario after trimming and case normalization. Block labels are unique within one Blocking Scenario and service day. A Trip ID may occur once across that complete Blocking Scenario/day but may be assigned differently in another Blocking Scenario.
 
 ## Cost entities
 
@@ -433,7 +456,8 @@ The initial Dexie database should use a unique application-specific name. Propos
 | `generationSets` | historical Phase 2 table; no new authoritative writes |
 | `tripProfiles` | `id`, `scenarioId`, `[scenarioId+name]`, `updatedAt` |
 | `trips` | `id`, `scenarioId`, `tripProfileId`, `routeId`, `serviceDayId`, `patternId`, `[tripProfileId+routeId]`, `[tripProfileId+serviceDayId]`, `provenance.runtimeProfileId` |
-| `blocks` | `id`, `scenarioId`, `tripProfileId`, `serviceDayId`, `[tripProfileId+serviceDayId]`, `[serviceDayId+label]` |
+| `blockingScenarios` | Implemented in database version 4: `id`, `scenarioId`, `tripProfileId`, `[scenarioId+name]`, `[tripProfileId+name]`, `updatedAt` |
+| `blocks` | Implemented in database version 4: `id`, `scenarioId`, `blockingScenarioId`, `serviceDayId`, `[blockingScenarioId+serviceDayId]`, `[serviceDayId+label]` |
 | `costPlans` | `id`, `scenarioId`, `[scenarioId+name]` |
 | `appMetadata` | `key` |
 
@@ -475,11 +499,14 @@ Use one transaction for operations that must remain consistent, including:
 - saving a route with node and pattern changes that affect references;
 - committing a reviewed Node or Pattern edit with reconciled directions, runtimes, trips, and affected blocks;
 - regenerating a trip set and updating affected block references;
+- creating or duplicating a Blocking Scenario with its complete all-day Block graph;
+- deleting a Blocking Scenario and all owned Blocks;
+- assigning or atomically reassigning a Trip when one or two Blocks are affected;
 - importing a complete project backup.
 
 ## Database versions and migrations
 
-The first implementation starts at database version 1. Version 2 adds a non-unique `runtimeProfileId` index to `runtimeAssignments` for profile lifecycle queries. Phase 2TP increments the database to version 3 with a `tripProfiles` store and Trip-profile ownership indexes on Trips and Blocks. Each later schema change must:
+The first implementation starts at database version 1. Version 2 adds a non-unique `runtimeProfileId` index to `runtimeAssignments` for profile lifecycle queries. Phase 2TP increments the database to version 3 with a `tripProfiles` store and Trip-profile ownership indexes on Trips and Blocks. Package 4B increments the database to version 4 with `blockingScenarios` and Blocking-Scenario ownership indexes on Blocks. The version 4 migration discards pre-Phase-4 placeholder Blocks while preserving Trips, Trip Profiles, and all other scheduling records. This is the explicit Decision 0019 exception to the normal preservation rule. Each later schema change must:
 
 1. increment the database version;
 2. define an explicit migration;
@@ -497,9 +524,9 @@ A JSON backup contains:
 - export-schema version;
 - export timestamp;
 - application version when available;
-- one complete project graph: the project, scenarios, service days, routes, nodes, directions, patterns, pattern points, runtimes, generation sets, trips, and blocks.
+- one complete project graph: the project, scenarios, service days, routes, nodes, directions, patterns, pattern points, runtimes, Trip profiles, trips, Blocking scenarios, and blocks.
 
-The current export schema is version 4 and stores directions, runtime profiles, assignments, Trip profiles, trips, and blocks as top-level arrays. Empty authoritative exports omit the historical `generationSets` property; populated historical records remain readable for transition purposes. Version 1 through version 3 imports are normalized to one Default Trip profile per Scenario.
+The implemented export schema is version 5 and stores directions, runtime profiles, assignments, Trip profiles, Blocking Scenarios, trips, and Blocks as top-level arrays. Versions 1 through 4 remain readable; version 4 and earlier placeholder Blocks are discarded during database migration, while legacy JSON Blocks remain readable at the import boundary. Empty authoritative exports omit the historical `generationSets` property; populated historical records remain readable for transition purposes. Version 1 through version 3 imports are normalized to one Default Trip profile per Scenario. Current normalized Blocks reference only their Blocking Scenario; Trip Profile ownership is derived through that relationship.
 
 Import must validate the complete payload before opening a write transaction. ID collision policy must be explicit: replace an existing project only after confirmation, or import with remapped IDs as a new project.
 
@@ -512,4 +539,4 @@ Phase 1 should export:
 - patterns;
 - pattern points.
 
-Phase 2R adds runtime bands, directions, direction columns, authoritative trips, scheduled points, blocks, and block activities. Phase 2TP adds `tripProfileId` and `tripProfileName` to the Trip and Block CSV outputs. The authoritative trip CSV contains creation method and runtime calculation source fields and does not include generation-set columns. A legacy export method remains temporarily for the pre-2R UI. CSV files are reporting and exchange outputs, not full backups.
+Phase 2R adds runtime bands, directions, direction columns, authoritative trips, scheduled points, placeholder blocks, and block activities. Phase 2TP adds `tripProfileId` and `tripProfileName` to the Trip and placeholder Block CSV outputs. Phase 4 replaces Blocking exports with Blocking Scenario, Block, block-activity, and derived block-summary files scoped to one Blocking Scenario. Summary files include validity and completeness fields. The authoritative Trip CSV contains creation method and runtime calculation source fields and does not include generation-set columns. A legacy export method remains temporarily for the pre-2R UI. CSV files are reporting and exchange outputs, not full backups.

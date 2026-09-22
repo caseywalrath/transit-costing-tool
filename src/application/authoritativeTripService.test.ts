@@ -47,6 +47,14 @@ describe('authoritative trip workflow', () => {
     expect(second.trips[0].provenance.calculationSource).toEqual({ runtimeProfileId: 'rp2', runtimeCalculationRevision: 0 });
   });
 
+  it('accepts a count-limited additive generation request', async () => {
+    const p = pattern('p1', 'Southbound 1', 0); const repository = new AuthoritativeFake([p], [profile('rp1', 'p1')]);
+    repository.assignments.push({ ...metadata(), id: 'a1', scenarioId: 'scenario', patternId: 'p1', serviceDayId: 'weekday', runtimeProfileId: 'rp1' });
+    const service = new TripGenerationService(repository);
+    const generated = await service.generateTrips({ scenarioId: 'scenario', routeId: 'route', serviceDayId: 'weekday', patternId: 'p1', firstTrip: 0, headwaySeconds: 300, tripCount: 4 });
+    expect(generated.trips.map((trip) => trip.stopTimes[0].time)).toEqual([0, 300, 600, 900]);
+  });
+
   it('orders interlaced patterns at their first common timetable point', async () => {
     const p1: RoutePattern = { ...pattern('p1', 'Southbound 1', 0), points: [
       { id: 'p1-a', nodeId: 'a', sequence: 0, cumulativeMiles: 0, directionColumnId: 'col-a' },

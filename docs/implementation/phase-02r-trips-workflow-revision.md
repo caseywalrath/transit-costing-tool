@@ -42,7 +42,7 @@ The workflow must prevent missing prerequisites through visible context, disable
 10. A pattern receives a `Default` runtime profile without requiring the user to create or name a profile first. The initial Default may be shared by multiple service days.
 11. The interface visibly identifies which service days use a selected shared profile.
 12. Service days always appear in this order: Weekday, Saturday, Sunday, Holiday. This order is centralized and reused by every interface and export where the four standard days are compared.
-13. Runtime segment-duration fields accept either decimal minutes or `MM:SS`.
+13. Runtime segment-duration fields accept decimal minutes (`7`, `07`, or `7.5`), standard `MM:SS` (`7:30`), and the displayed `:MM` / `:MM:SS` forms (`:07` or `:07:30`).
 14. Runtime segment durations remain integer seconds internally.
 15. An Add Trip row requires a pattern and one initial time. The application resolves the applicable runtime profile and calculates the remaining timepoints.
 16. The Pattern control is the leftmost visible schedule column. A pattern change preserves the trip's first time, resolves the new pattern's assigned profile, and recalculates the row.
@@ -117,7 +117,7 @@ Rules:
 
 - trim surrounding whitespace;
 - a value without a colon is decimal minutes;
-- a value with one colon is `MM:SS`;
+- standard `MM:SS` notation is accepted, and the display notation `:MM` / `:MM:SS` is accepted as the same stored duration;
 - seconds in colon notation must be from `00` through `59`;
 - decimal-minute results are rounded to the nearest integer second;
 - negative values, nonnumeric values, nonfinite values, and more than one colon are invalid;
@@ -138,7 +138,8 @@ interface GenerateTripsRequest {
   patternId: EntityId;
   firstTrip: ServiceSeconds;
   headwaySeconds: DurationSeconds;
-  lastTrip: ServiceSeconds;
+  lastTrip?: ServiceSeconds;
+  tripCount?: number;
 }
 ```
 
@@ -154,7 +155,7 @@ The application service must:
 
 No partial trip group may be written when one proposed departure cannot be calculated.
 
-The Last Trip value is inclusive when it falls exactly on the headway sequence. The request is invalid when Last Trip is earlier than First Trip or the headway is not positive.
+Exactly one of Last Trip and Number of Trips is required. Last Trip is inclusive when it falls exactly on the headway sequence. A request is invalid when Last Trip is earlier than First Trip, Number of Trips is not a positive whole number or exceeds 500, or the headway is not positive.
 
 ### Authoritative trips and calculation source
 
@@ -491,7 +492,8 @@ Requirements:
 - Remove the Runtime profile name field from this section.
 - From and To remain 24-plus service-clock fields.
 - Segment cells use the duration parser supplied by the application/domain layer.
-- While editing, accept decimal minutes or `MM:SS`.
+- Show a calculated Total column after the final segment and before row actions; it sums the band’s segment durations and is not an independently editable value.
+- While editing, accept decimal minutes, standard `MM:SS`, and displayed `:MM` / `:MM:SS` forms.
 - On commit, display whole minutes as `:05`, `:12`, or `:75` and nonzero seconds as `:05:30` or `:75:15`.
 - Empty is visually distinct from zero.
 - Invalid cells remain editable and receive cell-level guidance. Do not replace the entered value before the user can correct it.
@@ -512,11 +514,12 @@ The primary actions are:
 
 Build Trips is an action inside the Trips section. It must not be a separate permanently expanded section and must not expose a generation-set selector or name.
 
-Terra may use a modal or a compact collapsible panel. A modal is preferred because generation is a short, bounded action. The control must contain only:
+Build Trips uses a non-modal drawer docked to the right edge of the application, consistent with Shift Trips. The control must contain only:
 
 - Pattern
 - First Trip
 - Headway
+- Number of Trips
 - Last Trip
 - the resolved runtime-profile name as read-only context
 - Build and Cancel
@@ -525,7 +528,9 @@ Requirements:
 
 - Pattern options are limited to the selected direction.
 - First Trip and Last Trip use the shared 24-plus time control.
-- Headway accepts the same decimal-minute or `MM:SS` input behavior as runtime durations, without the decorative leading colon used in the table display.
+- Headway accepts the same decimal-minute, standard `MM:SS`, and displayed `:MM` / `:MM:SS` input behavior as runtime durations.
+- Number of Trips is blank by default and accepts a whole number from 1 through 500. Entering Number of Trips disables Last Trip; entering Last Trip disables Number of Trips.
+- Last Trip is inclusive: a departure exactly matching that time and the headway sequence is created.
 - Validate the complete proposed departure sequence before enabling Build.
 - If a departure falls in a runtime gap, show `No run time defined for [time]` beside the form and leave Build unavailable.
 - Do not show a generated-trip preview.
@@ -679,7 +684,7 @@ Primary agent.
 - The Service, Runtimes, and Trips sections form a visible A-to-B-to-C workflow.
 - Every usable pattern can begin with a Default runtime profile.
 - Shared-profile day usage is visible before editing.
-- Runtime durations accept decimal minutes and `MM:SS` and display correctly.
+- Runtime durations accept decimal minutes, standard `MM:SS`, and displayed `:MM` / `:MM:SS` forms and display correctly.
 - Generate Trips is additive and persists no generation instruction.
 - Add Trip requires only a pattern and first time.
 - The combined timetable shows all patterns in the selected direction.

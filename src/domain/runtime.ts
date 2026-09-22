@@ -93,6 +93,11 @@ export function patternSegmentMiles(pattern: RoutePattern): number[] {
   return pattern.points.slice(1).map((point, index) => point.cumulativeMiles - pattern.points[index].cumulativeMiles);
 }
 
+/** Return the total runtime represented by one band’s segment durations. */
+export function runtimeBandTotalSeconds(band: RuntimeBand): DurationSeconds {
+  return band.segmentRuntimeSeconds.reduce((total, duration) => total + duration, 0);
+}
+
 /** Validate a complete pattern-specific runtime profile. */
 export function validateRuntimeProfile(profile: RuntimeProfile, pattern: RoutePattern): ValidationFinding[] {
   const findings: ValidationFinding[] = [];

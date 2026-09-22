@@ -2,9 +2,9 @@
 
 ## Status
 
-Phase 3R is implemented and accepted through Package 3R-C. It adds scoped staged Trip Shift preview/commit contracts with stale-source protection, unified Runtime and Trip header action layers, and a right-docked staged Shift drawer. The closeout is recorded in `docs/implementation/phase-03r-closeout.md`.
+Phase 3R is implemented and accepted through Package 3R-C. It adds scoped staged Trip Shift preview/commit contracts with stale-source protection, unified Runtime and Trip header action layers, and a right-docked staged Shift drawer. The closeout is recorded in `docs/implementation/phase-03r-closeout.md`. Phase 4 uses relative connection deadheads: new and edited deadheads begin at their preceding revenue Trip end and derive the remaining layover before the successor Trip; legacy explicit deadhead times remain readable. Pull-out and pull-in values remain Block-owned; Decision 0024 adds a previewed, atomic bulk edit across matching Blocks without introducing shared movement rules.
 
-This document defines the initial architecture. Phase 1 route definition is implemented and accepted through Package 1C. The original Phase 2 runtime and trip generation implementation is accepted through Package 2G. User review then approved Phase 2R as a replacement Trips workflow. The Phase 2R replacement workflow, including the Route and Trips UI, safe route editing, Trip profiles, and integration acceptance, is complete. Phase 3 service-day workflows are implemented and accepted through Package 3C; Runtime and Trip copies remain separate operations. Phase 3R is implemented and accepted through Package 3R-C under Decision 0018; it consolidates Runtime and Trip section-header action layers and stages Trip shifts in a right-docked preview drawer without changing authoritative scheduling rules. The Dexie schema is version 3 and the JSON backup schema is version 4. Phase-specific implementation must follow the decision records and implementation plans under `docs/`.
+This document defines the initial architecture. Phase 1 route definition is implemented and accepted through Package 1C. The original Phase 2 runtime and trip generation implementation is accepted through Package 2G. User review then approved Phase 2R as a replacement Trips workflow. The Phase 2R replacement workflow, including the Route and Trips UI, safe route editing, Trip profiles, and integration acceptance, is complete. Phase 3 service-day workflows are implemented and accepted through Package 3C; Runtime and Trip copies remain separate operations. Phase 3R is implemented and accepted through Package 3R-C under Decision 0018; it consolidates Runtime and Trip section-header action layers and stages Trip shifts in a right-docked preview drawer without changing authoritative scheduling rules. Phase 4 planning is revised and approved under Decisions 0019 through 0023. Packages 4A through 4C are implemented in the current working tree; primary-agent integration and user verification remain in Package 4D. Decision 0026 records Trips-table unassignment and revenue hours inclusive of layover. The implemented Dexie schema is version 4 and the JSON backup schema is version 5. Phase-specific implementation must follow the decision records and implementation plans under `docs/`.
 
 ## Product Objective
 
@@ -78,7 +78,7 @@ src/main.tsx        composition root for repository, backup, application service
 
 The Route UI depends on `RouteDefinitionApplication`; the Trips UI depends on `TripGenerationApplication`. The application services coordinate domain commands, repository transactions, backup and CSV operations, validation queries, derived segment miles, and save-status events. React does not import Dexie, persistence serializers, or authoritative route commands. Packages 2A through 2G provide the historical runtime and generation implementation. Phase 2R-B adds route-managed Outbound and Inbound records, internally ordered timetable columns, pattern mappings, canonical service-day ordering, flexible runtime-duration utilities, runtime calculation revisions, Default-profile provisioning, safe profile lifecycle commands, and direction-aware persistence/backup serializers. Phase 2R-C adds transient validation-only generation requests, additive atomic trip insertion, direct Add Trip, same-direction pattern changes, explicit recalculation impact reporting, stale-source queries, and authoritative trip CSV output. Package 3A adds typed target-first Runtime-copy and Trip-copy commands, source-signature stale protection, independent/shared Runtime modes, target-Day Trip replacement with Block-activity cleanup, and atomic all-or-nothing batch Pattern changes. Runtime selection, trip generation, recalculation, service-day copy, and validation remain outside React.
 
-The JSON backup graph includes the project, scenarios, service days, routes, nodes, directions, patterns, pattern points, runtime profiles, runtime assignments, scenario-wide Trip profiles, authoritative trips, and blocks. Current exports use JSON schema version 4 and omit the historical generation-set collection when it is empty; the parser continues to accept non-empty generation sets in older Phase 2 files. Version 1 through version 3 backups are normalized to one Default Trip profile per Scenario. Direction data is optional when reading pre-2R backups and is remapped during scenario/import copies. Costing records remain owned by their later phase.
+The implemented JSON backup graph includes the project, scenarios, service days, routes, nodes, directions, patterns, pattern points, runtime profiles, runtime assignments, scenario-wide Trip profiles, Blocking Scenarios, authoritative trips, and normalized Blocks. Current exports use JSON schema version 5 and omit the historical generation-set collection when it is empty; the parser continues to accept non-empty generation sets in older Phase 2 files. Versions 1 through 4 remain readable; version 4 and earlier placeholder Blocks are discarded during Phase 4 normalization. Version 1 through version 3 backups are normalized to one Default Trip profile per Scenario. Direction data is optional when reading pre-2R backups and is remapped during scenario/import copies. Blocking Scenario, Block, activity, Trip, and Node references are remapped during import-as-copy and scenario duplication. Costing records remain owned by their later phase.
 
 ## Architectural Principles
 
@@ -167,11 +167,12 @@ Project
     │   └── Runtime profiles and assignments
     ├── Trip profiles
     │   ├── Trips across Routes and service days
-    │   └── Blocks sourced from that timetable
+    │   └── Blocking scenarios sourced from that timetable
+    │       └── Blocks by service day
     └── Cost plans
 ```
 
-The interface initially selects one project, scenario, route, and service day. Day and direction are non-authoritative workspace context selections: Trips uses both, future Blocking uses day only, and Route does not require either. The storage model supports more than one of each. Trips also selects one scenario-wide Trip profile; future Blocking will select one Trip profile through a named Blocking scenario.
+The interface initially selects one project, scenario, route, and service day. Day and direction are non-authoritative workspace context selections: Trips uses both, Blocking uses day and Route as candidate scope, and Route definition does not require either. The storage model supports more than one of each. Trips selects one scenario-wide Trip Profile and one Blocking Scenario; its Block pills and multi-select Actions can assign, move, or unassign Trips only within that selected Blocking Scenario and service day. Blocking selects one Trip Profile through a named Blocking Scenario.
 
 ## Route and Pattern Model
 
@@ -202,7 +203,7 @@ A runtime profile belongs to one route pattern. It contains ordered runtime band
 
 A runtime assignment links one service day to one runtime profile for a pattern. Multiple service days may reference the same profile. Profiles are not shared between patterns in the initial implementation.
 
-Runtime segment durations are parsed from decimal minutes or `MM:SS` into integer seconds and formatted as `:MM` or `:MM:SS`. A runtime profile carries a calculation revision. Band-bound or segment-duration changes increment that revision; a profile rename does not. Existing trips record the profile and revision used for their current times, and Package 2R-C provides explicit recalculation against that source.
+Runtime segment durations are parsed from decimal minutes, standard `MM:SS`, or the displayed `:MM` / `:MM:SS` forms into integer seconds and formatted as `:MM` or `:MM:SS`. A runtime profile carries a calculation revision. Band-bound or segment-duration changes increment that revision; a profile rename does not. Existing trips record the profile and revision used for their current times, and Package 2R-C provides explicit recalculation against that source.
 
 Runtime bands are continuous half-open intervals: start time is inclusive and end time is exclusive. A label covering disjoint periods must use separate bands. For example, off-peak service from 04:00-06:00 and 22:00-26:00 uses two bands.
 
@@ -230,16 +231,16 @@ Operating spans and observed headways are derived from authoritative trips. The 
 
 ## Blocking Model
 
-A block is an ordered collection of activities for one scenario and service day. Initial activity types are:
+A Blocking Scenario is one named arrangement of an immutable source Trip Profile across all service days. A Block belongs to one Blocking Scenario and one service day and is an ordered collection of activities. Initial activity types are:
 
 - pull-out;
 - revenue trip;
 - manual deadhead;
 - pull-in.
 
-Layover is derived from the available time between consecutive activities. It is not stored as an independent authoritative activity.
+Layover is derived from the available time between consecutive revenue movements after any manual deadhead. It is not stored as an independent authoritative activity. Empty Blocks are valid. Pull-out is optional and first; pull-in is optional and last; one manual deadhead is permitted between consecutive revenue Trips. New and edited pull-out and pull-in activities store non-negative whole-minute offsets from the first and last revenue Trips; their resolved boundary times and platform hours update when those Trips change. Legacy explicit boundary times remain readable.
 
-The first blocking release supports manual trip assignment, manual deadhead, and manual pull-out and pull-in. It reports:
+The first blocking release supports manual trip assignment and unassignment, manual deadhead, and manual pull-out and pull-in. Running Time sums scheduled revenue-Trip durations; Revenue hours add known usable layover between revenue Trips. Deadhead and boundary activities remain excluded from Revenue hours. It reports:
 
 - overlapping trips;
 - negative layover;
@@ -247,12 +248,19 @@ The first blocking release supports manual trip assignment, manual deadhead, and
 - deadhead that does not fit in the available gap;
 - missing pull-out or pull-in data required for platform hours.
 
+Structural ownership, reference, duplicate-assignment, and malformed-time violations reject writes. Structurally valid but operationally infeasible Blocks remain saved with visible findings. Selected-day subtotals include valid Blocks; Block-level status and findings identify incomplete or infeasible work.
+
+The initial Blocking UI filters candidate Trips by one selected Route and does not intentionally create multi-route Blocks. The data model remains scenario-wide. Existing or imported multi-route Blocks remain fully visible, and Route filtering never truncates their activities.
+
+Candidate compatibility may apply a UI preference for minimum layover: either fixed minutes per connection or a percentage of the preceding Trip's revenue runtime. The pure Blocking classifier evaluates the preference; it does not become authoritative Block data. Persisted Block summaries continue to derive actual layover and deadhead hours from activities and Trip times. Deadhead hours include pull-out, pull-in, and between-Trip deadhead durations; layover remains separate.
+
 ## Summary and Cost Model
 
 Initial service quantities are:
 
-- revenue hours: sum of scheduled revenue-trip durations;
-- platform hours: block pull-in time minus block pull-out time;
+- running time: sum of scheduled revenue-trip durations, excluding layover;
+- revenue hours: running time plus usable layover time between revenue Trips;
+- platform hours: resolved block pull-in time minus resolved block pull-out time;
 - revenue miles: sum of pattern miles for revenue trips when distances are complete;
 - annual quantities: daily quantities multiplied by annual service-day counts.
 
@@ -347,9 +355,9 @@ Rewritten implementation plan: `docs/implementation/phase-03-service-day-workflo
 
 ### Phase 4: Manual blocking
 
-Add block activities, manual assignment, deadhead, pull-out and pull-in, conflict validation, layover display, and block summaries.
+Add named Blocking Scenarios, ordered Block activities, manual assignment and atomic reassignment, deadhead, pull-out and pull-in, conflict validation, completeness-aware summaries, persistence, backup, CSV, and accessible Blocking and Trips-context interfaces.
 
-Draft implementation plan: `docs/implementation/phase-04-manual-blocking.md`.
+Approved revised implementation plan: `docs/implementation/phase-04-manual-blocking.md`. Decisions 0019 through 0023 define ownership, lifecycle, calculations, Route scope, migration, exports, and relative activity timing. Packages 4A through 4C are implemented; Package 4D owns the integration and user-verification gate.
 
 ### Phase 5: Costing
 

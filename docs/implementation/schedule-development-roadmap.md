@@ -2,7 +2,7 @@
 
 ## Status
 
-Superseded in part by the approved Phase 2R Trips workflow revision. The Phase 2R replacement workflow, safe route-editing package, and Phase 2TP Trip profiles are implemented and user-accepted. Phase 3 service-day workflows are implemented and accepted through Package 3C; see `phase-03-closeout.md`. Phase 3R is implemented and accepted through Package 3R-C; see `phase-03r-closeout.md`. Phase 4 remains draft work and is deferred to a later user-approved session. See `phase-02r-trips-workflow-revision.md`, `phase-02tp-trip-profiles.md`, and `phase-03-service-day-workflows.md`.
+Superseded in part by the approved Phase 2R Trips workflow revision. The Phase 2R replacement workflow, safe route-editing package, and Phase 2TP Trip profiles are implemented and user-accepted. Phase 3 service-day workflows are implemented and accepted through Package 3C; see `phase-03-closeout.md`. Phase 3R is implemented and accepted through Package 3R-C; see `phase-03r-closeout.md`. Phase 4 planning is revised and approved under Decisions 0019 through 0023; Packages 4A through 4C are implemented and Package 4D remains the user-verification gate. See `phase-02r-trips-workflow-revision.md`, `phase-02tp-trip-profiles.md`, `phase-03-service-day-workflows.md`, and `phase-04-manual-blocking.md`.
 
 ## Objective
 
@@ -40,7 +40,7 @@ These plans form one scheduling-development sequence. Each phase contains smalle
 - Scenario-wide Trip profiles own timetable alternatives across all Routes and service days while remaining independent of Runtime profiles.
 - Recalculation retains stable trip IDs and therefore retains block references.
 - User-defined directions provide ordered timetable columns shared by multiple patterns.
-- Blocks are ordered activity lists, not a block-number field on each trip.
+- Blocking Scenarios are named all-service-day arrangements with one immutable source Trip Profile. Blocks belong to one Blocking Scenario and service day and remain ordered activity lists rather than a block-number field on each Trip.
 - Layover is derived. No minimum layover rule is included in the first blocking build.
 - Pull-out, pull-in, and deadhead values are entered manually in the first build.
 - Revenue hours and platform hours are primary summaries. Miles are derived where route data is complete.
@@ -62,13 +62,14 @@ Use one selected service day and direction at a time.
 
 ### Blocking tab
 
-Use one selected Trip profile and service day at a time. A future Blocking scenario selects exactly one Trip profile.
+Use one selected Trip Profile, Blocking Scenario, Route candidate filter, and service day at a time. A Blocking Scenario selects one immutable Trip Profile and spans all service days.
 
-- Show a compact unassigned-trip list.
+- Show a compact unassigned-Trip list filtered to the selected Route.
 - Show one selected block as an ordered activity table.
 - Allow direct manual assignment and reassignment.
 - Display compatibility status without automatically creating blocks.
 - Display a block summary table for all blocks on the selected day.
+- Keep imported multi-route Block contents fully visible while preventing new cross-route assignments in Phase 4.
 
 Terra may refine these recommendations during the relevant UI package without changing domain behavior.
 
@@ -82,8 +83,9 @@ The following operations require one repository transaction:
 - confirmed recalculation of selected trips when manual changes or block references are affected;
 - replacement of a target service-day schedule;
 - block assignment or reassignment when two blocks are affected;
+- Blocking Scenario duplication or deletion with all owned Blocks;
 - complete project import or replacement;
-- scenario duplication with all schedule and block records.
+- scenario duplication with all schedule, Blocking Scenario, and Block records.
 
 Derived layovers, summaries, and validation findings are not persisted.
 
@@ -122,7 +124,7 @@ The sequence contains these mandatory pauses:
 3. complete hands-on Route and Trips review after Package 2R-D;
 4. accept Phase 2R before rewriting service-day workflows;
 5. accept the revised Phase 3 before manual blocking;
-6. verify blocking structure before blocking UI;
+6. verify Blocking Scenario ownership, Block calculations, migration, and persistence before blocking UI;
 7. complete hands-on blocking review before Phase 4 closeout.
 
 At each waypoint, report completed files, checks, deviations, unresolved decisions, and the recommended next package and model.

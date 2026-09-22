@@ -10,7 +10,7 @@ Accepted for implementation verification on 2026-09-11. Package 2R-B is complete
 - Added pattern direction ownership, pattern-point column mappings, deterministic ordering, and repeated-node support.
 - Added directional validation for missing, cross-route, duplicate, and incompatible references.
 - Added canonical Weekday, Saturday, Sunday, Holiday sorting.
-- Added runtime-duration parsing and formatting for decimal minutes and `MM:SS` values.
+- Added runtime-duration parsing and formatting for decimal minutes, standard `MM:SS`, and displayed `:MM` / `:MM:SS` values.
 - Added runtime calculation revisions and runtime source fields on trip provenance.
 - Added idempotent Default profile and standard-service-day assignment provisioning.
 - Added explicit runtime profile rename and safe deletion with replacement requirements.

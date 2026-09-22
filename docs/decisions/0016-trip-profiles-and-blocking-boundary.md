@@ -23,6 +23,8 @@ Planners need to compare timetable alternatives inside one Scenario without dupl
 
 ## Consequences
 
+Decision 0019 refines the implemented placeholder boundary for Phase 4: a Block will reference a Blocking Scenario rather than duplicating `tripProfileId`. The Block's single source Trip Profile remains derived and enforceable through that Blocking Scenario.
+
 - Trip profile selection becomes part of the Trips workspace context.
 - Route definitions, Directions, Patterns, runtime profiles, runtime assignments, and service-day definitions remain shared across Trip profiles.
 - Editing shared Route or runtime inputs may affect or mark Trips in several Trip profiles; existing safe-edit and stale-runtime impact reporting must count affected Trips by profile.

@@ -42,10 +42,13 @@ export interface GenerateTripsRequest {
   patternId: EntityId;
   firstTrip: ServiceSeconds;
   headwaySeconds: DurationSeconds;
-  lastTrip: ServiceSeconds;
+  /** Inclusive final departure when building by time. Exactly one generation limit is required. */
+  lastTrip?: ServiceSeconds;
+  /** Requested generated-trip count when building by count. Exactly one generation limit is required. */
+  tripCount?: number;
   tripProfileId?: EntityId;
 }
-export interface AddTripRequest extends Omit<GenerateTripsRequest, 'headwaySeconds' | 'lastTrip'> {
+export interface AddTripRequest extends Omit<GenerateTripsRequest, 'headwaySeconds' | 'lastTrip' | 'tripCount'> {
   directionId: EntityId;
 }
 export type GenerationLimit = { mode: 'endTime'; endTime: ServiceSeconds } | { mode: 'tripCount'; tripCount: number };
@@ -74,19 +77,32 @@ export interface TripProvenance {
   calculationSource?: TripCalculationSource;
 }
 export interface Trip extends EntityMetadata { id: EntityId; scenarioId: EntityId; routeId: EntityId; serviceDayId: EntityId; patternId: EntityId; /** Scenario-wide timetable alternative. Legacy records may omit this until normalized. */ tripProfileId?: EntityId; publicLabel?: string; stopTimes: ScheduledPoint[]; provenance: TripProvenance; }
-export interface PullOutActivity { id: EntityId; type: 'pullOut'; sequence: number; startTime: ServiceSeconds; endTime: ServiceSeconds; fromNodeId?: EntityId; toNodeId: EntityId; }
+/** Phase 4 command-boundary Trip shape. Legacy imports may omit the profile until normalized. */
+export type NormalizedTrip = Omit<Trip, 'tripProfileId'> & { tripProfileId: EntityId };
+/** A named, scenario-wide blocking alternative. Its Trip Profile source is immutable after creation. */
+export interface BlockingScenario extends EntityMetadata { id: EntityId; scenarioId: EntityId; tripProfileId: EntityId; name: string; description?: string; }
+/** A pull-out may use legacy explicit times or an offset from the first revenue Trip. */
+export interface PullOutActivity { id: EntityId; type: 'pullOut'; sequence: number; startTime?: ServiceSeconds; endTime?: ServiceSeconds; minutesBeforeFirstTrip?: number; fromNodeId?: EntityId; toNodeId: EntityId; miles?: Miles; }
 export interface RevenueTripActivity { id: EntityId; type: 'revenueTrip'; sequence: number; tripId: EntityId; }
-export interface DeadheadActivity { id: EntityId; type: 'deadhead'; sequence: number; startTime: ServiceSeconds; endTime: ServiceSeconds; fromNodeId: EntityId; toNodeId: EntityId; miles?: Miles; }
-export interface PullInActivity { id: EntityId; type: 'pullIn'; sequence: number; startTime: ServiceSeconds; endTime: ServiceSeconds; fromNodeId: EntityId; toNodeId?: EntityId; }
+/** A new or edited deadhead uses a whole-minute duration from its preceding revenue Trip.
+ * Legacy imported activities may retain paired explicit times. */
+export interface DeadheadActivity { id: EntityId; type: 'deadhead'; sequence: number; minutesAfterPreviousTrip?: number; startTime?: ServiceSeconds; endTime?: ServiceSeconds; fromNodeId: EntityId; toNodeId: EntityId; miles?: Miles; }
+/** A pull-in may use legacy explicit times or an offset from the last revenue Trip. */
+export interface PullInActivity { id: EntityId; type: 'pullIn'; sequence: number; startTime?: ServiceSeconds; endTime?: ServiceSeconds; minutesAfterLastTrip?: number; fromNodeId: EntityId; toNodeId?: EntityId; miles?: Miles; }
 export type BlockActivity = PullOutActivity | RevenueTripActivity | DeadheadActivity | PullInActivity;
-export interface Block extends EntityMetadata { id: EntityId; scenarioId: EntityId; serviceDayId: EntityId; /** Timetable alternative that this block serves. */ tripProfileId?: EntityId; label: string; activities: BlockActivity[]; notes?: string; }
+/** Phase 4 normalized Block ownership. Legacy `Block` remains readable at import/migration boundaries. */
+export interface BlockingBlock extends EntityMetadata { id: EntityId; scenarioId: EntityId; blockingScenarioId: EntityId; serviceDayId: EntityId; label: string; activities: BlockActivity[]; notes?: string; }
+export type NormalizedBlock = BlockingBlock;
+export type NormalizedBlockingBlock = BlockingBlock;
+export interface Block extends EntityMetadata { id: EntityId; scenarioId: EntityId; serviceDayId: EntityId; /** Phase 4 ownership. Legacy records may omit this until migration/import normalization. */ blockingScenarioId?: EntityId; /** Historical timetable ownership retained only at legacy boundaries. */ tripProfileId?: EntityId; label: string; activities: BlockActivity[]; notes?: string; }
 export type CostBasis = 'revenueHours' | 'platformHours' | 'revenueMiles' | 'platformMiles';
 export interface CostSource { type: 'user' | 'ntd'; sourceYear?: number; note?: string; }
 export interface InflationAssumption { year: number; rate: number; }
 export interface CostEstimate { id: EntityId; name: string; basis: CostBasis; rate: number; baseYear: number; source: CostSource; }
 export interface CostPlan extends EntityMetadata { id: EntityId; scenarioId: EntityId; name: string; currencyCode: string; estimates: CostEstimate[]; inflation: InflationAssumption[]; }
 export type ValidationSeverity = 'error' | 'warning';
-export interface ValidationFinding { ruleId: string; severity: ValidationSeverity; entityType: string; entityId: EntityId; field?: string; messageKey: string; parameters?: Record<string, string | number>; }
+export type ValidationCategory = 'structural' | 'operational';
+export interface ValidationFinding { ruleId: string; severity: ValidationSeverity; category?: ValidationCategory; entityType: string; entityId: EntityId; field?: string; messageKey: string; parameters?: Record<string, string | number>; }
 export interface AppMetadata { key: string; value: string; }
 
 /** Complete project graph used by the Phase 1 backup and restore workflow. */
@@ -101,10 +117,12 @@ export interface ProjectSnapshot {
   runtimeProfiles: RuntimeProfile[];
   runtimeAssignments: RuntimeAssignment[];
   tripProfiles?: TripProfile[];
+  /** Phase 4 normalized Blocking Scenario records. Legacy snapshots may omit this collection. */
+  blockingScenarios?: BlockingScenario[];
   /** @deprecated Historical Phase 2 collection; authoritative snapshots leave this empty. */
   generationSets: TripGenerationSet[];
   trips: Trip[];
   blocks: Block[];
 }
 
-export interface DatabaseRecordMap { projects: Project; scenarios: Scenario; serviceDays: ServiceDayDefinition; routes: Route; nodes: Node; patterns: RoutePattern; directions: RouteDirection; runtimeProfiles: RuntimeProfile; runtimeAssignments: RuntimeAssignment; generationSets: TripGenerationSet; tripProfiles: TripProfile; trips: Trip; blocks: Block; costPlans: CostPlan; appMetadata: AppMetadata; }
+export interface DatabaseRecordMap { projects: Project; scenarios: Scenario; serviceDays: ServiceDayDefinition; routes: Route; nodes: Node; patterns: RoutePattern; directions: RouteDirection; runtimeProfiles: RuntimeProfile; runtimeAssignments: RuntimeAssignment; generationSets: TripGenerationSet; tripProfiles: TripProfile; blockingScenarios: BlockingScenario; trips: Trip; blocks: Block; costPlans: CostPlan; appMetadata: AppMetadata; }

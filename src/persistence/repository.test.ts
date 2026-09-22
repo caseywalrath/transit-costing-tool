@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import Dexie from 'dexie';
 import { TransitDatabase } from './database';
 import { InMemoryRouteDefinitionRepository } from './inMemoryRepository';
 import { metadata } from '../domain/ids';
@@ -15,14 +16,34 @@ describe('route-definition persistence', () => {
     expect(await repository.getRouteDefinition(route.id)).toEqual({ route, nodes: [], patterns: [] });
   });
 
-  it('defines IndexedDB schema version 3 with runtime and trip-profile lookups', () => {
+  it('defines IndexedDB schema version 4 with Blocking Scenario and normalized Block lookups', () => {
     const database = new TransitDatabase(`transit-costing-test-${Date.now()}`);
-    expect(database.verno).toBe(3);
-    expect(database.tables.map((table) => table.name)).toEqual(expect.arrayContaining(['runtimeProfiles', 'runtimeAssignments', 'tripProfiles']));
+    expect(database.verno).toBe(4);
+    expect(database.tables.map((table) => table.name)).toEqual(expect.arrayContaining(['runtimeProfiles', 'runtimeAssignments', 'tripProfiles', 'blockingScenarios']));
     expect(database.runtimeAssignments.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['runtimeProfileId']));
+    expect(database.blockingScenarios.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['tripProfileId', '[scenarioId+name]', '[tripProfileId+name]']));
     expect(database.trips.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['tripProfileId', '[tripProfileId+routeId]', '[tripProfileId+serviceDayId]']));
-    expect(database.blocks.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['tripProfileId', '[tripProfileId+serviceDayId]']));
+    expect(database.blocks.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['blockingScenarioId', '[blockingScenarioId+serviceDayId]']));
     database.close();
+  });
+
+  it('discards Phase 3 placeholder Blocks during the version 4 migration but keeps Trips and Trip Profiles', async () => {
+    if (typeof indexedDB === 'undefined') return;
+    const name = `transit-costing-migration-${Date.now()}`;
+    const legacy = new Dexie(name);
+    legacy.version(3).stores({ tripProfiles: 'id,scenarioId', trips: 'id,scenarioId,tripProfileId', blocks: 'id,scenarioId,tripProfileId,serviceDayId' });
+    await legacy.open();
+    await legacy.table('tripProfiles').put({ id: 'profile', scenarioId: 'scenario', name: 'Default', ...metadata() });
+    await legacy.table('trips').put({ id: 'trip', scenarioId: 'scenario', routeId: 'route', serviceDayId: 'day', patternId: 'pattern', tripProfileId: 'profile', stopTimes: [], provenance: { kind: 'manual', manuallyChangedFields: [] }, ...metadata() });
+    await legacy.table('blocks').put({ id: 'placeholder', scenarioId: 'scenario', serviceDayId: 'day', tripProfileId: 'profile', label: '1', activities: [], ...metadata() });
+    legacy.close();
+    const migrated = new TransitDatabase(name);
+    await migrated.open();
+    expect(migrated.verno).toBe(4);
+    expect(await migrated.tripProfiles.get('profile')).toBeDefined();
+    expect(await migrated.trips.get('trip')).toBeDefined();
+    expect(await migrated.blocks.get('placeholder')).toBeUndefined();
+    migrated.close();
   });
 
   it('round trips runtime profiles and assignments and enforces assignment uniqueness', async () => {

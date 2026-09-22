@@ -14,6 +14,7 @@ import type {
   Trip,
   Block,
   TripProfile,
+  BlockingScenario,
 } from '../domain/types';
 import { metadata, newId } from '../domain/ids';
 import { validatePattern } from '../domain/patterns';
@@ -22,9 +23,32 @@ import { assertRuntimeGraph } from './runtimePersistence';
 import { assertTripProfileReferences } from '../domain/trips';
 
 export const PROJECT_BACKUP_FORMAT = 'transit-costing-tool.project' as const;
-export const PROJECT_BACKUP_SCHEMA_VERSION = 4 as const;
+export const PROJECT_BACKUP_SCHEMA_VERSION = 5 as const;
 export const LEGACY_PROJECT_BACKUP_SCHEMA_VERSION = 1 as const;
 export const RUNTIME_PROJECT_BACKUP_SCHEMA_VERSION = 2 as const;
+
+function validateBlockingScenarios(values: unknown[], scenarioIds: Set<string>, tripProfiles: TripProfile[]): BlockingScenario[] {
+  const ids = new Set<string>();
+  const names = new Set<string>();
+  const profiles = new Map(tripProfiles.map((profile) => [profile.id, profile]));
+  return values.map((value, index) => {
+    if (!isRecord(value)) throw new Error(`Invalid project backup: blockingScenarios[${index}] must be an object`);
+    const scenario = value as unknown as BlockingScenario;
+    requiredString(scenario.id, `blockingScenarios[${index}].id`);
+    requiredString(scenario.scenarioId, `blockingScenarios[${index}].scenarioId`);
+    requiredString(scenario.tripProfileId, `blockingScenarios[${index}].tripProfileId`);
+    requiredString(scenario.name, `blockingScenarios[${index}].name`);
+    assertMetadata(value, `blockingScenarios[${index}]`);
+    if (ids.has(scenario.id)) throw new Error(`Invalid project backup: duplicate blocking scenario id ${scenario.id}`);
+    if (!scenarioIds.has(scenario.scenarioId)) throw new Error(`Invalid project backup: blocking scenario ${scenario.id} references a missing Scenario`);
+    const profile = profiles.get(scenario.tripProfileId);
+    if (!profile || profile.scenarioId !== scenario.scenarioId) throw new Error(`Invalid project backup: blocking scenario ${scenario.id} references an invalid Trip Profile`);
+    const nameKey = `${scenario.scenarioId}:${scenario.name.trim().toLowerCase()}`;
+    if (names.has(nameKey)) throw new Error(`Invalid project backup: duplicate Blocking Scenario name in scenario ${scenario.scenarioId}`);
+    ids.add(scenario.id); names.add(nameKey);
+    return scenario;
+  });
+}
 
 export interface ProjectBackup extends Omit<ProjectSnapshot, 'generationSets' | 'tripProfiles'> {
   /** Historical field; omitted for authoritative exports. */
@@ -265,12 +289,18 @@ function validateTrips(values: unknown[], scenarioIds: Set<string>, routes: Map<
   });
 }
 
-function validateBlocks(values: unknown[], scenarioIds: Set<string>, serviceDays: ServiceDayDefinition[], trips: Trip[]): Block[] {
+function validateBlocks(values: unknown[], scenarioIds: Set<string>, serviceDays: ServiceDayDefinition[], trips: Trip[], blockingScenarios: BlockingScenario[] = []): Block[] {
   const ids = new Set<string>(); const tripIds = new Set(trips.map((trip) => trip.id)); const dayIds = new Set(serviceDays.map((day) => day.id));
+  const blockingScenarioById = new Map(blockingScenarios.map((scenario) => [scenario.id, scenario]));
   return values.map((value, index) => {
     if (!isRecord(value)) throw new Error(`Invalid project backup: blocks[${index}] must be an object`);
     const block = value as unknown as Block; requiredString(block.id, `blocks[${index}].id`); if (ids.has(block.id)) throw new Error(`Invalid project backup: duplicate block id ${block.id}`); ids.add(block.id);
     if (!scenarioIds.has(block.scenarioId) || !dayIds.has(block.serviceDayId)) throw new Error(`Invalid project backup: blocks[${index}] references a missing record`); requiredString(block.label, `blocks[${index}].label`); if (!Array.isArray(block.activities)) throw new Error(`Invalid project backup: blocks[${index}].activities`);
+    if (block.blockingScenarioId) {
+      const owner = blockingScenarioById.get(block.blockingScenarioId);
+      if (!owner || owner.scenarioId !== block.scenarioId) throw new Error(`Invalid project backup: block ${block.id} references an invalid Blocking Scenario`);
+      if (block.tripProfileId && block.tripProfileId !== owner.tripProfileId) throw new Error(`Invalid project backup: normalized block ${block.id} duplicates mismatched Trip Profile ownership`);
+    }
     for (const activity of block.activities) { if (activity.type === 'revenueTrip' && !tripIds.has(activity.tripId)) throw new Error(`Invalid project backup: block ${block.id} references a missing trip`); }
     assertMetadata(value, `blocks[${index}]`); return block;
   });
@@ -284,7 +314,7 @@ export function parseProjectBackup(payload: string): ProjectSnapshot {
     throw new Error('Invalid project backup: malformed JSON');
   }
   if (!isRecord(parsed)) throw new Error('Invalid project backup: root must be an object');
-  if (parsed.format !== PROJECT_BACKUP_FORMAT || ![1, 2, 3, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)) {
+  if (parsed.format !== PROJECT_BACKUP_FORMAT || ![1, 2, 3, 4, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)) {
     throw new Error('Unsupported project backup format or schema version');
   }
   requiredString(parsed.exportedAt, 'exportedAt');
@@ -306,14 +336,18 @@ export function parseProjectBackup(payload: string): ProjectSnapshot {
   assertRuntimeGraph(runtimeProfiles, runtimeAssignments, patterns, serviceDays);
   // Current authoritative backups omit generationSets. A non-empty collection is
   // still accepted so historical Phase 2 files can be inspected and copied.
-  const suppliedTripProfiles = parsed.exportSchemaVersion === PROJECT_BACKUP_SCHEMA_VERSION ? validateTripProfiles(requiredArray(parsed.tripProfiles ?? [], 'tripProfiles'), scenarioIds) : [];
-  const generationSets = [3, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+  const suppliedTripProfiles = [4, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTripProfiles(requiredArray(parsed.tripProfiles ?? [], 'tripProfiles'), scenarioIds) : [];
+  const generationSets = [3, 4, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
     ? (parsed.generationSets === undefined ? [] : validateGenerationSets(requiredArray(parsed.generationSets, 'generationSets'), scenarioIds, routeById, patterns, serviceDays))
     : [];
-  const trips = [3, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTrips(requiredArray(parsed.trips, 'trips'), scenarioIds, routeById, patterns, serviceDays, generationSets, runtimeProfiles) : [];
-  const blocks = [3, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateBlocks(requiredArray(parsed.blocks, 'blocks'), scenarioIds, serviceDays, trips) : [];
+  const trips = [3, 4, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTrips(requiredArray(parsed.trips, 'trips'), scenarioIds, routeById, patterns, serviceDays, generationSets, runtimeProfiles) : [];
+  const provisionalTripProfiles = suppliedTripProfiles.length ? suppliedTripProfiles : scenarios.map((scenario) => ({ id: newId(), scenarioId: scenario.id, name: 'Default', ...metadata() }));
+  const blockingScenarios = parsed.exportSchemaVersion === PROJECT_BACKUP_SCHEMA_VERSION
+    ? validateBlockingScenarios(requiredArray(parsed.blockingScenarios ?? [], 'blockingScenarios'), scenarioIds, provisionalTripProfiles)
+    : [];
+  const blocks = [3, 4, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateBlocks(requiredArray(parsed.blocks, 'blocks'), scenarioIds, serviceDays, trips, blockingScenarios) : [];
   assertTripProfileReferences(trips, blocks);
-  const tripProfiles = suppliedTripProfiles.length ? suppliedTripProfiles : scenarios.map((scenario) => ({ id: newId(), scenarioId: scenario.id, name: 'Default', ...metadata() }));
+  const tripProfiles = provisionalTripProfiles;
   const defaultProfileByScenario = new Map(tripProfiles.map((profile) => [profile.scenarioId, profile.id]));
   const tripProfileById = new Map(tripProfiles.map((profile) => [profile.id, profile]));
   for (const trip of trips) {
@@ -330,7 +364,7 @@ export function parseProjectBackup(payload: string): ProjectSnapshot {
   }
   const normalizedTrips = trips.map((trip) => ({ ...trip, tripProfileId: trip.tripProfileId ?? defaultProfileByScenario.get(trip.scenarioId) }));
   const normalizedBlocks = blocks.map((block) => ({ ...block, tripProfileId: block.tripProfileId ?? defaultProfileByScenario.get(block.scenarioId) }));
-  return { project, scenarios, serviceDays, routes, nodes, patterns, ...(directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, generationSets, trips: normalizedTrips, blocks: normalizedBlocks };
+  return { project, scenarios, serviceDays, routes, nodes, patterns, ...(directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), generationSets, trips: normalizedTrips, blocks: normalizedBlocks };
 }
 
 export function exportProjectJson(snapshot: ProjectSnapshot, applicationVersion?: string): string {
@@ -349,6 +383,7 @@ export function exportProjectJson(snapshot: ProjectSnapshot, applicationVersion?
     runtimeProfiles: snapshot.runtimeProfiles,
     runtimeAssignments: snapshot.runtimeAssignments,
     ...(snapshot.tripProfiles?.length ? { tripProfiles: snapshot.tripProfiles } : {}),
+    ...(snapshot.blockingScenarios?.length ? { blockingScenarios: snapshot.blockingScenarios } : {}),
     ...(snapshot.generationSets.length ? { generationSets: snapshot.generationSets } : {}),
     trips: snapshot.trips,
     blocks: snapshot.blocks,
@@ -372,6 +407,7 @@ export function cloneProjectSnapshot(source: ProjectSnapshot, now = new Date().t
   const profileIds = new Map(source.runtimeProfiles.map((profile) => [profile.id, newId()]));
   const sourceTripProfiles = source.tripProfiles?.length ? source.tripProfiles : source.scenarios.map((scenario) => ({ id: `legacy-${scenario.id}`, scenarioId: scenario.id, name: 'Default', ...metadata(now) }));
   const tripProfileIds = new Map(sourceTripProfiles.map((profile) => [profile.id, newId()]));
+  const blockingScenarioIds = new Map((source.blockingScenarios ?? []).map((scenario) => [scenario.id, newId()]));
 
   const project: Project = { ...source.project, id: projectId, name: `${source.project.name} Copy`, ...metadata(now) };
   const scenarios = source.scenarios.map((scenario) => ({ ...scenario, id: scenarioIds.get(scenario.id)!, projectId, sourceScenarioId: scenarioIds.get(scenario.sourceScenarioId ?? ''), ...metadata(now) }));
@@ -422,6 +458,10 @@ export function cloneProjectSnapshot(source: ProjectSnapshot, now = new Date().t
   source.patterns.forEach((pattern, patternIndex) => pattern.points.forEach((point, pointIndex) => pointIds.set(point.id, patterns[patternIndex].points[pointIndex].id)));
   const generationSets = source.generationSets.map((set) => ({ ...set, id: generationSetIds.get(set.id)!, scenarioId: scenarioIds.get(set.scenarioId)!, routeId: routeIds.get(set.routeId)!, serviceDayId: serviceDayIds.get(set.serviceDayId)!, patternId: patternIds.get(set.patternId)!, ...metadata(now) }));
   const trips = source.trips.map((trip) => ({ ...trip, id: tripIds.get(trip.id)!, scenarioId: scenarioIds.get(trip.scenarioId)!, routeId: routeIds.get(trip.routeId)!, serviceDayId: serviceDayIds.get(trip.serviceDayId)!, patternId: patternIds.get(trip.patternId)!, tripProfileId: trip.tripProfileId ? tripProfileIds.get(trip.tripProfileId) : tripProfileIds.get(sourceTripProfiles.find((profile) => profile.scenarioId === trip.scenarioId)?.id ?? ''), stopTimes: trip.stopTimes.map((point) => ({ ...point, patternPointId: pointIds.get(point.patternPointId) ?? point.patternPointId })), provenance: { ...trip.provenance, generationSetId: trip.provenance.generationSetId ? generationSetIds.get(trip.provenance.generationSetId) : undefined, runtimeProfileId: trip.provenance.runtimeProfileId ? profileIds.get(trip.provenance.runtimeProfileId) : undefined, calculationSource: trip.provenance.calculationSource ? { ...trip.provenance.calculationSource, runtimeProfileId: profileIds.get(trip.provenance.calculationSource.runtimeProfileId) ?? trip.provenance.calculationSource.runtimeProfileId } : undefined }, ...metadata(now) }));
-  const blocks = source.blocks.map((block) => ({ ...block, id: blockIds.get(block.id)!, scenarioId: scenarioIds.get(block.scenarioId)!, serviceDayId: serviceDayIds.get(block.serviceDayId)!, tripProfileId: block.tripProfileId ? tripProfileIds.get(block.tripProfileId) : tripProfileIds.get(sourceTripProfiles.find((profile) => profile.scenarioId === block.scenarioId)?.id ?? ''), activities: block.activities.map((activity) => activity.type === 'revenueTrip' ? { ...activity, id: newId(), tripId: tripIds.get(activity.tripId) ?? activity.tripId } : { ...activity, id: newId() }), ...metadata(now) }));
-  return { project, scenarios, serviceDays, routes, nodes, patterns, ...(source.directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, generationSets, trips, blocks };
+  const blockingScenarios = (source.blockingScenarios ?? []).map((scenario) => ({ ...scenario, id: blockingScenarioIds.get(scenario.id)!, scenarioId: scenarioIds.get(scenario.scenarioId)!, tripProfileId: tripProfileIds.get(scenario.tripProfileId)!, ...metadata(now) }));
+  const blocks = source.blocks.map((block) => ({ ...block, id: blockIds.get(block.id)!, scenarioId: scenarioIds.get(block.scenarioId)!, serviceDayId: serviceDayIds.get(block.serviceDayId)!, ...(block.blockingScenarioId ? { blockingScenarioId: blockingScenarioIds.get(block.blockingScenarioId) } : {}), tripProfileId: block.tripProfileId ? tripProfileIds.get(block.tripProfileId) : (block.blockingScenarioId ? undefined : tripProfileIds.get(sourceTripProfiles.find((profile) => profile.scenarioId === block.scenarioId)?.id ?? '')), activities: block.activities.map((activity) => {
+    const remapped = activity.type === 'revenueTrip' ? { ...activity, tripId: tripIds.get(activity.tripId) ?? activity.tripId } : { ...activity };
+    return { ...remapped, id: newId(), ...(('fromNodeId' in remapped && remapped.fromNodeId) ? { fromNodeId: nodeIds.get(remapped.fromNodeId) ?? remapped.fromNodeId } : {}), ...(('toNodeId' in remapped && remapped.toNodeId) ? { toNodeId: nodeIds.get(remapped.toNodeId) ?? remapped.toNodeId } : {}) };
+  }), ...metadata(now) }));
+  return { project, scenarios, serviceDays, routes, nodes, patterns, ...(source.directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), generationSets, trips, blocks };
 }

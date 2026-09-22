@@ -150,11 +150,11 @@ Explicitly replacing selected trip times using the current runtime profile. Exis
 
 ### Block
 
-The ordered work performed by one vehicle on one service day. A block can eventually include trips from more than one route, but every referenced Trip must belong to one selected Trip profile.
+The ordered work performed by one vehicle on one service day within one Blocking Scenario. A Block derives its source Trip Profile through that Blocking Scenario. The data model can contain Trips from more than one Route, although the initial Phase 4 assignment interface intentionally works from one selected Route.
 
 ### Blocking scenario
 
-One named arrangement of a selected Trip profile into Blocks. Several Blocking scenarios may use the same Trip profile. A Blocking scenario cannot combine Trips from competing Trip profiles. This entity is deferred to the Blocking phase.
+One named arrangement of an immutable source Trip Profile into Blocks across all service days. Several Blocking Scenarios may use the same Trip Profile. A Blocking Scenario cannot combine Trips from competing Trip Profiles. A Scenario may contain no Blocking Scenarios. Users may create an empty arrangement or duplicate an existing one.
 
 ### Block label
 
@@ -166,15 +166,19 @@ An ordered item in a block. Initial activity types are pull-out, revenue trip, m
 
 ### Pull-out
 
-A non-revenue movement or time allowance before the first revenue trip in a block.
+A non-revenue movement or time allowance before the first revenue Trip in a Block. New and edited activities store a whole-minute offset before that Trip, so their resolved time changes with it. Legacy imported activities may retain explicit start and end times. A Block contains at most one pull-out and it is first.
 
 ### Pull-in
 
-A non-revenue movement or time allowance after the last revenue trip in a block.
+A non-revenue movement or time allowance after the last revenue Trip in a Block. New and edited activities store a whole-minute offset after that Trip, so their resolved time changes with it. Legacy imported activities may retain explicit start and end times. A Block contains at most one pull-in and it is last.
 
 ### Deadhead
 
-A non-revenue movement between locations. Initial deadhead duration and distance are entered manually.
+A non-revenue movement between consecutive revenue Trips. New and edited deadheads store a whole-minute duration beginning when the preceding Trip ends; any remaining connection time before the successor Trip is derived layover. Nodes and optional miles are entered manually. Legacy imported activities may retain explicit times.
+
+### Deadhead hours
+
+The sum of pull-out, pull-in, and between-Trip deadhead durations. Layover is reported separately.
 
 ### Layover
 
@@ -182,11 +186,19 @@ Unallocated time remaining between connected block activities after any required
 
 ### Revenue hours
 
-The sum of scheduled revenue-trip durations.
+Running time plus usable layover time between revenue Trips. Pull-out, pull-in, and deadhead time are excluded.
+
+### Running time
+
+The sum of scheduled revenue-Trip durations, excluding layover and non-revenue movements.
 
 ### Platform hours
 
-The elapsed time from block pull-out to block pull-in. A block without both values cannot contribute complete platform hours.
+The elapsed time from resolved Block pull-out start to resolved Block pull-in end. A Block without both valid boundary activities and adjacent revenue Trips cannot contribute complete platform hours.
+
+### Platform miles
+
+The sum of complete revenue miles plus pull-out, deadhead, and pull-in miles. Platform miles are incomplete when any required distance is missing.
 
 ### Revenue miles
 

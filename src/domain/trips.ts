@@ -12,6 +12,9 @@ export interface GenerateTripsPreview {
   warnings: ValidationFinding[];
 }
 
+/** Prevent an accidental bulk command from creating an impractically large schedule. */
+export const MAX_TRIPS_PER_GENERATION = 500;
+
 function requestFinding(request: GenerateTripsRequest, ruleId: string, messageKey: string, field?: string, parameters?: Record<string, string | number>): ValidationFinding {
   return { ruleId, severity: 'error', entityType: 'generateTrips', entityId: `${request.serviceDayId}:${request.patternId}`, ...(field ? { field } : {}), messageKey, ...(parameters ? { parameters } : {}) };
 }
@@ -25,8 +28,15 @@ export function validateGenerateTripsRequest(request: GenerateTripsRequest): Val
   if (!request.patternId.trim()) findings.push(requestFinding(request, 'tripGeneration.patternRequired', 'tripGeneration.patternRequired', 'patternId'));
   if (!Number.isInteger(request.firstTrip) || request.firstTrip < 0) findings.push(requestFinding(request, 'tripGeneration.firstTripInvalid', 'tripGeneration.firstTripInvalid', 'firstTrip'));
   if (!Number.isInteger(request.headwaySeconds) || request.headwaySeconds <= 0) findings.push(requestFinding(request, 'tripGeneration.headwayInvalid', 'tripGeneration.headwayInvalid', 'headwaySeconds'));
-  if (!Number.isInteger(request.lastTrip) || request.lastTrip < 0) findings.push(requestFinding(request, 'tripGeneration.lastTripInvalid', 'tripGeneration.lastTripInvalid', 'lastTrip'));
-  if (Number.isInteger(request.firstTrip) && Number.isInteger(request.lastTrip) && request.lastTrip < request.firstTrip) findings.push(requestFinding(request, 'tripGeneration.lastBeforeFirst', 'tripGeneration.lastBeforeFirst', 'lastTrip'));
+  const lastTrip = request.lastTrip;
+  const tripCount = request.tripCount;
+  const hasLastTrip = lastTrip !== undefined;
+  const hasTripCount = tripCount !== undefined;
+  if (hasLastTrip === hasTripCount) findings.push(requestFinding(request, 'tripGeneration.limitRequired', 'tripGeneration.limitRequired'));
+  if (lastTrip !== undefined && (!Number.isInteger(lastTrip) || lastTrip < 0)) findings.push(requestFinding(request, 'tripGeneration.lastTripInvalid', 'tripGeneration.lastTripInvalid', 'lastTrip'));
+  if (tripCount !== undefined && (!Number.isInteger(tripCount) || tripCount < 1)) findings.push(requestFinding(request, 'tripGeneration.tripCountInvalid', 'tripGeneration.tripCountInvalid', 'tripCount'));
+  if (tripCount !== undefined && Number.isInteger(tripCount) && tripCount > MAX_TRIPS_PER_GENERATION) findings.push(requestFinding(request, 'tripGeneration.tripCountTooLarge', 'tripGeneration.tripCountTooLarge', 'tripCount', { maximum: MAX_TRIPS_PER_GENERATION }));
+  if (Number.isInteger(request.firstTrip) && Number.isInteger(lastTrip) && lastTrip !== undefined && lastTrip < request.firstTrip) findings.push(requestFinding(request, 'tripGeneration.lastBeforeFirst', 'tripGeneration.lastBeforeFirst', 'lastTrip'));
   return findings;
 }
 
@@ -34,7 +44,12 @@ export function generateRequestDepartures(request: GenerateTripsRequest): Servic
   const findings = validateGenerateTripsRequest(request);
   if (findings.length) throw new TripGenerationError(findings);
   const departures: ServiceSeconds[] = [];
-  for (let departure = request.firstTrip; departure <= request.lastTrip; departure += request.headwaySeconds) departures.push(departure);
+  if (request.tripCount !== undefined) {
+    for (let sequence = 0; sequence < request.tripCount; sequence += 1) departures.push(request.firstTrip + (sequence * request.headwaySeconds));
+  } else {
+    // A departure exactly at Last Trip is included.
+    for (let departure = request.firstTrip; departure <= request.lastTrip!; departure += request.headwaySeconds) departures.push(departure);
+  }
   return departures;
 }
 
@@ -100,12 +115,12 @@ export function previewGenerateAuthoritativeTrips(request: GenerateTripsRequest,
 }
 
 /** Create one authoritative trip using the same propagation rules as generation. */
-export function createAuthoritativeTrip(request: Omit<GenerateTripsRequest, 'headwaySeconds' | 'lastTrip'>, pattern: RoutePattern, profile: RuntimeProfile, now = new Date().toISOString()): Trip {
+export function createAuthoritativeTrip(request: Omit<GenerateTripsRequest, 'headwaySeconds' | 'lastTrip' | 'tripCount'>, pattern: RoutePattern, profile: RuntimeProfile, now = new Date().toISOString()): Trip {
   const findings = validateGenerateTripsRequest({ ...request, headwaySeconds: 1, lastTrip: request.firstTrip });
   if (findings.length) throw new TripGenerationError(findings);
   const propagated = propagatePatternTimes(pattern, request.firstTrip, profile);
   if ('finding' in propagated) throw new TripGenerationError([{ ...propagated.finding, entityType: 'trip', entityId: `${request.serviceDayId}:${request.patternId}`, field: 'firstTrip' }]);
-  return authoritativeTrip(request as GenerateTripsRequest, pattern, profile, propagated.stopTimes, 'manual', newId(), now);
+  return authoritativeTrip({ ...request, headwaySeconds: 1, lastTrip: request.firstTrip }, pattern, profile, propagated.stopTimes, 'manual', newId(), now);
 }
 
 export interface RecalculationImpact {
@@ -250,7 +265,14 @@ export function adjustBlockReferences(blocks: Block[], removedTripIds: string[],
     // IDs are reported for that same block, but do not create a spurious update.
     if (!removedHere.length) return block;
     adjustments.push({ blockId: block.id, removedTripIds: [...new Set(removedHere)], survivingTripIds: [...new Set(survivingHere)] });
-    return withUpdatedAt({ ...block, activities: block.activities.filter((activity) => activity.type !== 'revenueTrip' || !removed.has(activity.tripId)).map((activity, sequence) => ({ ...activity, sequence })) });
+    const activities = block.activities.filter((activity, index, source) => {
+      if (activity.type === 'revenueTrip') return !removed.has(activity.tripId);
+      if (activity.type !== 'deadhead') return true;
+      const previous = [...source.slice(0, index)].reverse().find((candidate) => candidate.type === 'revenueTrip');
+      const next = source.slice(index + 1).find((candidate) => candidate.type === 'revenueTrip');
+      return !(previous?.type === 'revenueTrip' && removed.has(previous.tripId)) && !(next?.type === 'revenueTrip' && removed.has(next.tripId));
+    });
+    return withUpdatedAt({ ...block, activities: activities.map((activity, sequence) => ({ ...activity, sequence })) });
   });
   return { blocks: adjusted, adjustments };
 }

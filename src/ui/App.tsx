@@ -1,28 +1,35 @@
-import { forwardRef, type ChangeEvent, type FormEvent, type ReactNode, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, type ChangeEvent, type FormEvent, type ReactNode, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { SaveStatus } from '../application/ports';
+import type { BlockingCommands, BlockingQueries } from '../application/ports';
+import { BlockingWorkspace } from './BlockingWorkspace';
+import { MenuButton, type MenuGroup } from './MenuButton';
+import { createCsvArchive } from './csvDownload';
 import { type NodeChangePreview, type PatternChangePreview as SafePatternChangePreview, type RouteDefinitionApplication, type RouteEditCommitResult, type RouteEditMode, type ScenarioRecords } from '../application/routeDefinitionService';
 import { TripRecalculationConfirmationError, TripShiftStalePreviewError, type TripGenerationApplication } from '../application/tripGenerationService';
 import type { BatchPatternChangePreview, RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
 import type { TripShiftPreview } from '../domain/tripShift';
-import { TripGenerationError, type PatternChangePreview, type RegenerationPreview } from '../domain/trips';
+import { MAX_TRIPS_PER_GENERATION, TripGenerationError, type PatternChangePreview, type RegenerationPreview } from '../domain/trips';
 import { metadata, newId } from '../domain/ids';
 import { formatRuntimeDuration, parseRuntimeDuration } from '../domain/durations';
+import { runtimeBandTotalSeconds } from '../domain/runtime';
 import { sortServiceDays } from '../domain/serviceDays';
 import { formatServiceTime, parseServiceTime } from '../domain/time';
-import type { Node, NodeKind, Project, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeProfile, ServiceDayDefinition, Trip, TripGenerationSet, ValidationFinding } from '../domain/types';
+import type { BlockingBlock, Node, NodeKind, Project, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeProfile, ServiceDayDefinition, Trip, TripGenerationSet, ValidationFinding } from '../domain/types';
+import { createBlockingScenarioSourceSignature } from '../domain/blocking';
 
-type Props = { service: RouteDefinitionApplication; tripService: TripGenerationApplication };
+type Props = { service: RouteDefinitionApplication; tripService: TripGenerationApplication; blockingService: BlockingCommands & BlockingQueries };
 type Notice = { kind: 'error' | 'success'; text: string } | undefined;
 type NameDialog = { title: string; label?: string; initialValue?: string; submitLabel: string; action: (name: string) => Promise<void> | void };
 type Confirmation = { title: string; text: string; action: () => void; confirmLabel?: string };
-type ActiveTab = 'route' | 'trips';
+type ActiveTab = 'route' | 'trips' | 'blocking';
 type SelectionPreference = { projectId?: string; scenarioId?: string; routeId?: string };
 type RouteNavigationGuard = (action: () => void) => void;
-type MenuItem = { id: string; label: string; onSelect: () => void; disabled?: boolean; title?: string; checked?: boolean; destructive?: boolean };
-type MenuGroup = { label?: string; items: MenuItem[] };
 type RuntimeEditorHandle = { addBand: () => void; discard: () => void; save: () => void };
 type RuntimeEditorState = { dirty: boolean; saving: boolean };
+type TripBlockAssignmentDraft = { operation: 'assign' | 'unassign'; tripIds: string[]; destinationBlockId: string; source: 'pill' | 'actions'; blockingScenarioId: string; tripProfileId: string; serviceDayId: string; sourceSignature: string };
+type TripBlockOption = { id: string; label: string; disabled?: boolean; reason?: string };
 const SELECTION_PREFERENCE_KEY = 'transit-costing-tool.route-selection.v1';
+const TRIP_BLOCKING_SCENARIO_PREFERENCE_KEY = 'transit-costing-tool.trip-blocking-scenario.v1';
 
 function loadSelectionPreference(): SelectionPreference {
   try { return JSON.parse(localStorage.getItem(SELECTION_PREFERENCE_KEY) ?? '{}') as SelectionPreference; } catch { return {}; }
@@ -35,6 +42,12 @@ function saveSelectionPreference(preference: SelectionPreference) {
 function download(filename: string, contents: string, type = 'text/plain;charset=utf-8') {
   const url = URL.createObjectURL(new Blob([contents], { type }));
   const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url);
+}
+
+function downloadBlob(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function messages(findings: ValidationFinding[], entityId: string, field?: string) {
@@ -85,6 +98,8 @@ const USER_FACING_VALIDATION_MESSAGES: Record<string, string> = {
   'tripGeneration.firstTripInvalid': 'Enter a valid first trip time.',
   'tripGeneration.headwayInvalid': 'Enter a positive whole-minute headway.',
   'tripGeneration.tripCountInvalid': 'Enter at least one trip.',
+  'tripGeneration.tripCountTooLarge': 'Enter 500 trips or fewer.',
+  'tripGeneration.limitRequired': 'Enter either Last Trip or Number of Trips.',
   'tripGeneration.lastTripInvalid': 'Enter a valid last trip time.',
   'tripGeneration.lastBeforeFirst': 'The last trip must not be before the first trip.',
   'trip.patternDirectionMismatch': 'Choose a pattern in the selected direction.',
@@ -100,47 +115,7 @@ function userMessage(finding: ValidationFinding) {
   return USER_FACING_VALIDATION_MESSAGES[finding.messageKey] ?? 'Review this item.';
 }
 
-function MenuButton({ label, menuLabel, groups, disabled = false, triggerRef: externalTriggerRef }: { label: string; menuLabel: string; groups: MenuGroup[]; disabled?: boolean; triggerRef?: { current: HTMLButtonElement | null } }) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuId = useId();
-  const items = groups.flatMap((group) => group.items);
-  const focusItem = (index: number) => window.setTimeout(() => {
-    const focusable = [...rootRef.current?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)') ?? []];
-    focusable[Math.max(0, Math.min(index, focusable.length - 1))]?.focus();
-  });
-  const dismiss = (returnFocus = true) => { setOpen(false); if (returnFocus) window.setTimeout(() => triggerRef.current?.focus()); };
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: PointerEvent) => { if (!rootRef.current?.contains(event.target as globalThis.Node)) dismiss(false); };
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [open]);
-
-  return <div className="menu-button" ref={rootRef}>
-    <button ref={(node) => { triggerRef.current = node; if (externalTriggerRef) externalTriggerRef.current = node; }} type="button" className="menu-trigger" aria-haspopup="menu" aria-expanded={open} aria-controls={menuId} disabled={disabled} onClick={() => setOpen((current) => !current)} onKeyDown={(event) => {
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); setOpen(true); focusItem(event.key === 'ArrowDown' ? 0 : items.length - 1); }
-      if (event.key === 'Escape' && open) { event.preventDefault(); dismiss(); }
-    }}>{label}<span aria-hidden="true"> ▾</span></button>
-    {open && <div id={menuId} className="action-menu" role="menu" aria-label={menuLabel} onKeyDown={(event) => {
-      const menuItems = [...rootRef.current?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)') ?? []];
-      const current = menuItems.indexOf(document.activeElement as HTMLButtonElement);
-      if (event.key === 'Escape') { event.preventDefault(); dismiss(); }
-      if (event.key === 'Home') { event.preventDefault(); menuItems[0]?.focus(); }
-      if (event.key === 'End') { event.preventDefault(); menuItems.at(-1)?.focus(); }
-      if (event.key === 'ArrowDown') { event.preventDefault(); menuItems[(current + 1 + menuItems.length) % menuItems.length]?.focus(); }
-      if (event.key === 'ArrowUp') { event.preventDefault(); menuItems[(current - 1 + menuItems.length) % menuItems.length]?.focus(); }
-    }}>{groups.map((group, groupIndex) => <div className="action-menu-group" key={`${group.label ?? 'commands'}-${groupIndex}`}>
-      {groupIndex > 0 && <div className="action-menu-separator" role="separator" />}
-      {group.label && <div className="action-menu-label" role="presentation">{group.label}</div>}
-      {group.items.map((item) => <button key={item.id} type="button" role={item.checked !== undefined ? 'menuitemradio' : 'menuitem'} aria-checked={item.checked} className={item.destructive ? 'subtle-danger' : undefined} disabled={item.disabled} title={item.title} onClick={() => { if (item.disabled) return; dismiss(false); item.onSelect(); window.setTimeout(() => triggerRef.current?.focus()); }}>{item.checked && <span className="menu-check" aria-hidden="true">✓</span>}{item.label}</button>)}
-    </div>)}</div>}
-  </div>;
-}
-
-export function App({ service, tripService }: Props) {
+export function App({ service, tripService, blockingService }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState('');
   const [scenarioId, setScenarioId] = useState('');
@@ -247,6 +222,7 @@ export function App({ service, tripService }: Props) {
         impact.runtimeProfileCount ? `${impact.runtimeProfileCount} runtime profile${impact.runtimeProfileCount === 1 ? '' : 's'}` : '',
         impact.tripCount ? `${impact.tripCount} trip${impact.tripCount === 1 ? '' : 's'}` : '',
         impact.removedBlockActivityCount ? `${impact.removedBlockActivityCount} block activit${impact.removedBlockActivityCount === 1 ? 'y' : 'ies'}` : '',
+        impact.removedNonRevenueActivityCount ? `${impact.removedNonRevenueActivityCount} pull-out, pull-in, or deadhead activit${impact.removedNonRevenueActivityCount === 1 ? 'y' : 'ies'}` : '',
       ].filter(Boolean);
       const blockNote = impact.affectedBlockCount ? ` ${impact.affectedBlockCount} block${impact.affectedBlockCount === 1 ? '' : 's'} will remain without those trips.` : '';
       setConfirm({ title: 'Delete route?', text: `Delete “${aggregate.route.name || 'Untitled route'}”${affected.length ? ` and its ${affected.join(', ')}?` : '?'}${blockNote} This cannot be undone.`, confirmLabel: 'Delete route', action: () => { void service.deleteRoute(aggregate.route.id).then(async () => { await reload(projectId, scenarioId); }).catch((error) => showError(error, 'Unable to delete route.')); } });
@@ -256,7 +232,7 @@ export function App({ service, tripService }: Props) {
   async function saveRouteField(patch: Partial<Route>) { if (!aggregate) return; try { acceptAggregate(await service.updateRoute(aggregate, patch)); } catch (error) { showError(error, 'Unable to save route.'); } }
   async function addNode() { if (!aggregate) return; try { acceptAggregate(await service.addNode(aggregate)); } catch (error) { showError(error, 'Unable to add node.'); } }
   async function updateNode(id: string, patch: Partial<Node>) { if (!aggregate) return; try { acceptAggregate(await service.updateNode(aggregate, id, patch)); } catch (error) { showError(error, 'Unable to save node.'); } }
-  function deleteNode(node: Node) { if (!aggregate) return; const referenced = service.getNodeDeletionFindings(aggregate, node.id)[0]; setConfirm({ title: 'Remove node?', text: referenced ? `“${node.name || 'Untitled node'}” appears in ${referenced.parameters?.patternCount} pattern(s). Removing it will also remove those pattern points.` : `Remove “${node.name || 'Untitled node'}”?`, action: () => { void service.deleteNode(aggregate, node.id).then(acceptAggregate).catch((error) => showError(error, 'Unable to remove node.')); } }); }
+  function deleteNode(node: Node) { if (!aggregate) return; void service.getNodeDeletionImpact(aggregate, node.id).then((impact) => { const affected = [impact.patternCount ? `${impact.patternCount} pattern${impact.patternCount === 1 ? '' : 's'} points` : '', impact.removedNonRevenueActivityCount ? `${impact.removedNonRevenueActivityCount} pull-out, pull-in, or deadhead activit${impact.removedNonRevenueActivityCount === 1 ? 'y' : 'ies'}` : ''].filter(Boolean); const blockNote = impact.affectedBlockCount ? ` ${impact.affectedBlockCount} Block${impact.affectedBlockCount === 1 ? '' : 's'} will remain for repair.` : ''; setConfirm({ title: 'Remove node?', text: `Remove “${node.name || 'Untitled node'}”${affected.length ? ` and remove ${affected.join(', ')}?` : '?'}${blockNote}`, action: () => { void service.deleteNode(aggregate, node.id).then(acceptAggregate).catch((error) => showError(error, 'Unable to remove node.')); } }); }).catch((error) => showError(error, 'Unable to review node deletion.')); }
   async function addPattern() { if (!aggregate) return; try { const next = await service.addPattern(aggregate); acceptAggregate(next.aggregate); setSelectedPatternId(next.pattern.id); } catch (error) { showError(error, 'Unable to add pattern.'); } }
   async function updatePattern(patch: Partial<RoutePattern>) { if (!aggregate || !selectedPattern) return; try { acceptAggregate(await service.updatePattern(aggregate, selectedPattern.id, patch)); } catch (error) { showError(error, 'Unable to save pattern.'); } }
   async function addPoint() { if (!selectedPattern || !aggregate) return; try { acceptAggregate(await service.addPatternPoint(aggregate, selectedPattern.id)); } catch (error) { showError(error, 'Unable to add pattern point.'); } }
@@ -286,7 +262,7 @@ export function App({ service, tripService }: Props) {
   }
   async function exportJson() { if (!projectId || !selectedProject) return; download(`${selectedProject.name}.json`, await service.exportProject(projectId), 'application/json'); }
   async function importJson(event: ChangeEvent<HTMLInputElement>) { const file = event.target.files?.[0]; if (!file) return; try { const project = await service.importProject(await file.text()); setNotice({ kind: 'success', text: `Imported ${project.name} as an independent project.` }); await reload(project.id); } catch (error) { showError(error, 'Import failed.'); } finally { event.target.value = ''; } }
-  function exportCsv() { if (!aggregate || !records || !selectedProject) return; const safe = selectedProject.name.replaceAll(/[^a-z0-9]+/gi, '-'); for (const file of service.exportAuthoritativeCsv(aggregate, records)) download(`${safe}-${file.suffix}.csv`, file.contents, 'text/csv'); }
+  function exportCsv() { if (!aggregate || !records || !selectedProject) return; const safe = selectedProject.name.replaceAll(/[^a-z0-9]+/gi, '-') || 'transit-costing-tool'; const files = service.exportAuthoritativeCsv(aggregate, records); downloadBlob(`${safe}-csv.zip`, createCsvArchive(files.map((file) => ({ filename: `${safe}-${file.suffix}.csv`, contents: file.contents })))); }
   function requestRouteNavigation(action: () => void) {
     const guard = activeTab === 'trips' ? tripNavigationGuard.current : routeNavigationGuard.current;
     if (guard) { guard(action); return; }
@@ -321,12 +297,12 @@ export function App({ service, tripService }: Props) {
     }).catch((error) => showError(error, 'Unable to review Trip profile deletion.'));
   }
   return <main className="app-shell">
-    <header className="topbar"><div><strong>Transit Costing Tool</strong><span className="save-status" aria-live="polite">{saveStatus.state === 'saving' ? 'Saving locally…' : saveStatus.state === 'error' ? 'Local save failed' : 'Saved locally'}</span></div><nav aria-label="Primary"><button className={`tab ${activeTab === 'route' ? 'active' : ''}`} onClick={() => requestRouteNavigation(() => setActiveTab('route'))}>Route</button><button className={`tab ${activeTab === 'trips' ? 'active' : ''}`} disabled={!aggregate?.patterns.some((pattern) => pattern.points.length >= 2)} title={!aggregate?.patterns.some((pattern) => pattern.points.length >= 2) ? 'Add a pattern with at least two points to define runtimes.' : undefined} onClick={() => requestRouteNavigation(() => setActiveTab('trips'))}>Trips</button><button className="tab" disabled title="Available in a later phase">Blocking</button><button className="tab" disabled title="Available in a later phase">Costing</button></nav></header>
-    <section className="context-bar" aria-label="Project controls"><label>Project<select value={projectId} onChange={(event) => requestRouteNavigation(() => { void reload(event.target.value); })}><option value="">Select project</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><button className="primary" onClick={() => setNameDialog({ title: 'New Project', submitLabel: 'New Project', action: createNewProject })}>New Project</button><label className="scenario-control">Scenario<select value={scenarioId} onChange={(event) => requestRouteNavigation(() => { void reload(projectId, event.target.value); })} disabled={!projectId}><option value="">Select scenario</option>{scenarios.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.name}</option>)}</select></label><button disabled={!records} onClick={() => setNameDialog({ title: 'New Scenario', label: 'Scenario name', submitLabel: 'Create scenario', action: addScenario })}>New scenario</button><button disabled={!records} onClick={() => setNameDialog({ title: 'Rename scenario', label: 'Scenario name', initialValue: records?.scenario.name, submitLabel: 'Rename', action: renameCurrentScenario })}>Rename</button><button disabled={!records} onClick={() => setNameDialog({ title: 'Duplicate scenario', initialValue: `${records?.scenario.name ?? ''} Copy`, submitLabel: 'Duplicate', action: duplicateCurrentScenario })}>Duplicate</button><button className="subtle-danger" disabled={!records} onClick={() => requestRouteNavigation(deleteCurrentScenario)}>Delete</button><span className="grow" /><button disabled={!projectId} onClick={() => void exportJson()}>Backup JSON</button><button disabled={!aggregate} onClick={exportCsv}>Export CSV</button><button onClick={() => importRef.current?.click()}>Restore JSON</button><input ref={importRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importJson} /></section>
+    <header className="topbar"><div><strong>Transit Costing Tool</strong><span className="save-status" aria-live="polite">{saveStatus.state === 'saving' ? 'Saving locally…' : saveStatus.state === 'error' ? 'Local save failed' : 'Saved locally'}</span></div><nav aria-label="Primary"><button className={`tab ${activeTab === 'route' ? 'active' : ''}`} onClick={() => requestRouteNavigation(() => setActiveTab('route'))}>Route</button><button className={`tab ${activeTab === 'trips' ? 'active' : ''}`} disabled={!aggregate?.patterns.some((pattern) => pattern.points.length >= 2)} title={!aggregate?.patterns.some((pattern) => pattern.points.length >= 2) ? 'Add a pattern with at least two points to define runtimes.' : undefined} onClick={() => requestRouteNavigation(() => setActiveTab('trips'))}>Trips</button><button className={`tab ${activeTab === 'blocking' ? 'active' : ''}`} disabled={!aggregate || !(records?.tripProfiles ?? []).length} title={!aggregate ? 'Select a Route before blocking service.' : !(records?.tripProfiles ?? []).length ? 'Create a Trip Profile before blocking service.' : undefined} onClick={() => requestRouteNavigation(() => setActiveTab('blocking'))}>Blocking</button><button className="tab" disabled title="Available in a later phase">Costing</button></nav></header>
+    <section className="context-bar" aria-label="Project controls"><label>Project<select value={projectId} onChange={(event) => requestRouteNavigation(() => { void reload(event.target.value); })}><option value="">Select project</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><button className="primary" onClick={() => setNameDialog({ title: 'New Project', submitLabel: 'New Project', action: createNewProject })}>New Project</button><label className="scenario-control">Scenario<select value={scenarioId} onChange={(event) => requestRouteNavigation(() => { void reload(projectId, event.target.value); })} disabled={!projectId}><option value="">Select scenario</option>{scenarios.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.name}</option>)}</select></label><button disabled={!records} onClick={() => setNameDialog({ title: 'New Scenario', label: 'Scenario name', submitLabel: 'Create scenario', action: addScenario })}>New scenario</button><button disabled={!records} onClick={() => setNameDialog({ title: 'Rename scenario', label: 'Scenario name', initialValue: records?.scenario.name, submitLabel: 'Rename', action: renameCurrentScenario })}>Rename</button><button disabled={!records} onClick={() => setNameDialog({ title: 'Duplicate scenario', initialValue: `${records?.scenario.name ?? ''} Copy`, submitLabel: 'Duplicate', action: duplicateCurrentScenario })}>Duplicate</button><button className="subtle-danger" disabled={!records} onClick={() => requestRouteNavigation(deleteCurrentScenario)}>Delete</button><span className="grow" /><button disabled={!projectId} onClick={() => void exportJson()}>Backup JSON</button><button title="Downloads one ZIP containing the CSV files." disabled={!aggregate} onClick={exportCsv}>Export CSV (ZIP)</button><button onClick={() => importRef.current?.click()}>Restore JSON</button><input ref={importRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importJson} /></section>
     {notice && <div className={`notice ${notice.kind}`} role="status">{notice.text}<button onClick={() => setNotice(undefined)} aria-label="Dismiss message">×</button></div>}
     {!records ? <section className="empty-state empty-project"><h1>Start a local planning project</h1><p>Use New Project above to define a scenario, route, service days, nodes, and patterns. Everything saves in this browser.</p></section> : <>
       <section className="route-picker"><label>Route<select value={routeId} onChange={(event) => requestRouteNavigation(() => { void reload(projectId, scenarioId, event.target.value); })}><option value="">No route selected</option>{records.routes.map((route) => <option key={route.id} value={route.id}>{route.shortName ? `${route.shortName} — ${route.name}` : route.name || 'Untitled route'}</option>)}</select></label>{activeTab === 'route' && <><button onClick={() => requestRouteNavigation(() => { void addRoute(); })}>Add route</button><button className="subtle-danger" disabled={!aggregate} onClick={() => requestRouteNavigation(deleteCurrentRoute)}>Delete route</button></>}{activeTab === 'trips' && aggregate && <><label>Day<select value={workspaceServiceDayId} onChange={(event) => requestRouteNavigation(() => setWorkspaceServiceDayId(event.target.value))}>{sortServiceDays(records.serviceDays).map((day) => <option key={day.id} value={day.id}>{day.name}</option>)}</select></label><label>Direction<select value={workspaceDirectionId} onChange={(event) => requestRouteNavigation(() => setWorkspaceDirectionId(event.target.value))}>{[...(aggregate.directions ?? [])].sort((left, right) => left.sequence - right.sequence).map((direction) => <option key={direction.id} value={direction.id}>{direction.name}</option>)}</select></label></>}</section>
-      {aggregate ? <><div hidden={activeTab !== 'route'}><RouteWorkspace key={aggregate.route.id} service={service} aggregate={aggregate} findings={findings} selectedPatternId={selectedPatternId} segmentMiles={(pattern, index) => service.getSegmentMiles(pattern, index)} onRoute={saveRouteField} onServiceDay={updateServiceDay} serviceDays={records.serviceDays} onCommitted={acceptRouteEdit} onDeletePattern={deleteSelectedPattern} onSelectPattern={setSelectedPatternId} onRegisterNavigationGuard={(guard) => { routeNavigationGuard.current = guard; }} onError={(error) => showError(error, 'Unable to save route changes.')} /></div>{activeTab === 'trips' && <TripsWorkspace service={service} tripService={tripService} aggregate={aggregate} records={records} serviceDayId={workspaceServiceDayId} directionId={workspaceDirectionId} tripProfileId={workspaceTripProfileId} tripProfileBusy={tripProfileBusy} onTripProfileChange={setWorkspaceTripProfileId} onTripProfileRename={() => setNameDialog({ title: 'Rename Trip Profile', label: 'Name', initialValue: records.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name, submitLabel: 'Rename', action: renameTripProfile })} onTripProfileCopy={() => setNameDialog({ title: 'Copy Trip Profile', label: 'Name', initialValue: `${records.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name ?? ''} Copy`, submitLabel: 'Copy', action: copyTripProfile })} onTripProfileDelete={deleteTripProfile} onRegisterNavigationGuard={(guard) => { tripNavigationGuard.current = guard; }} runtimeVersion={runtimeVersion} onRuntimeChanged={() => setRuntimeVersion((current) => current + 1)} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update trips.')} />}</> : <section className="empty-state"><h2>No route selected</h2><p>Add a route, then define its timepoints and patterns.</p></section>}
+      {aggregate ? <><div hidden={activeTab !== 'route'}><RouteWorkspace key={aggregate.route.id} service={service} aggregate={aggregate} findings={findings} selectedPatternId={selectedPatternId} segmentMiles={(pattern, index) => service.getSegmentMiles(pattern, index)} onRoute={saveRouteField} onServiceDay={updateServiceDay} serviceDays={records.serviceDays} onCommitted={acceptRouteEdit} onDeletePattern={deleteSelectedPattern} onSelectPattern={setSelectedPatternId} onRegisterNavigationGuard={(guard) => { routeNavigationGuard.current = guard; }} onError={(error) => showError(error, 'Unable to save route changes.')} /></div>{activeTab === 'trips' && <TripsWorkspace service={service} tripService={tripService} blockingService={blockingService} aggregate={aggregate} records={records} serviceDayId={workspaceServiceDayId} directionId={workspaceDirectionId} tripProfileId={workspaceTripProfileId} tripProfileBusy={tripProfileBusy} onTripProfileChange={setWorkspaceTripProfileId} onTripProfileRename={() => setNameDialog({ title: 'Rename Trip Profile', label: 'Name', initialValue: records.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name, submitLabel: 'Rename', action: renameTripProfile })} onTripProfileCopy={() => setNameDialog({ title: 'Copy Trip Profile', label: 'Name', initialValue: `${records.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name ?? ''} Copy`, submitLabel: 'Copy', action: copyTripProfile })} onTripProfileDelete={deleteTripProfile} onRegisterNavigationGuard={(guard) => { tripNavigationGuard.current = guard; }} runtimeVersion={runtimeVersion} onRuntimeChanged={() => setRuntimeVersion((current) => current + 1)} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update trips.')} />}{activeTab === 'blocking' && <BlockingWorkspace blockingService={blockingService} tripService={tripService} aggregate={aggregate} records={records} onReload={() => reload(projectId, scenarioId, routeId)} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update Blocking.')} />}</> : <section className="empty-state"><h2>No route selected</h2><p>Add a route, then define its timepoints and patterns.</p></section>}
     </>}
     {nameDialog && <NameDialogForm dialog={nameDialog} onClose={() => setNameDialog(undefined)} />}
     {confirm && <ConfirmDialog dialog={confirm} onClose={() => setConfirm(undefined)} />}
@@ -366,6 +342,16 @@ function RouteWorkspace({ service, aggregate, serviceDays, findings, selectedPat
   const displayPatterns = patternDraft
     ? (isNewPattern ? [...aggregate.patterns, patternDraft] : aggregate.patterns.map((pattern) => pattern.id === patternDraft.id ? patternDraft : pattern))
     : aggregate.patterns;
+  const patternDirectionName = (pattern: RoutePattern) => aggregate.directions?.find((direction) => direction.id === pattern.directionId)?.name?.trim() || 'Outbound';
+  const sortedDisplayPatterns = [...displayPatterns].sort((left, right) => {
+    const leftDirection = patternDirectionName(left).toLocaleLowerCase();
+    const rightDirection = patternDirectionName(right).toLocaleLowerCase();
+    const leftDirectionRank = leftDirection === 'inbound' ? 0 : leftDirection === 'outbound' ? 1 : 2;
+    const rightDirectionRank = rightDirection === 'inbound' ? 0 : rightDirection === 'outbound' ? 1 : 2;
+    return leftDirectionRank - rightDirectionRank
+      || (left.name || 'Untitled pattern').localeCompare(right.name || 'Untitled pattern', undefined, { numeric: true, sensitivity: 'base' })
+      || left.id.localeCompare(right.id);
+  });
 
   useEffect(() => {
     const protect = (event: BeforeUnloadEvent) => {
@@ -472,7 +458,7 @@ function RouteWorkspace({ service, aggregate, serviceDays, findings, selectedPat
   return <div className="route-workspace"><div className="route-overview-grid"><section className="route-details"><h1 className="box-heading">Route definition</h1><div className="field-grid"><Field label="Route name" required errors={fieldError(aggregate.route.id, 'name')}><input defaultValue={aggregate.route.name} onBlur={(event) => void onRoute({ name: event.target.value })} /></Field><Field label="Short name"><input defaultValue={aggregate.route.shortName ?? ''} onBlur={(event) => void onRoute({ shortName: event.target.value || undefined })} /></Field><Field label="Description" wide><input defaultValue={aggregate.route.description ?? ''} onBlur={(event) => void onRoute({ description: event.target.value || undefined })} /></Field></div></section>
     <section><div className="section-title"><h2>Service days</h2><span>Annual count is saved on field commit. Zero is valid.</span></div><div className="table-scroll service-days-table"><table><thead><tr><th>Service day</th><th>Annual service days</th></tr></thead><tbody>{[...serviceDays].sort((a, b) => serviceDayOrder[a.kind] - serviceDayOrder[b.kind] || a.sequence - b.sequence).map((day) => <tr key={day.id}><td><input aria-label={`${day.name} name`} defaultValue={day.name} onBlur={(event) => void onServiceDay(day.id, { name: event.target.value })} /></td><td><NumericCommit label={`${day.name} annual service days`} value={day.annualServiceDays} integer onCommit={(value) => onServiceDay(day.id, { annualServiceDays: value })} /></td></tr>)}</tbody></table></div></section></div>
     <div className="definition-grid"><section><div className="section-title"><h2>Nodes</h2></div><div className="table-scroll"><table><thead><tr><th>Name</th><th>Short</th><th>Type</th><th>Notes</th><th><span className="visually-hidden">Actions</span></th></tr></thead><tbody>{nodeDraft.map((node) => { const pending = pendingNodeDeletes.has(node.id); const errors = messages(nodeFindings, node.id); return <tr key={node.id} className={`${pending ? 'pending-delete' : ''} ${!aggregate.nodes.some((saved) => saved.id === node.id) ? 'draft-row' : ''}`}><td><input aria-label="Node name" placeholder="Enter node name" value={node.name} disabled={pending || nodeSaving} onChange={(event) => { setNodeDraft((current) => current.map((candidate) => candidate.id === node.id ? { ...candidate, name: event.target.value } : candidate)); setNodeFindings([]); }} />{errors.map((error) => <small className="field-error" key={error}>{error}</small>)}</td><td><input aria-label="Node short name" value={node.shortName ?? ''} disabled={pending || nodeSaving} onChange={(event) => setNodeDraft((current) => current.map((candidate) => candidate.id === node.id ? { ...candidate, shortName: event.target.value || undefined } : candidate))} /></td><td><select aria-label="Node type" value={node.kind} disabled={pending || nodeSaving} onChange={(event) => setNodeDraft((current) => current.map((candidate) => candidate.id === node.id ? { ...candidate, kind: event.target.value as NodeKind } : candidate))}>{['timepoint', 'terminal', 'garage', 'other'].map((kind) => <option key={kind}>{kind}</option>)}</select></td><td><input aria-label="Node notes" value={node.notes ?? ''} disabled={pending || nodeSaving} onChange={(event) => setNodeDraft((current) => current.map((candidate) => candidate.id === node.id ? { ...candidate, notes: event.target.value || undefined } : candidate))} /></td><td>{pending ? <button disabled={nodeSaving} onClick={() => setPendingNodeDeletes((current) => { const next = new Set(current); next.delete(node.id); return next; })}>Undo</button> : <button className="icon-button icon-button--danger" disabled={nodeSaving} onClick={() => setPendingNodeDeletes((current) => new Set(current).add(node.id))} aria-label={`Remove ${node.name || 'node'}`} title={`Remove ${node.name || 'node'}`}><TrashIcon /></button>} {pending && <span className="row-status">Will be deleted</span>}</td></tr>; })}{nodeDraft.length === 0 && <tr><td colSpan={5} className="table-empty">Add scheduling timepoints and terminals. Nodes can be reused in any pattern.</td></tr>}</tbody></table></div><div className="table-actions"><button onClick={addNode} disabled={nodeSaving}>New node</button><span className="grow" /><button onClick={() => { setNodeDraft(aggregate.nodes); setPendingNodeDeletes(new Set()); setNodeFindings([]); }} disabled={!nodeDirty || nodeSaving}>Discard changes</button><button className="primary" onClick={() => void reviewNodeSave()} disabled={!nodeDirty || nodeSaving}>Save nodes</button></div></section>
-      <section><div className="section-title"><h2>Patterns</h2></div><div className="pattern-layout"><aside className="pattern-list" aria-label="Patterns">{displayPatterns.length ? displayPatterns.map((pattern) => <button key={pattern.id} className={patternDraft?.id === pattern.id ? 'selected' : ''} onClick={() => requestPattern(pattern.id)}><strong>{pattern.name || 'Untitled pattern'} {isNewPattern && pattern.id === patternDraft?.id ? <em>Unsaved</em> : null}</strong><span>{aggregate.directions?.find((direction) => direction.id === pattern.directionId)?.name || 'Outbound'}{pattern.directionLabel ? ` · ${pattern.directionLabel}` : ''} · {pattern.points.length} points</span></button>) : <p>Patterns define full, short, and loop trips.</p>}<button className="pattern-list-add" onClick={newPattern}>Add pattern</button></aside>{patternDraft && <PatternEditor pattern={patternDraft} directions={aggregate.directions ?? []} nodes={aggregate.nodes} segmentMiles={segmentMiles} errors={patternErrors} conflict={conflict} isNew={isNewPattern} dirty={patternDirty} canDuplicate={!isNewPattern} onPattern={updateDraft} onAddPoint={addPoint} onUpdatePoint={updatePoint} onMovePoint={movePoint} onRemovePoint={removePoint} onReverse={() => duplicatePattern(true)} onDuplicate={() => duplicatePattern(false)} onDelete={() => isNewPattern ? discardPattern() : onDeletePattern()} onSave={() => void reviewPatternSave()} onDiscard={discardPattern} />}</div></section></div>
+      <section><div className="section-title"><h2>Patterns</h2></div><div className="pattern-layout"><aside className="pattern-list" aria-label="Patterns">{sortedDisplayPatterns.length ? sortedDisplayPatterns.map((pattern) => <button key={pattern.id} className={patternDraft?.id === pattern.id ? 'selected' : ''} onClick={() => requestPattern(pattern.id)}><strong>{pattern.name || 'Untitled pattern'} {isNewPattern && pattern.id === patternDraft?.id ? <em>Unsaved</em> : null}</strong><span>{patternDirectionName(pattern)}{pattern.directionLabel ? ` · ${pattern.directionLabel}` : ''} · {pattern.points.length} points</span></button>) : <p>Patterns define full, short, and loop trips.</p>}<button className="pattern-list-add" onClick={newPattern}>Add pattern</button></aside>{patternDraft && <PatternEditor pattern={patternDraft} directions={aggregate.directions ?? []} nodes={aggregate.nodes} segmentMiles={segmentMiles} errors={patternErrors} conflict={conflict} isNew={isNewPattern} dirty={patternDirty} canDuplicate={!isNewPattern} onPattern={updateDraft} onAddPoint={addPoint} onUpdatePoint={updatePoint} onMovePoint={movePoint} onRemovePoint={removePoint} onReverse={() => duplicatePattern(true)} onDuplicate={() => duplicatePattern(false)} onDelete={() => isNewPattern ? discardPattern() : onDeletePattern()} onSave={() => void reviewPatternSave()} onDiscard={discardPattern} />}</div></section></div>
     {impactDialog && <RouteEditImpactDialog preview={impactDialog.preview} mode={impactDialog.mode} onClose={() => setImpactDialog(undefined)} onCommit={() => impactDialog.preview.kind === 'nodes' ? void commitNodes(impactDialog.preview, impactDialog.afterCommit) : void commitPattern(impactDialog.preview, impactDialog.mode, impactDialog.afterCommit)} />}
     {discardDialog && <DiscardRouteDraftDialog title={discardDialog.title} onDiscard={() => { discardDialog.action(); setDiscardDialog(undefined); }} onClose={() => setDiscardDialog(undefined)} />}
     {navigationDialog && <RouteNavigationDraftDialog onCancel={() => setNavigationDialog(undefined)} onDiscard={() => { const action = navigationDialog.action; discardAllDrafts(); setNavigationDialog(undefined); action(); }} onSave={() => { const action = navigationDialog.action; setNavigationDialog(undefined); saveDraftsThenNavigate(action); }} />}
@@ -663,8 +649,10 @@ function ServiceTimeField({ label, value, onCommit }: { label: string; value: nu
   return <label>{label}<input className="time-input" value={draft} aria-invalid={Boolean(error)} onChange={(event) => { setDraft(event.target.value); setError(''); }} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setDraft(formatServiceTime(value)); setError(''); event.currentTarget.blur(); } }} />{error && <small className="field-error" role="alert">{error}</small>}</label>;
 }
 
+function blockPillClass(label: string) { let hash = 0; for (const character of label) hash = (hash * 31 + character.charCodeAt(0)) >>> 0; return `block-pill block-pill-${hash % 6}`; }
+
 function FragmentTripRow({ trip, selected, expanded, warning, patternName, departure, arrival, generationSetName, blockLabel, nodeName, onToggle, onToggleDetails, onPatternChange, canChangePattern, overrideLabel }: { trip: Trip; selected: boolean; expanded: boolean; warning: boolean; patternName: string; departure?: number; arrival?: number; generationSetName: string; blockLabel: string; nodeName: (id: string) => string; onToggle: () => void; onToggleDetails: () => void; onPatternChange: () => void; canChangePattern: boolean; overrideLabel: string }) {
-  return <><tr className={`${selected ? 'trip-row-selected ' : ''}${warning ? 'trip-row-warning' : ''}`}><td><input className="trip-select" type="checkbox" checked={selected} onChange={onToggle} aria-label={`Select ${patternName} departing ${departure === undefined ? 'unknown time' : formatServiceTime(departure)}`} /></td><td>{patternName}</td><td>{departure === undefined ? '—' : formatServiceTime(departure)}</td><td>{arrival === undefined ? '—' : formatServiceTime(arrival)}</td><td>{departure === undefined || arrival === undefined ? '—' : formatServiceTime(arrival - departure)}</td><td>{generationSetName}</td><td>{trip.provenance.manuallyChangedFields.length ? <span className="trip-status" title={overrideLabel}>{overrideLabel}</span> : 'Generated'}</td><td>{blockLabel}</td><td><div className="row-actions"><button onClick={onToggleDetails} aria-expanded={expanded}>{expanded ? 'Hide times' : `${trip.stopTimes.length} times`}</button><button onClick={onPatternChange} disabled={!canChangePattern}>Change pattern</button></div></td></tr>{expanded && <tr className="timepoint-detail"><td colSpan={9}><div className="timepoint-list">{trip.stopTimes.map((point) => <span key={point.patternPointId}><strong>{nodeName(point.patternPointId)}</strong> {formatServiceTime(point.time)}</span>)}</div></td></tr>}</>;
+  return <><tr className={`${selected ? 'trip-row-selected ' : ''}${warning ? 'trip-row-warning' : ''}`}><td><input className="trip-select" type="checkbox" checked={selected} onChange={onToggle} aria-label={`Select ${patternName} departing ${departure === undefined ? 'unknown time' : formatServiceTime(departure)}`} /></td><td>{patternName}</td><td>{departure === undefined ? '—' : formatServiceTime(departure)}</td><td>{arrival === undefined ? '—' : formatServiceTime(arrival)}</td><td>{departure === undefined || arrival === undefined ? '—' : formatServiceTime(arrival - departure)}</td><td>{generationSetName}</td><td>{trip.provenance.manuallyChangedFields.length ? <span className="trip-status" title={overrideLabel}>{overrideLabel}</span> : 'Generated'}</td><td>{blockLabel === 'Unassigned' ? <span className="trip-block-unassigned">Unassigned</span> : <span className={blockPillClass(blockLabel)}>{blockLabel}</span>}</td><td><div className="row-actions"><button onClick={onToggleDetails} aria-expanded={expanded}>{expanded ? 'Hide times' : `${trip.stopTimes.length} times`}</button><button onClick={onPatternChange} disabled={!canChangePattern}>Change pattern</button></div></td></tr>{expanded && <tr><td colSpan={9}><div className="timepoint-list">{trip.stopTimes.map((point) => <span key={point.patternPointId}><strong>{nodeName(point.patternPointId)}</strong> {formatServiceTime(point.time)}</span>)}</div></td></tr>}</>;
 }
 
 function GenerationPreviewDialog({ preview, patternName, onCancel, onConfirm, busy }: { preview: RegenerationPreview; patternName: (id: string) => string; onCancel: () => void; onConfirm: () => void; busy: boolean }) {
@@ -685,7 +673,7 @@ function PatternChangePreviewDialog({ dialog, nodeName, onCancel, onConfirm, bus
 
 type NewRuntimeDialog = { mode: 'new' | 'copy' | 'reverse' | 'rename'; initialName: string } | undefined;
 
-function TripsWorkspace({ service, tripService, aggregate, records, serviceDayId, directionId, tripProfileId, tripProfileBusy, onTripProfileChange, onTripProfileRename, onTripProfileCopy, onTripProfileDelete, onRegisterNavigationGuard, runtimeVersion, onRuntimeChanged, onError }: { service: RouteDefinitionApplication; tripService: TripGenerationApplication; aggregate: RouteDefinitionAggregate; records: ScenarioRecords; serviceDayId: string; directionId: string; tripProfileId: string; tripProfileBusy: boolean; onTripProfileChange: (id: string) => void; onTripProfileRename: () => void; onTripProfileCopy: () => void; onTripProfileDelete: () => void; onRegisterNavigationGuard: (guard: RouteNavigationGuard | undefined) => void; runtimeVersion: number; onRuntimeChanged: () => void; onError: (error: unknown, fallback?: string) => void }) {
+function TripsWorkspace({ service, tripService, blockingService, aggregate, records, serviceDayId, directionId, tripProfileId, tripProfileBusy, onTripProfileChange, onTripProfileRename, onTripProfileCopy, onTripProfileDelete, onRegisterNavigationGuard, runtimeVersion, onRuntimeChanged, onError }: { service: RouteDefinitionApplication; tripService: TripGenerationApplication; blockingService: BlockingCommands & BlockingQueries; aggregate: RouteDefinitionAggregate; records: ScenarioRecords; serviceDayId: string; directionId: string; tripProfileId: string; tripProfileBusy: boolean; onTripProfileChange: (id: string) => void; onTripProfileRename: () => void; onTripProfileCopy: () => void; onTripProfileDelete: () => void; onRegisterNavigationGuard: (guard: RouteNavigationGuard | undefined) => void; runtimeVersion: number; onRuntimeChanged: () => void; onError: (error: unknown, fallback?: string) => void }) {
   const days = sortServiceDays(records.serviceDays);
   const directions = [...(aggregate.directions ?? [])].sort((left, right) => left.sequence - right.sequence);
   const [patternId, setPatternId] = useState('');
@@ -713,9 +701,18 @@ function TripsWorkspace({ service, tripService, aggregate, records, serviceDayId
   const [runtimeCopyOpen, setRuntimeCopyOpen] = useState(false);
   const [tripCopyOpen, setTripCopyOpen] = useState(false);
   const [batchPatternChangeOpen, setBatchPatternChangeOpen] = useState(false);
+  const [blockingScenarios, setBlockingScenarios] = useState<import('../domain/types').BlockingScenario[]>([]);
+  const [tripBlockingScenarioId, setTripBlockingScenarioId] = useState('');
+  const [tripBlockingBlocks, setTripBlockingBlocks] = useState<BlockingBlock[]>([]);
+  const [tripBlockingBlocksBusy, setTripBlockingBlocksBusy] = useState(false);
+  const [tripBlockAssignment, setTripBlockAssignment] = useState<TripBlockAssignmentDraft>();
+  const [tripBlockAssignmentError, setTripBlockAssignmentError] = useState('');
+  const [tripBlockAssignmentStatus, setTripBlockAssignmentStatus] = useState('');
   const runtimeCopyButtonRef = useRef<HTMLButtonElement>(null);
   const tripsActionsRef = useRef<HTMLButtonElement>(null);
+  const tripBlockAssignmentFocusRef = useRef<HTMLElement | null>(null);
   const runtimeEditorRef = useRef<RuntimeEditorHandle>(null);
+  const selectionAnchorId = useRef<string | undefined>(undefined);
   const patterns = aggregate.patterns.filter((pattern) => pattern.points.length >= 2 && pattern.directionId === directionId).sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0));
   const selectedPattern = patterns.find((pattern) => pattern.id === patternId);
   const selectedProfile = profiles.find((profile) => profile.id === profileId);
@@ -746,7 +743,123 @@ function TripsWorkspace({ service, tripService, aggregate, records, serviceDayId
   }
   useEffect(() => { void loadRuntime(); }, [aggregate.route.id, selectedPattern?.id, serviceDayId, records.scenario.id, runtimeVersion]);
   function clearTripShiftHistory() { setShiftDrawerOpen(false); setShiftOperations([]); setRedoShiftOperations([]); setShiftPreview(undefined); setShiftError(''); }
-  useEffect(() => { setSelectedTripIds([]); setDraftTrip(undefined); clearTripShiftHistory(); void loadTrips(); }, [serviceDayId, directionId, tripProfileId, runtimeVersion]);
+  useEffect(() => { setSelectedTripIds([]); selectionAnchorId.current = undefined; setDraftTrip(undefined); setBuildOpen(false); clearTripShiftHistory(); void loadTrips(); }, [serviceDayId, directionId, tripProfileId, runtimeVersion]);
+  useEffect(() => {
+    let live = true;
+    void blockingService.listBlockingScenarios(records.scenario.id).then((next) => {
+      if (!live) return;
+      const available = next.filter((item) => item.tripProfileId === tripProfileId);
+      setBlockingScenarios(available);
+      let saved = '';
+      try { const preference = JSON.parse(localStorage.getItem(TRIP_BLOCKING_SCENARIO_PREFERENCE_KEY) ?? '{}') as { scenarioId?: string; tripProfileId?: string; blockingScenarioId?: string }; if (preference.scenarioId === records.scenario.id && preference.tripProfileId === tripProfileId) saved = preference.blockingScenarioId ?? ''; } catch { /* UI preference only. */ }
+      setTripBlockingScenarioId((current) => {
+        if (current && available.some((item) => item.id === current)) return current;
+        if (current && !available.some((item) => item.id === current)) return '';
+        if (saved && available.some((item) => item.id === saved)) return saved;
+        return available[0]?.id ?? '';
+      });
+    }).catch((error) => onError(error, 'Unable to load Blocking Scenario context.'));
+    return () => { live = false; };
+  }, [blockingService, records.scenario.id, tripProfileId]);
+  useEffect(() => {
+    let live = true;
+    setTripBlockingBlocks([]);
+    if (!tripBlockingScenarioId) { setTripBlockingBlocksBusy(false); return; }
+    setTripBlockingBlocksBusy(true);
+    void blockingService.listBlockingBlocks(tripBlockingScenarioId).then((blocks) => {
+      if (live) setTripBlockingBlocks(blocks);
+    }).catch((error) => onError(error, 'Unable to load Blocking Scenario Blocks.')).finally(() => { if (live) setTripBlockingBlocksBusy(false); });
+    return () => { live = false; };
+  }, [blockingService, tripBlockingScenarioId, serviceDayId, runtimeVersion]);
+  useEffect(() => { try { localStorage.setItem(TRIP_BLOCKING_SCENARIO_PREFERENCE_KEY, JSON.stringify({ scenarioId: records.scenario.id, tripProfileId, blockingScenarioId: tripBlockingScenarioId })); } catch { /* UI preference only. */ } }, [records.scenario.id, tripProfileId, tripBlockingScenarioId]);
+  useEffect(() => { setTripBlockAssignment(undefined); setTripBlockAssignmentError(''); setTripBlockAssignmentStatus(''); }, [serviceDayId, directionId, tripProfileId, tripBlockingScenarioId]);
+
+  const selectedBlockingScenario = blockingScenarios.find((item) => item.id === tripBlockingScenarioId);
+  const dayBlockingBlocks = tripBlockingBlocks
+    .filter((block) => block.blockingScenarioId === tripBlockingScenarioId && block.serviceDayId === serviceDayId)
+    .sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: 'base' }) || left.id.localeCompare(right.id));
+  const tripBlockByTripId = new Map(dayBlockingBlocks.flatMap((block) => block.activities
+    .filter((activity) => activity.type === 'revenueTrip')
+    .map((activity) => [activity.tripId, block] as const)));
+
+  function tripBlockOption(block: BlockingBlock): TripBlockOption {
+    const revenueTripIds = block.activities.filter((activity) => activity.type === 'revenueTrip').map((activity) => activity.tripId);
+    const blockTrips = revenueTripIds.map((id) => records.trips.find((trip) => trip.id === id));
+    if (blockTrips.some((trip) => !trip)) return { id: block.id, label: block.label, disabled: true, reason: 'This Block references a Trip that is no longer available.' };
+    if (blockTrips.some((trip) => trip!.tripProfileId !== tripProfileId || trip!.serviceDayId !== serviceDayId)) return { id: block.id, label: block.label, disabled: true, reason: 'This Block contains a Trip outside the selected Trip Profile or service day.' };
+    if (blockTrips.some((trip) => trip!.routeId !== aggregate.route.id)) return { id: block.id, label: block.label, disabled: true, reason: 'Cross-Route assignment is not available in this workspace.' };
+    return { id: block.id, label: block.label };
+  }
+  const tripBlockOptions = dayBlockingBlocks.map(tripBlockOption);
+  const hasAssignableTripBlock = tripBlockOptions.some((option) => !option.disabled);
+
+  function openTripBlockAssignment(tripIds: string[], destinationBlockId: string, source: 'pill' | 'actions', focusTarget?: HTMLElement | null, operation: 'assign' | 'unassign' = 'assign') {
+    if (!selectedBlockingScenario || !tripBlockingScenarioId || !tripIds.length || !tripBlockingBlocks.length) return;
+    const selectedIds = new Set(tripIds);
+    const displayedTripIds = trips.filter((trip) => selectedIds.has(trip.id)).map((trip) => trip.id);
+    if (!displayedTripIds.length) return;
+    tripBlockAssignmentFocusRef.current = focusTarget ?? tripsActionsRef.current;
+    setTripBlockAssignmentError('');
+    setTripBlockAssignmentStatus('');
+    setTripBlockAssignment({ operation, tripIds: displayedTripIds, destinationBlockId, source, blockingScenarioId: selectedBlockingScenario.id, tripProfileId, serviceDayId, sourceSignature: createBlockingScenarioSourceSignature(selectedBlockingScenario, tripBlockingBlocks) });
+  }
+
+  function closeTripBlockAssignment() {
+    setTripBlockAssignment(undefined);
+    setTripBlockAssignmentError('');
+    window.setTimeout(() => tripBlockAssignmentFocusRef.current?.focus());
+  }
+
+  async function confirmTripBlockAssignment(destinationBlockId: string) {
+    if (!tripBlockAssignment) return;
+    if (tripBlockAssignment.blockingScenarioId !== tripBlockingScenarioId || tripBlockAssignment.tripProfileId !== tripProfileId || tripBlockAssignment.serviceDayId !== serviceDayId) {
+      setTripBlockAssignmentError('The selected service context changed. Close this dialog and review the assignment again.');
+      return;
+    }
+    if (tripBlockAssignment.operation === 'unassign') {
+      const assignedTripIds = tripBlockAssignment.tripIds.filter((id) => tripBlockByTripId.has(id));
+      if (!assignedTripIds.length) {
+        setTripBlockAssignmentStatus('The selected Trips are already unassigned.');
+        closeTripBlockAssignment();
+        return;
+      }
+      setBusy(true);
+      setTripBlockAssignmentError('');
+      try {
+        await blockingService.removeTrips(tripBlockAssignment.blockingScenarioId, tripBlockAssignment.serviceDayId, assignedTripIds, tripBlockAssignment.sourceSignature);
+        const updatedBlocks = await blockingService.listBlockingBlocks(tripBlockAssignment.blockingScenarioId);
+        setTripBlockingBlocks(updatedBlocks);
+        setSelectedTripIds((ids) => ids.filter((id) => !tripBlockAssignment.tripIds.includes(id)));
+        const alreadyUnassignedCount = tripBlockAssignment.tripIds.length - assignedTripIds.length;
+        setTripBlockAssignmentStatus(`Unassigned ${assignedTripIds.length} Trip${assignedTripIds.length === 1 ? '' : 's'}${alreadyUnassignedCount ? `; ${alreadyUnassignedCount} already unassigned` : ''}.`);
+        setTripBlockAssignment(undefined);
+        window.setTimeout(() => tripBlockAssignmentFocusRef.current?.focus());
+      } catch (error) {
+        setTripBlockAssignmentError(error instanceof Error ? error.message : 'Unable to unassign the selected Trips.');
+        if (error instanceof Error && error.message.includes('changed since the operation was reviewed')) {
+          void blockingService.listBlockingBlocks(tripBlockAssignment.blockingScenarioId).then(setTripBlockingBlocks).catch(() => undefined);
+        }
+      } finally { setBusy(false); }
+      return;
+    }
+    const option = tripBlockOptions.find((item) => item.id === destinationBlockId);
+    if (!option || option.disabled) { setTripBlockAssignmentError(option?.reason ?? 'Choose an available Block.'); return; }
+    setBusy(true);
+    setTripBlockAssignmentError('');
+    try {
+      const result = await blockingService.assignTripsToBlock({ blockingScenarioId: tripBlockAssignment.blockingScenarioId, serviceDayId: tripBlockAssignment.serviceDayId, tripIds: tripBlockAssignment.tripIds, destinationBlockId, sourceSignature: tripBlockAssignment.sourceSignature });
+      setTripBlockingBlocks(result.blocks);
+      setSelectedTripIds((ids) => ids.filter((id) => !tripBlockAssignment.tripIds.includes(id)));
+      setTripBlockAssignmentStatus(`Assigned ${tripBlockAssignment.tripIds.length} Trip${tripBlockAssignment.tripIds.length === 1 ? '' : 's'} to ${option.label}.`);
+      setTripBlockAssignment(undefined);
+      window.setTimeout(() => tripBlockAssignmentFocusRef.current?.focus());
+    } catch (error) {
+      setTripBlockAssignmentError(error instanceof Error ? error.message : 'Unable to assign the selected Trips.');
+      if (error instanceof Error && error.message.includes('changed since the operation was reviewed')) {
+        void blockingService.listBlockingBlocks(tripBlockAssignment.blockingScenarioId).then(setTripBlockingBlocks).catch(() => undefined);
+      }
+    } finally { setBusy(false); }
+  }
 
   function requestShiftScopeChange(action: () => void) {
     if (shiftOperations.length) { setShiftDiscardAction(() => action); return; }
@@ -853,6 +966,7 @@ function TripsWorkspace({ service, tripService, aggregate, records, serviceDayId
   function closeRuntimeCopy() { setRuntimeCopyOpen(false); window.setTimeout(() => runtimeCopyButtonRef.current?.focus()); }
   function closeTripCopy() { setTripCopyOpen(false); window.setTimeout(() => tripsActionsRef.current?.focus()); }
   function closeBatchPatternChange() { setBatchPatternChangeOpen(false); window.setTimeout(() => tripsActionsRef.current?.focus()); }
+  function closeBuildDrawer() { setBuildOpen(false); window.setTimeout(() => tripsActionsRef.current?.focus()); }
   const runtimeProfileMenu: MenuGroup[] = [
     { label: 'Profiles', items: profiles.map((profile) => ({ id: profile.id, label: profile.name, checked: profile.id === profileId, disabled: loading || tripProfileBusy, onSelect: () => void assignProfile(profile.id) })) },
     { items: [
@@ -873,13 +987,19 @@ function TripsWorkspace({ service, tripService, aggregate, records, serviceDayId
       { id: 'delete', label: 'Delete profile…', destructive: true, disabled: !tripProfileId || tripProfileBusy, onSelect: onTripProfileDelete },
     ] },
   ];
+  const tripBlockingScenarioMenu: MenuGroup[] = [{ label: 'Blocking Scenarios', items: [
+    ...(!blockingScenarios.length || !tripBlockingScenarioId ? [{ id: 'none', label: 'No Blocking Scenario', checked: true, disabled: tripProfileBusy, onSelect: () => requestShiftScopeChange(() => setTripBlockingScenarioId('')) }] : []),
+    ...blockingScenarios.map((scenario) => ({ id: scenario.id, label: scenario.name, checked: scenario.id === tripBlockingScenarioId, disabled: tripProfileBusy, onSelect: () => requestShiftScopeChange(() => setTripBlockingScenarioId(scenario.id)) })),
+  ] }];
   const tripActionsMenu: MenuGroup[] = [
     { items: [
-      { id: 'build', label: 'Build trips…', disabled: tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => setBuildOpen(true) },
+      { id: 'build', label: 'Build trips…', disabled: tripProfileBusy || shiftOperations.length > 0 || buildOpen, title: buildOpen ? 'The Build Trips drawer is already open.' : shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => setBuildOpen(true) },
       { id: 'add', label: 'Add trip…', disabled: Boolean(draftTrip) || tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => setDraftTrip({ patternId: '', firstTrip: '' }) },
       { id: 'regenerate', label: 'Regenerate selected…', disabled: !selectedChangedRuntimeTripIds.length || busy || tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : !selectedChangedRuntimeTripIds.length ? 'Select Trips with changed runtimes.' : undefined, onSelect: () => void regenerateSelectedTrips() },
       { id: 'shift', label: 'Shift selected…', disabled: !selectedTripIds.length || busy || tripProfileBusy || shiftDrawerOpen, title: shiftDrawerOpen ? 'The Shift drawer is already open.' : !selectedTripIds.length ? 'Select one or more Trips.' : undefined, onSelect: () => void openShiftDrawer() },
       { id: 'change-pattern', label: 'Change pattern…', disabled: !selectedTripIds.length || busy || tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : !selectedTripIds.length ? 'Select one or more Trips.' : undefined, onSelect: () => setBatchPatternChangeOpen(true) },
+      { id: 'assign-block', label: 'Assign Block…', disabled: !selectedTripIds.length || !selectedBlockingScenario || tripBlockingBlocksBusy || !tripBlockOptions.length || !hasAssignableTripBlock || busy || tripProfileBusy || shiftOperations.length > 0 || shiftDrawerOpen, title: !selectedTripIds.length ? 'Select one or more Trips.' : !selectedBlockingScenario ? 'Select a Blocking Scenario first.' : tripBlockingBlocksBusy ? 'Loading Blocks.' : !tripBlockOptions.length ? 'Create a Block in the selected Blocking Scenario first.' : !hasAssignableTripBlock ? 'No Blocks can accept Trips from the selected Route.' : shiftOperations.length || shiftDrawerOpen ? 'Finish or discard the staged shift first.' : undefined, restoreFocus: false, onSelect: () => openTripBlockAssignment(selectedTripIds, '', 'actions', tripsActionsRef.current) },
+      { id: 'unassign-block', label: 'Unassign from Block…', destructive: true, disabled: !selectedTripIds.some((id) => tripBlockByTripId.has(id)) || !selectedBlockingScenario || tripBlockingBlocksBusy || busy || tripProfileBusy || shiftOperations.length > 0 || shiftDrawerOpen, title: !selectedTripIds.length ? 'Select one or more Trips.' : !selectedTripIds.some((id) => tripBlockByTripId.has(id)) ? 'Select at least one assigned Trip.' : !selectedBlockingScenario ? 'Select a Blocking Scenario first.' : shiftOperations.length || shiftDrawerOpen ? 'Finish or discard the staged shift first.' : undefined, restoreFocus: false, onSelect: () => openTripBlockAssignment(selectedTripIds, '', 'actions', tripsActionsRef.current, 'unassign') },
       { id: 'copy-day', label: 'Copy from day…', disabled: tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => setTripCopyOpen(true) },
     ] },
     { items: [{ id: 'delete', label: 'Delete selected…', destructive: true, disabled: !selectedTripIds.length || busy || tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : !selectedTripIds.length ? 'Select one or more Trips.' : undefined, onSelect: () => void requestTripDeletion(selectedTripIds) }] },
@@ -890,20 +1010,33 @@ function TripsWorkspace({ service, tripService, aggregate, records, serviceDayId
   if (!patterns.length) return <section className="trips-workspace"><section className="prerequisite"><h2>Add a pattern on Route</h2><p>Choose a direction, then add a pattern with at least two points before entering runtimes or trips.</p></section></section>;
   return <div className="trips-workspace">
     <section className="workflow-section" aria-label="Runtimes section">
-      <div className="section-title"><div><h2>Runtimes</h2></div><div className="section-actions section-header-actions"><label className="header-field">Pattern<select value={patternId} disabled={tripProfileBusy} onChange={(event) => setPatternId(event.target.value)}>{patterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label><MenuButton label={`Profile: ${selectedProfile?.name ?? 'Select profile'}`} menuLabel="Runtime profile" groups={runtimeProfileMenu} disabled={loading || tripProfileBusy} /><span className="action-separator" aria-hidden="true" /><button onClick={() => runtimeEditorRef.current?.addBand()} disabled={!selectedProfile || runtimeEditorState.saving || tripProfileBusy}>Add</button>{runtimeEditorState.dirty && <><button onClick={() => runtimeEditorRef.current?.discard()} disabled={runtimeEditorState.saving || tripProfileBusy}>Discard</button><button className="primary" onClick={() => runtimeEditorRef.current?.save()} disabled={runtimeEditorState.saving || tripProfileBusy}>{runtimeEditorState.saving ? 'Saving…' : 'Save'}</button></>}<span className="action-separator" aria-hidden="true" /><MenuButton label="Actions" menuLabel="Runtime actions" groups={[{ items: [{ id: 'copy-day', label: 'Copy from day…', disabled: loading || tripProfileBusy, onSelect: () => setRuntimeCopyOpen(true) }] }]} disabled={loading || tripProfileBusy} triggerRef={runtimeCopyButtonRef} /></div></div>
+      <div className="section-title"><div><h2>Runtimes</h2></div><div className="section-actions section-header-actions"><label className="header-field">Pattern<select value={patternId} disabled={tripProfileBusy} onChange={(event) => setPatternId(event.target.value)}>{patterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label><MenuButton fieldLabel="Profile" label={selectedProfile?.name ?? 'Select profile'} menuLabel="Runtime profile" groups={runtimeProfileMenu} disabled={loading || tripProfileBusy} />{runtimeEditorState.dirty && <><span className="action-separator" aria-hidden="true" /><button onClick={() => runtimeEditorRef.current?.discard()} disabled={runtimeEditorState.saving || tripProfileBusy}>Discard</button><button className="primary" onClick={() => runtimeEditorRef.current?.save()} disabled={runtimeEditorState.saving || tripProfileBusy}>{runtimeEditorState.saving ? 'Saving…' : 'Save'}</button></>}<span className="action-separator" aria-hidden="true" /><MenuButton label="Actions" menuLabel="Runtime actions" groups={[{ items: [{ id: 'add-time-band', label: 'Add Time Band', disabled: !selectedProfile || runtimeEditorState.saving || tripProfileBusy, onSelect: () => runtimeEditorRef.current?.addBand() }, { id: 'copy-day', label: 'Copy from day…', disabled: loading || tripProfileBusy, onSelect: () => setRuntimeCopyOpen(true) }] }]} disabled={loading || tripProfileBusy} triggerRef={runtimeCopyButtonRef} /></div></div>
       {selectedProfile && <p className="profile-usage">Used by {selectedDay?.name ?? 'this service day'} for {selectedPattern?.name}.</p>}
       {selectedProfile && selectedPattern ? <RuntimeEditor2 ref={runtimeEditorRef} service={service} profile={selectedProfile} pattern={selectedPattern} nodes={aggregate.nodes} onStateChange={setRuntimeEditorState} onSaved={async () => { await loadRuntime(); onRuntimeChanged(); }} onError={onError} /> : <p className="runtime-status">Loading runtimes…</p>}
     </section>
     <section className="workflow-section" aria-label="Trips section">
-      <div className="section-title"><div><h2>Trips</h2></div><div className="section-actions section-header-actions"><MenuButton label={`Profile: ${selectedTripProfile?.name ?? 'Select profile'}`} menuLabel="Trip profile" groups={tripProfileMenu} disabled={tripProfileBusy} /><span className="action-separator" aria-hidden="true" /><MenuButton label="Actions" menuLabel="Trip actions" groups={tripActionsMenu} disabled={tripProfileBusy} triggerRef={tripsActionsRef} /></div></div>
+      <div className="section-title"><div><h2>Trips</h2></div><div className="section-actions section-header-actions"><MenuButton fieldLabel="Profile" label={selectedTripProfile?.name ?? 'Select profile'} menuLabel="Trip profile" groups={tripProfileMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} /><MenuButton fieldLabel="Scenario" label={selectedBlockingScenario?.name ?? 'No Blocking Scenario'} menuLabel="Blocking Scenario" groups={tripBlockingScenarioMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} /><span className="action-separator" aria-hidden="true" /><MenuButton label="Actions" menuLabel="Trip actions" groups={tripActionsMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} triggerRef={tripsActionsRef} /></div></div>
       {tripsWithChangedRuntimes.length > 0 && <p className="section-status"><span className="runtime-change-indicator">Run Times Have Changed</span></p>}
-      <ScheduleTable trips={trips} previewTrips={shiftPreview?.shiftedTrips} stagedShiftSeconds={shiftPreview?.netOffsetSeconds} draft={draftTrip} patterns={patterns} direction={directions.find((direction) => directionId === direction.id)!} nodes={aggregate.nodes} selectedIds={selectedTripIds} changedRuntimeTripIds={changedRuntimeTripIds} onToggle={(id) => requestShiftScopeChange(() => setSelectedTripIds((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id]))} onSelectAll={(selected) => requestShiftScopeChange(() => setSelectedTripIds(selected ? trips.map((trip) => trip.id) : []))} onDelete={(trip) => requestShiftScopeChange(() => void requestTripDeletion([trip.id]))} onPatternChange={(trip, targetPatternId) => requestShiftScopeChange(() => void changeTripPattern(trip, targetPatternId))} onDraftChange={setDraftTrip} onDraftSave={() => void saveDraftTrip()} onDraftCancel={() => setDraftTrip(undefined)} busy={busy || tripProfileBusy} />
+      {tripBlockAssignmentStatus && <p className="section-status" role="status">{tripBlockAssignmentStatus}</p>}
+      <ScheduleTable trips={trips} previewTrips={shiftPreview?.shiftedTrips} stagedShiftSeconds={shiftPreview?.netOffsetSeconds} draft={draftTrip} patterns={patterns} direction={directions.find((direction) => directionId === direction.id)!} nodes={aggregate.nodes} blockAssignments={tripBlockByTripId} blockOptions={tripBlockOptions} blockAssignmentDisabled={busy || tripProfileBusy || tripBlockingBlocksBusy || shiftOperations.length > 0 || shiftDrawerOpen || Boolean(tripBlockAssignment)} onAssignBlock={(trip, blockId, trigger) => openTripBlockAssignment([trip.id], blockId, 'pill', trigger)} onUnassignBlock={(trip, trigger) => openTripBlockAssignment([trip.id], '', 'pill', trigger, 'unassign')} selectedIds={selectedTripIds} changedRuntimeTripIds={changedRuntimeTripIds} onToggle={(id, index, shiftKey) => requestShiftScopeChange(() => {
+        setSelectedTripIds((current) => {
+          const anchorIndex = selectionAnchorId.current ? trips.findIndex((trip) => trip.id === selectionAnchorId.current) : -1;
+          if (shiftKey && anchorIndex >= 0) {
+            const start = Math.min(anchorIndex, index); const end = Math.max(anchorIndex, index);
+            return [...new Set([...current, ...trips.slice(start, end + 1).map((trip) => trip.id)])];
+          }
+          selectionAnchorId.current = id;
+          return current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
+        });
+      })} onSelectAll={(selected) => requestShiftScopeChange(() => { selectionAnchorId.current = undefined; setSelectedTripIds(selected ? trips.map((trip) => trip.id) : []); })} onDelete={(trip) => requestShiftScopeChange(() => void requestTripDeletion([trip.id]))} onPatternChange={(trip, targetPatternId) => requestShiftScopeChange(() => void changeTripPattern(trip, targetPatternId))} onDraftChange={setDraftTrip} onDraftSave={() => void saveDraftTrip()} onDraftCancel={() => setDraftTrip(undefined)} busy={busy || tripProfileBusy} />
     </section>
     {shiftDrawerOpen && <aside className="shift-drawer" role="complementary" aria-labelledby="shift-drawer-title"><header><h2 id="shift-drawer-title">Shift selected Trips</h2><button className="icon-button" type="button" aria-label="Close Shift drawer" title="Close Shift drawer" onClick={requestCloseShiftDrawer} disabled={busy}>×</button></header><div className="shift-drawer-body"><div className="shift-drawer-controls"><button type="button" disabled={!canShiftSelectedTrips || busy || tripProfileBusy} onClick={() => appendStagedShift(-parsedShiftMinutes * 60)}>− Back</button><label><span className="visually-hidden">Shift minutes</span><input aria-label="Shift minutes" type="number" min="1" step="1" inputMode="numeric" value={shiftMinutes} disabled={tripProfileBusy || busy} onChange={(event) => setShiftMinutes(event.target.value)} /></label><button type="button" disabled={!canShiftSelectedTrips || busy || tripProfileBusy} onClick={() => appendStagedShift(parsedShiftMinutes * 60)}>+ Forward</button></div><div className="shift-drawer-history"><button type="button" disabled={!shiftOperations.length || busy} onClick={() => { const undone = shiftOperations.at(-1)!; void reviewStagedShift(shiftOperations.slice(0, -1)); setRedoShiftOperations((current) => [...current, undone]); }}>Undo</button><button type="button" disabled={!redoShiftOperations.length || busy} onClick={() => { const restored = redoShiftOperations.at(-1)!; setRedoShiftOperations((current) => current.slice(0, -1)); void reviewStagedShift([...shiftOperations, restored]); }}>Redo</button></div><p className="shift-drawer-summary" role="status">{shiftPreview?.selectedTripIds.length ?? selectedTripIds.length} selected · {netShiftLabel}</p>{shiftError && <p className="field-error" role="alert">{shiftError}</p>}</div><footer><button type="button" onClick={() => discardStagedShift()} disabled={busy}>Discard</button><button className="primary" type="button" onClick={() => void completeStagedShift()} disabled={busy || Boolean(shiftError)}>{busy ? 'Saving…' : 'Done'}</button></footer></aside>}
+    {tripBlockAssignment?.operation === 'assign' && <TripBlockAssignmentDialog draft={tripBlockAssignment} blockingScenarioName={selectedBlockingScenario?.name ?? 'Blocking Scenario'} serviceDayName={selectedDay?.name ?? 'selected service day'} blocks={dayBlockingBlocks} blockOptions={tripBlockOptions} currentAssignments={tripBlockByTripId} onConfirm={(destinationId) => void confirmTripBlockAssignment(destinationId)} onClose={closeTripBlockAssignment} busy={busy} error={tripBlockAssignmentError} />}
+    {tripBlockAssignment?.operation === 'unassign' && <TripBlockUnassignmentDialog draft={tripBlockAssignment} blockingScenarioName={selectedBlockingScenario?.name ?? 'Blocking Scenario'} serviceDayName={selectedDay?.name ?? 'selected service day'} blocks={dayBlockingBlocks} currentAssignments={tripBlockByTripId} onConfirm={() => void confirmTripBlockAssignment('')} onClose={closeTripBlockAssignment} busy={busy} error={tripBlockAssignmentError} />}
     {shiftDiscardAction && <ShiftDiscardDialog onDiscard={() => discardStagedShift(shiftDiscardAction)} onCancel={() => setShiftDiscardAction(undefined)} />}
     {runtimeDialog && <RuntimeProfileDialog2 dialog={runtimeDialog} candidates={reverseCandidates} onSubmit={submitRuntimeDialog} onClose={() => setRuntimeDialog(undefined)} />}
     {deleteProfileOpen && selectedProfile && profileDeletionImpact && <DeleteRuntimeProfileDialog profile={selectedProfile} profiles={profiles} assignmentCount={profileDeletionImpact.assignmentCount} tripCount={profileDeletionImpact.tripCount} onDelete={deleteProfile} onClose={() => { setDeleteProfileOpen(false); setProfileDeletionImpact(undefined); }} />}
-    {buildOpen && <BuildTripsDialog tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} serviceDayId={serviceDayId} tripProfileId={tripProfileId} patterns={patterns} profileName={selectedProfile?.name} onDone={async () => { setBuildOpen(false); clearTripShiftHistory(); await loadTrips(); }} onClose={() => setBuildOpen(false)} onError={onError} />}
+    {buildOpen && <BuildTripsDrawer tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} serviceDayId={serviceDayId} tripProfileId={tripProfileId} patterns={patterns} profileName={selectedProfile?.name} onDone={async () => { closeBuildDrawer(); clearTripShiftHistory(); await loadTrips(); }} onClose={closeBuildDrawer} />}
     {tripDeletion && <DeleteTripsDialog tripCount={tripDeletion.tripIds.length} affectedBlockCount={tripDeletion.affectedBlockIds.length} onDelete={() => void deleteTrips()} onClose={() => setTripDeletion(undefined)} busy={busy} />}
     {runtimeCopyOpen && selectedDay && <RuntimeDayCopyDialog tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} routeName={aggregate.route.name || 'Untitled route'} targetDay={selectedDay} days={days} patterns={aggregate.patterns.filter((pattern) => pattern.points.length >= 2)} onDone={completeRuntimeCopy} onClose={closeRuntimeCopy} onError={onError} />}
     {tripCopyOpen && selectedDay && <TripDayCopyDialog tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} tripProfileId={tripProfileId} routeName={aggregate.route.name || 'Untitled route'} tripProfileName={(records.tripProfiles ?? []).find((profile) => profile.id === tripProfileId)?.name || 'Trip profile'} targetDay={selectedDay} days={days} patterns={aggregate.patterns} onDone={completeTripCopy} onClose={closeTripCopy} onError={onError} />}
@@ -913,19 +1046,33 @@ function TripsWorkspace({ service, tripService, aggregate, records, serviceDayId
 
 const RuntimeEditor2 = forwardRef<RuntimeEditorHandle, { service: RouteDefinitionApplication; profile: RuntimeProfile; pattern: RoutePattern; nodes: Node[]; onStateChange: (state: RuntimeEditorState) => void; onSaved: () => Promise<void>; onError: (error: unknown) => void }>(function RuntimeEditor2({ service, profile, pattern, nodes, onStateChange, onSaved, onError }, ref) {
   const [draft, setDraft] = useState(profile); const [findings, setFindings] = useState<ValidationFinding[]>([]); const [saving, setSaving] = useState(false);
-  useEffect(() => { setDraft(profile); setFindings([]); }, [profile]);
+  const profileSignature = JSON.stringify(profile);
+  const lastProfileSignature = useRef(profileSignature);
+  useEffect(() => {
+    if (lastProfileSignature.current === profileSignature) return;
+    lastProfileSignature.current = profileSignature;
+    setDraft(profile);
+    setFindings([]);
+  }, [profile, profileSignature]);
   const dirty = JSON.stringify(draft) !== JSON.stringify(profile);
   const nodeName = (id: string) => nodes.find((node) => node.id === id)?.shortName || nodes.find((node) => node.id === id)?.name || 'Unnamed point';
   const updateBand = (index: number, patch: Partial<RuntimeProfile['bands'][number]>) => setDraft((current) => ({ ...current, bands: current.bands.map((band, bandIndex) => bandIndex === index ? { ...band, ...patch } : band) }));
   const addBand = () => setDraft((current) => ({ ...current, bands: [...current.bands, { id: newId(), label: 'Time period', sequence: current.bands.length, startTime: 0, endTime: 0, segmentRuntimeSeconds: Array(Math.max(0, pattern.points.length - 1)).fill(0) }] }));
+  const duplicateBand = (index: number) => setDraft((current) => {
+    const source = current.bands[index];
+    if (!source) return current;
+    const copy = { ...source, id: newId(), segmentRuntimeSeconds: [...source.segmentRuntimeSeconds] };
+    const bands = [...current.bands.slice(0, index + 1), copy, ...current.bands.slice(index + 1)];
+    return { ...current, bands: bands.map((band, sequence) => ({ ...band, sequence })) };
+  });
   const discard = () => { setDraft(profile); setFindings([]); };
   async function save() { const nextFindings = await service.validateRuntimeProfile(draft, pattern); setFindings(nextFindings); if (nextFindings.some((finding) => finding.severity === 'error')) return; setSaving(true); try { await service.saveRuntimeProfile(draft); await onSaved(); } catch (error) { onError(error); } finally { setSaving(false); } }
   useImperativeHandle(ref, () => ({ addBand, discard, save: () => void save() }), [draft, profile, pattern]);
   useEffect(() => onStateChange({ dirty, saving }), [dirty, saving, onStateChange]);
-  return <div className="runtime-editor"><div className="table-scroll data-grid runtime-table"><table><thead><tr><th>From</th><th>To</th>{pattern.points.slice(1).map((point, index) => <th key={point.id}><span className="segment-header">{nodeName(pattern.points[index].nodeId)} → {nodeName(point.nodeId)}</span></th>)}<th><span className="visually-hidden">Remove time band</span></th></tr></thead><tbody>{draft.bands.map((band, bandIndex) => <tr key={band.id} className={findings.some((finding) => finding.parameters?.bandId === band.id || finding.parameters?.previousBandId === band.id) ? 'runtime-row-error' : undefined}><td><RuntimeTimeInput label={`Time band ${bandIndex + 1} start`} value={band.startTime} onCommit={(value) => updateBand(bandIndex, { startTime: value })} /></td><td><RuntimeTimeInput label={`Time band ${bandIndex + 1} end`} value={band.endTime} onCommit={(value) => updateBand(bandIndex, { endTime: value })} /></td>{band.segmentRuntimeSeconds.map((value, segmentIndex) => <td key={`${band.id}-${segmentIndex}`}><RuntimeTimeInput label={`Time band ${bandIndex + 1} segment ${segmentIndex + 1}`} value={value} duration onCommit={(next) => updateBand(bandIndex, { segmentRuntimeSeconds: band.segmentRuntimeSeconds.map((item, index) => index === segmentIndex ? next : item) })} /></td>)}<td><button className="icon-button icon-button--danger" onClick={() => setDraft((current) => ({ ...current, bands: current.bands.filter((_, index) => index !== bandIndex).map((item, sequence) => ({ ...item, sequence })) }))} aria-label="Remove time band"><TrashIcon /></button></td></tr>)}{draft.bands.length === 0 && <tr><td colSpan={pattern.points.length + 2} className="table-empty">Add a time band to enter runtimes.</td></tr>}</tbody></table></div>{findings.length > 0 && <p className="field-error" role="alert">{[...new Set(findings.map(userMessage))].join(' ')}</p>}</div>;
+  return <div className="runtime-editor"><div className="table-scroll data-grid runtime-table"><table><thead><tr><th>From</th><th>To</th>{pattern.points.slice(1).map((point, index) => <th key={point.id}><span className="segment-header">{nodeName(pattern.points[index].nodeId)} → {nodeName(point.nodeId)}</span></th>)}<th className="runtime-total-heading">Total</th><th><span className="visually-hidden">Time band actions</span></th></tr></thead><tbody>{draft.bands.map((band, bandIndex) => <tr key={band.id} className={findings.some((finding) => finding.parameters?.bandId === band.id || finding.parameters?.previousBandId === band.id) ? 'runtime-row-error' : undefined}><td><RuntimeTimeInput label={`Time band ${bandIndex + 1} start`} value={band.startTime} onCommit={(value) => updateBand(bandIndex, { startTime: value })} /></td><td><RuntimeTimeInput label={`Time band ${bandIndex + 1} end`} value={band.endTime} onCommit={(value) => updateBand(bandIndex, { endTime: value })} /></td>{band.segmentRuntimeSeconds.map((value, segmentIndex) => <td key={`${band.id}-${segmentIndex}`}><RuntimeTimeInput label={`Time band ${bandIndex + 1} segment ${segmentIndex + 1}`} value={value} duration onCommit={(next) => updateBand(bandIndex, { segmentRuntimeSeconds: band.segmentRuntimeSeconds.map((item, index) => index === segmentIndex ? next : item) })} /></td>)}<td className="runtime-total">{formatRuntimeDuration(runtimeBandTotalSeconds(band))}</td><td><div className="row-actions"><button className="icon-button" onClick={() => duplicateBand(bandIndex)} aria-label={`Duplicate time band ${bandIndex + 1}`} title="Duplicate time band"><CopyIcon /></button><button className="icon-button icon-button--danger" onClick={() => setDraft((current) => ({ ...current, bands: current.bands.filter((_, index) => index !== bandIndex).map((item, sequence) => ({ ...item, sequence })) }))} aria-label={`Remove time band ${bandIndex + 1}`} title="Remove time band"><TrashIcon /></button></div></td></tr>)}{draft.bands.length === 0 && <tr><td colSpan={pattern.points.length + 3} className="table-empty">Add a time band to enter runtimes.</td></tr>}</tbody></table></div>{findings.length > 0 && <p className="field-error" role="alert">{[...new Set(findings.map(userMessage))].join(' ')}</p>}</div>;
 });
 
-function ScheduleTable({ trips, previewTrips, stagedShiftSeconds, draft, patterns, direction, nodes, selectedIds, changedRuntimeTripIds, onToggle, onSelectAll, onDelete, onPatternChange, onDraftChange, onDraftSave, onDraftCancel, busy }: { trips: Trip[]; previewTrips?: Trip[]; stagedShiftSeconds?: number; draft?: { patternId: string; firstTrip: string }; patterns: RoutePattern[]; direction: NonNullable<RouteDefinitionAggregate['directions']>[number]; nodes: Node[]; selectedIds: string[]; changedRuntimeTripIds: Set<string>; onToggle: (id: string) => void; onSelectAll: (selected: boolean) => void; onDelete: (trip: Trip) => void; onPatternChange: (trip: Trip, patternId: string) => void; onDraftChange: (draft: { patternId: string; firstTrip: string }) => void; onDraftSave: () => void; onDraftCancel: () => void; busy: boolean }) {
+function ScheduleTable({ trips, previewTrips, stagedShiftSeconds, draft, patterns, direction, nodes, blockAssignments, blockOptions, blockAssignmentDisabled, onAssignBlock, onUnassignBlock, selectedIds, changedRuntimeTripIds, onToggle, onSelectAll, onDelete, onPatternChange, onDraftChange, onDraftSave, onDraftCancel, busy }: { trips: Trip[]; previewTrips?: Trip[]; stagedShiftSeconds?: number; draft?: { patternId: string; firstTrip: string }; patterns: RoutePattern[]; direction: NonNullable<RouteDefinitionAggregate['directions']>[number]; nodes: Node[]; blockAssignments: Map<string, BlockingBlock>; blockOptions: TripBlockOption[]; blockAssignmentDisabled: boolean; onAssignBlock: (trip: Trip, blockId: string, trigger: HTMLButtonElement | null) => void; onUnassignBlock: (trip: Trip, trigger: HTMLButtonElement | null) => void; selectedIds: string[]; changedRuntimeTripIds: Set<string>; onToggle: (id: string, index: number, shiftKey: boolean) => void; onSelectAll: (selected: boolean) => void; onDelete: (trip: Trip) => void; onPatternChange: (trip: Trip, patternId: string) => void; onDraftChange: (draft: { patternId: string; firstTrip: string }) => void; onDraftSave: () => void; onDraftCancel: () => void; busy: boolean }) {
   const columns = [...direction.columns].sort((left, right) => left.sequence - right.sequence);
   const pointFor = (pattern: RoutePattern, columnId: string) => pattern.points.find((point) => point.directionColumnId === columnId);
   const duplicateKeys = new Set(trips.filter((trip, _, all) => all.filter((item) => item.patternId === trip.patternId && item.stopTimes[0]?.time === trip.stopTimes[0]?.time).length > 1).map((trip) => `${trip.patternId}:${trip.stopTimes[0]?.time}`));
@@ -933,22 +1080,120 @@ function ScheduleTable({ trips, previewTrips, stagedShiftSeconds, draft, pattern
   const previewById = new Map((previewTrips ?? []).map((trip) => [trip.id, trip]));
   const allTripsSelected = trips.length > 0 && trips.every((trip) => selectedIds.includes(trip.id));
   const stagedLabel = stagedShiftSeconds === undefined || stagedShiftSeconds === 0 ? undefined : `Staged ${Math.abs(stagedShiftSeconds / 60)} minute${Math.abs(stagedShiftSeconds) === 60 ? '' : 's'} ${stagedShiftSeconds < 0 ? 'earlier' : 'later'}`;
-  return <div className="table-scroll data-grid schedule-table"><table><thead><tr><th className="trip-selection-column"><input type="checkbox" aria-label="Select all trips" checked={allTripsSelected} disabled={busy} onChange={(event) => onSelectAll(event.target.checked)} /></th><th className="trip-pattern-column">Pattern</th>{columns.map((column) => <th className="trip-timepoint-column" key={column.id}>{columnName(column)}</th>)}<th className="trip-actions-column"><span className="visually-hidden">Actions</span></th></tr></thead><tbody>{draft && <DraftTripRow draft={draft} patterns={patterns} columns={columns} onChange={onDraftChange} onSave={onDraftSave} onCancel={onDraftCancel} busy={busy} />}{trips.map((savedTrip) => { const trip = previewById.get(savedTrip.id) ?? savedTrip; const pattern = patterns.find((item) => item.id === trip.patternId); const duplicate = duplicateKeys.has(`${savedTrip.patternId}:${savedTrip.stopTimes[0]?.time}`); const runtimesChanged = changedRuntimeTripIds.has(trip.id); const staged = previewById.has(trip.id) && stagedLabel; const rowClass = [selectedIds.includes(trip.id) && 'trip-row-selected', runtimesChanged && 'trip-row-runtime-changed', staged && 'trip-row-staged-shift'].filter(Boolean).join(' ') || undefined; return <tr key={trip.id} className={rowClass}><td className="trip-selection-column"><input type="checkbox" aria-label={`Select ${pattern?.name || 'trip'}`} checked={selectedIds.includes(trip.id)} disabled={busy} onChange={() => onToggle(trip.id)} /></td><td className="trip-pattern-column"><select className="trip-pattern-select" aria-label="Trip pattern" title={pattern?.name} value={trip.patternId} disabled={busy} onChange={(event) => void onPatternChange(savedTrip, event.target.value)}>{patterns.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{runtimesChanged && <span className="runtime-changed-note">Run times changed</span>}{staged && <span className="staged-shift-note">{staged}</span>}{duplicate && <span className="duplicate-note">Duplicate departure</span>}</td>{columns.map((column) => { const point = pattern ? pointFor(pattern, column.id) : undefined; const time = point && trip.stopTimes.find((item) => item.patternPointId === point.id)?.time; return <td className="trip-timepoint-column" key={column.id}>{time === undefined ? '—' : formatServiceTime(time)}</td>; })}<td className="trip-actions-column"><button className="icon-button icon-button--danger" disabled={busy} onClick={() => onDelete(savedTrip)} aria-label="Delete trip" title="Delete trip"><TrashIcon /></button></td></tr>; })}{!trips.length && !draft && <tr><td colSpan={columns.length + 3} className="table-empty">Use Build Trips or Add Trip to begin this schedule.</td></tr>}</tbody></table></div>;
+  return <div className="table-scroll data-grid schedule-table"><table><thead><tr><th className="trip-selection-column"><input type="checkbox" aria-label="Select all trips" checked={allTripsSelected} disabled={busy} onChange={(event) => onSelectAll(event.target.checked)} /></th><th className="trip-pattern-column">Pattern</th>{columns.map((column) => <th className="trip-timepoint-column" key={column.id}>{columnName(column)}</th>)}<th className="trip-block-column">Block</th><th className="trip-actions-column"><span className="visually-hidden">Actions</span></th></tr></thead><tbody>{draft && <DraftTripRow draft={draft} patterns={patterns} columns={columns} onChange={onDraftChange} onSave={onDraftSave} onCancel={onDraftCancel} busy={busy} />}{trips.map((savedTrip, tripIndex) => { const trip = previewById.get(savedTrip.id) ?? savedTrip; const pattern = patterns.find((item) => item.id === trip.patternId); const duplicate = duplicateKeys.has(`${savedTrip.patternId}:${savedTrip.stopTimes[0]?.time}`); const runtimesChanged = changedRuntimeTripIds.has(trip.id); const staged = previewById.has(savedTrip.id) && stagedLabel; const assignedBlock = blockAssignments.get(savedTrip.id); const rowClass = [selectedIds.includes(trip.id) && 'trip-row-selected', runtimesChanged && 'trip-row-runtime-changed', staged && 'trip-row-staged-shift'].filter(Boolean).join(' ') || undefined; return <tr key={trip.id} className={rowClass}><td className="trip-selection-column"><input type="checkbox" aria-label={`Select ${pattern?.name || 'trip'}`} checked={selectedIds.includes(trip.id)} disabled={busy} onClick={(event) => onToggle(trip.id, tripIndex, event.shiftKey)} /></td><td className="trip-pattern-column"><select className="trip-pattern-select" aria-label="Trip pattern" title={pattern?.name} value={trip.patternId} disabled={busy} onChange={(event) => void onPatternChange(savedTrip, event.target.value)}>{patterns.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{runtimesChanged && <span className="runtime-changed-note">Run times changed</span>}{staged && <span className="staged-shift-note">{staged}</span>}{duplicate && <span className="duplicate-note">Duplicate departure</span>}</td>{columns.map((column) => { const point = pattern ? pointFor(pattern, column.id) : undefined; const time = point && trip.stopTimes.find((item) => item.patternPointId === point.id)?.time; return <td className="trip-timepoint-column" key={column.id}>{time === undefined ? '—' : formatServiceTime(time)}</td>; })}<td className="trip-block-column"><TripBlockAssignmentControl trip={savedTrip} patternName={pattern?.name || 'Trip'} assignedBlock={assignedBlock} options={blockOptions} disabled={blockAssignmentDisabled} onChoose={(blockId, trigger) => onAssignBlock(savedTrip, blockId, trigger)} onUnassign={(trigger) => onUnassignBlock(savedTrip, trigger)} /></td><td className="trip-actions-column"><button className="icon-button icon-button--danger" disabled={busy} onClick={() => onDelete(savedTrip)} aria-label="Delete trip" title="Delete trip"><TrashIcon /></button></td></tr>; })}{!trips.length && !draft && <tr><td colSpan={columns.length + 4} className="table-empty">Use Build Trips or Add Trip to begin this schedule.</td></tr>}</tbody></table></div>;
+}
+
+function TripBlockAssignmentControl({ trip, patternName, assignedBlock, options, disabled, onChoose, onUnassign }: { trip: Trip; patternName: string; assignedBlock?: BlockingBlock; options: TripBlockOption[]; disabled: boolean; onChoose: (blockId: string, trigger: HTMLButtonElement | null) => void; onUnassign: (trigger: HTMLButtonElement | null) => void }) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  if (!options.length) return assignedBlock ? <span className={blockPillClass(assignedBlock.label)}>{assignedBlock.label}</span> : <span className="trip-block-unassigned">Unassigned</span>;
+  const departure = trip.stopTimes[0]?.time;
+  const label = assignedBlock?.label ?? 'Unassigned';
+  const groups: MenuGroup[] = [{ label: 'Available Blocks', items: options.map((option) => ({
+    id: option.id,
+    label: option.label,
+    checked: option.id === assignedBlock?.id,
+    disabled: disabled || option.disabled || option.id === assignedBlock?.id,
+    title: option.disabled ? option.reason : option.id === assignedBlock?.id ? 'This Trip is already in this Block.' : undefined,
+    restoreFocus: false,
+    onSelect: () => onChoose(option.id, triggerRef.current),
+  })) }, ...(assignedBlock ? [{ items: [{ id: 'unassign', label: 'Unassign from Block', destructive: true, disabled, restoreFocus: false, onSelect: () => onUnassign(triggerRef.current) }] }] : [])];
+  return <MenuButton label={label} menuLabel={`Block assignment for ${patternName} Trip`} groups={groups} disabled={disabled} selectionStyle="highlight" triggerRef={triggerRef} triggerClassName={`trip-block-assignment-trigger ${assignedBlock ? blockPillClass(assignedBlock.label) : 'trip-block-unassigned-trigger'}`} triggerAriaLabel={`Block assignment for ${patternName} Trip departing ${departure === undefined ? 'unknown time' : formatServiceTime(departure)}: ${label}`} />;
+}
+
+function TripBlockAssignmentDialog({ draft, blockingScenarioName, serviceDayName, blocks, blockOptions, currentAssignments, onConfirm, onClose, busy, error }: { draft: TripBlockAssignmentDraft; blockingScenarioName: string; serviceDayName: string; blocks: BlockingBlock[]; blockOptions: TripBlockOption[]; currentAssignments: Map<string, BlockingBlock>; onConfirm: (destinationBlockId: string) => void; onClose: () => void; busy: boolean; error: string }) {
+  const [destinationBlockId, setDestinationBlockId] = useState(draft.destinationBlockId);
+  const destination = blocks.find((block) => block.id === destinationBlockId);
+  const assignedElsewhereCount = draft.tripIds.filter((id) => currentAssignments.has(id) && currentAssignments.get(id)?.id !== destinationBlockId).length;
+  const unassignedCount = draft.tripIds.filter((id) => !currentAssignments.has(id)).length;
+  const alreadyThereCount = draft.tripIds.filter((id) => currentAssignments.get(id)?.id === destinationBlockId).length;
+  const movedIds = new Set(draft.tripIds.filter((id) => currentAssignments.get(id)?.id !== destinationBlockId));
+  const deadheadCount = blocks.filter((block) => block.id !== destinationBlockId).reduce((count, block) => {
+    const activities = [...block.activities].sort((left, right) => left.sequence - right.sequence || left.id.localeCompare(right.id));
+    return count + activities.filter((activity, index) => {
+      if (activity.type !== 'deadhead') return false;
+      const previous = [...activities.slice(0, index)].reverse().find((candidate) => candidate.type === 'revenueTrip');
+      const next = activities.slice(index + 1).find((candidate) => candidate.type === 'revenueTrip');
+      return (previous?.type === 'revenueTrip' && movedIds.has(previous.tripId)) || (next?.type === 'revenueTrip' && movedIds.has(next.tripId));
+    }).length;
+  }, 0);
+  const unavailable = blockOptions.find((option) => option.id === destinationBlockId && option.disabled);
+  const canSubmit = Boolean(destination && !unavailable && movedIds.size > 0 && !busy);
+  const title = draft.source === 'pill' ? (assignedElsewhereCount ? 'Move Trip to another Block?' : 'Assign Trip to Block?') : `Assign ${draft.tripIds.length} selected Trip${draft.tripIds.length === 1 ? '' : 's'}?`;
+  const confirmLabel = draft.source === 'pill' ? (assignedElsewhereCount ? 'Move Trip' : 'Assign Trip') : `Assign ${draft.tripIds.length} Trip${draft.tripIds.length === 1 ? '' : 's'}`;
+  return <div className="modal-backdrop" role="presentation"><section className="confirm-dialog trip-block-assignment-dialog" role="alertdialog" aria-modal="true" aria-labelledby="trip-block-assignment-title" tabIndex={-1} onKeyDown={(event) => { if (event.key === 'Escape' && !busy) onClose(); }}>
+    <h2 id="trip-block-assignment-title">{title}</h2>
+    <p className="trip-block-assignment-context">{blockingScenarioName} · {serviceDayName}</p>
+    {draft.source === 'actions' ? <label className="dialog-field">Destination Block<select autoFocus value={destinationBlockId} onChange={(event) => setDestinationBlockId(event.target.value)} disabled={busy}><option value="">Choose a Block</option>{blockOptions.map((option) => <option key={option.id} value={option.id} disabled={option.disabled}>{option.label}{option.disabled ? ' — unavailable' : ''}</option>)}</select></label> : <p>Destination Block: <strong>{destination?.label ?? 'Unavailable'}</strong></p>}
+    {(assignedElsewhereCount > 0 || unassignedCount > 0 || alreadyThereCount > 0) && <p>{assignedElsewhereCount > 0 ? `${assignedElsewhereCount} selected Trip${assignedElsewhereCount === 1 ? ' is' : 's are'} currently in another Block and will be moved.` : ''}{unassignedCount > 0 ? ` ${unassignedCount} unassigned Trip${unassignedCount === 1 ? '' : 's'} will be assigned.` : ''}{alreadyThereCount > 0 ? ` ${alreadyThereCount} Trip${alreadyThereCount === 1 ? ' is' : 's are'} already in this Block and will stay there.` : ''}</p>}
+    {deadheadCount > 0 && <p>{deadheadCount} adjacent deadhead activit{deadheadCount === 1 ? 'y will' : 'ies will'} be removed from source Blocks. Pull-outs and pull-ins remain in their original Blocks.</p>}
+    {unavailable && <p className="field-error" role="alert">{unavailable.reason}</p>}
+    {error && <p className="field-error" role="alert">{error}</p>}
+    <div className="dialog-actions"><button autoFocus={draft.source === 'pill'} type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="primary" type="button" onClick={() => destinationBlockId && onConfirm(destinationBlockId)} disabled={!canSubmit}>{busy ? 'Saving…' : confirmLabel}</button></div>
+  </section></div>;
+}
+
+function TripBlockUnassignmentDialog({ draft, blockingScenarioName, serviceDayName, blocks, currentAssignments, onConfirm, onClose, busy, error }: { draft: TripBlockAssignmentDraft; blockingScenarioName: string; serviceDayName: string; blocks: BlockingBlock[]; currentAssignments: Map<string, BlockingBlock>; onConfirm: () => void; onClose: () => void; busy: boolean; error: string }) {
+  const assignedTripIds = draft.tripIds.filter((id) => currentAssignments.has(id));
+  const alreadyUnassignedCount = draft.tripIds.length - assignedTripIds.length;
+  const selected = new Set(assignedTripIds);
+  const sourceBlockLabels = [...new Set(assignedTripIds.map((id) => currentAssignments.get(id)?.label).filter((label): label is string => Boolean(label)))];
+  const deadheadCount = blocks.reduce((count, block) => {
+    const activities = [...block.activities].sort((left, right) => left.sequence - right.sequence || left.id.localeCompare(right.id));
+    return count + activities.filter((activity, index) => {
+      if (activity.type !== 'deadhead') return false;
+      const previous = [...activities.slice(0, index)].reverse().find((candidate) => candidate.type === 'revenueTrip');
+      const next = activities.slice(index + 1).find((candidate) => candidate.type === 'revenueTrip');
+      return (previous?.type === 'revenueTrip' && selected.has(previous.tripId)) || (next?.type === 'revenueTrip' && selected.has(next.tripId));
+    }).length;
+  }, 0);
+  const title = draft.source === 'pill' ? 'Unassign Trip from Block?' : 'Unassign selected Trips?';
+  const confirmLabel = draft.source === 'pill' ? 'Unassign Trip' : `Unassign ${assignedTripIds.length} Trip${assignedTripIds.length === 1 ? '' : 's'}`;
+  return <div className="modal-backdrop" role="presentation"><section className="confirm-dialog trip-block-assignment-dialog" role="alertdialog" aria-modal="true" aria-labelledby="trip-block-unassignment-title" tabIndex={-1} onKeyDown={(event) => { if (event.key === 'Escape' && !busy) onClose(); }}>
+    <h2 id="trip-block-unassignment-title">{title}</h2>
+    <p className="trip-block-assignment-context">{blockingScenarioName} · {serviceDayName}</p>
+    <p>{assignedTripIds.length} selected Trip{assignedTripIds.length === 1 ? '' : 's'} in {sourceBlockLabels.length ? sourceBlockLabels.map((label) => `“${label}”`).join(', ') : 'the selected Blocks'} will become unassigned.</p>
+    {alreadyUnassignedCount > 0 && <p>{alreadyUnassignedCount} selected Trip{alreadyUnassignedCount === 1 ? ' is' : 's are'} already unassigned and will remain so.</p>}
+    {deadheadCount > 0 && <p>{deadheadCount} adjacent deadhead activit{deadheadCount === 1 ? 'y will' : 'ies will'} be removed. Pull-outs and pull-ins remain in their Blocks.</p>}
+    {error && <p className="field-error" role="alert">{error}</p>}
+    <div className="dialog-actions"><button autoFocus type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="primary" type="button" onClick={onConfirm} disabled={!assignedTripIds.length || busy}>{busy ? 'Saving…' : confirmLabel}</button></div>
+  </section></div>;
 }
 
 function DraftTripRow({ draft, patterns, columns, onChange, onSave, onCancel, busy }: { draft: { patternId: string; firstTrip: string }; patterns: RoutePattern[]; columns: NonNullable<RouteDefinitionAggregate['directions']>[number]['columns']; onChange: (draft: { patternId: string; firstTrip: string }) => void; onSave: () => void; onCancel: () => void; busy: boolean }) {
   const pattern = patterns.find((item) => item.id === draft.patternId); const firstPoint = pattern?.points.find((point) => point.directionColumnId && columns.some((column) => column.id === point.directionColumnId));
-  return <tr className="draft-trip-row"><td className="trip-selection-column" aria-hidden="true" /><td className="trip-pattern-column"><select className="trip-pattern-select" autoFocus aria-label="New trip pattern" title={pattern?.name || 'Select a pattern'} value={draft.patternId} disabled={busy} onChange={(event) => onChange({ ...draft, patternId: event.target.value })}><option value="">Select pattern</option>{patterns.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></td>{columns.map((column) => <td className="trip-timepoint-column" key={column.id}>{firstPoint?.directionColumnId === column.id ? <input className="time-input" aria-label="First trip time" value={draft.firstTrip} placeholder="06:00" disabled={busy} onChange={(event) => onChange({ ...draft, firstTrip: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') onSave(); if (event.key === 'Escape') onCancel(); }} /> : '—'}</td>)}<td className="trip-actions-column"><div className="row-actions"><button className="primary" disabled={!draft.patternId || !draft.firstTrip.trim() || busy} onClick={onSave}>Save</button><button disabled={busy} onClick={onCancel}>Cancel</button></div></td></tr>;
+  return <tr className="draft-trip-row"><td className="trip-selection-column" aria-hidden="true" /><td className="trip-pattern-column"><select className="trip-pattern-select" autoFocus aria-label="New trip pattern" title={pattern?.name || 'Select a pattern'} value={draft.patternId} disabled={busy} onChange={(event) => onChange({ ...draft, patternId: event.target.value })}><option value="">Select pattern</option>{patterns.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></td>{columns.map((column) => <td className="trip-timepoint-column" key={column.id}>{firstPoint?.directionColumnId === column.id ? <input className="time-input" aria-label="First trip time" value={draft.firstTrip} placeholder="06:00" disabled={busy} onChange={(event) => onChange({ ...draft, firstTrip: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') onSave(); if (event.key === 'Escape') onCancel(); }} /> : '—'}</td>)}<td className="trip-block-column">Unassigned</td><td className="trip-actions-column"><div className="row-actions"><button className="primary" disabled={!draft.patternId || !draft.firstTrip.trim() || busy} onClick={onSave}>Save</button><button disabled={busy} onClick={onCancel}>Cancel</button></div></td></tr>;
 }
 
-function BuildTripsDialog({ tripService, scenarioId, routeId, serviceDayId, tripProfileId, patterns, profileName, onDone, onClose, onError }: { tripService: TripGenerationApplication; scenarioId: string; routeId: string; serviceDayId: string; tripProfileId: string; patterns: RoutePattern[]; profileName?: string; onDone: () => Promise<void>; onClose: () => void; onError: (error: unknown) => void }) {
-  const [patternId, setPatternId] = useState(patterns[0]?.id ?? ''); const [firstTrip, setFirstTrip] = useState(''); const [headway, setHeadway] = useState(''); const [lastTrip, setLastTrip] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!firstTrip.trim() || !headway.trim() || !lastTrip.trim()) { setError('Enter First Trip, Headway, and Last Trip.'); return; } try { const parsedHeadway = parseRuntimeDuration(headway); if (!parsedHeadway || parsedHeadway <= 0) throw new Error('Enter a positive headway.'); const request = { scenarioId, routeId, serviceDayId, patternId, tripProfileId, firstTrip: parseServiceTime(firstTrip), headwaySeconds: parsedHeadway, lastTrip: parseServiceTime(lastTrip) }; if (request.lastTrip < request.firstTrip) throw new Error('The last trip must not be before the first trip.'); setBusy(true); await tripService.previewGenerateTrips(request); await tripService.generateTrips(request); await onDone(); } catch (caught) { const text = caught instanceof Error && (caught.message.includes('last trip') || caught.message.includes('positive headway') || caught.message.includes('Invalid service time')) ? caught.message.includes('Invalid service time') ? 'Enter First Trip and Last Trip as times such as 6:30 or 25:00.' : caught.message : 'No run time defined for this time period.'; setError(text); if (!(caught instanceof TripGenerationError) && !String(caught instanceof Error ? caught.message : '').includes('Invalid service time') && !String(caught instanceof Error ? caught.message : '').includes('positive headway')) onError(caught); } finally { setBusy(false); } }
-  return <div className="modal-backdrop" role="presentation"><form className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="build-trips-title" onSubmit={(event) => void submit(event)}><h2 id="build-trips-title">Build Trips</h2><label className="dialog-field">Pattern<select value={patternId} onChange={(event) => setPatternId(event.target.value)}>{patterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label><ClockField label="First Trip" value={firstTrip} onChange={setFirstTrip} /><DurationField label="Headway" value={headway} onChange={setHeadway} /><ClockField label="Last Trip" value={lastTrip} onChange={setLastTrip} /><p>Runtime profile: {profileName ?? 'No runtime profile selected'}</p>{error && <p className="field-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="primary" type="submit" disabled={busy}>{busy ? 'Building…' : 'Build'}</button></div></form></div>;
+function BuildTripsDrawer({ tripService, scenarioId, routeId, serviceDayId, tripProfileId, patterns, profileName, onDone, onClose }: { tripService: TripGenerationApplication; scenarioId: string; routeId: string; serviceDayId: string; tripProfileId: string; patterns: RoutePattern[]; profileName?: string; onDone: () => Promise<void>; onClose: () => void }) {
+  const [patternId, setPatternId] = useState(''); const [firstTrip, setFirstTrip] = useState(''); const [headway, setHeadway] = useState(''); const [tripCount, setTripCount] = useState(''); const [lastTrip, setLastTrip] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
+  const buildingByCount = tripCount.trim() !== '';
+  const buildingByLastTrip = lastTrip.trim() !== '';
+  useEffect(() => { const handleEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) { event.preventDefault(); onClose(); } }; document.addEventListener('keydown', handleEscape); return () => document.removeEventListener('keydown', handleEscape); }, [busy, onClose]);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!patternId || !firstTrip.trim() || !headway.trim() || (!buildingByCount && !buildingByLastTrip)) { setError('Select a Pattern, then enter First Trip, Headway, and either Last Trip or Number of Trips.'); return; }
+    try {
+      const parsedHeadway = parseRuntimeDuration(headway);
+      if (!parsedHeadway || parsedHeadway <= 0) throw new Error('Enter a positive headway.');
+      const baseRequest = { scenarioId, routeId, serviceDayId, patternId, tripProfileId, firstTrip: parseServiceTime(firstTrip), headwaySeconds: parsedHeadway };
+      const request = buildingByCount
+        ? { ...baseRequest, tripCount: Number(tripCount) }
+        : { ...baseRequest, lastTrip: parseServiceTime(lastTrip) };
+      if ('lastTrip' in request && request.lastTrip < request.firstTrip) throw new Error('The last trip must not be before the first trip.');
+      if ('tripCount' in request && (!Number.isInteger(request.tripCount) || request.tripCount < 1 || request.tripCount > MAX_TRIPS_PER_GENERATION)) throw new Error(`Enter a whole number from 1 to ${MAX_TRIPS_PER_GENERATION}.`);
+      setBusy(true); await tripService.previewGenerateTrips(request); await tripService.generateTrips(request); await onDone();
+    } catch (caught) {
+      if (caught instanceof TripGenerationError) setError([...new Set(caught.findings.map(userMessage))].join(' '));
+      else if (caught instanceof Error && caught.message.includes('Invalid service time')) setError('Enter First Trip and Last Trip as times such as 6:30 or 25:00.');
+      else if (caught instanceof Error) setError(caught.message);
+      else setError('Unable to build trips.');
+    } finally { setBusy(false); }
+  }
+  return <aside className="shift-drawer build-trips-drawer" role="complementary" aria-labelledby="build-trips-drawer-title"><header><h2 id="build-trips-drawer-title">Build Trips</h2><button className="icon-button" type="button" aria-label="Close Build Trips drawer" title="Close Build Trips drawer" onClick={onClose} disabled={busy}>×</button></header><form className="build-trips-form" onSubmit={(event) => void submit(event)}><div className="shift-drawer-body"><label className="dialog-field">Pattern<select autoFocus value={patternId} disabled={busy} onChange={(event) => { setPatternId(event.target.value); setError(''); }}><option value="">Select pattern</option>{patterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label><ClockField label="First Trip" value={firstTrip} disabled={busy} onChange={(value) => { setFirstTrip(value); setError(''); }} /><DurationField label="Headway" value={headway} disabled={busy} onChange={(value) => { setHeadway(value); setError(''); }} /><label className="dialog-field">Number of Trips<input type="number" min="1" max={MAX_TRIPS_PER_GENERATION} step="1" inputMode="numeric" value={tripCount} disabled={busy || buildingByLastTrip} onChange={(event) => { setTripCount(event.target.value); setError(''); }} /></label><ClockField label="Last Trip" value={lastTrip} disabled={busy || buildingByCount} onChange={(value) => { setLastTrip(value); setError(''); }} /><p className="build-trips-profile">Runtime profile: {profileName ?? 'No runtime profile selected'}</p>{error && <p className="field-error" role="alert">{error}</p>}</div><footer><button type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="primary" type="submit" disabled={busy}>{busy ? 'Building…' : 'Build'}</button></footer></form></aside>;
 }
 
-function DurationField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="dialog-field">{label}<input value={value} inputMode="decimal" onChange={(event) => onChange(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') event.currentTarget.blur(); }} /></label>; }
-function ClockField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="dialog-field">{label}<input className="time-input" value={value} onChange={(event) => onChange(event.target.value)} /></label>; }
+function DurationField({ label, value, onChange, disabled = false }: { label: string; value: string; onChange: (value: string) => void; disabled?: boolean }) { return <label className="dialog-field">{label}<input value={value} inputMode="decimal" disabled={disabled} onChange={(event) => onChange(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') event.currentTarget.blur(); }} /></label>; }
+function ClockField({ label, value, onChange, disabled = false }: { label: string; value: string; onChange: (value: string) => void; disabled?: boolean }) { return <label className="dialog-field">{label}<input className="time-input" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} /></label>; }
 
 function RuntimeProfileDialog2({ dialog, candidates, onSubmit, onClose }: { dialog: Exclude<NewRuntimeDialog, undefined>; candidates: RoutePattern[]; onSubmit: (name: string, targetPatternId?: string) => Promise<void>; onClose: () => void }) { const [name, setName] = useState(dialog.initialName); const [targetPatternId, setTargetPatternId] = useState(candidates[0]?.id ?? ''); const [error, setError] = useState(''); const reverse = dialog.mode === 'reverse'; async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!name.trim() || (reverse && !targetPatternId)) { setError('Enter a name and select a pattern.'); return; } await onSubmit(name.trim(), reverse ? targetPatternId : undefined); } return <div className="modal-backdrop" role="presentation"><form className="confirm-dialog" role="dialog" aria-modal="true" onSubmit={(event) => void submit(event)}><h2>{dialog.mode === 'rename' ? 'Rename runtime profile' : dialog.mode === 'new' ? 'New runtime profile' : dialog.mode === 'reverse' ? 'Reverse-copy runtime profile' : 'Copy runtime profile'}</h2><label className="dialog-field">Name<input autoFocus value={name} onChange={(event) => { setName(event.target.value); setError(''); }} /></label>{reverse && <label className="dialog-field">Reverse pattern<select value={targetPatternId} onChange={(event) => setTargetPatternId(event.target.value)}>{candidates.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label>}{error && <p className="field-error">{error}</p>}<div className="dialog-actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">{dialog.mode === 'rename' ? 'Rename' : dialog.mode === 'new' ? 'Create' : 'Copy'}</button></div></form></div>; }
 function DeleteRuntimeProfileDialog({ profile, profiles, assignmentCount, tripCount, onDelete, onClose }: { profile: RuntimeProfile; profiles: RuntimeProfile[]; assignmentCount: number; tripCount: number; onDelete: (replacementProfileId?: string) => Promise<void>; onClose: () => void }) { const alternatives = profiles.filter((item) => item.id !== profile.id); const [replacement, setReplacement] = useState(alternatives[0]?.id ?? ''); const requiresReplacement = assignmentCount > 0; const blocked = tripCount > 0 || (requiresReplacement && !alternatives.length); return <div className="modal-backdrop" role="presentation"><section className="confirm-dialog" role="dialog" aria-modal="true"><h2>Delete runtime profile?</h2>{tripCount > 0 ? <p className="field-error">{tripCount} saved trip{tripCount === 1 ? '' : 's'} retain this profile as their run-time source. Delete or recalculate those trips before deleting this profile.</p> : requiresReplacement ? <><p>This profile is assigned to {assignmentCount} service-day pattern combination{assignmentCount === 1 ? '' : 's'}. Select a replacement profile.</p>{alternatives.length > 0 ? <label className="dialog-field">Replacement<select value={replacement} onChange={(event) => setReplacement(event.target.value)}>{alternatives.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : <p className="field-error">Create another profile before deleting this one.</p>}</> : <p>This profile is not assigned to service and is not used by a saved trip.</p>}<div className="dialog-actions"><button onClick={onClose}>Cancel</button><button className="subtle-danger" disabled={blocked} onClick={() => void onDelete(requiresReplacement ? replacement : undefined)}>Delete</button></div></section></div>; }
@@ -1005,7 +1250,7 @@ function RuntimeTimeInput({ label, value, duration = false, onCommit }: { label:
   const [draft, setDraft] = useState(() => display(value));
   const [error, setError] = useState('');
   useEffect(() => { setDraft(display(value)); }, [value, duration]);
-  function commit() { if (!draft.trim()) { setError(duration ? 'Enter a runtime. Zero is valid.' : 'Enter a time.'); return; } try { const next = duration ? parseRuntimeDuration(draft) : parseServiceTime(draft); if (next === undefined) throw new Error(); setError(''); onCommit(next); setDraft(display(next)); } catch { setError(duration ? 'Use decimal minutes or MM:SS.' : 'Use a time such as 6:30 or 25:00.'); } }
+  function commit() { if (!draft.trim()) { setError(duration ? 'Enter a runtime. Zero is valid.' : 'Enter a time.'); return; } try { const next = duration ? parseRuntimeDuration(draft) : parseServiceTime(draft); if (next === undefined) throw new Error(); setError(''); onCommit(next); setDraft(display(next)); } catch { setError(duration ? 'Use minutes such as 7, :07, or 7:30.' : 'Use a time such as 6:30 or 25:00.'); } }
   return <><input className="time-input" aria-label={label} aria-invalid={Boolean(error)} value={draft} onChange={(event) => { setDraft(event.target.value); setError(''); }} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setDraft(display(value)); setError(''); event.currentTarget.blur(); } }} />{error && <small className="field-error" role="alert">{error}</small>}</>;
 }
 
@@ -1046,6 +1291,10 @@ function RouteNavigationDraftDialog({ onCancel, onDiscard, onSave }: { onCancel:
 
 function TrashIcon() {
   return <svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15" focusable="false"><path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-2 6h10l-1 11H8L7 9Zm3 2v7h2v-7h-2Zm4 0v7h2v-7h-2Z" /></svg>;
+}
+
+function CopyIcon() {
+  return <svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15" focusable="false"><path fill="currentColor" d="M8 7V3h12v14h-4v4H4V7h4Zm2 0h6v8h2V5h-8v2Zm4 12v-2H8V9H6v10h8Z" /></svg>;
 }
 
 function UndoIcon() {

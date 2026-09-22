@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
-import { authoritativeTripsCsv, blocksCsv, csvEscape, generationSetsCsv, patternPointsCsv, routeCsv, scheduledPointsCsv, tripsCsv } from './csv';
+import { authoritativeTripsCsv, blockingActivitiesCsv, blockingBlocksCsv, blockingScenariosCsv, blockingSummariesCsv, blocksCsv, csvEscape, generationSetsCsv, patternPointsCsv, routeCsv, scheduledPointsCsv, tripsCsv } from './csv';
 
 describe('CSV serializers', () => {
   it('escapes commas, quotes, and newlines', () => {
@@ -42,5 +42,25 @@ describe('CSV serializers', () => {
     const output = blocksCsv([{ id: 'b', scenarioId: 's', serviceDayId: 'd', tripProfileId: 'tp', label: '1', activities: [], ...metadata() }], [{ id: 'tp', scenarioId: 's', name: 'Default', ...metadata() }]);
     expect(output.split('\r\n')[0]).toContain('tripProfileId,tripProfileName');
     expect(output).toContain('tp,Default');
+  });
+
+  it('exports normalized Blocking Scenario records and ordered activity rows', () => {
+    const scenario = { id: 'bs', scenarioId: 's', tripProfileId: 'tp', name: 'Base', ...metadata() };
+    const block = { id: 'b', scenarioId: 's', blockingScenarioId: 'bs', serviceDayId: 'd', label: '1', activities: [{ id: 'trip', type: 'revenueTrip' as const, sequence: 1, tripId: 't' }, { id: 'pullout', type: 'pullOut' as const, sequence: 0, minutesBeforeFirstTrip: 10, toNodeId: 'n', miles: 1 }, { id: 'deadhead', type: 'deadhead' as const, sequence: 2, minutesAfterPreviousTrip: 8, fromNodeId: 'n', toNodeId: 'm', miles: 1 }], ...metadata() };
+    expect(blockingScenariosCsv([scenario], [{ id: 'tp', scenarioId: 's', name: 'Weekday', ...metadata() }]).split('\r\n')[0]).toContain('tripProfileName');
+    expect(blockingBlocksCsv([block]).split('\r\n')[0]).toContain('blockingScenarioId');
+    const rows = blockingActivitiesCsv([block]).trim().split('\r\n');
+    expect(rows[0]).toContain('minutesBeforeFirstTrip');
+    expect(rows[0]).toContain('minutesAfterPreviousTrip');
+    expect(rows[1]).toContain('pullOut'); expect(rows[1]).toContain(',10,');
+    expect(rows[2]).toContain('revenueTrip');
+    expect(rows[3]).toContain('deadhead'); expect(rows[3]).toContain(',8,');
+  });
+
+  it('exports revenue hours alongside the separate running-time measure', () => {
+    const summary = { blockId: 'b', revenueHours: 1.5, runningHours: 1, platformHours: 2, deadheadHours: 0, layoverHours: 0.5, revenueMiles: 10, platformMiles: 10, status: 'incomplete' as const, complete: false, valid: true, findings: [], connections: [], activityTimings: [] };
+    const rows = blockingSummariesCsv([summary]).trim().split('\r\n');
+    expect(rows[0]).toContain('revenueHours,runningHours,platformHours');
+    expect(rows[1]).toContain('1.5,1,2');
   });
 });

@@ -11,15 +11,27 @@ export class RuntimeDurationError extends Error {
 /**
  * Parse a runtime segment duration.
  *
- * Values without a colon are decimal minutes. Values with one colon are
- * minutes and seconds. Blank input intentionally returns undefined so the UI
- * can distinguish an empty cell from an explicit zero.
+ * Values without a colon are decimal minutes. Standard colon notation uses
+ * minutes and seconds (`7:30`), while the display notation emitted by
+ * formatRuntimeDuration uses a leading colon (`:07` or `:07:30`). Blank input
+ * intentionally returns undefined so the UI can distinguish an empty cell
+ * from an explicit zero.
  */
 export function parseRuntimeDuration(value: string): DurationSeconds | undefined {
   const text = value.trim();
   if (!text) return undefined;
   if (text.includes(':')) {
     const parts = text.split(':');
+    if (parts.length === 2 && parts[0] === '') {
+      if (!/^\d+$/.test(parts[1])) throw new RuntimeDurationError(`Invalid runtime duration: ${value}`);
+      return Number(parts[1]) * 60;
+    }
+    if (parts.length === 3 && parts[0] === '' && /^\d+$/.test(parts[1]) && /^\d{2}$/.test(parts[2])) {
+      const minutes = Number(parts[1]);
+      const seconds = Number(parts[2]);
+      if (seconds > 59) throw new RuntimeDurationError(`Invalid runtime duration: ${value}`);
+      return minutes * 60 + seconds;
+    }
     if (parts.length !== 2 || !/^\d+$/.test(parts[0]) || !/^\d{2}$/.test(parts[1])) {
       throw new RuntimeDurationError(`Invalid runtime duration: ${value}`);
     }
