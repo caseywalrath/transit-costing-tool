@@ -2,7 +2,7 @@
 
 ## Status
 
-Superseded in part by the approved Phase 2R Trips workflow revision. The Phase 2R replacement workflow, safe route-editing package, and Phase 2TP Trip profiles are implemented and user-accepted. Phase 3 service-day workflows are implemented and accepted through Package 3C; see `phase-03-closeout.md`. Phase 3R is implemented and accepted through Package 3R-C; see `phase-03r-closeout.md`. Phase 4 planning is revised and approved under Decisions 0019 through 0023; Packages 4A through 4C are implemented and Package 4D remains the user-verification gate. See `phase-02r-trips-workflow-revision.md`, `phase-02tp-trip-profiles.md`, `phase-03-service-day-workflows.md`, and `phase-04-manual-blocking.md`.
+Superseded in part by the approved Phase 2R Trips workflow revision. The Phase 2R replacement workflow, safe route-editing package, and Phase 2TP Trip profiles are implemented and user-accepted. Phase 3 service-day workflows are implemented and accepted through Package 3C; see `phase-03-closeout.md`. Phase 3R is implemented and accepted through Package 3R-C; see `phase-03r-closeout.md`. Phase 4 is implemented and user-accepted through Package 4D; see `phase-04-closeout.md`. Phase 5 Costing planning is approved; no implementation package has begun.
 
 ## Objective
 
@@ -14,7 +14,7 @@ Extend the accepted route-definition foundation into a usable scheduling workflo
 4. assemble trips into vehicle blocks with explicit non-revenue activities;
 5. identify conflicts and derive daily block summaries.
 
-The work fills the Trips and Blocking tabs. Costing remains a later phase, but the service quantities needed by costing must be derived and tested during blocking.
+The work filled the Trips and Blocking tabs and established service quantities for Costing. The approved Phase 5 plan specifies annualization, Block eligibility, rate assumptions, and one selected Blocking Scenario at a time.
 
 ## Plan set
 
@@ -26,6 +26,9 @@ The work fills the Trips and Blocking tabs. Costing remains a later phase, but t
 | 3 | `phase-03-service-day-workflows.md` | Copy-between-day and batch editing workflows |
 | 3R | `phase-03r-unified-action-layers.md` | Unified Runtime/Trip header actions and staged Shift drawer |
 | 4 | `phase-04-manual-blocking.md` | Manual block activities, conflicts, deadhead, pull-in/out, and summaries |
+| 4 closeout | `phase-04-closeout.md` | Phase 4 implementation, verification, and user acceptance |
+| 5 planning | `phase-05-costing-planning.md` | Planning review and accepted decisions |
+| 5 | `phase-05-costing.md` | Approved packages, calculation rules, lifecycle, UI, and verification; packages begin only on request |
 
 These plans form one scheduling-development sequence. Each phase contains smaller work packages and a user verification gate. No package automatically starts the next package.
 
@@ -44,7 +47,7 @@ These plans form one scheduling-development sequence. Each phase contains smalle
 - Layover is derived. No minimum layover rule is included in the first blocking build.
 - Pull-out, pull-in, and deadhead values are entered manually in the first build.
 - Revenue hours and platform hours are primary summaries. Miles are derived where route data is complete.
-- Tables remain compact and reuse accepted Route-tab conventions where applicable. Terra owns new layout and interaction decisions.
+- Tables remain compact and reuse accepted Route-tab conventions where applicable. Current UI/UX model recommendations are in `codex.md`: Luna for precise UI wiring that reuses established patterns; Sol for novel or complex design and interaction.
 
 ## Recommended screen scope
 
@@ -71,7 +74,7 @@ Use one selected Trip Profile, Blocking Scenario, Route candidate filter, and se
 - Display a block summary table for all blocks on the selected day.
 - Keep imported multi-route Block contents fully visible while preventing new cross-route assignments in Phase 4.
 
-Terra may refine these recommendations during the relevant UI package without changing domain behavior.
+The UI package may refine these recommendations without changing domain behavior.
 
 ## Cross-phase data and transaction requirements
 
@@ -125,7 +128,7 @@ The sequence contains these mandatory pauses:
 4. accept Phase 2R before rewriting service-day workflows;
 5. accept the revised Phase 3 before manual blocking;
 6. verify Blocking Scenario ownership, Block calculations, migration, and persistence before blocking UI;
-7. complete hands-on blocking review before Phase 4 closeout.
+7. complete hands-on Blocking review before Phase 4 closeout. Completed and accepted on 2026-09-22.
 
 At each waypoint, report completed files, checks, deviations, unresolved decisions, and the recommended next package and model.
 

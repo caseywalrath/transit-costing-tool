@@ -4,7 +4,7 @@
 
 Phase 3R is implemented and accepted through Package 3R-C. It adds scoped staged Trip Shift preview/commit contracts with stale-source protection, unified Runtime and Trip header action layers, and a right-docked staged Shift drawer. The closeout is recorded in `docs/implementation/phase-03r-closeout.md`. Phase 4 uses relative connection deadheads: new and edited deadheads begin at their preceding revenue Trip end and derive the remaining layover before the successor Trip; legacy explicit deadhead times remain readable. Pull-out and pull-in values remain Block-owned; Decision 0024 adds a previewed, atomic bulk edit across matching Blocks without introducing shared movement rules.
 
-This document defines the initial architecture. Phase 1 route definition is implemented and accepted through Package 1C. The original Phase 2 runtime and trip generation implementation is accepted through Package 2G. User review then approved Phase 2R as a replacement Trips workflow. The Phase 2R replacement workflow, including the Route and Trips UI, safe route editing, Trip profiles, and integration acceptance, is complete. Phase 3 service-day workflows are implemented and accepted through Package 3C; Runtime and Trip copies remain separate operations. Phase 3R is implemented and accepted through Package 3R-C under Decision 0018; it consolidates Runtime and Trip section-header action layers and stages Trip shifts in a right-docked preview drawer without changing authoritative scheduling rules. Phase 4 planning is revised and approved under Decisions 0019 through 0023. Packages 4A through 4C are implemented in the current working tree; primary-agent integration and user verification remain in Package 4D. Decision 0026 records Trips-table unassignment and revenue hours inclusive of layover. The implemented Dexie schema is version 4 and the JSON backup schema is version 5. Phase-specific implementation must follow the decision records and implementation plans under `docs/`.
+This document defines the initial architecture. Phase 1 route definition is implemented and accepted through Package 1C. The original Phase 2 runtime and trip generation implementation is accepted through Package 2G. User review then approved Phase 2R as a replacement Trips workflow. The Phase 2R replacement workflow, including the Route and Trips UI, safe route editing, Trip profiles, and integration acceptance, is complete. Phase 3 service-day workflows are implemented and accepted through Package 3C; Runtime and Trip copies remain separate operations. Phase 3R is implemented and accepted through Package 3R-C under Decision 0018; it consolidates Runtime and Trip section-header action layers and stages Trip shifts in a right-docked preview drawer without changing authoritative scheduling rules. Phase 4 is implemented and user-accepted through Package 4D; see `docs/implementation/phase-04-closeout.md`. Decision 0026 records Trips-table unassignment and Revenue hours inclusive of layover. The implemented Dexie schema is version 4 and the JSON backup schema is version 5. Costing remains unimplemented, but its planning scope is approved in `docs/implementation/phase-05-costing.md`. Phase-specific implementation must follow the decision records and implementation plans under `docs/`.
 
 ## Product Objective
 
@@ -44,7 +44,7 @@ The product is a planning tool. It is not intended to dispatch service, manage o
 | Blocking | Manual assignment first; automated suggestions later |
 | Layover | Derived from connected trips and deadhead activities |
 | Deadhead | Manually entered first |
-| Primary cost measures | Revenue hours and platform hours |
+| Initial cost multiplier | Entered USD operating cost per Revenue Hour (VRH); Platform Hours are displayed, not separately costed |
 | Secondary measure | Miles when supplied |
 | NTD input | Manual entry first |
 | Initial export | CSV; versioned JSON is also required for backup and restore |
@@ -169,7 +169,7 @@ Project
     │   ├── Trips across Routes and service days
     │   └── Blocking scenarios sourced from that timetable
     │       └── Blocks by service day
-    └── Cost plans
+    └── Costing assumptions (Phase 5; one set shared by Blocking Scenarios)
 ```
 
 The interface initially selects one project, scenario, route, and service day. Day and direction are non-authoritative workspace context selections: Trips uses both, Blocking uses day and Route as candidate scope, and Route definition does not require either. The storage model supports more than one of each. Trips selects one scenario-wide Trip Profile and one Blocking Scenario; its Block pills and multi-select Actions can assign, move, or unassign Trips only within that selected Blocking Scenario and service day. Blocking selects one Trip Profile through a named Blocking Scenario.
@@ -264,9 +264,7 @@ Initial service quantities are:
 - revenue miles: sum of pattern miles for revenue trips when distances are complete;
 - annual quantities: daily quantities multiplied by annual service-day counts.
 
-A cost plan includes one or more estimates. Each estimate selects a basis such as revenue hours or platform hours, a rate, a base year, source metadata, and inflation assumptions.
-
-Revenue-hour and platform-hour estimates may be compared but are not automatically added. Combined line-item costing, cost per mile, peak vehicles, and spare ratios are later capabilities.
+Phase 5 uses one Scenario-owned set of Costing assumptions, not multiple named Costing scenarios. A selected Blocking Scenario supplies eligible Revenue and Platform Hours; the initial cost multiplier is manually entered USD operating cost per Revenue Hour. Platform Hours are displayed but are not separately multiplied or added. The source rate year is adjusted automatically to the service year using an editable annual escalation assumption, defaulting to 3%. The horizon is the base year plus up to ten future years. Annual quantities use stored service-day counts capped at 365. The UI shows one Blocking Scenario at a time through a selector, without a cross-scenario comparison table. Detailed eligibility, lifecycle, and export rules are in `docs/implementation/phase-05-costing.md`.
 
 ## Validation
 
@@ -296,7 +294,7 @@ Primary navigation is:
 Route | Trips | Blocking | Costing
 ```
 
-Tables must be compact, functional, and suitable for repeated editing. Detailed UI decisions are deferred to Terra work packages and must not be established by structural implementation.
+Tables must be compact, functional, and suitable for repeated editing. Detailed UI decisions belong to a distinct UI/UX work package and must not be established by structural implementation. Select Luna for tightly specified UI wiring that reuses established components; select Sol for novel or complex UX judgment, as described in `codex.md`.
 
 ## Structural and UI/UX Work Separation
 
@@ -304,7 +302,7 @@ Each implementation phase should be divided when both types of work are present:
 
 1. a structural package recommended for Luna;
 2. a verification gate and user review;
-3. a UI/UX package recommended for Terra;
+3. a UI/UX package recommended for Luna only when the solution is simple, established, and precisely specified, or for Sol when it requires novel or complex UX judgment;
 4. integration and final phase verification.
 
 Structural packages define typed ports, domain behavior, persistence, and tests. UI/UX packages consume those ports and define presentation and interaction. If UI work reveals a needed domain change, document it and return it to a separate structural revision rather than embedding business logic in the UI.
@@ -349,7 +347,7 @@ Implementation plan: `docs/implementation/phase-02tp-trip-profiles.md`.
 
 ### Phase 3: Service-day editing workflows
 
-The plan was rewritten on 2026-09-14 for separate route-scoped Runtime and Trip copy operations plus authoritative batch Trip editing. Phase 3 is implemented and accepted through Package 3C. Historical generation sets remain supported only for legacy backup compatibility and do not participate in Phase 3 commands. Phase 4 is deferred to a later user-approved session.
+The plan was rewritten on 2026-09-14 for separate route-scoped Runtime and Trip copy operations plus authoritative batch Trip editing. Phase 3 is implemented and accepted through Package 3C. Historical generation sets remain supported only for legacy backup compatibility and do not participate in Phase 3 commands. Phase 4 has since been implemented and accepted; see its closeout.
 
 Rewritten implementation plan: `docs/implementation/phase-03-service-day-workflows.md`.
 
@@ -357,11 +355,11 @@ Rewritten implementation plan: `docs/implementation/phase-03-service-day-workflo
 
 Add named Blocking Scenarios, ordered Block activities, manual assignment and atomic reassignment, deadhead, pull-out and pull-in, conflict validation, completeness-aware summaries, persistence, backup, CSV, and accessible Blocking and Trips-context interfaces.
 
-Approved revised implementation plan: `docs/implementation/phase-04-manual-blocking.md`. Decisions 0019 through 0023 define ownership, lifecycle, calculations, Route scope, migration, exports, and relative activity timing. Packages 4A through 4C are implemented; Package 4D owns the integration and user-verification gate.
+Approved revised implementation plan: `docs/implementation/phase-04-manual-blocking.md`. Decisions 0019 through 0026 define ownership, lifecycle, calculations, Route scope, migration, exports, timing, Trips-table assignment, and Revenue-hour semantics. Phase 4 was accepted through Package 4D on 2026-09-22; see `docs/implementation/phase-04-closeout.md`.
 
 ### Phase 5: Costing
 
-Add annual service quantities, revenue-hour and platform-hour estimates, user and NTD source metadata, inflation, and scenario comparisons.
+Add annual service quantities, a Revenue-Hour-based cost estimate, user and NTD source metadata, rate-year adjustment, future-year escalation, and a Blocking-Scenario selector. Platform Hours are shown but are not a second cost basis. The approved planning scope is in `docs/implementation/phase-05-costing.md`; implementation begins only upon an explicit package request. Decision 0027 records the accepted basis, assumption ownership, forecast defaults, and selector-only UI. The starter `CostPlan` shape in `docs/data-schema.md` is not an approved persistence contract.
 
 ### Phase 6: Advanced capabilities
 

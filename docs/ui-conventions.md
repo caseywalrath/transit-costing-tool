@@ -4,7 +4,7 @@
 
 The Runtime and Trip header-action conventions below are implemented and accepted through Phase 3R. They retain separate Runtime and Trip scopes, preserve the existing shared workflow-section system, and do not establish a convention for top-level Scenario/Data menus or Route-tab Node/Pattern menus.
 
-## Phase 4 planned Blocking conventions
+## Phase 4 implemented Blocking conventions
 
 - Blocking uses Trip Profile, Blocking Scenario, selected Route, and Day as context. The selected Route filters candidate Trips but never hides or truncates activities in the selected Block.
 - Blocking Scenario is a named all-service-day arrangement. Its Profile relationship is immutable. Empty-create, duplicate, rename, and delete actions must state their complete scope.
@@ -14,10 +14,10 @@ The Runtime and Trip header-action conventions below are implemented and accepte
 - Assignment, atomic reassignment, removal, ordering, and activity editing must be completely keyboard operable. Drag-and-drop cannot be the only method.
 - Operationally infeasible Blocks remain visible with planner-facing text and accessible status. Color is supplemental. Structural command rejection must identify the record and required correction.
 - The selected Block always shows its complete ordered activity list, including every Route represented in imported multi-route data. Phase 4 prevents new cross-route assignment to non-empty Blocks.
-- Summary displays distinguish known valid subtotals from invalid and incomplete Block counts. Valid but incomplete Blocks contribute known hours; incomplete mileage values are not displayed as zero.
+- Block-level status and findings identify incomplete or infeasible work. The selected-day summary shows service quantities without separate complete/incomplete count tiles; valid but incomplete Blocks contribute known hours, and incomplete mileage is not displayed as zero.
 - Dense Blocking tables retain compact controls, horizontal overflow, stable identifying columns, predictable focus after dialogs and writes, and usable desktop and narrow-width layouts.
 
-> Phase 2R is replacing the original Phase 2 trip-generation conventions below. Package 2R-B has established the structural direction and runtime contracts; Terra must replace the generation-set/materialized-schedule wording and interaction rules in the Phase 2 sections during Package 2R-D. The Phase 2 text is retained as historical implementation context until that package is accepted.
+> The Phase 2 sections below are historical implementation context. Phase 2R replaced the generation-set workflow, and its Route and Trips UI is accepted. Historical Terra references record the model recommendation at that time; current model guidance is in `codex.md`.
 
 ## Phase 1 route definition
 

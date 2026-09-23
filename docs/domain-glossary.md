@@ -214,17 +214,17 @@ Additional vehicles added through a spare ratio or explicit input. This is defer
 
 ## Costing and validation
 
-### Cost plan
+### Costing assumptions
 
-A set of cost estimates and inflation assumptions applied to a scenario.
+The single Scenario-owned set of entered USD/Revenue-Hour rate, source year, service year, and annual escalation inputs. It applies to whichever Blocking Scenario is selected. The Phase 5 implementation plan specifies its persistence lifecycle.
 
 ### Cost estimate
 
-A calculation using one service quantity, one rate, and projection assumptions. Initial bases are revenue hours and platform hours.
+A derived calculation for eligible Blocks using Revenue Hours, one entered USD/Revenue-Hour rate, and annual escalation. Platform Hours remain visible but are not a second cost estimate.
 
 ### Cost basis
 
-The service quantity multiplied by a rate. Revenue hours and platform hours are separate bases and are not automatically added together.
+The service quantity multiplied by a rate. Revenue Hours are the only initial cost basis. A platform-sensitive supplement is deferred and must not double count the Revenue-Hour estimate.
 
 ### NTD assumption
 

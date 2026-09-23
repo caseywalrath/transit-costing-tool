@@ -29,7 +29,7 @@ Route-scoped CSV cannot safely represent a future multi-route Block without trun
 - The first UI preserves the one-Route planning workflow without adding Route ownership to Blocks.
 - Imported multi-route data is inspectable but cannot be expanded through Phase 4 assignment commands.
 - The Trips Block column has a defined alternative context instead of implying one universal assignment.
-- Terra must place and verify the additional Trips context control without undoing the accepted Phase 3R hierarchy.
+- The UI package must place and verify the additional Trips context control without undoing the accepted Phase 3R hierarchy. Current model recommendations are maintained in `codex.md`.
 - Blocking exports preserve complete Blocks and avoid route-filter truncation.
 
 ## Rejected alternatives
