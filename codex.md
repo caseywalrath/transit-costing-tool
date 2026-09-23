@@ -52,15 +52,18 @@ The repository is currently local and may not yet have Git initialized or a remo
 
 When Git is initialized, treat `main` as the stable branch. Use one descriptive feature branch per meaningful implementation or revision package unless the user directs otherwise.
 
-## Structural and UI/UX Separation
+## Work Packages and Model Recommendations
 
-Development plans must separate structural work from UI/UX work.
+Development plans must separate structural work from UI/UX work when both are present.
 
-- Recommend Luna for explicit, bounded structural implementation after architectural decisions are documented.
-- Recommend Terra for any package requiring layout, styling, interaction, usability, accessibility, or visual judgment.
-- Do not let a structural package establish UI conventions through placeholder designs.
-- Do not let a UI package duplicate business logic that belongs in domain commands or selectors.
-- Place a user verification gate between structural and UI/UX packages.
+- Recommend Luna for bounded domain, application, persistence, migration, serialization, and test work after the architecture is settled.
+- Luna may implement a simple UI or wire approved behavior when it reuses existing components and patterns. Give Luna precise instructions for placement, states, interactions, keyboard/accessibility behavior, and acceptance criteria; do not rely on Luna to invent a new visual or interaction system.
+- Recommend Sol when UI work is novel, interaction-heavy, visually complex, or requires substantial usability/accessibility judgment.
+- Keep structural packages from establishing UI conventions through placeholders, and keep UI packages from duplicating business rules that belong in domain commands or selectors.
+- Place a user-verification gate between structural work and a separately owned UI/UX package when both are required.
+- The primary agent remains responsible for architecture, integration, cross-layer consistency, and final verification.
+
+Older plans may contain Terra assignments from when that model was available. Treat those as historical recommendations; do not use Terra for new work.
 
 Model recommendations are presented to the user between packages. They do not authorize automatic task creation, delegation, or continuation.
 
@@ -107,8 +110,8 @@ Do not start the next package until the user requests it.
 
 ## Current implementation status
 
-Phase 3R is implemented and accepted through Package 3R-C. It is recorded in `docs/implementation/phase-03r-closeout.md`. Phase 4 planning is revised and approved under Decisions 0019 through 0023. Packages 4A through 4C are implemented in the current working tree; primary-agent integration and user verification remain in Package 4D.
+Phase 3R is implemented and accepted through Package 3R-C. It is recorded in `docs/implementation/phase-03r-closeout.md`. Phase 4 is implemented and user-accepted through Package 4D; see `docs/implementation/phase-04-closeout.md`. Phase 5 Costing planning is approved in `docs/implementation/phase-05-costing.md`; no implementation package has begun.
 
 Phase 1 is implemented through Package 1C. The completed scope includes the React/TypeScript/Vite foundation, route-definition domain behavior, Dexie version 1 persistence, complete Phase 1 JSON backup/restore, CSV serializers, the route-definition interface, and the application-layer integration facade.
 
-Phase 2 is implemented and accepted through Package 2G, but user review approved a replacement Trips workflow before Phase 3. The Phase 2R replacement workflow, including its Route and Trips UI, safe route editing, Trip profiles, and integration acceptance, is complete; its historical package plan is `docs/implementation/phase-02r-trips-workflow-revision.md`. The corrective package in `docs/implementation/phase-02r-safe-route-editing.md` is implemented and user-accepted. It stages Node and Pattern saves, deterministically rebalances runtimes and trips, presents reset impacts for ambiguous Pattern changes, and reconciles Direction timetable columns. Trip-profile implementation in `docs/implementation/phase-02tp-trip-profiles.md` is implemented and user-accepted; it adds scenario-wide timetable alternatives and the source boundary for Blocking Scenarios. Phase 3 service-day workflows are implemented and accepted through Package 3C. The completed scope is recorded in `docs/implementation/phase-03-closeout.md`. Phase 3R is implemented and accepted through Package 3R-C; the closeout is `docs/implementation/phase-03r-closeout.md`. The revised Phase 4 plan is approved for sequencing, and Package 4A domain and application contracts are implemented in the current working tree. Persistence and UI work remain deferred to later packages.
+Phase 2 is implemented and accepted through Package 2G, but user review approved a replacement Trips workflow before Phase 3. The Phase 2R replacement workflow, including its Route and Trips UI, safe route editing, Trip profiles, and integration acceptance, is complete; its historical package plan is `docs/implementation/phase-02r-trips-workflow-revision.md`. The corrective package in `docs/implementation/phase-02r-safe-route-editing.md` is implemented and user-accepted. It stages Node and Pattern saves, deterministically rebalances runtimes and trips, presents reset impacts for ambiguous Pattern changes, and reconciles Direction timetable columns. Trip-profile implementation in `docs/implementation/phase-02tp-trip-profiles.md` is implemented and user-accepted; it adds scenario-wide timetable alternatives and the source boundary for Blocking Scenarios. Phase 3 service-day workflows are implemented and accepted through Package 3C. The completed scope is recorded in `docs/implementation/phase-03-closeout.md`. Phase 3R is implemented and accepted through Package 3R-C; the closeout is `docs/implementation/phase-03r-closeout.md`. Phase 4 is accepted through Package 4D; its closeout is `docs/implementation/phase-04-closeout.md`. Phase 5 planning is approved in `docs/implementation/phase-05-costing.md`; no Costing code is implemented. Package 5A requires an explicit user request.

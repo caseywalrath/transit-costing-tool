@@ -379,7 +379,9 @@ Blocks do not contain a Route ID or duplicate Trip Profile ID. The Block derives
 
 Blocking Scenario names are unique within a Scenario after trimming and case normalization. Block labels are unique within one Blocking Scenario and service day. A Trip ID may occur once across that complete Blocking Scenario/day but may be assigned differently in another Blocking Scenario.
 
-## Cost entities
+## Cost entities (preliminary; not an implementation contract)
+
+The following types are a historical architecture sketch only and do **not** match the approved Phase 5 direction. Decision 0027 accepts one USD/Revenue-Hour cost basis, automatic rate-year adjustment, and one Scenario-owned assumption set shared by Blocking Scenarios, with derived results rather than saved estimates. Phase 5B must replace these placeholder types in both documentation and `src/domain/types.ts`. See `docs/implementation/phase-05-costing.md`.
 
 ```typescript
 type CostBasis =
@@ -418,7 +420,7 @@ interface CostPlan extends EntityMetadata {
 }
 ```
 
-Only revenue-hours and platform-hours bases are included in the first costing release. Other values remain in the type plan for later migration review.
+The first costing release uses Revenue Hours as its only cost multiplier. Platform Hours are displayed as context, not separately costed; the other basis values above remain historical placeholders, not Phase 5 scope.
 
 ## Validation result
 

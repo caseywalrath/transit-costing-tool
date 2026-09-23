@@ -2,9 +2,7 @@
 
 ## Status
 
-Revised for approved Phase 4 planning decisions on 2026-09-21. Phase 3 and Phase 3R are accepted. Trip-profile ownership is implemented. Decisions 0019 through 0023 define Blocking ownership, lifecycle, activity, validation, migration, export, and relative timing. Decision 0026 adds Trips-table unassignment and updates revenue-hour semantics.
-
-Packages 4A through 4C are implemented in the current working tree. Package 4D primary-agent integration and the hands-on user-verification gate remain; do not begin the next phase automatically.
+Revised for approved Phase 4 planning decisions on 2026-09-21. Phase 4 was implemented and user-accepted through Package 4D on 2026-09-22. See `phase-04-closeout.md` for delivered scope and verification. This file remains the implementation record; the former model assignments are historical. Current model recommendations are in `codex.md`.
 
 ## Objective
 
@@ -111,14 +109,12 @@ At completion, a user can:
 
 ```text
 4A Blocking domain, application contracts, validation, compatibility, and summaries — Luna
-  -> structural calculation and user-verification gate
+  -> completed
 4B Lifecycle integration, persistence, migration, backup, duplication, and CSV — Luna
-  -> data-integrity and user-verification gate
-  -> mandatory stop before model shift
-4C Blocking and Trips-context UI/UX — Terra
-  -> hands-on accessibility and visual-verification gate
-  -> mandatory stop before model shift
-4D Primary-agent integration and Phase 4 acceptance
+  -> completed
+4C Blocking and Trips-context UI/UX — originally recommended Terra; completed
+  -> user review and focused verification completed
+4D Primary-agent integration and Phase 4 acceptance — completed
 ```
 
 ## Package 4A: Domain and application contracts
@@ -176,7 +172,7 @@ Run focused domain and application-contract tests plus TypeScript typechecking. 
 
 ## Package 4B: Lifecycle integration, persistence, migration, backup, duplication, and CSV
 
-Package 4B is implemented in the current working tree. Its data-integrity gate was completed through explicit user approval before Package 4C began.
+Package 4B is complete. Its data-integrity gate was completed through explicit user approval before Package 4C began.
 
 ### Recommended model
 
@@ -228,15 +224,15 @@ No page layout, CSS, interaction, accessibility, or visual-design decisions.
 
 ### Gate
 
-Report changed files, migration behavior, transaction boundaries, rollback evidence, backup/duplication results, and CSV samples. Stop and recommend Terra for Package 4C. Do not begin UI work without explicit user approval.
+The Package 4B data-integrity gate was completed before Package 4C. Its original model recommendation is historical; see `codex.md` for future UI work.
 
 ## Package 4C: Blocking and Trips-context UI/UX
 
-Package 4C is implemented in the current working tree. It adds the Blocking workspace, context-scoped Trips Block labels, keyboard-operable table actions, explicit lifecycle dialogs, narrow-layout table overflow, header-level Unassigned Trip filters and sorting, chronological assignment insertion, compatibility filtering, problem treatment, and relative boundary-time entry. The user has since approved direct single-Trip and multi-Trip assignment from the Trips table; Package 4D must validate this integration and obtain the required hands-on user review.
+Package 4C is complete. It adds the Blocking workspace, context-scoped Trips Block labels, keyboard-operable table actions, explicit lifecycle dialogs, narrow-layout table overflow, header-level Unassigned Trip filters and sorting, chronological assignment insertion, compatibility filtering, problem treatment, and relative boundary-time entry. Direct single-Trip and multi-Trip assignment and unassignment from the Trips table were included in Package 4D integration and user review.
 
 ### Required model
 
-Terra.
+Historical recommendation: Terra (now deprecated). The package is complete. For future UI packages, follow `codex.md`.
 
 ### File ownership
 
@@ -247,7 +243,7 @@ Terra.
 - Playwright fixtures and UI tests;
 - reusable UI-convention documentation.
 
-Terra must consume Package 4A and 4B contracts and must not recreate authoritative validation, compatibility, summary, ownership, or duplicate-assignment logic in React.
+The UI implementation consumed Packages 4A and 4B contracts and does not recreate authoritative validation, compatibility, summary, ownership, or duplicate-assignment logic in React.
 
 ### Required interface behavior
 

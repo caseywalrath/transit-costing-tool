@@ -45,22 +45,17 @@ Recommend Luna for bounded, mechanical, or structural work after the architectur
 
 Luna must not make visual design, layout, interaction, accessibility, or other UX decisions.
 
-### Terra recommendation
+### UI/UX model recommendations
 
-Recommend Terra for all work that includes design or user experience judgment, including:
-
-- page and navigation layout;
-- forms, grids, tables, and editing interactions;
-- keyboard behavior and selection behavior;
-- responsive and dense-table behavior;
-- colors, typography, spacing, warnings, and empty states;
-- accessibility and visual verification.
+- Recommend Sol for novel, complex, interaction-heavy, or visually distinctive UI work requiring design, usability, accessibility, or layout judgment.
+- Luna may implement simpler UI changes or wire approved behavior when they reuse existing components and conventions. Provide specific requirements for placement, states, interaction, keyboard/accessibility behavior, and acceptance criteria. Do not rely on Luna to invent a visual or interaction system.
+- Historical plans may name Terra; those assignments are retained as history and do not apply to new work.
 
 ### Integration
 
 - Keep structural and UI/UX work in separate work packages with explicit file ownership.
 - A structural agent may wire approved UI ports without changing layout or interaction behavior.
-- If integration exposes a UX decision, return that decision to a Terra work package.
+- If integration exposes a UX decision, return it to a Sol package when it requires novel or complex judgment, or to a precisely specified Luna package when it reuses established UI patterns.
 - The primary agent remains responsible for architecture, integration review, cross-layer consistency, and final verification.
 - Use subagents only when the user requests delegation and the active environment permits it.
 
