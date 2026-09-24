@@ -199,6 +199,37 @@ function validateNodes(values: unknown[], routes: Map<string, Route>): Node[] {
   });
 }
 
+/** Recover columns from copies created before import-as-copy remapped their node references. */
+function recoverCopiedDirectionColumnNodeReferences(values: unknown[], patterns: unknown[], routes: Map<string, Route>, nodes: Node[]): unknown[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  return values.map((value) => {
+    if (!isRecord(value) || typeof value.id !== 'string' || typeof value.routeId !== 'string' || typeof value.scenarioId !== 'string' || !Array.isArray(value.columns)) return value;
+    const route = routes.get(value.routeId);
+    if (!route || route.scenarioId !== value.scenarioId) return value;
+    const patternReferences = patterns.flatMap((patternValue) => {
+      if (!isRecord(patternValue) || patternValue.directionId !== value.id || patternValue.routeId !== value.routeId || patternValue.scenarioId !== value.scenarioId || !Array.isArray(patternValue.points)) return [];
+      return patternValue.points.filter(isRecord);
+    });
+    const columns = value.columns.map((columnValue) => {
+      if (!isRecord(columnValue) || typeof columnValue.id !== 'string' || typeof columnValue.nodeId !== 'string') return columnValue;
+      const currentNode = nodeById.get(columnValue.nodeId);
+      if (currentNode?.routeId === route.id && currentNode.scenarioId === route.scenarioId) return columnValue;
+
+      // A column is recoverable only when mapped pattern points identify one valid route node.
+      const candidateNodeIds = new Set(patternReferences
+        .filter((point) => point.directionColumnId === columnValue.id && typeof point.nodeId === 'string')
+        .map((point) => point.nodeId as string)
+        .filter((nodeId) => {
+          const node = nodeById.get(nodeId);
+          return node?.routeId === route.id && node.scenarioId === route.scenarioId;
+        }));
+      if (candidateNodeIds.size !== 1) return columnValue;
+      return { ...columnValue, nodeId: candidateNodeIds.values().next().value };
+    });
+    return { ...value, columns };
+  });
+}
+
 function validateDirections(values: unknown[], routes: Map<string, Route>, nodes: Node[]): RouteDirection[] {
   const ids = new Set<string>();
   const columnIds = new Set<string>();
@@ -368,8 +399,13 @@ export function parseProjectBackup(payload: string): ProjectSnapshot {
   const routes = validateRoutes(requiredArray(parsed.routes, 'routes'), scenarioIds);
   const routeById = new Map(routes.map((route) => [route.id, route]));
   const nodes = validateNodes(requiredArray(parsed.nodes, 'nodes'), routeById);
-  const directions = parsed.directions === undefined ? undefined : validateDirections(requiredArray(parsed.directions, 'directions'), routeById, nodes);
-  const patterns = validatePatterns(requiredArray(parsed.patterns, 'patterns'), routeById, nodes, directions);
+  const rawPatterns = requiredArray(parsed.patterns, 'patterns');
+  const directions = parsed.directions === undefined ? undefined : validateDirections(
+    recoverCopiedDirectionColumnNodeReferences(requiredArray(parsed.directions, 'directions'), rawPatterns, routeById, nodes),
+    routeById,
+    nodes,
+  );
+  const patterns = validatePatterns(rawPatterns, routeById, nodes, directions);
   const runtimeProfiles = parsed.exportSchemaVersion === LEGACY_PROJECT_BACKUP_SCHEMA_VERSION
     ? []
     : validateRuntimeProfiles(requiredArray(parsed.runtimeProfiles, 'runtimeProfiles'), patterns);
@@ -473,7 +509,11 @@ export function cloneProjectSnapshot(source: ProjectSnapshot, now = new Date().t
     id: directionIds.get(direction.id)!,
     scenarioId: scenarioIds.get(direction.scenarioId)!,
     routeId: routeIds.get(direction.routeId)!,
-    columns: direction.columns.map((column) => ({ ...column, id: directionColumnIds.get(column.id)! })),
+    columns: direction.columns.map((column) => ({
+      ...column,
+      id: directionColumnIds.get(column.id)!,
+      nodeId: nodeIds.get(column.nodeId) ?? column.nodeId,
+    })),
     ...metadata(now),
   }));
   const patterns = source.patterns.map((pattern) => ({
