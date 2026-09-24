@@ -1,9 +1,10 @@
-import type { AddTripRequest, Block, BlockingBlock, BlockingScenario, GenerateTripsRequest, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceSeconds, Trip, TripGenerationSet, TripProfile, ValidationFinding } from '../domain/types';
+import type { AddTripRequest, Block, BlockingBlock, BlockingScenario, CostingAssumptions, GenerateTripsRequest, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceSeconds, Trip, TripGenerationSet, TripProfile, ValidationFinding } from '../domain/types';
 import type { BatchPatternChangePreview, BatchPatternChangeRequest, RuntimeCopyPreview, RuntimeCopyRequest, TripCopyPreview, TripCopyRequest } from '../domain/serviceDayCopy';
 import type { GenerateTripsPreview, PatternChangePreview, RecalculationPreview, RegenerationPreview, RegenerationResult } from '../domain/trips';
 import type { TripShiftPreview, TripShiftRequest } from '../domain/tripShift';
 import type { ScenarioRecords } from '../domain/project';
 import type { BlockSummary, BlockingAssignmentRequest, BlockingCompatibility, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingActivityEditRequest, BlockingTripsAssignmentRequest } from '../domain/blocking';
+import type { CostingAssumptionsInput, CostingCalculationContext, CostingCalculationResult } from '../domain/costing';
 
 export interface RouteDefinitionRepository {
   listProjects(): Promise<Project[]>;
@@ -207,4 +208,37 @@ export interface BlockingQueries {
   classifyInsertion(blockingScenarioId: string, blockId: string, tripId: string, insertAt?: number, minimumLayover?: import('../domain/blocking').MinimumLayoverRule): Promise<BlockingCompatibility>;
   getTripBlockingContext(tripId: string, blockingScenarioId: string): Promise<{ block?: BlockingBlock; blockingScenario?: BlockingScenario; tripProfile?: TripProfile }>;
   exportBlockingScenarioCsv(blockingScenarioId: string): Promise<Array<{ suffix: 'blocking-scenarios' | 'blocking-blocks' | 'blocking-activities' | 'blocking-summaries'; contents: string }>>;
+}
+
+/** Read source contract needed to assemble a calculation without persisting derived costs. */
+export interface CostingCalculationContextQueries {
+  listBlockingScenarios(scenarioId: string): Promise<BlockingScenario[]>;
+  getCostingCalculationContext(scenarioId: string, blockingScenarioId: string): Promise<CostingCalculationContext | undefined>;
+}
+
+/** Persistence boundary for one editable assumption set owned by a Scenario. */
+export interface CostingAssumptionsRepository {
+  getCostingAssumptions(scenarioId: string): Promise<CostingAssumptions | undefined>;
+  saveCostingAssumptions(assumptions: CostingAssumptions): Promise<void>;
+}
+
+/** Application commands for the single Scenario-owned Costing assumptions record. */
+export interface CostingCommands {
+  loadAssumptions(scenarioId: string): Promise<CostingAssumptions | undefined>;
+  saveAssumptions(scenarioId: string, assumptions: CostingAssumptionsInput): Promise<CostingAssumptions>;
+}
+
+/** Application query surface for the selected Blocking Scenario's derived cost estimate. */
+export interface CostingQueries {
+  listBlockingScenarios(scenarioId: string): Promise<BlockingScenario[]>;
+  calculateEstimate(request: {
+    scenarioId: string;
+    blockingScenarioId: string;
+    assumptions: CostingAssumptionsInput;
+  }): Promise<CostingCalculationResult | undefined>;
+  exportEstimateCsv(request: {
+    scenarioId: string;
+    blockingScenarioId: string;
+    assumptions: CostingAssumptionsInput;
+  }): Promise<Array<{ suffix: string; contents: string }> | undefined>;
 }

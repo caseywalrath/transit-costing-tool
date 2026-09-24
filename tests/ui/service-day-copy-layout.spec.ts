@@ -9,8 +9,8 @@ test('uses unified Runtime and Trips header action layers', async ({ page }) => 
   const runtimeActions = runtimeSection.locator('.section-header-actions');
   const tripActions = tripsSection.locator('.section-header-actions');
 
-  await expect(runtimeActions.getByRole('button')).toHaveText(['Profile: Weekday ▾', 'Add', 'Discard', 'Save', 'Actions ▾']);
-  await expect(tripActions.getByRole('button')).toHaveText(['Profile: Default ▾', 'Actions ▾']);
+  await expect(runtimeActions.getByRole('button')).toHaveText(['Profile: Weekday ▾', 'Add', 'Discard', 'Save', '']);
+  await expect(tripActions.getByRole('button')).toHaveText(['Profile: Default ▾', '']);
   await expect(runtimeSection.locator('.runtime-editor-toolbar')).toHaveCount(0);
   await expect(tripsSection.locator('.more-actions')).toHaveCount(0);
 

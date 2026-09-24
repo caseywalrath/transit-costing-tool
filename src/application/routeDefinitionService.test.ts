@@ -197,6 +197,27 @@ describe('RouteDefinitionService', () => {
     await expect(service.deleteScenario(alternate.scenario.id)).rejects.toThrow('Create another scenario before deleting the only scenario');
   });
 
+  it('copies Scenario-owned costing assumptions and removes them with the Scenario', async () => {
+    const repository = new InMemoryRouteDefinitionRepository();
+    const { service } = createService(repository);
+    const created = await service.createProject('Costing lifecycle');
+    await repository.saveCostingAssumptions({
+      id: 'cost-source', scenarioId: created.records.scenario.id, currencyCode: 'USD', enteredRate: 125.25,
+      rateYear: 2024, sourceType: 'ntd', sourceNote: '2024 source', baseServiceYear: 2026,
+      futureYearCount: 3, annualEscalation: 0.03, ...metadata(),
+    });
+    const sourceRecords = await repository.getScenarioRecords(created.records.scenario.id);
+    const copy = await service.duplicateScenario(sourceRecords!, 'Base Copy');
+
+    expect(copy.costingAssumptions).toMatchObject({ scenarioId: copy.scenario.id, enteredRate: 125.25, sourceType: 'ntd' });
+    expect(copy.costingAssumptions?.id).not.toBe('cost-source');
+    expect(await repository.getCostingAssumptions(created.records.scenario.id)).toEqual(sourceRecords?.costingAssumptions);
+
+    await service.deleteScenario(created.records.scenario.id);
+    expect(await repository.getCostingAssumptions(created.records.scenario.id)).toBeUndefined();
+    expect(await repository.getCostingAssumptions(copy.scenario.id)).toEqual(copy.costingAssumptions);
+  });
+
   it('does not commit a reviewed route edit after its source data changes', async () => {
     const { service } = createService();
     const created = await service.createProject('Stale route edit');

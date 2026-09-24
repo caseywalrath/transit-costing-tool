@@ -119,4 +119,58 @@ describe('backup', () => {
     expect(copy.blocks[0].activities[0].type === 'pullOut' && copy.blocks[0].activities[0].toNodeId).toBe(copy.nodes.find((node) => node.name === 'A')?.id);
     expect(copy.blocks[0].activities[0].type === 'pullOut' && copy.blocks[0].activities[0].minutesBeforeFirstTrip).toBe(10);
   });
+
+  it('round trips costing assumptions in schema 6 and remaps them during import-as-copy', () => {
+    const source = {
+      project: { id: 'p', name: 'Costing', distanceUnit: 'miles' as const, currencyCode: 'USD', ...metadata() },
+      scenarios: [{ id: 's', projectId: 'p', name: 'Base', ...metadata() }],
+      serviceDays: [], routes: [], nodes: [], patterns: [], runtimeProfiles: [], runtimeAssignments: [],
+      tripProfiles: [{ id: 'tp', scenarioId: 's', name: 'Default', ...metadata() }], blockingScenarios: [],
+      costingAssumptions: [{ id: 'cost', scenarioId: 's', currencyCode: 'USD' as const, enteredRate: 100, rateYear: 2024, sourceType: 'ntd' as const, sourceNote: 'NTD 2024', baseServiceYear: 2026, futureYearCount: 2, annualEscalation: 0.03, ...metadata() }],
+      generationSets: [], trips: [], blocks: [],
+    };
+    const exported = JSON.parse(exportProjectJson(source));
+    expect(exported.exportSchemaVersion).toBe(6);
+    expect(exported.costingAssumptions).toEqual(source.costingAssumptions);
+    expect(importProjectJson(JSON.stringify(exported)).costingAssumptions).toEqual(source.costingAssumptions);
+
+    const copy = cloneProjectSnapshot(source, '2026-01-01T00:00:00.000Z');
+    expect(copy.costingAssumptions?.[0].id).not.toBe('cost');
+    expect(copy.costingAssumptions?.[0].scenarioId).toBe(copy.scenarios[0].id);
+    expect(copy.costingAssumptions?.[0].enteredRate).toBe(100);
+  });
+
+  it('accepts version 5 backups without costing assumptions and keeps historical 366-day totals', () => {
+    const payload = JSON.parse(exportProjectJson({
+      project: { id: 'p', name: 'Legacy 5', distanceUnit: 'miles', currencyCode: 'USD', ...metadata() },
+      scenarios: [{ id: 's', projectId: 'p', name: 'Base', ...metadata() }],
+      serviceDays: [{ id: 'd', scenarioId: 's', kind: 'weekday', name: 'Weekday', annualServiceDays: 366, sequence: 0, ...metadata() }],
+      routes: [], nodes: [], patterns: [], runtimeProfiles: [], runtimeAssignments: [], tripProfiles: [{ id: 'tp', scenarioId: 's', name: 'Default', ...metadata() }],
+      blockingScenarios: [], costingAssumptions: [], generationSets: [], trips: [], blocks: [],
+    }));
+    payload.exportSchemaVersion = 5;
+    delete payload.costingAssumptions;
+    const restored = importProjectJson(JSON.stringify(payload));
+    expect(restored.costingAssumptions).toBeUndefined();
+    expect(restored.serviceDays[0].annualServiceDays).toBe(366);
+  });
+
+  it('rejects malformed costing assumptions before import', () => {
+    const payload = JSON.parse(exportProjectJson({
+      project: { id: 'p', name: 'Invalid costing', distanceUnit: 'miles', currencyCode: 'USD', ...metadata() },
+      scenarios: [{ id: 's', projectId: 'p', name: 'Base', ...metadata() }],
+      serviceDays: [], routes: [], nodes: [], patterns: [], runtimeProfiles: [], runtimeAssignments: [], tripProfiles: [],
+      costingAssumptions: [{ id: 'cost', scenarioId: 's', currencyCode: 'USD', enteredRate: -1, rateYear: 2027, sourceType: 'ntd', baseServiceYear: 2026, futureYearCount: 0, annualEscalation: 0.03, ...metadata() }],
+      generationSets: [], trips: [], blocks: [],
+    }));
+    expect(() => importProjectJson(JSON.stringify(payload))).toThrow(/enteredRate/);
+
+    payload.costingAssumptions[0].enteredRate = 100;
+    payload.costingAssumptions[0].currencyCode = 'CAD';
+    expect(() => importProjectJson(JSON.stringify(payload))).toThrow(/currencyCode must be USD/);
+
+    payload.costingAssumptions[0].currencyCode = 'USD';
+    payload.costingAssumptions[0].scenarioId = 'missing-scenario';
+    expect(() => importProjectJson(JSON.stringify(payload))).toThrow(/references a missing Scenario/);
+  });
 });

@@ -1,14 +1,15 @@
-import type { Block, BlockingScenario, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RuntimeAssignment, RuntimeProfile, Scenario, Trip, TripGenerationSet, TripProfile } from '../domain/types';
+import type { Block, BlockingScenario, CostingAssumptions, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RuntimeAssignment, RuntimeProfile, Scenario, Trip, TripGenerationSet, TripProfile } from '../domain/types';
 import type { ScenarioRecords } from '../domain/project';
-import type { RouteDefinitionRepository } from '../application/ports';
+import type { CostingAssumptionsRepository, RouteDefinitionRepository } from '../application/ports';
 import type { RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
 import { TransitDatabase } from './database';
 import { assertRuntimeGraph } from './runtimePersistence';
 import { assertTripProfileReferences } from '../domain/trips';
 import { sortServiceDays } from '../domain/serviceDays';
 import { orderDirections } from '../domain/directions';
+import { assertCostingAssumptions, assertCostingAssumptionsCollection } from './costingPersistence';
 
-export class DexieRouteDefinitionRepository implements RouteDefinitionRepository {
+export class DexieRouteDefinitionRepository implements RouteDefinitionRepository, CostingAssumptionsRepository {
   constructor(readonly db = new TransitDatabase()) {}
 
   async listProjects(): Promise<Project[]> { return this.db.projects.toArray(); }
@@ -16,6 +17,24 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
   async saveProject(project: Project): Promise<void> { await this.db.projects.put(project); }
   async listScenarios(projectId: string): Promise<Scenario[]> { return this.db.scenarios.where('projectId').equals(projectId).toArray(); }
   async saveScenario(scenario: Scenario): Promise<void> { await this.db.scenarios.put(scenario); }
+
+  async getCostingAssumptions(scenarioId: string): Promise<CostingAssumptions | undefined> {
+    const records = await this.db.costingAssumptions.where('scenarioId').equals(scenarioId).toArray();
+    if (records.length > 1) throw new Error(`Scenario ${scenarioId} has more than one costing assumptions record.`);
+    return records[0];
+  }
+
+  async saveCostingAssumptions(assumptions: CostingAssumptions): Promise<void> {
+    assertCostingAssumptions(assumptions, assumptions.scenarioId);
+    await this.db.transaction('rw', [this.db.scenarios, this.db.costingAssumptions], async () => {
+      if (!await this.db.scenarios.get(assumptions.scenarioId)) throw new Error('Costing assumptions reference a missing Scenario.');
+      const existing = await this.db.costingAssumptions.where('scenarioId').equals(assumptions.scenarioId).toArray();
+      if (existing.some((candidate) => candidate.id !== assumptions.id)) throw new Error('Scenario already has a different costing assumptions record.');
+      const sameId = await this.db.costingAssumptions.get(assumptions.id);
+      if (sameId && sameId.scenarioId !== assumptions.scenarioId) throw new Error('Costing assumption ownership cannot be moved to another Scenario.');
+      await this.db.costingAssumptions.put(assumptions);
+    });
+  }
 
   async getScenarioRecords(scenarioId: string): Promise<ScenarioRecords | undefined> {
     const scenario = await this.db.scenarios.get(scenarioId);
@@ -30,22 +49,25 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
       this.db.patterns.toArray().then((values) => values.filter((pattern) => routeIds.has(pattern.routeId))),
       this.db.directions.toArray().then((values) => orderDirections(values.filter((direction) => routeIds.has(direction.routeId)))),
     ]);
-    const [runtimeProfiles, runtimeAssignments, tripProfiles, blockingScenarios, generationSets, trips, blocks] = await Promise.all([
+    const [runtimeProfiles, runtimeAssignments, tripProfiles, blockingScenarios, costingAssumptions, generationSets, trips, blocks] = await Promise.all([
       this.db.runtimeProfiles.toArray().then((values) => values.filter((profile) => routeIds.has(profile.routeId))),
       this.db.runtimeAssignments.where('scenarioId').equals(scenarioId).toArray(),
       this.db.tripProfiles.where('scenarioId').equals(scenarioId).toArray(),
       this.db.blockingScenarios.where('scenarioId').equals(scenarioId).toArray(),
+      this.db.costingAssumptions.where('scenarioId').equals(scenarioId).toArray(),
       this.db.generationSets.where('scenarioId').equals(scenarioId).toArray(),
       this.db.trips.where('scenarioId').equals(scenarioId).toArray(),
       this.db.blocks.where('scenarioId').equals(scenarioId).toArray(),
     ]);
-    return { scenario, serviceDays: sortServiceDays(serviceDays), routes, nodes, patterns, ...(directions.length ? { directions } : {}), runtimeProfiles, runtimeAssignments, ...(tripProfiles.length ? { tripProfiles } : {}), ...(blockingScenarios.length ? { blockingScenarios } : {}), generationSets, trips, blocks };
+    if (costingAssumptions.length > 1) throw new Error(`Scenario ${scenarioId} has more than one costing assumptions record.`);
+    return { scenario, serviceDays: sortServiceDays(serviceDays), routes, nodes, patterns, ...(directions.length ? { directions } : {}), runtimeProfiles, runtimeAssignments, ...(tripProfiles.length ? { tripProfiles } : {}), ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions[0] ? { costingAssumptions: costingAssumptions[0] } : {}), generationSets, trips, blocks };
   }
 
   async saveScenarioRecords(records: ScenarioRecords): Promise<void> {
     assertRuntimeGraph(records.runtimeProfiles, records.runtimeAssignments, records.patterns, records.serviceDays, records.scenario.id);
     assertTripProfileReferences(records.trips, records.blocks);
-    await this.db.transaction('rw', [this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.generationSets, this.db.trips, this.db.blocks], async () => {
+    if (records.costingAssumptions) assertCostingAssumptions(records.costingAssumptions, records.scenario.id);
+    await this.db.transaction('rw', [this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.costingAssumptions, this.db.generationSets, this.db.trips, this.db.blocks], async () => {
       const oldRoutes = await this.db.routes.where('scenarioId').equals(records.scenario.id).toArray();
       const oldRouteIds = new Set(oldRoutes.map((route) => route.id));
       const [oldNodes, oldPatterns] = await Promise.all([
@@ -63,6 +85,14 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
       const oldAssignments = await this.db.runtimeAssignments.where('scenarioId').equals(records.scenario.id).toArray();
       const oldTripProfiles = await this.db.tripProfiles.where('scenarioId').equals(records.scenario.id).toArray();
       const oldBlockingScenarios = await this.db.blockingScenarios.where('scenarioId').equals(records.scenario.id).toArray();
+      const oldCostingAssumptions = await this.db.costingAssumptions.where('scenarioId').equals(records.scenario.id).toArray();
+      if (records.costingAssumptions && oldCostingAssumptions.some((candidate) => candidate.id !== records.costingAssumptions!.id)) {
+        throw new Error('Scenario already has a different costing assumptions record.');
+      }
+      if (records.costingAssumptions) {
+        const sameId = await this.db.costingAssumptions.get(records.costingAssumptions.id);
+        if (sameId && sameId.scenarioId !== records.scenario.id) throw new Error('Costing assumption ownership cannot be moved to another Scenario.');
+      }
       const oldGenerationSets = await this.db.generationSets.where('scenarioId').equals(records.scenario.id).toArray();
       const oldTrips = await this.db.trips.where('scenarioId').equals(records.scenario.id).toArray();
       const oldBlocks = await this.db.blocks.where('scenarioId').equals(records.scenario.id).toArray();
@@ -95,6 +125,7 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
       await this.db.runtimeAssignments.bulkPut(records.runtimeAssignments);
       await this.db.tripProfiles.bulkPut(records.tripProfiles ?? []);
       await this.db.blockingScenarios.bulkPut(records.blockingScenarios ?? []);
+      if (records.costingAssumptions) await this.db.costingAssumptions.put(records.costingAssumptions);
       await this.db.generationSets.bulkPut(records.generationSets);
       await this.db.trips.bulkPut(records.trips);
       await this.db.blocks.bulkPut(records.blocks);
@@ -143,7 +174,7 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
     if (!project) return undefined;
     const scenarios = await this.db.scenarios.where('projectId').equals(projectId).toArray();
     const scenarioIds = new Set(scenarios.map((scenario) => scenario.id));
-    const [serviceDays, routes, nodes, patterns, directions, runtimeProfiles, runtimeAssignments, tripProfiles, blockingScenarios, generationSets, trips, blocks] = await Promise.all([
+    const [serviceDays, routes, nodes, patterns, directions, runtimeProfiles, runtimeAssignments, tripProfiles, blockingScenarios, costingAssumptions, generationSets, trips, blocks] = await Promise.all([
       this.db.serviceDays.toArray().then((values) => values.filter((day) => scenarioIds.has(day.scenarioId))),
       this.db.routes.toArray().then((values) => values.filter((route) => scenarioIds.has(route.scenarioId))),
       this.db.nodes.toArray().then((values) => values.filter((node) => scenarioIds.has(node.scenarioId))),
@@ -153,22 +184,24 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
       this.db.runtimeAssignments.toArray().then((values) => values.filter((assignment) => scenarioIds.has(assignment.scenarioId))),
       this.db.tripProfiles.toArray().then((values) => values.filter((profile) => scenarioIds.has(profile.scenarioId))),
       this.db.blockingScenarios.toArray().then((values) => values.filter((blockingScenario) => scenarioIds.has(blockingScenario.scenarioId))),
+      this.db.costingAssumptions.toArray().then((values) => values.filter((assumptions) => scenarioIds.has(assumptions.scenarioId))),
       this.db.generationSets.toArray().then((values) => values.filter((set) => scenarioIds.has(set.scenarioId))),
       this.db.trips.toArray().then((values) => values.filter((trip) => scenarioIds.has(trip.scenarioId))),
       this.db.blocks.toArray().then((values) => values.filter((block) => scenarioIds.has(block.scenarioId))),
     ]);
-    return { project, scenarios, serviceDays: sortServiceDays(serviceDays), routes, nodes, patterns, ...(directions.length ? { directions } : {}), runtimeProfiles, runtimeAssignments, ...(tripProfiles.length ? { tripProfiles } : {}), ...(blockingScenarios.length ? { blockingScenarios } : {}), generationSets, trips, blocks };
+    return { project, scenarios, serviceDays: sortServiceDays(serviceDays), routes, nodes, patterns, ...(directions.length ? { directions } : {}), runtimeProfiles, runtimeAssignments, ...(tripProfiles.length ? { tripProfiles } : {}), ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions.length ? { costingAssumptions } : {}), generationSets, trips, blocks };
   }
 
   async saveProjectSnapshot(snapshot: ProjectSnapshot): Promise<void> {
     assertRuntimeGraph(snapshot.runtimeProfiles, snapshot.runtimeAssignments, snapshot.patterns, snapshot.serviceDays);
     assertTripProfileReferences(snapshot.trips, snapshot.blocks);
-    await this.db.transaction('rw', [this.db.projects, this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.generationSets, this.db.trips, this.db.blocks], async () => {
+    assertCostingAssumptionsCollection(snapshot.costingAssumptions ?? [], new Set(snapshot.scenarios.map((scenario) => scenario.id)));
+    await this.db.transaction('rw', [this.db.projects, this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.costingAssumptions, this.db.generationSets, this.db.trips, this.db.blocks], async () => {
       const currentScenarios = await this.db.scenarios.where('projectId').equals(snapshot.project.id).toArray();
       const currentScenarioIds = new Set(currentScenarios.map((scenario) => scenario.id));
       const currentRoutes = (await this.db.routes.toArray()).filter((route) => currentScenarioIds.has(route.scenarioId));
       const currentRouteIds = new Set(currentRoutes.map((route) => route.id));
-      const [currentServiceDays, currentNodes, currentPatterns, currentDirections, currentProfiles, currentAssignments, currentTripProfiles, currentBlockingScenarios, currentGenerationSets, currentTrips, currentBlocks] = await Promise.all([
+      const [currentServiceDays, currentNodes, currentPatterns, currentDirections, currentProfiles, currentAssignments, currentTripProfiles, currentBlockingScenarios, storedCostingAssumptions, currentGenerationSets, currentTrips, currentBlocks] = await Promise.all([
         this.db.serviceDays.toArray().then((values) => values.filter((day) => currentScenarioIds.has(day.scenarioId))),
         this.db.nodes.toArray().then((values) => values.filter((node) => currentRouteIds.has(node.routeId))),
         this.db.patterns.toArray().then((values) => values.filter((pattern) => currentRouteIds.has(pattern.routeId))),
@@ -177,10 +210,16 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
         this.db.runtimeAssignments.toArray().then((values) => values.filter((assignment) => currentScenarioIds.has(assignment.scenarioId))),
         this.db.tripProfiles.toArray().then((values) => values.filter((profile) => currentScenarioIds.has(profile.scenarioId))),
         this.db.blockingScenarios.toArray().then((values) => values.filter((blockingScenario) => currentScenarioIds.has(blockingScenario.scenarioId))),
+        this.db.costingAssumptions.toArray(),
         this.db.generationSets.toArray().then((values) => values.filter((set) => currentScenarioIds.has(set.scenarioId))),
         this.db.trips.toArray().then((values) => values.filter((trip) => currentScenarioIds.has(trip.scenarioId))),
         this.db.blocks.toArray().then((values) => values.filter((block) => currentScenarioIds.has(block.scenarioId))),
       ]);
+      const currentCostingAssumptions = storedCostingAssumptions.filter((assumptions) => currentScenarioIds.has(assumptions.scenarioId));
+      for (const assumptions of snapshot.costingAssumptions ?? []) {
+        const sameId = storedCostingAssumptions.find((candidate) => candidate.id === assumptions.id);
+        if (sameId && sameId.scenarioId !== assumptions.scenarioId) throw new Error('Costing assumption ownership cannot be moved to another Scenario.');
+      }
       const incoming = {
         scenarios: new Set(snapshot.scenarios.map((scenario) => scenario.id)),
         serviceDays: new Set(snapshot.serviceDays.map((day) => day.id)),
@@ -192,6 +231,7 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
         runtimeAssignments: new Set(snapshot.runtimeAssignments.map((assignment) => assignment.id)),
         tripProfiles: new Set((snapshot.tripProfiles ?? []).map((profile) => profile.id)),
         blockingScenarios: new Set((snapshot.blockingScenarios ?? []).map((blockingScenario) => blockingScenario.id)),
+        costingAssumptions: new Set((snapshot.costingAssumptions ?? []).map((assumptions) => assumptions.id)),
         generationSets: new Set(snapshot.generationSets.map((set) => set.id)),
         trips: new Set(snapshot.trips.map((trip) => trip.id)),
         blocks: new Set(snapshot.blocks.map((block) => block.id)),
@@ -206,6 +246,7 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
       await this.db.runtimeProfiles.bulkDelete(currentProfiles.filter((profile) => !incoming.runtimeProfiles.has(profile.id)).map((profile) => profile.id));
       await this.db.tripProfiles.bulkDelete(currentTripProfiles.filter((profile) => !incoming.tripProfiles.has(profile.id)).map((profile) => profile.id));
       await this.db.blockingScenarios.bulkDelete(currentBlockingScenarios.filter((blockingScenario) => !incoming.blockingScenarios.has(blockingScenario.id)).map((blockingScenario) => blockingScenario.id));
+      await this.db.costingAssumptions.bulkDelete(currentCostingAssumptions.filter((assumptions) => !incoming.costingAssumptions.has(assumptions.id)).map((assumptions) => assumptions.id));
       await this.db.generationSets.bulkDelete(currentGenerationSets.filter((set) => !incoming.generationSets.has(set.id)).map((set) => set.id));
       await this.db.trips.bulkDelete(currentTrips.filter((trip) => !incoming.trips.has(trip.id)).map((trip) => trip.id));
       await this.db.blocks.bulkDelete(currentBlocks.filter((block) => !incoming.blocks.has(block.id)).map((block) => block.id));
@@ -220,6 +261,7 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
       await this.db.runtimeAssignments.bulkPut(snapshot.runtimeAssignments);
       await this.db.tripProfiles.bulkPut(snapshot.tripProfiles ?? []);
       await this.db.blockingScenarios.bulkPut(snapshot.blockingScenarios ?? []);
+      await this.db.costingAssumptions.bulkPut(snapshot.costingAssumptions ?? []);
       await this.db.generationSets.bulkPut(snapshot.generationSets);
       await this.db.trips.bulkPut(snapshot.trips);
       await this.db.blocks.bulkPut(snapshot.blocks);

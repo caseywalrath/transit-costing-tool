@@ -12,8 +12,8 @@ test('uses one header action layer and a right-docked Shift drawer', async ({ pa
   const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
 
   await expect(sections).toHaveCount(2);
-  await expect(runtimeActions.getByRole('button')).toHaveText(['Profile: Weekday ▾', 'Add', 'Actions ▾']);
-  await expect(tripActions.getByRole('button')).toHaveText(['Profile: Default ▾', 'Actions ▾']);
+  await expect(runtimeActions.getByRole('button')).toHaveText(['Profile: Weekday ▾', 'Add', '']);
+  await expect(tripActions.getByRole('button')).toHaveText(['Profile: Default ▾', '']);
   await expect(runtimeSection.locator('.runtime-editor-toolbar')).toHaveCount(0);
   await expect(tripsSection.locator('.trip-shift-tool')).toHaveCount(0);
   await expect(drawer.getByRole('button')).toHaveText(['×', '− Back', '+ Forward', 'Undo', 'Redo', 'Discard', 'Done']);

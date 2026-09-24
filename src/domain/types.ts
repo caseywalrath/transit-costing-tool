@@ -95,11 +95,19 @@ export interface BlockingBlock extends EntityMetadata { id: EntityId; scenarioId
 export type NormalizedBlock = BlockingBlock;
 export type NormalizedBlockingBlock = BlockingBlock;
 export interface Block extends EntityMetadata { id: EntityId; scenarioId: EntityId; serviceDayId: EntityId; /** Phase 4 ownership. Legacy records may omit this until migration/import normalization. */ blockingScenarioId?: EntityId; /** Historical timetable ownership retained only at legacy boundaries. */ tripProfileId?: EntityId; label: string; activities: BlockActivity[]; notes?: string; }
-export type CostBasis = 'revenueHours' | 'platformHours' | 'revenueMiles' | 'platformMiles';
-export interface CostSource { type: 'user' | 'ntd'; sourceYear?: number; note?: string; }
-export interface InflationAssumption { year: number; rate: number; }
-export interface CostEstimate { id: EntityId; name: string; basis: CostBasis; rate: number; baseYear: number; source: CostSource; }
-export interface CostPlan extends EntityMetadata { id: EntityId; scenarioId: EntityId; name: string; currencyCode: string; estimates: CostEstimate[]; inflation: InflationAssumption[]; }
+export interface CostingAssumptions extends EntityMetadata {
+  id: EntityId;
+  scenarioId: EntityId;
+  /** The first costing release is fixed to USD per Vehicle Revenue Hour. */
+  currencyCode: 'USD';
+  enteredRate?: number;
+  rateYear: number;
+  sourceType: 'user' | 'ntd';
+  sourceNote?: string;
+  baseServiceYear: number;
+  futureYearCount: number;
+  annualEscalation: number;
+}
 export type ValidationSeverity = 'error' | 'warning';
 export type ValidationCategory = 'structural' | 'operational';
 export interface ValidationFinding { ruleId: string; severity: ValidationSeverity; category?: ValidationCategory; entityType: string; entityId: EntityId; field?: string; messageKey: string; parameters?: Record<string, string | number>; }
@@ -119,10 +127,12 @@ export interface ProjectSnapshot {
   tripProfiles?: TripProfile[];
   /** Phase 4 normalized Blocking Scenario records. Legacy snapshots may omit this collection. */
   blockingScenarios?: BlockingScenario[];
+  /** Scenario-owned costing inputs. Legacy snapshots and lazy-created scenarios may omit this collection. */
+  costingAssumptions?: CostingAssumptions[];
   /** @deprecated Historical Phase 2 collection; authoritative snapshots leave this empty. */
   generationSets: TripGenerationSet[];
   trips: Trip[];
   blocks: Block[];
 }
 
-export interface DatabaseRecordMap { projects: Project; scenarios: Scenario; serviceDays: ServiceDayDefinition; routes: Route; nodes: Node; patterns: RoutePattern; directions: RouteDirection; runtimeProfiles: RuntimeProfile; runtimeAssignments: RuntimeAssignment; generationSets: TripGenerationSet; tripProfiles: TripProfile; blockingScenarios: BlockingScenario; trips: Trip; blocks: Block; costPlans: CostPlan; appMetadata: AppMetadata; }
+export interface DatabaseRecordMap { projects: Project; scenarios: Scenario; serviceDays: ServiceDayDefinition; routes: Route; nodes: Node; patterns: RoutePattern; directions: RouteDirection; runtimeProfiles: RuntimeProfile; runtimeAssignments: RuntimeAssignment; generationSets: TripGenerationSet; tripProfiles: TripProfile; blockingScenarios: BlockingScenario; trips: Trip; blocks: Block; costingAssumptions: CostingAssumptions; appMetadata: AppMetadata; }

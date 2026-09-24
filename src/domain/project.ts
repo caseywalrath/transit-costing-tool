@@ -15,6 +15,7 @@ import type {
   Scenario,
   ServiceDayDefinition,
   BlockingScenario,
+  CostingAssumptions,
 } from './types';
 import { metadata, newId } from './ids';
 import { createStandardServiceDays } from './serviceDays';
@@ -45,11 +46,92 @@ export interface ScenarioRecords {
   trips: Trip[];
   blocks: Block[];
   blockingScenarios?: BlockingScenario[];
+  costingAssumptions?: CostingAssumptions;
 }
 
 export function createScenarioRecords(projectId: string, name: string, now = new Date().toISOString()): ScenarioRecords {
   const scenario = createScenario(projectId, name, now);
   return { scenario, serviceDays: createStandardServiceDays(scenario.id, undefined, now), routes: [], nodes: [], patterns: [], directions: [], runtimeProfiles: [], runtimeAssignments: [], tripProfiles: [{ id: newId(), scenarioId: scenario.id, name: 'Default', ...metadata(now) }], generationSets: [], trips: [], blocks: [] };
+}
+
+/** Duplicate one complete Route planning graph inside its current Scenario.
+ * Blocks remain unchanged, so copied Trips begin unassigned. */
+export function duplicateRouteRecords(source: ScenarioRecords, routeId: string, targetName: string, now = new Date().toISOString()): { records: ScenarioRecords; route: Route } {
+  const sourceRoute = source.routes.find((route) => route.id === routeId);
+  if (!sourceRoute) throw new Error('Route not found.');
+  if (!targetName.trim()) throw new Error('Route name is required.');
+
+  const route: Route = { ...sourceRoute, id: newId(), name: targetName.trim(), ...metadata(now) };
+  const sourceNodes = source.nodes.filter((node) => node.routeId === routeId);
+  const nodeIds = new Map(sourceNodes.map((node) => [node.id, newId()]));
+  const nodes = sourceNodes.map((node) => ({ ...node, id: nodeIds.get(node.id)!, routeId: route.id, ...metadata(now) }));
+
+  const sourceDirections = (source.directions ?? []).filter((direction) => direction.routeId === routeId);
+  const directionIds = new Map(sourceDirections.map((direction) => [direction.id, newId()]));
+  const columnIds = new Map<string, string>();
+  sourceDirections.forEach((direction) => direction.columns.forEach((column) => columnIds.set(column.id, newId())));
+  const directions = sourceDirections.map((direction) => ({
+    ...direction,
+    id: directionIds.get(direction.id)!,
+    routeId: route.id,
+    columns: direction.columns.map((column) => ({ ...column, id: columnIds.get(column.id)!, nodeId: nodeIds.get(column.nodeId) ?? column.nodeId })),
+    ...metadata(now),
+  }));
+
+  const sourcePatterns = source.patterns.filter((pattern) => pattern.routeId === routeId);
+  const patternIds = new Map(sourcePatterns.map((pattern) => [pattern.id, newId()]));
+  const pointIds = new Map<string, string>();
+  sourcePatterns.forEach((pattern) => pattern.points.forEach((point) => pointIds.set(point.id, newId())));
+  const patterns = sourcePatterns.map((pattern) => ({
+    ...pattern,
+    id: patternIds.get(pattern.id)!,
+    routeId: route.id,
+    directionId: pattern.directionId ? directionIds.get(pattern.directionId) : undefined,
+    points: pattern.points.map((point) => ({ ...point, id: pointIds.get(point.id)!, nodeId: nodeIds.get(point.nodeId) ?? point.nodeId, directionColumnId: point.directionColumnId ? columnIds.get(point.directionColumnId) : undefined })),
+    ...metadata(now),
+  }));
+
+  const sourceProfiles = source.runtimeProfiles.filter((profile) => profile.routeId === routeId);
+  const profileIds = new Map(sourceProfiles.map((profile) => [profile.id, newId()]));
+  const runtimeProfiles = sourceProfiles.map((profile) => ({ ...profile, id: profileIds.get(profile.id)!, routeId: route.id, patternId: patternIds.get(profile.patternId) ?? profile.patternId, bands: profile.bands.map((band) => ({ ...band, id: newId(), segmentRuntimeSeconds: [...band.segmentRuntimeSeconds] })), ...metadata(now) }));
+  const sourceProfileIds = new Set(sourceProfiles.map((profile) => profile.id));
+  const sourcePatternIds = new Set(sourcePatterns.map((pattern) => pattern.id));
+  const runtimeAssignments = source.runtimeAssignments
+    .filter((assignment) => sourcePatternIds.has(assignment.patternId) || sourceProfileIds.has(assignment.runtimeProfileId))
+    .map((assignment) => ({ ...assignment, id: newId(), patternId: patternIds.get(assignment.patternId) ?? assignment.patternId, runtimeProfileId: profileIds.get(assignment.runtimeProfileId) ?? assignment.runtimeProfileId, ...metadata(now) }));
+
+  const sourceGenerationSets = source.generationSets.filter((set) => set.routeId === routeId);
+  const generationSetIds = new Map(sourceGenerationSets.map((set) => [set.id, newId()]));
+  const generationSets = sourceGenerationSets.map((set) => ({ ...set, id: generationSetIds.get(set.id)!, routeId: route.id, patternId: patternIds.get(set.patternId) ?? set.patternId, ...metadata(now) }));
+  const trips = source.trips.filter((trip) => trip.routeId === routeId).map((trip) => ({
+    ...trip,
+    id: newId(),
+    routeId: route.id,
+    patternId: patternIds.get(trip.patternId) ?? trip.patternId,
+    stopTimes: trip.stopTimes.map((point) => ({ ...point, patternPointId: pointIds.get(point.patternPointId) ?? point.patternPointId })),
+    provenance: {
+      ...trip.provenance,
+      generationSetId: trip.provenance.generationSetId ? generationSetIds.get(trip.provenance.generationSetId) : undefined,
+      runtimeProfileId: trip.provenance.runtimeProfileId ? profileIds.get(trip.provenance.runtimeProfileId) : undefined,
+      calculationSource: trip.provenance.calculationSource ? { ...trip.provenance.calculationSource, runtimeProfileId: profileIds.get(trip.provenance.calculationSource.runtimeProfileId) ?? trip.provenance.calculationSource.runtimeProfileId } : undefined,
+    },
+    ...metadata(now),
+  }));
+
+  return {
+    route,
+    records: {
+      ...source,
+      routes: [...source.routes, route],
+      nodes: [...source.nodes, ...nodes],
+      patterns: [...source.patterns, ...patterns],
+      directions: [...(source.directions ?? []), ...directions],
+      runtimeProfiles: [...source.runtimeProfiles, ...runtimeProfiles],
+      runtimeAssignments: [...source.runtimeAssignments, ...runtimeAssignments],
+      generationSets: [...source.generationSets, ...generationSets],
+      trips: [...source.trips, ...trips],
+    },
+  };
 }
 
 /** Clone all Phase 1 records owned by a scenario with remapped references. */
@@ -136,8 +218,11 @@ export function duplicateScenario(source: ScenarioRecords, targetName: string, n
   const blockingScenarioIds = new Map((source.blockingScenarios ?? []).map((blockingScenario) => [blockingScenario.id, newId()]));
   const blockingScenarios = (source.blockingScenarios ?? []).map((blockingScenario) => ({ ...blockingScenario, id: blockingScenarioIds.get(blockingScenario.id)!, scenarioId: scenario.id, tripProfileId: tripProfileIds.get(blockingScenario.tripProfileId) ?? defaultProfileId!, ...metadata(now) }));
   const normalizedBlocks = blocks.map((block) => ({ ...block, ...(block.blockingScenarioId ? { blockingScenarioId: blockingScenarioIds.get(block.blockingScenarioId) } : {}) }));
+  const costingAssumptions = source.costingAssumptions
+    ? { ...source.costingAssumptions, id: newId(), scenarioId: scenario.id, ...metadata(now) }
+    : undefined;
 
-  return { scenario, serviceDays, routes, nodes, patterns: copiedPatterns, ...(source.directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), generationSets, trips, blocks: normalizedBlocks };
+  return { scenario, serviceDays, routes, nodes, patterns: copiedPatterns, ...(source.directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions ? { costingAssumptions } : {}), generationSets, trips, blocks: normalizedBlocks };
 }
 
 export function snapshotForScenario(snapshot: ProjectSnapshot, scenarioId: string): ScenarioRecords | undefined {
@@ -155,6 +240,7 @@ export function snapshotForScenario(snapshot: ProjectSnapshot, scenarioId: strin
     runtimeAssignments: snapshot.runtimeAssignments.filter((assignment) => assignment.scenarioId === scenarioId),
     tripProfiles: (snapshot.tripProfiles ?? []).filter((profile) => profile.scenarioId === scenarioId),
     blockingScenarios: (snapshot.blockingScenarios ?? []).filter((blockingScenario) => blockingScenario.scenarioId === scenarioId),
+    costingAssumptions: snapshot.costingAssumptions?.find((assumptions) => assumptions.scenarioId === scenarioId),
     generationSets: snapshot.generationSets.filter((set) => set.scenarioId === scenarioId),
     trips: snapshot.trips.filter((trip) => trip.scenarioId === scenarioId),
     blocks: snapshot.blocks.filter((block) => block.scenarioId === scenarioId),
@@ -176,6 +262,7 @@ export function projectSnapshotWithScenario(snapshot: ProjectSnapshot, records: 
     runtimeAssignments: [...snapshot.runtimeAssignments.filter((assignment) => otherScenarioIds.has(assignment.scenarioId)), ...records.runtimeAssignments],
     tripProfiles: [...(snapshot.tripProfiles ?? []).filter((profile) => otherScenarioIds.has(profile.scenarioId)), ...(records.tripProfiles ?? [])],
     blockingScenarios: [...(snapshot.blockingScenarios ?? []).filter((blockingScenario) => otherScenarioIds.has(blockingScenario.scenarioId)), ...(records.blockingScenarios ?? [])],
+    costingAssumptions: [...(snapshot.costingAssumptions ?? []).filter((assumptions) => otherScenarioIds.has(assumptions.scenarioId)), ...(records.costingAssumptions ? [records.costingAssumptions] : [])],
     generationSets: [...snapshot.generationSets.filter((set) => otherScenarioIds.has(set.scenarioId)), ...records.generationSets],
     trips: [...snapshot.trips.filter((trip) => otherScenarioIds.has(trip.scenarioId)), ...records.trips],
     blocks: [...snapshot.blocks.filter((block) => otherScenarioIds.has(block.scenarioId)), ...records.blocks],

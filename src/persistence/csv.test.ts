@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
-import { authoritativeTripsCsv, blockingActivitiesCsv, blockingBlocksCsv, blockingScenariosCsv, blockingSummariesCsv, blocksCsv, csvEscape, generationSetsCsv, patternPointsCsv, routeCsv, scheduledPointsCsv, tripsCsv } from './csv';
+import { authoritativeTripsCsv, blockingActivitiesCsv, blockingBlocksCsv, blockingScenariosCsv, blockingSummariesCsv, blocksCsv, costingCsvFiles, createCsvArchive, csvEscape, generationSetsCsv, patternPointsCsv, routeCsv, scheduledPointsCsv, tripsCsv } from './csv';
+import type { CostingAssumptionsInput, CostingCalculationResult } from '../domain/costing';
 
 describe('CSV serializers', () => {
   it('escapes commas, quotes, and newlines', () => {
@@ -62,5 +63,47 @@ describe('CSV serializers', () => {
     const rows = blockingSummariesCsv([summary]).trim().split('\r\n');
     expect(rows[0]).toContain('revenueHours,runningHours,platformHours');
     expect(rows[1]).toContain('1.5,1,2');
+  });
+
+  it('exports all service-day/year rows, independently rounded totals, and exclusions in one ZIP', async () => {
+    const scenario = { id: 'scenario', projectId: 'project', name: 'Base', ...metadata() };
+    const blockingScenario = { id: 'blocking', scenarioId: scenario.id, tripProfileId: 'profile', name: 'Weekday blocks', ...metadata() };
+    const profile = { id: 'profile', scenarioId: scenario.id, name: 'Default', ...metadata() };
+    const assumptions: CostingAssumptionsInput = {
+      enteredRate: 1.00005, rateYear: 2024, sourceType: 'ntd', sourceNote: 'NTD source',
+      baseServiceYear: 2026, futureYearCount: 0, annualEscalation: 0.03,
+    };
+    const result: CostingCalculationResult = {
+      state: 'partial', sourceRate: 1.00005, sourceRateYear: 2024, annualEscalation: 0.03,
+      eligibleBlockCount: 2, excludedBlockCount: 1, unassignedTripCount: 2, findings: [],
+      exclusions: [
+        { serviceDayId: 'weekday', serviceDayName: 'Weekday', excludedBlockCount: 1, unassignedTripCount: 0, blocks: [{ blockId: 'bad-block', blockLabel: '3', reasonCodes: ['block.connectionIncomplete'] }] },
+        { serviceDayId: 'saturday', serviceDayName: 'Saturday', excludedBlockCount: 0, unassignedTripCount: 2, blocks: [] },
+      ],
+      dailyRows: [
+        { serviceDayId: 'weekday', serviceDayName: 'Weekday', serviceDayKind: 'weekday', annualServiceDays: 1, eligibleBlockCount: 1, excludedBlockCount: 1, unassignedTripCount: 0, revenueHoursPerDay: 0.005, platformHoursPerDay: 0.005, annualRevenueHours: 0.005, annualPlatformHours: 0.005, yearCosts: [{ serviceYear: 2026, costPerDayUsd: 0.005, annualCostUsd: 0.005 }] },
+        { serviceDayId: 'saturday', serviceDayName: 'Saturday', serviceDayKind: 'saturday', annualServiceDays: 1, eligibleBlockCount: 1, excludedBlockCount: 0, unassignedTripCount: 2, revenueHoursPerDay: 0.005, platformHoursPerDay: 0.005, annualRevenueHours: 0.005, annualPlatformHours: 0.005, yearCosts: [{ serviceYear: 2026, costPerDayUsd: 0.005, annualCostUsd: 0.005 }] },
+      ],
+      yearRows: [{ serviceYear: 2026, appliedRateUsdPerRevenueHour: 1.00005, annualRevenueHours: 0.01, annualPlatformHours: 0.01, annualCostUsd: 0.01 }],
+    };
+    const files = costingCsvFiles(scenario, blockingScenario, profile, assumptions, result);
+    expect(files.map((file) => file.suffix)).toEqual(['costing-assumptions', 'costing-results', 'costing-exclusions']);
+    const rows = files[1].contents.trim().split('\r\n');
+    expect(rows[0]).toContain('appliedRateUsdPerRevenueHour');
+    expect(rows).toHaveLength(4);
+    expect(rows[1]).toContain(',0.0050,0.0050,0.0050,0.0050,1.0001,0.01,0.01,');
+    expect(rows[3]).toContain(',0.0100,0.0100,1.0001,,0.01,');
+    expect(files[2].contents).toContain('bad-block,3,block.connectionIncomplete');
+    expect(files[2].contents).toContain('unassignedTrips');
+
+    const archive = createCsvArchive(files.map((file) => ({ filename: `${file.suffix}.csv`, contents: file.contents })));
+    const bytes = new Uint8Array(await archive.arrayBuffer());
+    expect(archive.type).toBe('application/zip');
+    expect([...bytes.slice(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04]);
+    const archiveText = new TextDecoder().decode(bytes);
+    expect(archiveText).toContain('costing-assumptions.csv');
+    expect(archiveText).toContain('costing-results.csv');
+    expect(archiveText).toContain('costing-exclusions.csv');
+    expect([...bytes.slice(-22, -18)]).toEqual([0x50, 0x4b, 0x05, 0x06]);
   });
 });

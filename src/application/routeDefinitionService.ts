@@ -1,6 +1,6 @@
 import { makePatternPoint } from '../domain/commands';
 import { metadata, newId, withUpdatedAt } from '../domain/ids';
-import { createProject, createScenarioRecords, duplicateScenario, type ScenarioRecords } from '../domain/project';
+import { createProject, createScenarioRecords, duplicateRouteRecords, duplicateScenario, type ScenarioRecords } from '../domain/project';
 import { duplicatePattern, getSegmentMiles, normalizePattern, reversePattern, validatePattern } from '../domain/patterns';
 import { createDirectionColumn, createManagedDirections, createRouteDirection, ensureManagedDirections, mapPatternPointsToDirection, normalizeDirections, oppositeDirectionGroup } from '../domain/directions';
 import { classifyPatternEdit, describePatternPointChange, getPatternServiceImpact, rebalanceRuntimeProfile, rebalanceTripForPattern, reconcileRouteTimetables, resetPatternService, type DirectionOrderConflict, type PatternServiceImpact, type RouteEditClassification, type RouteEditMode } from '../domain/safeRouteEditing';
@@ -326,6 +326,8 @@ export class RouteDefinitionService {
       runtimeProfiles: snapshot.runtimeProfiles.filter((profile) => !removedRouteIds.has(profile.routeId)),
       runtimeAssignments: snapshot.runtimeAssignments.filter((assignment) => assignment.scenarioId !== scenarioId),
       tripProfiles: (snapshot.tripProfiles ?? []).filter((profile) => profile.scenarioId !== scenarioId),
+      blockingScenarios: (snapshot.blockingScenarios ?? []).filter((blockingScenario) => blockingScenario.scenarioId !== scenarioId),
+      costingAssumptions: (snapshot.costingAssumptions ?? []).filter((assumptions) => assumptions.scenarioId !== scenarioId),
       generationSets: snapshot.generationSets.filter((set) => set.scenarioId !== scenarioId),
       trips: snapshot.trips.filter((trip) => trip.scenarioId !== scenarioId),
       blocks: snapshot.blocks.filter((block) => block.scenarioId !== scenarioId),
@@ -335,6 +337,10 @@ export class RouteDefinitionService {
     const route: Route = { id: newId(), scenarioId: records.scenario.id, name: '', ...metadata(this.now()) };
     const directions = createManagedDirections(records.scenario.id, route.id, this.now());
     return { records: await this.saveScenarioRecords({ ...records, routes: [...records.routes, route], directions: [...(records.directions ?? []), ...directions] }), route };
+  }
+  async duplicateRoute(records: ScenarioRecords, routeId: string, name: string): Promise<{ records: ScenarioRecords; route: Route }> {
+    const duplicate = duplicateRouteRecords(records, routeId, name, this.now());
+    return { ...duplicate, records: await this.saveScenarioRecords(duplicate.records) };
   }
   async getRouteDeletionImpact(routeId: string): Promise<RouteDeletionImpact> {
     const records = await this.recordsForRoute(routeId);
@@ -986,6 +992,7 @@ export type RouteDefinitionApplication = Pick<RouteDefinitionService,
   | 'getScenarioDeletionImpact'
   | 'deleteScenario'
   | 'addRoute'
+  | 'duplicateRoute'
   | 'getRouteDeletionImpact'
   | 'deleteRoute'
   | 'updateServiceDay'

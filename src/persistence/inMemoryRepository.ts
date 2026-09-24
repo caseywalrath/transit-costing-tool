@@ -1,13 +1,14 @@
-import type { Block, BlockingScenario, Node, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, Trip, TripGenerationSet, TripProfile } from '../domain/types';
+import type { Block, BlockingScenario, CostingAssumptions, Node, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, Trip, TripGenerationSet, TripProfile } from '../domain/types';
 import type { ScenarioRecords } from '../domain/project';
-import type { RouteDefinitionRepository } from '../application/ports';
+import type { CostingAssumptionsRepository, RouteDefinitionRepository } from '../application/ports';
 import type { RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
 import { assertRuntimeGraph } from './runtimePersistence';
 import { assertTripProfileReferences } from '../domain/trips';
 import { sortServiceDays } from '../domain/serviceDays';
 import { orderDirections } from '../domain/directions';
+import { assertCostingAssumptions, assertCostingAssumptionsCollection } from './costingPersistence';
 
-export class InMemoryRouteDefinitionRepository implements RouteDefinitionRepository {
+export class InMemoryRouteDefinitionRepository implements RouteDefinitionRepository, CostingAssumptionsRepository {
   projects = new Map<string, Project>();
   scenarios = new Map<string, Scenario>();
   serviceDays = new Map<string, ServiceDayDefinition>();
@@ -22,12 +23,29 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
   generationSets = new Map<string, TripGenerationSet>();
   trips = new Map<string, Trip>();
   blocks = new Map<string, Block>();
+  costingAssumptions = new Map<string, CostingAssumptions>();
 
   async listProjects(): Promise<Project[]> { return [...this.projects.values()]; }
   async getProject(id: string): Promise<Project | undefined> { return this.projects.get(id); }
   async saveProject(value: Project): Promise<void> { this.projects.set(value.id, value); }
   async listScenarios(projectId: string): Promise<Scenario[]> { return [...this.scenarios.values()].filter((value) => value.projectId === projectId); }
   async saveScenario(value: Scenario): Promise<void> { this.scenarios.set(value.id, value); }
+
+  async getCostingAssumptions(scenarioId: string): Promise<CostingAssumptions | undefined> {
+    const records = [...this.costingAssumptions.values()].filter((value) => value.scenarioId === scenarioId);
+    if (records.length > 1) throw new Error(`Scenario ${scenarioId} has more than one costing assumptions record.`);
+    return records[0];
+  }
+
+  async saveCostingAssumptions(value: CostingAssumptions): Promise<void> {
+    assertCostingAssumptions(value, value.scenarioId);
+    if (!this.scenarios.has(value.scenarioId)) throw new Error('Costing assumptions reference a missing Scenario.');
+    const existing = [...this.costingAssumptions.values()].find((candidate) => candidate.scenarioId === value.scenarioId);
+    if (existing && existing.id !== value.id) throw new Error('Scenario already has a different costing assumptions record.');
+    const sameId = this.costingAssumptions.get(value.id);
+    if (sameId && sameId.scenarioId !== value.scenarioId) throw new Error('Costing assumption ownership cannot be moved to another Scenario.');
+    this.costingAssumptions.set(value.id, value);
+  }
 
   async getScenarioRecords(scenarioId: string): Promise<ScenarioRecords | undefined> {
     const scenario = this.scenarios.get(scenarioId);
@@ -45,6 +63,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
       runtimeAssignments: [...this.runtimeAssignments.values()].filter((assignment) => assignment.scenarioId === scenarioId),
       ...((() => { const profiles = [...this.tripProfiles.values()].filter((profile) => profile.scenarioId === scenarioId); return profiles.length ? { tripProfiles: profiles } : {}; })()),
       ...((() => { const scenarios = [...this.blockingScenarios.values()].filter((blockingScenario) => blockingScenario.scenarioId === scenarioId); return scenarios.length ? { blockingScenarios: scenarios } : {}; })()),
+      ...((() => { const assumptions = [...this.costingAssumptions.values()].filter((value) => value.scenarioId === scenarioId); if (assumptions.length > 1) throw new Error(`Scenario ${scenarioId} has more than one costing assumptions record.`); return assumptions.length ? { costingAssumptions: assumptions[0] } : {}; })()),
       generationSets: [...this.generationSets.values()].filter((set) => set.scenarioId === scenarioId),
       trips: [...this.trips.values()].filter((trip) => trip.scenarioId === scenarioId),
       blocks: [...this.blocks.values()].filter((block) => block.scenarioId === scenarioId),
@@ -61,6 +80,15 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     const serviceDayIds = new Set(records.serviceDays.map((day) => day.id));
     assertRuntimeGraph(records.runtimeProfiles, records.runtimeAssignments, records.patterns, records.serviceDays, records.scenario.id);
     assertTripProfileReferences(records.trips, records.blocks);
+    if (records.costingAssumptions) assertCostingAssumptions(records.costingAssumptions, records.scenario.id);
+    const previousCostingAssumptions = [...this.costingAssumptions.values()].find((candidate) => candidate.scenarioId === records.scenario.id);
+    if (records.costingAssumptions && previousCostingAssumptions && previousCostingAssumptions.id !== records.costingAssumptions.id) {
+      throw new Error('Scenario already has a different costing assumptions record.');
+    }
+    if (records.costingAssumptions) {
+      const sameId = this.costingAssumptions.get(records.costingAssumptions.id);
+      if (sameId && sameId.scenarioId !== records.scenario.id) throw new Error('Costing assumption ownership cannot be moved to another Scenario.');
+    }
     for (const [id, node] of this.nodes) if (oldRouteIds.has(node.routeId) && !nodeIds.has(id)) this.nodes.delete(id);
     for (const [id, pattern] of this.patterns) if (oldRouteIds.has(pattern.routeId) && !patternIds.has(id)) this.patterns.delete(id);
     for (const [id, direction] of this.directions) if (oldRouteIds.has(direction.routeId) && !directionIds.has(id)) this.directions.delete(id);
@@ -83,6 +111,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     for (const assignment of records.runtimeAssignments) this.runtimeAssignments.set(assignment.id, assignment);
     for (const profile of records.tripProfiles ?? []) this.tripProfiles.set(profile.id, profile);
     for (const blockingScenario of records.blockingScenarios ?? []) this.blockingScenarios.set(blockingScenario.id, blockingScenario);
+    if (records.costingAssumptions) this.costingAssumptions.set(records.costingAssumptions.id, records.costingAssumptions);
     for (const set of records.generationSets) this.generationSets.set(set.id, set);
     for (const trip of records.trips) this.trips.set(trip.id, trip);
     for (const block of records.blocks) this.blocks.set(block.id, block);
@@ -135,6 +164,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
       runtimeAssignments: [...this.runtimeAssignments.values()].filter((assignment) => scenarioIds.has(assignment.scenarioId)),
       ...((() => { const profiles = [...this.tripProfiles.values()].filter((profile) => scenarioIds.has(profile.scenarioId)); return profiles.length ? { tripProfiles: profiles } : {}; })()),
       ...((() => { const blockingScenarios = [...this.blockingScenarios.values()].filter((blockingScenario) => scenarioIds.has(blockingScenario.scenarioId)); return blockingScenarios.length ? { blockingScenarios } : {}; })()),
+      ...((() => { const costingAssumptions = [...this.costingAssumptions.values()].filter((assumptions) => scenarioIds.has(assumptions.scenarioId)); return costingAssumptions.length ? { costingAssumptions } : {}; })()),
       generationSets: [...this.generationSets.values()].filter((set) => scenarioIds.has(set.scenarioId)),
       trips: [...this.trips.values()].filter((trip) => scenarioIds.has(trip.scenarioId)),
       blocks: [...this.blocks.values()].filter((block) => scenarioIds.has(block.scenarioId)),
@@ -146,6 +176,11 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     const ownedRouteIds = new Set([...this.routes.values()].filter((route) => ownedScenarioIds.has(route.scenarioId)).map((route) => route.id));
     assertRuntimeGraph(snapshot.runtimeProfiles, snapshot.runtimeAssignments, snapshot.patterns, snapshot.serviceDays);
     assertTripProfileReferences(snapshot.trips, snapshot.blocks);
+    assertCostingAssumptionsCollection(snapshot.costingAssumptions ?? [], new Set(snapshot.scenarios.map((scenario) => scenario.id)));
+    for (const assumptions of snapshot.costingAssumptions ?? []) {
+      const sameId = this.costingAssumptions.get(assumptions.id);
+      if (sameId && sameId.scenarioId !== assumptions.scenarioId) throw new Error('Costing assumption ownership cannot be moved to another Scenario.');
+    }
     for (const [id, scenario] of this.scenarios) if (scenario.projectId === snapshot.project.id && !snapshot.scenarios.some((candidate) => candidate.id === id)) this.scenarios.delete(id);
     for (const [id, day] of this.serviceDays) if (snapshot.scenarios.some((scenario) => scenario.projectId === snapshot.project.id && scenario.id === day.scenarioId) && !snapshot.serviceDays.some((candidate) => candidate.id === id)) this.serviceDays.delete(id);
     for (const [id, route] of this.routes) if (snapshot.scenarios.some((scenario) => scenario.projectId === snapshot.project.id && scenario.id === route.scenarioId) && !snapshot.routes.some((candidate) => candidate.id === id)) this.routes.delete(id);
@@ -157,6 +192,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     for (const [id, assignment] of this.runtimeAssignments) if (ownedScenarioIds.has(assignment.scenarioId) && !snapshot.runtimeAssignments.some((candidate) => candidate.id === id)) this.runtimeAssignments.delete(id);
     for (const [id, profile] of this.tripProfiles) if (ownedScenarioIds.has(profile.scenarioId) && !(snapshot.tripProfiles ?? []).some((candidate) => candidate.id === id)) this.tripProfiles.delete(id);
     for (const [id, blockingScenario] of this.blockingScenarios) if (ownedScenarioIds.has(blockingScenario.scenarioId) && !(snapshot.blockingScenarios ?? []).some((candidate) => candidate.id === id)) this.blockingScenarios.delete(id);
+    for (const [id, assumptions] of this.costingAssumptions) if (ownedScenarioIds.has(assumptions.scenarioId) && !(snapshot.costingAssumptions ?? []).some((candidate) => candidate.id === id)) this.costingAssumptions.delete(id);
     for (const [id, set] of this.generationSets) if (ownedScenarioIds.has(set.scenarioId) && !snapshot.generationSets.some((candidate) => candidate.id === id)) this.generationSets.delete(id);
     for (const [id, trip] of this.trips) if (ownedScenarioIds.has(trip.scenarioId) && !snapshot.trips.some((candidate) => candidate.id === id)) this.trips.delete(id);
     for (const [id, block] of this.blocks) if (ownedScenarioIds.has(block.scenarioId) && !snapshot.blocks.some((candidate) => candidate.id === id)) this.blocks.delete(id);
@@ -171,6 +207,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     for (const assignment of snapshot.runtimeAssignments) this.runtimeAssignments.set(assignment.id, assignment);
     for (const profile of snapshot.tripProfiles ?? []) this.tripProfiles.set(profile.id, profile);
     for (const blockingScenario of snapshot.blockingScenarios ?? []) this.blockingScenarios.set(blockingScenario.id, blockingScenario);
+    for (const assumptions of snapshot.costingAssumptions ?? []) this.costingAssumptions.set(assumptions.id, assumptions);
     for (const set of snapshot.generationSets) this.generationSets.set(set.id, set);
     for (const trip of snapshot.trips) this.trips.set(trip.id, trip);
     for (const block of snapshot.blocks) this.blocks.set(block.id, block);

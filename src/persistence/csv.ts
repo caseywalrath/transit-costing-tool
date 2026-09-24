@@ -1,5 +1,6 @@
-import type { Block, BlockingBlock, BlockingScenario, DirectionTimepointColumn, Node, Route, RouteDirection, RoutePattern, RuntimeProfile, Trip, TripGenerationSet, TripProfile } from '../domain/types';
+import type { Block, BlockingBlock, BlockingScenario, DirectionTimepointColumn, Node, Route, RouteDirection, RoutePattern, RuntimeProfile, Scenario, Trip, TripGenerationSet, TripProfile } from '../domain/types';
 import type { BlockSummary, BlockingSummary } from '../domain/blocking';
+import { roundCostingDisplay, type CostingAssumptionsInput, type CostingCalculationResult } from '../domain/costing';
 import { formatServiceTime } from '../domain/time';
 export function csvEscape(value: unknown): string { const s = String(value ?? ''); return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s; }
 export function toCsv(headers: string[], rows: Array<object>): string { return [headers, ...rows.map(r => { const record = r as Record<string, unknown>; return headers.map(h => csvEscape(record[h])); })] .map(row => row.join(',')).join('\r\n') + '\r\n'; }
@@ -74,6 +75,161 @@ export const blockingScenariosCsv = (scenarios: BlockingScenario[], tripProfiles
   const names = new Map(tripProfiles.map((profile) => [profile.id, profile.name]));
   return toCsv(['id', 'scenarioId', 'tripProfileId', 'tripProfileName', 'name', 'description'], scenarios.map((scenario) => ({ id: scenario.id, scenarioId: scenario.scenarioId, tripProfileId: scenario.tripProfileId, tripProfileName: names.get(scenario.tripProfileId), name: scenario.name, description: scenario.description })));
 };
+
+export type CostingCsvFileSuffix = 'costing-assumptions' | 'costing-results' | 'costing-exclusions';
+export interface CostingCsvFile { suffix: CostingCsvFileSuffix; contents: string; }
+
+const usd = (value: number | undefined) => value === undefined || !Number.isFinite(value) ? '' : roundCostingDisplay(value, 2).toFixed(2);
+const hours = (value: number | undefined) => value === undefined || !Number.isFinite(value) ? '' : roundCostingDisplay(value, 4).toFixed(4);
+const rate = (value: number | undefined) => value === undefined || !Number.isFinite(value) ? '' : roundCostingDisplay(value, 4).toFixed(4);
+
+/** Three CSV files for one selected Blocking Scenario. CSV is report output, not a restore format. */
+export function costingCsvFiles(
+  scenario: Scenario,
+  blockingScenario: BlockingScenario,
+  tripProfile: TripProfile,
+  assumptions: CostingAssumptionsInput,
+  result: CostingCalculationResult,
+): CostingCsvFile[] {
+  const context = {
+    projectId: scenario.projectId,
+    scenarioId: scenario.id,
+    scenarioName: scenario.name,
+    blockingScenarioId: blockingScenario.id,
+    blockingScenarioName: blockingScenario.name,
+    tripProfileId: tripProfile.id,
+    tripProfileName: tripProfile.name,
+  };
+  const assumptionsContents = toCsv(
+    ['projectId', 'scenarioId', 'scenarioName', 'blockingScenarioId', 'blockingScenarioName', 'tripProfileId', 'tripProfileName', 'costBasis', 'currencyCode', 'rateUnit', 'enteredRateUsdPerRevenueHour', 'rateYear', 'sourceType', 'sourceNote', 'baseServiceYear', 'futureYearCount', 'annualEscalationFraction', 'roundingNote'],
+    [{
+      ...context,
+      costBasis: 'Revenue Hours',
+      currencyCode: 'USD',
+      rateUnit: 'USD/VRH',
+      enteredRateUsdPerRevenueHour: rate(assumptions.enteredRate),
+      rateYear: assumptions.rateYear,
+      sourceType: assumptions.sourceType,
+      sourceNote: assumptions.sourceNote,
+      baseServiceYear: assumptions.baseServiceYear,
+      futureYearCount: assumptions.futureYearCount,
+      annualEscalationFraction: assumptions.annualEscalation,
+      roundingNote: 'USD amounts and applied rates are independently rounded to 2 and 4 decimals; hours to 4 decimals.',
+    }],
+  );
+
+  const resultHeaders = [
+    'rowType', 'projectId', 'scenarioId', 'scenarioName', 'blockingScenarioId', 'blockingScenarioName', 'tripProfileId', 'tripProfileName',
+    'estimateState', 'noEstimateReason', 'serviceYear', 'serviceDayId', 'serviceDayName', 'annualServiceDays', 'eligibleBlockCount', 'excludedBlockCount', 'unassignedTripCount',
+    'revenueHoursPerDay', 'platformHoursPerDay', 'annualRevenueHours', 'annualPlatformHours', 'appliedRateUsdPerRevenueHour', 'costPerDayUsd', 'annualCostUsd', 'roundingNote',
+  ];
+  type ResultRow = Record<string, unknown>;
+  const resultRows: ResultRow[] = [];
+  const commonResult = { ...context, estimateState: result.state, noEstimateReason: result.noEstimateReason ?? '' };
+  for (const day of result.dailyRows) {
+    if (day.yearCosts.length === 0) {
+      resultRows.push({
+        rowType: 'serviceDay', ...commonResult, serviceDayId: day.serviceDayId, serviceDayName: day.serviceDayName,
+        annualServiceDays: day.annualServiceDays, eligibleBlockCount: day.eligibleBlockCount, excludedBlockCount: day.excludedBlockCount,
+        unassignedTripCount: day.unassignedTripCount, revenueHoursPerDay: hours(day.revenueHoursPerDay), platformHoursPerDay: hours(day.platformHoursPerDay),
+        annualRevenueHours: hours(day.annualRevenueHours), annualPlatformHours: hours(day.annualPlatformHours),
+      });
+      continue;
+    }
+    for (const yearCost of day.yearCosts) {
+      const year = result.yearRows.find((candidate) => candidate.serviceYear === yearCost.serviceYear);
+      resultRows.push({
+        rowType: 'serviceDay', ...commonResult, serviceYear: yearCost.serviceYear, serviceDayId: day.serviceDayId, serviceDayName: day.serviceDayName,
+        annualServiceDays: day.annualServiceDays, eligibleBlockCount: day.eligibleBlockCount, excludedBlockCount: day.excludedBlockCount,
+        unassignedTripCount: day.unassignedTripCount, revenueHoursPerDay: hours(day.revenueHoursPerDay), platformHoursPerDay: hours(day.platformHoursPerDay),
+        annualRevenueHours: hours(day.annualRevenueHours), annualPlatformHours: hours(day.annualPlatformHours),
+        appliedRateUsdPerRevenueHour: rate(year?.appliedRateUsdPerRevenueHour), costPerDayUsd: usd(yearCost.costPerDayUsd), annualCostUsd: usd(yearCost.annualCostUsd),
+      });
+    }
+  }
+  for (const year of result.yearRows) {
+    resultRows.push({
+      rowType: 'total', ...commonResult, serviceYear: year.serviceYear,
+      eligibleBlockCount: result.eligibleBlockCount, excludedBlockCount: result.excludedBlockCount, unassignedTripCount: result.unassignedTripCount,
+      annualRevenueHours: hours(year.annualRevenueHours), annualPlatformHours: hours(year.annualPlatformHours),
+      appliedRateUsdPerRevenueHour: rate(year.appliedRateUsdPerRevenueHour), annualCostUsd: usd(year.annualCostUsd),
+      roundingNote: 'Total is rounded independently from unrounded service-day values.',
+    });
+  }
+  if (result.dailyRows.length > 0 && result.yearRows.length === 0) {
+    resultRows.push({
+      rowType: 'total', ...commonResult,
+      eligibleBlockCount: result.eligibleBlockCount, excludedBlockCount: result.excludedBlockCount, unassignedTripCount: result.unassignedTripCount,
+      annualRevenueHours: hours(result.dailyRows.reduce((sum, day) => sum + day.annualRevenueHours, 0)),
+      annualPlatformHours: hours(result.dailyRows.reduce((sum, day) => sum + day.annualPlatformHours, 0)),
+      roundingNote: 'Quantities are rounded independently from unrounded service-day values; no cost rate is available.',
+    });
+  }
+  if (resultRows.length === 0) resultRows.push({ rowType: 'status', ...commonResult, roundingNote: '' });
+
+  const exclusionsContents = toCsv(
+    ['projectId', 'scenarioId', 'scenarioName', 'blockingScenarioId', 'blockingScenarioName', 'tripProfileId', 'tripProfileName', 'serviceDayId', 'serviceDayName', 'exclusionType', 'blockId', 'blockLabel', 'reasonCodes', 'unassignedTripCount'],
+    result.exclusions.flatMap((day) => [
+      ...day.blocks.map((block) => ({ ...context, serviceDayId: day.serviceDayId, serviceDayName: day.serviceDayName, exclusionType: 'block', blockId: block.blockId, blockLabel: block.blockLabel, reasonCodes: block.reasonCodes.join('|') })),
+      ...(day.unassignedTripCount > 0 ? [{ ...context, serviceDayId: day.serviceDayId, serviceDayName: day.serviceDayName, exclusionType: 'unassignedTrips', unassignedTripCount: day.unassignedTripCount }] : []),
+    ]),
+  );
+
+  return [
+    { suffix: 'costing-assumptions', contents: assumptionsContents },
+    { suffix: 'costing-results', contents: toCsv(resultHeaders, resultRows) },
+    { suffix: 'costing-exclusions', contents: exclusionsContents },
+  ];
+}
+
+export type CsvArchiveFile = { filename: string; contents: string };
+
+const encoder = new TextEncoder();
+const crcTable = Array.from({ length: 256 }, (_, index) => {
+  let value = index;
+  for (let bit = 0; bit < 8; bit += 1) value = (value & 1) ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+  return value >>> 0;
+});
+
+function crc32(bytes: Uint8Array) {
+  let value = 0xffffffff;
+  for (const byte of bytes) value = crcTable[(value ^ byte) & 0xff] ^ (value >>> 8);
+  return (value ^ 0xffffffff) >>> 0;
+}
+
+function u16(value: number) { return new Uint8Array([value & 0xff, (value >>> 8) & 0xff]); }
+function u32(value: number) { return new Uint8Array([value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff]); }
+function join(parts: Uint8Array[]) {
+  const result = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+  let offset = 0;
+  for (const part of parts) { result.set(part, offset); offset += part.length; }
+  return result;
+}
+
+/** Creates one dependency-free ZIP archive containing stored (uncompressed) CSV entries. */
+export function createCsvArchive(files: CsvArchiveFile[]) {
+  const localParts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
+  let localOffset = 0;
+  for (const file of files) {
+    const name = encoder.encode(file.filename);
+    const contents = encoder.encode(file.contents);
+    const checksum = crc32(contents);
+    const localHeader = join([
+      u32(0x04034b50), u16(20), u16(0x0800), u16(0), u16(0), u16(0), u32(checksum), u32(contents.length), u32(contents.length), u16(name.length), u16(0), name,
+    ]);
+    localParts.push(localHeader, contents);
+    const centralHeader = join([
+      u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0), u16(0), u16(0), u32(checksum), u32(contents.length), u32(contents.length), u16(name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(localOffset), name,
+    ]);
+    centralParts.push(centralHeader);
+    localOffset += localHeader.length + contents.length;
+  }
+  const centralDirectory = join(centralParts);
+  const localDirectory = join(localParts);
+  const end = join([u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length), u32(centralDirectory.length), u32(localDirectory.length), u16(0)]);
+  return new Blob([localDirectory, centralDirectory, end], { type: 'application/zip' });
+}
 
 export const blockingBlocksCsv = (blocks: BlockingBlock[]) => toCsv(['id', 'scenarioId', 'blockingScenarioId', 'serviceDayId', 'label', 'notes'], [...blocks].sort((a, b) => a.serviceDayId.localeCompare(b.serviceDayId) || a.label.localeCompare(b.label) || a.id.localeCompare(b.id)));
 
