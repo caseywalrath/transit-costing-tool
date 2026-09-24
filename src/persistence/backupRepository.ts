@@ -19,7 +19,11 @@ export class ProjectBackupService implements BackupPort {
     const source = importProjectJson(payload);
     const existing = await this.getSnapshot(source.project.id);
     if (existing && mode === 'reject') throw new Error('Project already exists; choose replace or copy');
-    const snapshot = mode === 'copy' ? cloneProjectSnapshot(source) : source;
+    // Re-parse copied snapshots before writing so cloned references receive the same
+    // graph validation as an uploaded backup.
+    const snapshot = mode === 'copy'
+      ? importProjectJson(exportProjectJson(cloneProjectSnapshot(source)))
+      : source;
     await this.saveSnapshot(snapshot);
     return snapshot.project;
   }

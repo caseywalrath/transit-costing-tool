@@ -15,6 +15,7 @@ const snapshot: ProjectSnapshot = {
   runtimeProfiles: [],
   runtimeAssignments: [],
   tripProfiles: [{ id: 'trip-profile', scenarioId: 'scenario', name: 'Default', ...metadata('2026-01-01T00:00:00.000Z') }],
+  costingAssumptions: [{ id: 'costing', scenarioId: 'scenario', currencyCode: 'USD', enteredRate: 125.5, rateYear: 2024, sourceType: 'ntd', sourceNote: 'NTD source', baseServiceYear: 2026, futureYearCount: 2, annualEscalation: 0.03, ...metadata('2026-01-01T00:00:00.000Z') }],
   generationSets: [],
   trips: [],
   blocks: [],
@@ -31,6 +32,8 @@ describe('project backup service', () => {
     const copied = await service.importProject(payload, 'copy');
     expect(copied.id).not.toBe(snapshot.project.id);
     expect(stored?.scenarios[0].projectId).toBe(copied.id);
+    expect(stored?.costingAssumptions?.[0].id).not.toBe(snapshot.costingAssumptions?.[0].id);
+    expect(stored?.costingAssumptions?.[0].scenarioId).toBe(stored?.scenarios[0].id);
   });
 
   it('round trips a saved graph through the repository', async () => {
@@ -51,6 +54,16 @@ describe('project backup service', () => {
     const invalid = JSON.parse(exportProjectJson(snapshot)) as Record<string, unknown>;
     invalid.runtimeAssignments = [{ id: 'assignment', scenarioId: 'scenario', patternId: 'missing-pattern', serviceDayId: 'missing-day', runtimeProfileId: 'missing-profile', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' }];
     await expect(service.importProject(JSON.stringify(invalid), 'replace')).rejects.toThrow(/missing record/);
+    expect(await repository.getProjectSnapshot(snapshot.project.id)).toEqual(snapshot);
+  });
+
+  it('rejects invalid costing assumptions before replacing a saved project', async () => {
+    const repository = new InMemoryRouteDefinitionRepository();
+    await repository.saveProjectSnapshot(snapshot);
+    const service = new ProjectBackupService(repository.getProjectSnapshot.bind(repository), repository.saveProjectSnapshot.bind(repository));
+    const invalid = JSON.parse(exportProjectJson(snapshot)) as { costingAssumptions: Array<Record<string, unknown>>; [key: string]: unknown };
+    invalid.costingAssumptions[0].currencyCode = 'CAD';
+    await expect(service.importProject(JSON.stringify(invalid), 'replace')).rejects.toThrow(/currencyCode must be USD/);
     expect(await repository.getProjectSnapshot(snapshot.project.id)).toEqual(snapshot);
   });
 });

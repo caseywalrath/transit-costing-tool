@@ -15,15 +15,17 @@ import type {
   Block,
   TripProfile,
   BlockingScenario,
+  CostingAssumptions,
 } from '../domain/types';
 import { metadata, newId } from '../domain/ids';
 import { validatePattern } from '../domain/patterns';
 import { validateDirection, validatePatternDirection } from '../domain/directions';
 import { assertRuntimeGraph } from './runtimePersistence';
 import { assertTripProfileReferences } from '../domain/trips';
+import { MAX_COSTING_FUTURE_YEARS, MAX_COSTING_YEAR, MIN_COSTING_YEAR, validatePersistedCostingAssumptions } from '../domain/costing';
 
 export const PROJECT_BACKUP_FORMAT = 'transit-costing-tool.project' as const;
-export const PROJECT_BACKUP_SCHEMA_VERSION = 5 as const;
+export const PROJECT_BACKUP_SCHEMA_VERSION = 6 as const;
 export const LEGACY_PROJECT_BACKUP_SCHEMA_VERSION = 1 as const;
 export const RUNTIME_PROJECT_BACKUP_SCHEMA_VERSION = 2 as const;
 
@@ -47,6 +49,47 @@ function validateBlockingScenarios(values: unknown[], scenarioIds: Set<string>, 
     if (names.has(nameKey)) throw new Error(`Invalid project backup: duplicate Blocking Scenario name in scenario ${scenario.scenarioId}`);
     ids.add(scenario.id); names.add(nameKey);
     return scenario;
+  });
+}
+
+function validateCostingAssumptions(values: unknown[], scenarioIds: Set<string>): CostingAssumptions[] {
+  const ids = new Set<string>();
+  const owners = new Set<string>();
+  return values.map((value, index) => {
+    if (!isRecord(value)) throw new Error(`Invalid project backup: costingAssumptions[${index}] must be an object`);
+    const assumptions = value as unknown as CostingAssumptions;
+    requiredString(assumptions.id, `costingAssumptions[${index}].id`);
+    requiredString(assumptions.scenarioId, `costingAssumptions[${index}].scenarioId`);
+    if (!scenarioIds.has(assumptions.scenarioId)) throw new Error(`Invalid project backup: costing assumptions ${assumptions.id} references a missing Scenario`);
+    if (ids.has(assumptions.id)) throw new Error(`Invalid project backup: duplicate costing assumptions id ${assumptions.id}`);
+    if (owners.has(assumptions.scenarioId)) throw new Error(`Invalid project backup: Scenario ${assumptions.scenarioId} has more than one costing assumptions record`);
+    if (assumptions.currencyCode !== 'USD') throw new Error(`Invalid project backup: costingAssumptions[${index}].currencyCode must be USD`);
+    if (assumptions.enteredRate !== undefined && (typeof assumptions.enteredRate !== 'number' || !Number.isFinite(assumptions.enteredRate) || assumptions.enteredRate < 0)) {
+      throw new Error(`Invalid project backup: costingAssumptions[${index}].enteredRate`);
+    }
+    if (!Number.isInteger(assumptions.rateYear) || assumptions.rateYear < MIN_COSTING_YEAR || assumptions.rateYear > MAX_COSTING_YEAR) {
+      throw new Error(`Invalid project backup: costingAssumptions[${index}].rateYear`);
+    }
+    if (!Number.isInteger(assumptions.baseServiceYear) || assumptions.baseServiceYear < MIN_COSTING_YEAR || assumptions.baseServiceYear > MAX_COSTING_YEAR) {
+      throw new Error(`Invalid project backup: costingAssumptions[${index}].baseServiceYear`);
+    }
+    if (assumptions.rateYear > assumptions.baseServiceYear) throw new Error(`Invalid project backup: costingAssumptions[${index}].rateYear is after baseServiceYear`);
+    if (!Number.isInteger(assumptions.futureYearCount) || assumptions.futureYearCount < 0 || assumptions.futureYearCount > MAX_COSTING_FUTURE_YEARS
+      || assumptions.baseServiceYear + assumptions.futureYearCount > MAX_COSTING_YEAR) {
+      throw new Error(`Invalid project backup: costingAssumptions[${index}].futureYearCount`);
+    }
+    if (typeof assumptions.annualEscalation !== 'number' || !Number.isFinite(assumptions.annualEscalation) || assumptions.annualEscalation <= -1) {
+      throw new Error(`Invalid project backup: costingAssumptions[${index}].annualEscalation`);
+    }
+    if (assumptions.sourceType !== 'user' && assumptions.sourceType !== 'ntd') throw new Error(`Invalid project backup: costingAssumptions[${index}].sourceType`);
+    if (assumptions.sourceNote !== undefined && typeof assumptions.sourceNote !== 'string') throw new Error(`Invalid project backup: costingAssumptions[${index}].sourceNote`);
+    assertMetadata(value, `costingAssumptions[${index}]`);
+    if (validatePersistedCostingAssumptions(assumptions).some((finding) => finding.severity === 'error')) {
+      throw new Error(`Invalid project backup: costingAssumptions[${index}] failed validation`);
+    }
+    ids.add(assumptions.id);
+    owners.add(assumptions.scenarioId);
+    return assumptions;
   });
 }
 
@@ -153,6 +196,37 @@ function validateNodes(values: unknown[], routes: Map<string, Route>): Node[] {
     if (!['timepoint', 'terminal', 'garage', 'other'].includes(node.kind)) throw new Error(`Invalid project backup: nodes[${index}].kind`);
     assertMetadata(value, `nodes[${index}]`);
     return node;
+  });
+}
+
+/** Recover columns from copies created before import-as-copy remapped their node references. */
+function recoverCopiedDirectionColumnNodeReferences(values: unknown[], patterns: unknown[], routes: Map<string, Route>, nodes: Node[]): unknown[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  return values.map((value) => {
+    if (!isRecord(value) || typeof value.id !== 'string' || typeof value.routeId !== 'string' || typeof value.scenarioId !== 'string' || !Array.isArray(value.columns)) return value;
+    const route = routes.get(value.routeId);
+    if (!route || route.scenarioId !== value.scenarioId) return value;
+    const patternReferences = patterns.flatMap((patternValue) => {
+      if (!isRecord(patternValue) || patternValue.directionId !== value.id || patternValue.routeId !== value.routeId || patternValue.scenarioId !== value.scenarioId || !Array.isArray(patternValue.points)) return [];
+      return patternValue.points.filter(isRecord);
+    });
+    const columns = value.columns.map((columnValue) => {
+      if (!isRecord(columnValue) || typeof columnValue.id !== 'string' || typeof columnValue.nodeId !== 'string') return columnValue;
+      const currentNode = nodeById.get(columnValue.nodeId);
+      if (currentNode?.routeId === route.id && currentNode.scenarioId === route.scenarioId) return columnValue;
+
+      // A column is recoverable only when mapped pattern points identify one valid route node.
+      const candidateNodeIds = new Set(patternReferences
+        .filter((point) => point.directionColumnId === columnValue.id && typeof point.nodeId === 'string')
+        .map((point) => point.nodeId as string)
+        .filter((nodeId) => {
+          const node = nodeById.get(nodeId);
+          return node?.routeId === route.id && node.scenarioId === route.scenarioId;
+        }));
+      if (candidateNodeIds.size !== 1) return columnValue;
+      return { ...columnValue, nodeId: candidateNodeIds.values().next().value };
+    });
+    return { ...value, columns };
   });
 }
 
@@ -314,7 +388,7 @@ export function parseProjectBackup(payload: string): ProjectSnapshot {
     throw new Error('Invalid project backup: malformed JSON');
   }
   if (!isRecord(parsed)) throw new Error('Invalid project backup: root must be an object');
-  if (parsed.format !== PROJECT_BACKUP_FORMAT || ![1, 2, 3, 4, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)) {
+  if (parsed.format !== PROJECT_BACKUP_FORMAT || ![1, 2, 3, 4, 5, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)) {
     throw new Error('Unsupported project backup format or schema version');
   }
   requiredString(parsed.exportedAt, 'exportedAt');
@@ -325,8 +399,13 @@ export function parseProjectBackup(payload: string): ProjectSnapshot {
   const routes = validateRoutes(requiredArray(parsed.routes, 'routes'), scenarioIds);
   const routeById = new Map(routes.map((route) => [route.id, route]));
   const nodes = validateNodes(requiredArray(parsed.nodes, 'nodes'), routeById);
-  const directions = parsed.directions === undefined ? undefined : validateDirections(requiredArray(parsed.directions, 'directions'), routeById, nodes);
-  const patterns = validatePatterns(requiredArray(parsed.patterns, 'patterns'), routeById, nodes, directions);
+  const rawPatterns = requiredArray(parsed.patterns, 'patterns');
+  const directions = parsed.directions === undefined ? undefined : validateDirections(
+    recoverCopiedDirectionColumnNodeReferences(requiredArray(parsed.directions, 'directions'), rawPatterns, routeById, nodes),
+    routeById,
+    nodes,
+  );
+  const patterns = validatePatterns(rawPatterns, routeById, nodes, directions);
   const runtimeProfiles = parsed.exportSchemaVersion === LEGACY_PROJECT_BACKUP_SCHEMA_VERSION
     ? []
     : validateRuntimeProfiles(requiredArray(parsed.runtimeProfiles, 'runtimeProfiles'), patterns);
@@ -336,16 +415,19 @@ export function parseProjectBackup(payload: string): ProjectSnapshot {
   assertRuntimeGraph(runtimeProfiles, runtimeAssignments, patterns, serviceDays);
   // Current authoritative backups omit generationSets. A non-empty collection is
   // still accepted so historical Phase 2 files can be inspected and copied.
-  const suppliedTripProfiles = [4, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTripProfiles(requiredArray(parsed.tripProfiles ?? [], 'tripProfiles'), scenarioIds) : [];
-  const generationSets = [3, 4, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+  const suppliedTripProfiles = [4, 5, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTripProfiles(requiredArray(parsed.tripProfiles ?? [], 'tripProfiles'), scenarioIds) : [];
+  const generationSets = [3, 4, 5, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
     ? (parsed.generationSets === undefined ? [] : validateGenerationSets(requiredArray(parsed.generationSets, 'generationSets'), scenarioIds, routeById, patterns, serviceDays))
     : [];
-  const trips = [3, 4, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTrips(requiredArray(parsed.trips, 'trips'), scenarioIds, routeById, patterns, serviceDays, generationSets, runtimeProfiles) : [];
+  const trips = [3, 4, 5, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTrips(requiredArray(parsed.trips, 'trips'), scenarioIds, routeById, patterns, serviceDays, generationSets, runtimeProfiles) : [];
   const provisionalTripProfiles = suppliedTripProfiles.length ? suppliedTripProfiles : scenarios.map((scenario) => ({ id: newId(), scenarioId: scenario.id, name: 'Default', ...metadata() }));
-  const blockingScenarios = parsed.exportSchemaVersion === PROJECT_BACKUP_SCHEMA_VERSION
+  const blockingScenarios = [5, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
     ? validateBlockingScenarios(requiredArray(parsed.blockingScenarios ?? [], 'blockingScenarios'), scenarioIds, provisionalTripProfiles)
     : [];
-  const blocks = [3, 4, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateBlocks(requiredArray(parsed.blocks, 'blocks'), scenarioIds, serviceDays, trips, blockingScenarios) : [];
+  const costingAssumptions = parsed.exportSchemaVersion === PROJECT_BACKUP_SCHEMA_VERSION
+    ? validateCostingAssumptions(requiredArray(parsed.costingAssumptions, 'costingAssumptions'), scenarioIds)
+    : [];
+  const blocks = [3, 4, 5, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateBlocks(requiredArray(parsed.blocks, 'blocks'), scenarioIds, serviceDays, trips, blockingScenarios) : [];
   assertTripProfileReferences(trips, blocks);
   const tripProfiles = provisionalTripProfiles;
   const defaultProfileByScenario = new Map(tripProfiles.map((profile) => [profile.scenarioId, profile.id]));
@@ -364,7 +446,7 @@ export function parseProjectBackup(payload: string): ProjectSnapshot {
   }
   const normalizedTrips = trips.map((trip) => ({ ...trip, tripProfileId: trip.tripProfileId ?? defaultProfileByScenario.get(trip.scenarioId) }));
   const normalizedBlocks = blocks.map((block) => ({ ...block, tripProfileId: block.tripProfileId ?? defaultProfileByScenario.get(block.scenarioId) }));
-  return { project, scenarios, serviceDays, routes, nodes, patterns, ...(directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), generationSets, trips: normalizedTrips, blocks: normalizedBlocks };
+  return { project, scenarios, serviceDays, routes, nodes, patterns, ...(directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions.length ? { costingAssumptions } : {}), generationSets, trips: normalizedTrips, blocks: normalizedBlocks };
 }
 
 export function exportProjectJson(snapshot: ProjectSnapshot, applicationVersion?: string): string {
@@ -384,6 +466,7 @@ export function exportProjectJson(snapshot: ProjectSnapshot, applicationVersion?
     runtimeAssignments: snapshot.runtimeAssignments,
     ...(snapshot.tripProfiles?.length ? { tripProfiles: snapshot.tripProfiles } : {}),
     ...(snapshot.blockingScenarios?.length ? { blockingScenarios: snapshot.blockingScenarios } : {}),
+    costingAssumptions: snapshot.costingAssumptions ?? [],
     ...(snapshot.generationSets.length ? { generationSets: snapshot.generationSets } : {}),
     trips: snapshot.trips,
     blocks: snapshot.blocks,
@@ -408,6 +491,12 @@ export function cloneProjectSnapshot(source: ProjectSnapshot, now = new Date().t
   const sourceTripProfiles = source.tripProfiles?.length ? source.tripProfiles : source.scenarios.map((scenario) => ({ id: `legacy-${scenario.id}`, scenarioId: scenario.id, name: 'Default', ...metadata(now) }));
   const tripProfileIds = new Map(sourceTripProfiles.map((profile) => [profile.id, newId()]));
   const blockingScenarioIds = new Map((source.blockingScenarios ?? []).map((scenario) => [scenario.id, newId()]));
+  const costingAssumptions = (source.costingAssumptions ?? []).map((assumptions) => ({
+    ...assumptions,
+    id: newId(),
+    scenarioId: scenarioIds.get(assumptions.scenarioId)!,
+    ...metadata(now),
+  }));
 
   const project: Project = { ...source.project, id: projectId, name: `${source.project.name} Copy`, ...metadata(now) };
   const scenarios = source.scenarios.map((scenario) => ({ ...scenario, id: scenarioIds.get(scenario.id)!, projectId, sourceScenarioId: scenarioIds.get(scenario.sourceScenarioId ?? ''), ...metadata(now) }));
@@ -420,7 +509,11 @@ export function cloneProjectSnapshot(source: ProjectSnapshot, now = new Date().t
     id: directionIds.get(direction.id)!,
     scenarioId: scenarioIds.get(direction.scenarioId)!,
     routeId: routeIds.get(direction.routeId)!,
-    columns: direction.columns.map((column) => ({ ...column, id: directionColumnIds.get(column.id)! })),
+    columns: direction.columns.map((column) => ({
+      ...column,
+      id: directionColumnIds.get(column.id)!,
+      nodeId: nodeIds.get(column.nodeId) ?? column.nodeId,
+    })),
     ...metadata(now),
   }));
   const patterns = source.patterns.map((pattern) => ({
@@ -463,5 +556,5 @@ export function cloneProjectSnapshot(source: ProjectSnapshot, now = new Date().t
     const remapped = activity.type === 'revenueTrip' ? { ...activity, tripId: tripIds.get(activity.tripId) ?? activity.tripId } : { ...activity };
     return { ...remapped, id: newId(), ...(('fromNodeId' in remapped && remapped.fromNodeId) ? { fromNodeId: nodeIds.get(remapped.fromNodeId) ?? remapped.fromNodeId } : {}), ...(('toNodeId' in remapped && remapped.toNodeId) ? { toNodeId: nodeIds.get(remapped.toNodeId) ?? remapped.toNodeId } : {}) };
   }), ...metadata(now) }));
-  return { project, scenarios, serviceDays, routes, nodes, patterns, ...(source.directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), generationSets, trips, blocks };
+  return { project, scenarios, serviceDays, routes, nodes, patterns, ...(source.directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), costingAssumptions, generationSets, trips, blocks };
 }

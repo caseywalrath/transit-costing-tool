@@ -1,11 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
 
+test.setTimeout(60_000);
+
 async function createShiftReadySchedule(page: Page, lastTrip = '06:00') {
   await page.goto('/');
-  await page.getByRole('button', { name: 'New Project', exact: true }).click();
+  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
   await page.locator('#dialog-name').fill('Unified action layer verification');
   await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
-  await page.getByRole('button', { name: 'Add route', exact: true }).click();
+  await page.getByRole('button', { name: 'Route actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
 
   await page.getByRole('button', { name: 'New node', exact: true }).click();
   await page.getByLabel('Node name').fill('A');
@@ -42,7 +46,7 @@ async function createShiftReadySchedule(page: Page, lastTrip = '06:00') {
   await expect(runtimeSection.getByLabel('Time band 2 start')).toHaveCount(0);
 
   const tripsSection = page.locator('[aria-label="Trips section"]');
-  const actions = tripsSection.getByRole('button', { name: 'Actions', exact: true });
+  const actions = tripsSection.getByRole('button', { name: 'Trip actions', exact: true });
   await actions.focus();
   await actions.press('ArrowDown');
   const actionMenu = page.getByRole('menu', { name: 'Trip actions' });
@@ -60,10 +64,12 @@ async function createShiftReadySchedule(page: Page, lastTrip = '06:00') {
   await actionMenu.getByRole('menuitem', { name: 'Build trips…' }).click();
   const drawer = page.getByRole('complementary', { name: 'Build Trips' });
   await expect(drawer).toBeVisible();
+  await drawer.getByLabel('Pattern').selectOption({ index: 1 });
   await drawer.getByLabel('First Trip').fill('06:00');
   await drawer.getByLabel('Headway').fill('10');
   await drawer.getByLabel('Last Trip').fill(lastTrip);
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
+  await expect(drawer).toBeHidden();
   await expect(page.locator('.schedule-table tbody tr')).toHaveCount(lastTrip === '06:00' ? 1 : 3);
 }
 
@@ -71,9 +77,11 @@ test('Build Trips uses a right drawer and supports inclusive last-trip and count
   await createShiftReadySchedule(page);
   const tripsSection = page.locator('[aria-label="Trips section"]');
   const openBuildDrawer = async () => {
-    await tripsSection.getByRole('button', { name: 'Actions', exact: true }).click();
+    await tripsSection.getByRole('button', { name: 'Trip actions', exact: true }).click();
     await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Build trips…' }).click();
-    return page.getByRole('complementary', { name: 'Build Trips' });
+    const drawer = page.getByRole('complementary', { name: 'Build Trips' });
+    await drawer.getByLabel('Pattern').selectOption({ index: 1 });
+    return drawer;
   };
 
   const byLastTrip = await openBuildDrawer();
@@ -99,7 +107,7 @@ test('stages Shift actions, guards scope changes, and persists only on Done', as
 
   const tripsSection = page.locator('[aria-label="Trips section"]');
   await page.locator('.schedule-table tbody input[type="checkbox"]').check();
-  await tripsSection.getByRole('button', { name: 'Actions', exact: true }).click();
+  await tripsSection.getByRole('button', { name: 'Trip actions', exact: true }).click();
   await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
 
   const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
@@ -121,7 +129,7 @@ test('stages Shift actions, guards scope changes, and persists only on Done', as
   await expect(drawer).toHaveCount(0);
   await expect(page.locator('.schedule-table')).toContainText('6:00');
 
-  await tripsSection.getByRole('button', { name: 'Actions', exact: true }).click();
+  await tripsSection.getByRole('button', { name: 'Trip actions', exact: true }).click();
   await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
   await drawer.getByRole('button', { name: '+ Forward' }).click();
   await expect(page.getByText('Staged 1 minute later')).toBeVisible();

@@ -157,6 +157,8 @@ interface ProjectSnapshot {
   tripProfiles: TripProfile[];
   /** Phase 4 named arrangements sourced from one Trip profile. */
   blockingScenarios: BlockingScenario[];
+  /** Optional until Costing assumptions are first saved for a Scenario. */
+  costingAssumptions?: CostingAssumptions[];
   /** Historical Phase 2 collection; current authoritative exports leave it empty or omit it. */
   generationSets: TripGenerationSet[];
   trips: Trip[];
@@ -379,48 +381,27 @@ Blocks do not contain a Route ID or duplicate Trip Profile ID. The Block derives
 
 Blocking Scenario names are unique within a Scenario after trimming and case normalization. Block labels are unique within one Blocking Scenario and service day. A Trip ID may occur once across that complete Blocking Scenario/day but may be assigned differently in another Blocking Scenario.
 
-## Cost entities (preliminary; not an implementation contract)
+## Costing assumptions
 
-The following types are a historical architecture sketch only and do **not** match the approved Phase 5 direction. Decision 0027 accepts one USD/Revenue-Hour cost basis, automatic rate-year adjustment, and one Scenario-owned assumption set shared by Blocking Scenarios, with derived results rather than saved estimates. Phase 5B must replace these placeholder types in both documentation and `src/domain/types.ts`. See `docs/implementation/phase-05-costing.md`.
+Decision 0027 accepts one Scenario-owned input record shared by all Blocking Scenarios. Cost results and selected Blocking Scenario/year remain derived or workspace state and are not persisted. A Scenario has no record until assumptions are first saved, so upgrading or importing old data never invents a rate or service year. The editor supplies the 3% escalation default.
 
 ```typescript
-type CostBasis =
-  | "revenueHours"
-  | "platformHours"
-  | "revenueMiles"
-  | "platformMiles";
-
-interface CostSource {
-  type: "user" | "ntd";
-  sourceYear?: number;
-  note?: string;
-}
-
-interface InflationAssumption {
-  year: number;
-  rate: number;
-}
-
-interface CostEstimate {
-  id: EntityId;
-  name: string;
-  basis: CostBasis;
-  rate: number;
-  baseYear: number;
-  source: CostSource;
-}
-
-interface CostPlan extends EntityMetadata {
+interface CostingAssumptions extends EntityMetadata {
   id: EntityId;
   scenarioId: EntityId;
-  name: string;
-  currencyCode: string;
-  estimates: CostEstimate[];
-  inflation: InflationAssumption[];
+  currencyCode: "USD";
+  /** Absent until a user enters a rate; zero is a real entered value. */
+  enteredRate?: number;
+  rateYear: number;
+  sourceType: "user" | "ntd";
+  sourceNote?: string;
+  baseServiceYear: number;
+  futureYearCount: number; // integer from 0 through 10
+  annualEscalation: number; // fraction; default 0.03, must be finite and greater than -1
 }
 ```
 
-The first costing release uses Revenue Hours as its only cost multiplier. Platform Hours are displayed as context, not separately costed; the other basis values above remain historical placeholders, not Phase 5 scope.
+Repository and backup validation require one record at most per Scenario, USD currency, a finite nonnegative rate when entered, year values from 1 through 9999, a source year no later than the base service year, and a valid horizon and escalation. Scenario duplication assigns a fresh assumptions ID and Scenario ID. Scenario deletion removes the record. Blocking Scenario lifecycle does not change it.
 
 ## Validation result
 
@@ -460,7 +441,8 @@ The initial Dexie database should use a unique application-specific name. Propos
 | `trips` | `id`, `scenarioId`, `tripProfileId`, `routeId`, `serviceDayId`, `patternId`, `[tripProfileId+routeId]`, `[tripProfileId+serviceDayId]`, `provenance.runtimeProfileId` |
 | `blockingScenarios` | Implemented in database version 4: `id`, `scenarioId`, `tripProfileId`, `[scenarioId+name]`, `[tripProfileId+name]`, `updatedAt` |
 | `blocks` | Implemented in database version 4: `id`, `scenarioId`, `blockingScenarioId`, `serviceDayId`, `[blockingScenarioId+serviceDayId]`, `[serviceDayId+label]` |
-| `costPlans` | `id`, `scenarioId`, `[scenarioId+name]` |
+| `costingAssumptions` | Added in database version 5: `id`, `scenarioId` |
+| `costPlans` | Inert legacy table retained for data preservation; no active domain type or reads/writes |
 | `appMetadata` | `key` |
 
 Dexie index syntax must be verified during implementation. Compound uniqueness that IndexedDB cannot enforce directly must be checked in domain or repository commands.
@@ -489,6 +471,17 @@ interface RouteDefinitionRepository {
 
 Exact interfaces should follow use cases. Do not create a generic repository abstraction that hides required transaction boundaries.
 
+The Costing input port is separate from schedule queries:
+
+```typescript
+interface CostingAssumptionsRepository {
+  getCostingAssumptions(scenarioId: EntityId): Promise<CostingAssumptions | undefined>;
+  saveCostingAssumptions(value: CostingAssumptions): Promise<void>;
+}
+```
+
+Saving validates the record and Scenario ownership. Scenario and project snapshot writes include the assumption record in their existing transaction so copy, replace, and deletion stay consistent.
+
 The authoritative trip repository exposes trip, block, pattern, assignment, and runtime-profile queries plus atomic `insertTripsAtomically` and `saveTripChangesAtomically` operations. Package 3A adds optional structural repository commands `commitRuntimeCopyAtomically` and `replaceTripsForDayAtomically`; both validate the complete affected graph before writing and execute one transaction. Runtime-copy and Trip-copy previews carry source signatures that the application recalculates immediately before commit. The historical generation-set repository methods remain only for the running pre-2R UI and are not used by the revised commands.
 
 ## Transactions
@@ -508,7 +501,7 @@ Use one transaction for operations that must remain consistent, including:
 
 ## Database versions and migrations
 
-The first implementation starts at database version 1. Version 2 adds a non-unique `runtimeProfileId` index to `runtimeAssignments` for profile lifecycle queries. Phase 2TP increments the database to version 3 with a `tripProfiles` store and Trip-profile ownership indexes on Trips and Blocks. Package 4B increments the database to version 4 with `blockingScenarios` and Blocking-Scenario ownership indexes on Blocks. The version 4 migration discards pre-Phase-4 placeholder Blocks while preserving Trips, Trip Profiles, and all other scheduling records. This is the explicit Decision 0019 exception to the normal preservation rule. Each later schema change must:
+The first implementation starts at database version 1. Version 2 adds a non-unique `runtimeProfileId` index to `runtimeAssignments` for profile lifecycle queries. Phase 2TP increments the database to version 3 with a `tripProfiles` store and Trip-profile ownership indexes on Trips and Blocks. Package 4B increments the database to version 4 with `blockingScenarios` and Blocking-Scenario ownership indexes on Blocks. The version 4 migration discards pre-Phase-4 placeholder Blocks while preserving Trips, Trip Profiles, and all other scheduling records. Version 5 adds the Scenario-owned `costingAssumptions` store and leaves it empty for existing Scenarios; records are created lazily when Costing inputs are saved. The preliminary `costPlans` store remains untouched and unused so the upgrade does not discard legacy data. Each later schema change must:
 
 1. increment the database version;
 2. define an explicit migration;
@@ -528,7 +521,9 @@ A JSON backup contains:
 - application version when available;
 - one complete project graph: the project, scenarios, service days, routes, nodes, directions, patterns, pattern points, runtimes, Trip profiles, trips, Blocking scenarios, and blocks.
 
-The implemented export schema is version 5 and stores directions, runtime profiles, assignments, Trip profiles, Blocking Scenarios, trips, and Blocks as top-level arrays. Versions 1 through 4 remain readable; version 4 and earlier placeholder Blocks are discarded during database migration, while legacy JSON Blocks remain readable at the import boundary. Empty authoritative exports omit the historical `generationSets` property; populated historical records remain readable for transition purposes. Version 1 through version 3 imports are normalized to one Default Trip profile per Scenario. Current normalized Blocks reference only their Blocking Scenario; Trip Profile ownership is derived through that relationship.
+The implemented export schema is version 6 and stores directions, runtime profiles, assignments, Trip profiles, Blocking Scenarios, optional Costing assumptions, trips, and Blocks as top-level arrays. Versions 1 through 5 remain readable; versions 1 through 4 predate normalized Blocking Scenarios and retain their existing import normalization. Version 5 imports with no Costing assumptions. The schema 6 parser validates assumptions and their Scenario ownership before any repository write. Historical service-day totals above 365 remain intact and make Costing calculations invalid until corrected. Empty authoritative exports omit the historical `generationSets` property; populated historical records remain readable for transition purposes. Version 1 through version 3 imports are normalized to one Default Trip profile per Scenario. Current normalized Blocks reference only their Blocking Scenario; Trip Profile ownership is derived through that relationship.
+
+Costing CSV reporting produces one ZIP containing `costing-assumptions.csv`, `costing-results.csv`, and `costing-exclusions.csv`. Result rows cover each service day and service year plus independently calculated annual totals. USD values use two decimals, hour quantities use four decimals, and applied USD/VRH rates use four decimals. Exclusion rows identify affected Blocks and reason codes and report unassigned Trip counts by service day. CSV does not restore project data.
 
 Import must validate the complete payload before opening a write transaction. ID collision policy must be explicit: replace an existing project only after confirmation, or import with remapped IDs as a new project.
 

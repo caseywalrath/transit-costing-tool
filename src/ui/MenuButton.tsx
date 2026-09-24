@@ -15,6 +15,8 @@ export function MenuButton({ label, menuLabel, groups, disabled = false, fieldLa
     focusable[Math.max(0, Math.min(index, focusable.length - 1))]?.focus();
   });
   const dismiss = (returnFocus = true) => { setOpen(false); if (returnFocus) window.setTimeout(() => triggerRef.current?.focus()); };
+  const iconOnly = label === 'Actions';
+  const accessibleLabel = triggerAriaLabel ?? (iconOnly ? menuLabel : undefined);
 
   useEffect(() => {
     if (!open) return;
@@ -25,10 +27,10 @@ export function MenuButton({ label, menuLabel, groups, disabled = false, fieldLa
 
   return <div className={fieldLabel ? 'menu-button menu-field' : 'menu-button'} ref={rootRef}>
     {fieldLabel && <span className="menu-field-label">{fieldLabel}</span>}
-    <button ref={(node) => { triggerRef.current = node; if (externalTriggerRef) externalTriggerRef.current = node; }} type="button" className={['menu-trigger', triggerClassName].filter(Boolean).join(' ')} aria-label={triggerAriaLabel} aria-haspopup="menu" aria-expanded={open} aria-controls={menuId} disabled={disabled} onClick={() => setOpen((current) => !current)} onKeyDown={(event) => {
+    <button ref={(node) => { triggerRef.current = node; if (externalTriggerRef) externalTriggerRef.current = node; }} type="button" className={['menu-trigger', iconOnly && 'menu-trigger--icon', triggerClassName].filter(Boolean).join(' ')} aria-label={accessibleLabel} title={iconOnly ? accessibleLabel : undefined} aria-haspopup="menu" aria-expanded={open} aria-controls={menuId} disabled={disabled} onClick={() => setOpen((current) => !current)} onKeyDown={(event) => {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); setOpen(true); focusItem(event.key === 'ArrowDown' ? 0 : items.length - 1); }
       if (event.key === 'Escape' && open) { event.preventDefault(); dismiss(); }
-    }}>{label}<span aria-hidden="true"> ▾</span></button>
+    }}>{iconOnly ? <EllipsisIcon /> : <>{label}<span aria-hidden="true"> ▾</span></>}</button>
     {open && <div id={menuId} className="action-menu" role="menu" aria-label={menuLabel} onKeyDown={(event) => {
       const menuItems = [...rootRef.current?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)') ?? []];
       const current = menuItems.indexOf(document.activeElement as HTMLButtonElement);
@@ -43,4 +45,8 @@ export function MenuButton({ label, menuLabel, groups, disabled = false, fieldLa
       {group.items.map((item) => <button key={item.id} type="button" role={item.checked !== undefined ? 'menuitemradio' : 'menuitem'} aria-checked={item.checked} className={[item.destructive && 'subtle-danger', item.checked && selectionStyle === 'highlight' && 'menu-item-selected'].filter(Boolean).join(' ') || undefined} disabled={item.disabled} title={item.title} onClick={() => { if (item.disabled) return; dismiss(false); item.onSelect(); if (item.restoreFocus !== false) window.setTimeout(() => triggerRef.current?.focus()); }}>{item.checked && selectionStyle === 'check' && <span className="menu-check" aria-hidden="true">✓</span>}{item.label}</button>)}
     </div>)}</div>}
   </div>;
+}
+
+function EllipsisIcon() {
+  return <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><circle cx="5" cy="12" r="1.75" /><circle cx="12" cy="12" r="1.75" /><circle cx="19" cy="12" r="1.75" /></svg>;
 }

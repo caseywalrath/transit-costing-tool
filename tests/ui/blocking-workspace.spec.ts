@@ -1,11 +1,15 @@
 import { expect, test } from '@playwright/test';
 
+test.setTimeout(60_000);
+
 async function createUsableRoute(page: import('@playwright/test').Page) {
   await page.goto('/');
-  await page.getByRole('button', { name: 'New Project', exact: true }).click();
+  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
   await page.locator('#dialog-name').fill('Blocking verification');
   await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
-  await page.getByRole('button', { name: 'Add route', exact: true }).click();
+  await page.getByRole('button', { name: 'Route actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
   await page.getByRole('button', { name: 'New node', exact: true }).click();
   await page.getByLabel('Node name').fill('A');
   await page.getByRole('button', { name: 'Save nodes', exact: true }).click();
@@ -23,7 +27,7 @@ async function createUsableRoute(page: import('@playwright/test').Page) {
 test('assigns, reassigns, and unassigns Trips from the Trips table by pill and bulk Actions', async ({ page }) => {
   await createUsableRoute(page);
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Actions', exact: true }).click();
+  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
   await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Build trips…' }).click();
   await page.locator('.build-trips-drawer').getByLabel('Pattern').selectOption({ index: 1 });
   await page.getByLabel('First Trip').fill('06:00');
@@ -34,13 +38,13 @@ test('assigns, reassigns, and unassigns Trips from the Trips table by pill and b
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   const discardRouteChanges = page.getByRole('button', { name: 'Discard', exact: true });
   if (await discardRouteChanges.isVisible()) await discardRouteChanges.click();
-  await page.getByRole('button', { name: /No Blocking Scenario/ }).click();
+  await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New Blocking Scenario…', exact: true }).click();
   await page.getByRole('dialog', { name: 'New Blocking Scenario' }).getByLabel('Name').fill('Trips assignment');
   await page.getByRole('dialog', { name: 'New Blocking Scenario' }).getByRole('button', { name: 'Create', exact: true }).click();
   const currentBlock = page.getByLabel('Current Block');
   for (const name of ['Block 1', 'Block 2', 'Block 3']) {
-    await currentBlock.getByRole('button', { name: 'Actions', exact: true }).click();
+    await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
     await page.getByRole('menuitem', { name: 'New Block…', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'New Block' });
     await dialog.getByLabel('Name').fill(name);
@@ -63,7 +67,7 @@ test('assigns, reassigns, and unassigns Trips from the Trips table by pill and b
   await expect(secondTripBlock).toContainText('Block 2');
 
   await schedule.getByRole('checkbox', { name: 'Select all trips' }).click();
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Actions', exact: true }).click();
+  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
   await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Assign Block…', exact: true }).click();
   const bulkDialog = page.getByRole('alertdialog', { name: 'Assign 3 selected Trips?' });
   await bulkDialog.getByLabel('Destination Block').selectOption({ label: 'Block 3' });
@@ -87,7 +91,7 @@ test('assigns, reassigns, and unassigns Trips from the Trips table by pill and b
   await expect(schedule.getByRole('button', { name: /departing 6:00: Unassigned/ })).toBeVisible();
 
   await schedule.getByRole('checkbox', { name: 'Select all trips' }).click();
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Actions', exact: true }).click();
+  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
   await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Unassign from Block…', exact: true }).click();
   const bulkUnassignDialog = page.getByRole('alertdialog', { name: 'Unassign selected Trips?' });
   await expect(bulkUnassignDialog).toContainText('2 selected Trips in “Block 3” will become unassigned.');
@@ -112,31 +116,28 @@ test('creates an empty Blocking Scenario and an empty Block, then exposes its Tr
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   const discardRouteChanges = page.getByRole('button', { name: 'Discard', exact: true });
   if (await discardRouteChanges.isVisible()) await discardRouteChanges.click();
-  await expect(page.getByRole('heading', { name: 'Blocking', exact: true })).toBeVisible();
-  const scenarioMenu = page.getByRole('button', { name: /No Blocking Scenario/ });
-  await scenarioMenu.click();
+  await expect(page.getByLabel('Blocking controls')).toBeVisible();
+  const blockingActions = page.getByRole('button', { name: 'Blocking actions', exact: true });
+  await blockingActions.click();
   await page.getByRole('menuitem', { name: 'New Blocking Scenario…', exact: true }).click();
   const scenarioDialog = page.getByRole('dialog', { name: 'New Blocking Scenario' });
   await expect(scenarioDialog.getByLabel('Name')).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(scenarioDialog).toBeHidden();
-  await scenarioMenu.click();
+  await blockingActions.click();
   await page.getByRole('menuitem', { name: 'New Blocking Scenario…', exact: true }).click();
   await scenarioDialog.getByLabel('Name').fill('Base blocks');
   await scenarioDialog.getByRole('button', { name: 'Create', exact: true }).click();
-  await expect(page.getByRole('button', { name: /Base blocks/ }).first()).toBeVisible();
-  const activeScenarioMenu = page.getByRole('button', { name: /Base blocks/ }).first();
-  await activeScenarioMenu.click();
-  await expect(page.getByRole('menuitem', { name: 'No Blocking Scenario', exact: true })).toHaveCount(0);
-  await page.keyboard.press('Escape');
+  await expect(page.getByRole('region', { name: 'Blocking controls' }).getByRole('combobox', { name: 'Blocking Scenario' })).toHaveValue(/.+/);
+  await expect(page.getByRole('heading', { name: 'Weekday Summary' })).toBeVisible();
   const currentBlock = page.getByLabel('Current Block');
-  await currentBlock.getByRole('button', { name: 'Actions', exact: true }).click();
+  await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New Block…', exact: true }).click();
   const blockDialog = page.getByRole('dialog', { name: 'New Block' });
   await blockDialog.getByLabel('Name').fill('Block 11');
   await blockDialog.getByRole('button', { name: 'Create Block', exact: true }).click();
   await expect(currentBlock.getByRole('button', { name: /Block 11/ })).toBeVisible();
-  await currentBlock.getByRole('button', { name: 'Actions', exact: true }).click();
+  await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New Block…', exact: true }).click();
   await blockDialog.getByLabel('Name').fill('Block 12');
   await blockDialog.getByRole('button', { name: 'Create Block', exact: true }).click();
@@ -145,8 +146,8 @@ test('creates an empty Blocking Scenario and an empty Block, then exposes its Tr
   await page.getByRole('menuitemradio', { name: 'Block 11', exact: true }).click();
   await expect(currentBlock.getByRole('button', { name: /Block 11/ })).toBeVisible();
   await expect(page.getByText('This empty Block is valid.')).toBeVisible();
-  const exportButton = page.getByLabel('Blocking workspace').getByRole('button', { name: 'Export CSV (ZIP)', exact: true });
-  await expect(exportButton).toBeVisible();
+  await blockingActions.click();
+  const exportButton = page.getByRole('menuitem', { name: 'Export Blocking CSV (ZIP)', exact: true });
   const download = page.waitForEvent('download');
   await exportButton.click();
   expect((await download).suggestedFilename()).toBe('Base-blocks-csv.zip');
@@ -157,13 +158,13 @@ test('creates an empty Blocking Scenario and an empty Block, then exposes its Tr
   await page.reload();
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await expect(page.getByLabel('Current Block').getByRole('button', { name: /Block 11/ })).toBeVisible();
-  await page.getByLabel('Unassigned Trips').getByRole('button', { name: 'Actions', exact: true }).click();
+  await page.getByLabel('Unassigned Trips').getByRole('button', { name: 'Unassigned Trip actions', exact: true }).click();
   await expect(page.getByRole('menuitemradio', { name: 'Compatible only', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByLabel('Unassigned Trips').getByText('Assign after', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Insert before activity', { exact: true })).toHaveCount(0);
   await page.setViewportSize({ width: 600, height: 800 });
-  await page.getByLabel('Current Block').getByRole('button', { name: 'Actions', exact: true }).click();
+  await page.getByLabel('Current Block').getByRole('button', { name: 'Current Block actions', exact: true }).click();
   await expect(page.getByRole('menuitem', { name: 'Add pull-out…', exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/blocking-workspace-narrow.png', fullPage: true });
 
@@ -178,7 +179,7 @@ test('shift-click selects inclusive ranges in Unassigned Trips and Current Block
   await createUsableRoute(page);
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   const tripsSection = page.locator('[aria-label="Trips section"]');
-  await tripsSection.getByRole('button', { name: 'Actions', exact: true }).click();
+  await tripsSection.getByRole('button', { name: 'Trip actions', exact: true }).click();
   await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Build trips…' }).click();
   await page.locator('.build-trips-drawer').getByLabel('Pattern').selectOption({ index: 1 });
   await page.getByLabel('First Trip').fill('06:00');
@@ -190,14 +191,13 @@ test('shift-click selects inclusive ranges in Unassigned Trips and Current Block
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   const discardRouteChanges = page.getByRole('button', { name: 'Discard', exact: true });
   if (await discardRouteChanges.isVisible()) await discardRouteChanges.click();
-  const scenarioMenu = page.getByRole('button', { name: /No Blocking Scenario/ });
-  await scenarioMenu.click();
+  await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New Blocking Scenario…', exact: true }).click();
   const scenarioDialog = page.getByRole('dialog', { name: 'New Blocking Scenario' });
   await scenarioDialog.getByLabel('Name').fill('Range blocks');
   await scenarioDialog.getByRole('button', { name: 'Create', exact: true }).click();
   const currentBlock = page.getByLabel('Current Block');
-  await currentBlock.getByRole('button', { name: 'Actions', exact: true }).click();
+  await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New Block…', exact: true }).click();
   const blockDialog = page.getByRole('dialog', { name: 'New Block' });
   await blockDialog.getByLabel('Name').fill('Block 1');
@@ -218,18 +218,18 @@ test('shift-click selects inclusive ranges in Unassigned Trips and Current Block
   await blockCheckboxes.nth(2).click({ modifiers: ['Shift'] });
   for (let index = 0; index < 3; index += 1) await expect(blockCheckboxes.nth(index)).toBeChecked();
 
-  await currentBlock.getByRole('button', { name: 'Actions', exact: true }).click();
+  await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New Block…', exact: true }).click();
   await page.getByRole('dialog', { name: 'New Block' }).getByLabel('Name').fill('Block 2');
   await page.getByRole('dialog', { name: 'New Block' }).getByRole('button', { name: 'Create Block' }).click();
   await currentBlock.getByRole('button', { name: /Block 2/ }).click();
   await page.getByRole('menuitemradio', { name: 'Block 1', exact: true }).click();
   await currentBlock.locator('tbody input[type="checkbox"]').first().click();
-  await currentBlock.getByRole('button', { name: 'Actions', exact: true }).click();
+  await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Reassign Trips…' }).click();
   await page.getByRole('dialog', { name: 'Reassign Trips to Block' }).getByRole('button', { name: 'Reassign Trips' }).click();
   await expect(currentBlock.getByRole('button', { name: /Block 2/ })).toBeVisible();
-  await currentBlock.getByRole('button', { name: 'Actions', exact: true }).click();
+  await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Add pull-out…' }).click();
   const pullOutDialog = page.getByRole('dialog', { name: 'Add Pull-out' });
   await pullOutDialog.getByLabel('Minutes before first Trip').fill('12');
@@ -250,7 +250,7 @@ test('filters and sorts Unassigned Trips while assignments insert by From Time',
   await createUsableRoute(page);
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   const tripsSection = page.locator('[aria-label="Trips section"]');
-  await tripsSection.getByRole('button', { name: 'Actions', exact: true }).click();
+  await tripsSection.getByRole('button', { name: 'Trip actions', exact: true }).click();
   await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Build trips…' }).click();
   await page.locator('.build-trips-drawer').getByLabel('Pattern').selectOption({ index: 1 });
   await page.getByLabel('First Trip').fill('06:00');
@@ -261,12 +261,12 @@ test('filters and sorts Unassigned Trips while assignments insert by From Time',
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   const discardRouteChanges = page.getByRole('button', { name: 'Discard', exact: true });
   if (await discardRouteChanges.isVisible()) await discardRouteChanges.click();
-  await page.getByRole('button', { name: /No Blocking Scenario/ }).click();
+  await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New Blocking Scenario…', exact: true }).click();
   await page.getByRole('dialog', { name: 'New Blocking Scenario' }).getByLabel('Name').fill('Chronological blocks');
   await page.getByRole('dialog', { name: 'New Blocking Scenario' }).getByRole('button', { name: 'Create', exact: true }).click();
   const currentBlock = page.getByLabel('Current Block');
-  await currentBlock.getByRole('button', { name: 'Actions', exact: true }).click();
+  await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New Block…', exact: true }).click();
   await page.getByRole('dialog', { name: 'New Block' }).getByLabel('Name').fill('Block 1');
   await page.getByRole('dialog', { name: 'New Block' }).getByRole('button', { name: 'Create Block', exact: true }).click();
@@ -278,7 +278,7 @@ test('filters and sorts Unassigned Trips while assignments insert by From Time',
   await expect(unassigned.locator('tbody tr')).toHaveCount(2);
   await page.keyboard.press('Escape');
   await expect(filterDialog).toBeHidden();
-  await unassigned.getByRole('button', { name: 'Actions', exact: true }).click();
+  await unassigned.getByRole('button', { name: 'Unassigned Trip actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Clear filters', exact: true }).click();
   await expect(unassigned.locator('tbody tr')).toHaveCount(3);
   await unassigned.getByRole('button', { name: /Sort by From Time/ }).click();

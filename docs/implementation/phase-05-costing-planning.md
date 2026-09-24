@@ -2,7 +2,7 @@
 
 ## Status
 
-Planning decisions accepted on 2026-09-22. Phase 4 is accepted. The companion `phase-05-costing.md` is the approved Phase 5 implementation plan; each package still requires an explicit request before work begins.
+Planning decisions accepted on 2026-09-22. Phase 4 is accepted. The companion `phase-05-costing.md` is the approved Phase 5 implementation plan. Packages 5A and 5B are implemented and verified. Package 5C and its user-directed consolidated-toolbar revision were implemented on 2026-09-23; automated verification passes and user review remains its stop gate. Package 5D requires an explicit request after that review.
 
 ## Objective
 
