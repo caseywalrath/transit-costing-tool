@@ -389,9 +389,15 @@ th:first-child { z-index: 2; background: #e8eef1; }
 .costing-alert { margin: 0 0 9px; border-left: 4px solid; padding: 8px 10px; line-height: 1.35; }
 .costing-alert.warning { border-color: #c78a36; background: #fff8e9; color: #5d4a26; }
 .costing-alert.error { border-color: #b43c31; background: #fff0ee; color: #74332e; }
+.costing-year-selector { display: grid; gap: 4px; min-width: 135px; color: #49606e; font-size: .76rem; font-weight: 700; }
+.costing-year-selector select { min-height: 34px; appearance: none; border: 1px solid #9fadb7; border-radius: 4px; background-color: #fff; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m1 1.5 5 5 5-5' fill='none' stroke='%233c5665' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-position: right 9px center; background-repeat: no-repeat; padding: 5px 30px 5px 9px; box-shadow: 0 1px 2px rgb(31 55 68 / .08); color: #17212b; font-size: .9rem; font-weight: 500; line-height: normal; }
+.costing-year-selector select:hover:not(:disabled) { border-color: #667f8d; background-color: #fbfdfe; }
+.costing-year-selector select:focus-visible { border-color: #1b668d; }
+.costing-year-selector select:disabled { background-color: #e4eaed; background-image: none; box-shadow: none; }
 .costing-results-table table { min-width: 1120px; }
 .costing-results-table th, .costing-results-table td, .costing-outlook-table th, .costing-outlook-table td { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .costing-results-table td:not(:first-child), .costing-results-table thead th:not(:first-child), .costing-results-table tfoot td { text-align: right; }
+.costing-results-table tbody th[scope='row'], .costing-results-table tfoot th[scope='row'] { text-align: right; vertical-align: middle; font-size: .9rem; }
 .costing-results-table tfoot, .costing-outlook-table .selected-costing-year { background: #e7eef1; font-weight: 700; }
 .costing-results-table tfoot th { background: #e7eef1; }
 .costing-lower-grid { display: grid; grid-template-columns: minmax(540px, 1.35fr) minmax(360px, .65fr); gap: 14px; min-width: 0; }
