@@ -205,6 +205,8 @@ A runtime assignment links one service day to one runtime profile for a pattern.
 
 Runtime segment durations are parsed from decimal minutes, standard `MM:SS`, or the displayed `:MM` / `:MM:SS` forms into integer seconds and formatted as `:MM` or `:MM:SS`. A runtime profile carries a calculation revision. Band-bound or segment-duration changes increment that revision; a profile rename does not. Existing trips record the profile and revision used for their current times, and Package 2R-C provides explicit recalculation against that source.
 
+The Runtimes editor accepts row-oriented tab-separated clipboard data and CSV for the selected pattern. Pasted values are previewed and validated before they change the editor draft; users can replace or append time bands, then save through the existing Runtime profile workflow. This does not import Trips or full Excel workbooks. See `docs/implementation/runtime-table-paste.md`.
+
 Runtime bands are continuous half-open intervals: start time is inclusive and end time is exclusive. A label covering disjoint periods must use separate bands. For example, off-peak service from 04:00-06:00 and 22:00-26:00 uses two bands.
 
 The trip's initial departure time selects the runtime band. The selected band applies for the entire trip even if the trip crosses into another band.
@@ -376,6 +378,6 @@ The following decisions are deliberately deferred:
 - cost-category allocation and combined cost models;
 - multi-user synchronization;
 - GTFS import and export;
-- Excel import.
+- Full Excel schedule and workbook import. The scoped Runtime table paste workflow does not import schedule data or workbook relationships.
 
 Resolve each item through a decision record before implementation.

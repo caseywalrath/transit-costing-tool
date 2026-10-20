@@ -17,6 +17,7 @@ import { sortServiceDays } from '../domain/serviceDays';
 import { formatServiceTime, parseServiceTime } from '../domain/time';
 import type { BlockingBlock, Node, NodeKind, Project, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeProfile, ServiceDayDefinition, Trip, TripGenerationSet, ValidationFinding } from '../domain/types';
 import { createBlockingScenarioSourceSignature } from '../domain/blocking';
+import { parseRuntimePaste, RuntimePasteParseError, type RuntimePasteRow } from './runtimePaste';
 
 import type { CostingCommands, CostingQueries } from '../application/ports';
 
@@ -27,7 +28,7 @@ type Confirmation = { title: string; text: string; action: () => void; confirmLa
 type ActiveTab = 'route' | 'trips' | 'blocking' | 'costing';
 type SelectionPreference = { projectId?: string; scenarioId?: string; routeId?: string };
 type RouteNavigationGuard = (action: () => void) => void;
-type RuntimeEditorHandle = { addBand: () => void; discard: () => void; save: () => void };
+type RuntimeEditorHandle = { addBand: () => void; discard: () => void; pasteRows: () => void; save: () => void };
 type RuntimeEditorState = { dirty: boolean; saving: boolean };
 type TripBlockAssignmentDraft = { operation: 'assign' | 'unassign'; tripIds: string[]; destinationBlockId: string; source: 'pill' | 'actions'; blockingScenarioId: string; tripProfileId: string; serviceDayId: string; sourceSignature: string };
 type TripBlockOption = { id: string; label: string; disabled?: boolean; reason?: string };
@@ -1038,7 +1039,7 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
   if (!patterns.length) return <section className="trips-workspace"><section className="prerequisite"><h2>Add a pattern on Route</h2><p>Choose a direction, then add a pattern with at least two points before entering runtimes or trips.</p></section></section>;
   return <div className="trips-workspace">
     <section className="workflow-section" aria-label="Runtimes section">
-      <div className="section-title"><div><h2>Runtimes</h2></div><div className="section-actions section-header-actions"><label className="header-field">Pattern<select value={patternId} disabled={tripProfileBusy} onChange={(event) => setPatternId(event.target.value)}>{patterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label><MenuButton fieldLabel="Profile" label={selectedProfile?.name ?? 'Select profile'} menuLabel="Runtime profile" groups={runtimeProfileMenu} disabled={loading || tripProfileBusy} />{runtimeEditorState.dirty && <><span className="action-separator" aria-hidden="true" /><button onClick={() => runtimeEditorRef.current?.discard()} disabled={runtimeEditorState.saving || tripProfileBusy}>Discard</button><button className="primary" onClick={() => runtimeEditorRef.current?.save()} disabled={runtimeEditorState.saving || tripProfileBusy}>{runtimeEditorState.saving ? 'Saving…' : 'Save'}</button></>}<span className="action-separator" aria-hidden="true" /><MenuButton label="Actions" menuLabel="Runtime actions" groups={[{ items: [{ id: 'add-time-band', label: 'Add Time Band', disabled: !selectedProfile || runtimeEditorState.saving || tripProfileBusy, onSelect: () => runtimeEditorRef.current?.addBand() }, { id: 'copy-day', label: 'Copy from day…', disabled: loading || tripProfileBusy, onSelect: () => setRuntimeCopyOpen(true) }] }]} disabled={loading || tripProfileBusy} triggerRef={runtimeCopyButtonRef} /></div></div>
+      <div className="section-title"><div><h2>Runtimes</h2></div><div className="section-actions section-header-actions"><label className="header-field">Pattern<select value={patternId} disabled={tripProfileBusy} onChange={(event) => setPatternId(event.target.value)}>{patterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label><MenuButton fieldLabel="Profile" label={selectedProfile?.name ?? 'Select profile'} menuLabel="Runtime profile" groups={runtimeProfileMenu} disabled={loading || tripProfileBusy} />{runtimeEditorState.dirty && <><span className="action-separator" aria-hidden="true" /><button onClick={() => runtimeEditorRef.current?.discard()} disabled={runtimeEditorState.saving || tripProfileBusy}>Discard</button><button className="primary" onClick={() => runtimeEditorRef.current?.save()} disabled={runtimeEditorState.saving || tripProfileBusy}>{runtimeEditorState.saving ? 'Saving…' : 'Save'}</button></>}<span className="action-separator" aria-hidden="true" /><MenuButton label="Actions" menuLabel="Runtime actions" groups={[{ items: [{ id: 'add-time-band', label: 'Add Time Band', disabled: !selectedProfile || runtimeEditorState.saving || tripProfileBusy, onSelect: () => runtimeEditorRef.current?.addBand() }, { id: 'paste-runtime-rows', label: 'Paste rows…', disabled: !selectedProfile || runtimeEditorState.saving || tripProfileBusy, onSelect: () => runtimeEditorRef.current?.pasteRows() }, { id: 'copy-day', label: 'Copy from day…', disabled: loading || tripProfileBusy, onSelect: () => setRuntimeCopyOpen(true) }] }]} disabled={loading || tripProfileBusy} triggerRef={runtimeCopyButtonRef} /></div></div>
       {selectedProfile && <p className="profile-usage">Used by {selectedDay?.name ?? 'this service day'} for {selectedPattern?.name}.</p>}
       {selectedProfile && selectedPattern ? <RuntimeEditor2 ref={runtimeEditorRef} service={service} profile={selectedProfile} pattern={selectedPattern} nodes={aggregate.nodes} onStateChange={setRuntimeEditorState} onSaved={async () => { await loadRuntime(); onRuntimeChanged(); }} onError={onError} /> : <p className="runtime-status">Loading runtimes…</p>}
     </section>
@@ -1073,7 +1074,10 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
 }
 
 const RuntimeEditor2 = forwardRef<RuntimeEditorHandle, { service: RouteDefinitionApplication; profile: RuntimeProfile; pattern: RoutePattern; nodes: Node[]; onStateChange: (state: RuntimeEditorState) => void; onSaved: () => Promise<void>; onError: (error: unknown) => void }>(function RuntimeEditor2({ service, profile, pattern, nodes, onStateChange, onSaved, onError }, ref) {
-  const [draft, setDraft] = useState(profile); const [findings, setFindings] = useState<ValidationFinding[]>([]); const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState(profile);
+  const [findings, setFindings] = useState<ValidationFinding[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [pasteRowsOpen, setPasteRowsOpen] = useState(false);
   const profileSignature = JSON.stringify(profile);
   const lastProfileSignature = useRef(profileSignature);
   useEffect(() => {
@@ -1094,11 +1098,129 @@ const RuntimeEditor2 = forwardRef<RuntimeEditorHandle, { service: RouteDefinitio
     return { ...current, bands: bands.map((band, sequence) => ({ ...band, sequence })) };
   });
   const discard = () => { setDraft(profile); setFindings([]); };
-  async function save() { const nextFindings = await service.validateRuntimeProfile(draft, pattern); setFindings(nextFindings); if (nextFindings.some((finding) => finding.severity === 'error')) return; setSaving(true); try { await service.saveRuntimeProfile(draft); await onSaved(); } catch (error) { onError(error); } finally { setSaving(false); } }
-  useImperativeHandle(ref, () => ({ addBand, discard, save: () => void save() }), [draft, profile, pattern]);
+  const openPasteRows = () => setPasteRowsOpen(true);
+  function applyPastedProfile(nextProfile: RuntimeProfile) {
+    setDraft(nextProfile);
+    setFindings([]);
+    setPasteRowsOpen(false);
+  }
+  async function save() {
+    const nextFindings = await service.validateRuntimeProfile(draft, pattern);
+    setFindings(nextFindings);
+    if (nextFindings.some((finding) => finding.severity === 'error')) return;
+    setSaving(true);
+    try { await service.saveRuntimeProfile(draft); await onSaved(); } catch (error) { onError(error); } finally { setSaving(false); }
+  }
+  useImperativeHandle(ref, () => ({ addBand, discard, pasteRows: openPasteRows, save: () => void save() }), [draft, profile, pattern]);
   useEffect(() => onStateChange({ dirty, saving }), [dirty, saving, onStateChange]);
-  return <div className="runtime-editor"><div className="table-scroll data-grid runtime-table"><table><thead><tr><th>From</th><th>To</th>{pattern.points.slice(1).map((point, index) => <th key={point.id}><span className="segment-header">{nodeName(pattern.points[index].nodeId)} → {nodeName(point.nodeId)}</span></th>)}<th className="runtime-total-heading">Total</th><th><span className="visually-hidden">Time band actions</span></th></tr></thead><tbody>{draft.bands.map((band, bandIndex) => <tr key={band.id} className={findings.some((finding) => finding.parameters?.bandId === band.id || finding.parameters?.previousBandId === band.id) ? 'runtime-row-error' : undefined}><td><RuntimeTimeInput label={`Time band ${bandIndex + 1} start`} value={band.startTime} onCommit={(value) => updateBand(bandIndex, { startTime: value })} /></td><td><RuntimeTimeInput label={`Time band ${bandIndex + 1} end`} value={band.endTime} onCommit={(value) => updateBand(bandIndex, { endTime: value })} /></td>{band.segmentRuntimeSeconds.map((value, segmentIndex) => <td key={`${band.id}-${segmentIndex}`}><RuntimeTimeInput label={`Time band ${bandIndex + 1} segment ${segmentIndex + 1}`} value={value} duration onCommit={(next) => updateBand(bandIndex, { segmentRuntimeSeconds: band.segmentRuntimeSeconds.map((item, index) => index === segmentIndex ? next : item) })} /></td>)}<td className="runtime-total">{formatRuntimeDuration(runtimeBandTotalSeconds(band))}</td><td><div className="row-actions"><button className="icon-button" onClick={() => duplicateBand(bandIndex)} aria-label={`Duplicate time band ${bandIndex + 1}`} title="Duplicate time band"><CopyIcon /></button><button className="icon-button icon-button--danger" onClick={() => setDraft((current) => ({ ...current, bands: current.bands.filter((_, index) => index !== bandIndex).map((item, sequence) => ({ ...item, sequence })) }))} aria-label={`Remove time band ${bandIndex + 1}`} title="Remove time band"><TrashIcon /></button></div></td></tr>)}{draft.bands.length === 0 && <tr><td colSpan={pattern.points.length + 3} className="table-empty">Add a time band to enter runtimes.</td></tr>}</tbody></table></div>{findings.length > 0 && <p className="field-error" role="alert">{[...new Set(findings.map(userMessage))].join(' ')}</p>}</div>;
+  return <div className="runtime-editor">
+    <div className="table-scroll data-grid runtime-table"><table>
+      <thead><tr><th>From</th><th>To</th>{pattern.points.slice(1).map((point, index) => <th key={point.id}><span className="segment-header">{nodeName(pattern.points[index].nodeId)} → {nodeName(point.nodeId)}</span></th>)}<th className="runtime-total-heading">Total</th><th><span className="visually-hidden">Time band actions</span></th></tr></thead>
+      <tbody>{draft.bands.map((band, bandIndex) => <tr key={band.id} className={findings.some((finding) => finding.parameters?.bandId === band.id || finding.parameters?.previousBandId === band.id) ? 'runtime-row-error' : undefined}>
+        <td><RuntimeTimeInput label={`Time band ${bandIndex + 1} start`} value={band.startTime} onCommit={(value) => updateBand(bandIndex, { startTime: value })} /></td>
+        <td><RuntimeTimeInput label={`Time band ${bandIndex + 1} end`} value={band.endTime} onCommit={(value) => updateBand(bandIndex, { endTime: value })} /></td>
+        {band.segmentRuntimeSeconds.map((value, segmentIndex) => <td key={`${band.id}-${segmentIndex}`}><RuntimeTimeInput label={`Time band ${bandIndex + 1} segment ${segmentIndex + 1}`} value={value} duration onCommit={(next) => updateBand(bandIndex, { segmentRuntimeSeconds: band.segmentRuntimeSeconds.map((item, index) => index === segmentIndex ? next : item) })} /></td>)}
+        <td className="runtime-total">{formatRuntimeDuration(runtimeBandTotalSeconds(band))}</td>
+        <td><div className="row-actions"><button className="icon-button" onClick={() => duplicateBand(bandIndex)} aria-label={`Duplicate time band ${bandIndex + 1}`} title="Duplicate time band"><CopyIcon /></button><button className="icon-button icon-button--danger" onClick={() => setDraft((current) => ({ ...current, bands: current.bands.filter((_, index) => index !== bandIndex).map((item, sequence) => ({ ...item, sequence })) }))} aria-label={`Remove time band ${bandIndex + 1}`} title="Remove time band"><TrashIcon /></button></div></td>
+      </tr>)}{draft.bands.length === 0 && <tr><td colSpan={pattern.points.length + 3} className="table-empty">Add a time band to enter runtimes.</td></tr>}</tbody>
+    </table></div>
+    {findings.length > 0 && <p className="field-error" role="alert">{[...new Set(findings.map(userMessage))].join(' ')}</p>}
+    {pasteRowsOpen && <RuntimePasteDialog service={service} baseProfile={draft} pattern={pattern} nodes={nodes} onApply={applyPastedProfile} onClose={() => setPasteRowsOpen(false)} />}
+  </div>;
 });
+
+function RuntimePasteDialog({ service, baseProfile, pattern, nodes, onApply, onClose }: { service: RouteDefinitionApplication; baseProfile: RuntimeProfile; pattern: RoutePattern; nodes: Node[]; onApply: (profile: RuntimeProfile) => void; onClose: () => void }) {
+  const [text, setText] = useState('');
+  const [mode, setMode] = useState<'replace' | 'append'>('replace');
+  const [parseIssues, setParseIssues] = useState<string[]>([]);
+  const [parsedRows, setParsedRows] = useState<RuntimePasteRow[]>([]);
+  const [candidate, setCandidate] = useState<RuntimeProfile>();
+  const [findings, setFindings] = useState<ValidationFinding[]>([]);
+  const [reviewing, setReviewing] = useState(false);
+  const segmentCount = Math.max(0, pattern.points.length - 1);
+  const hasValidationErrors = findings.some((finding) => finding.severity === 'error');
+  const previewBands = candidate ? (mode === 'append' ? candidate.bands.slice(baseProfile.bands.length) : candidate.bands) : [];
+  const segmentName = (index: number) => {
+    const from = nodes.find((node) => node.id === pattern.points[index]?.nodeId);
+    const to = nodes.find((node) => node.id === pattern.points[index + 1]?.nodeId);
+    const fromName = from?.shortName || from?.name || 'Unnamed point';
+    const toName = to?.shortName || to?.name || 'Unnamed point';
+    return `${fromName} → ${toName}`;
+  };
+
+  function clearReview() {
+    setParseIssues([]);
+    setParsedRows([]);
+    setCandidate(undefined);
+    setFindings([]);
+  }
+
+  async function reviewRows() {
+    setReviewing(true);
+    clearReview();
+    try {
+      const rows = parseRuntimePaste(text, segmentCount);
+      const firstSequence = mode === 'append' ? baseProfile.bands.length : 0;
+      const importedBands = rows.map((row, index) => {
+        const sequence = firstSequence + index;
+        const existingBand = mode === 'replace' ? baseProfile.bands[index] : undefined;
+        return {
+          id: existingBand?.id ?? newId(),
+          label: row.bandLabel ?? existingBand?.label ?? `Time period ${sequence + 1}`,
+          sequence,
+          startTime: row.startTime,
+          endTime: row.endTime,
+          segmentRuntimeSeconds: [...row.segmentRuntimeSeconds],
+        };
+      });
+      const nextBands = mode === 'append' ? [...baseProfile.bands, ...importedBands] : importedBands;
+      const nextProfile = { ...baseProfile, bands: nextBands };
+      const nextFindings = await service.validateRuntimeProfile(nextProfile, pattern);
+      setParsedRows(rows);
+      setCandidate(nextProfile);
+      setFindings(nextFindings);
+    } catch (error) {
+      setParseIssues(error instanceof RuntimePasteParseError ? error.issues : ['Unable to read the pasted runtime rows.']);
+    } finally {
+      setReviewing(false);
+    }
+  }
+
+  function changeText(value: string) {
+    setText(value);
+    clearReview();
+  }
+
+  function changeMode(value: 'replace' | 'append') {
+    setMode(value);
+    clearReview();
+  }
+
+  const canApply = Boolean(candidate && parsedRows.length && !hasValidationErrors && !parseIssues.length && !reviewing);
+  return <div className="modal-backdrop" role="presentation"><section className="confirm-dialog runtime-paste-dialog" role="dialog" aria-modal="true" aria-labelledby="runtime-paste-title" tabIndex={-1} onKeyDown={(event) => { if (event.key === 'Escape' && !reviewing) onClose(); }}>
+    <h2 id="runtime-paste-title">Paste runtime rows</h2>
+    <p>Paste rows with From, To, and one runtime for each segment in the selected Pattern. Use tabs copied from a spreadsheet or comma-separated CSV. A header row is optional; Band and calculated Total columns are accepted when named in the header.</p>
+    <fieldset className="copy-mode">
+      <legend>Apply pasted rows</legend>
+      <label><input type="radio" name="runtime-paste-mode" checked={mode === 'replace'} onChange={() => changeMode('replace')} /> Replace all {baseProfile.bands.length} current time band{baseProfile.bands.length === 1 ? '' : 's'}</label>
+      <small>The pasted rows become the complete runtime profile.</small>
+      <label><input type="radio" name="runtime-paste-mode" checked={mode === 'append'} onChange={() => changeMode('append')} /> Append after the {baseProfile.bands.length} current time band{baseProfile.bands.length === 1 ? '' : 's'}</label>
+      <small>Existing time bands stay in the draft. The combined profile must still pass validation.</small>
+    </fieldset>
+    <label className="dialog-field" htmlFor="runtime-paste-text">Spreadsheet or CSV rows<textarea id="runtime-paste-text" className="runtime-paste-input" autoFocus value={text} onChange={(event) => changeText(event.target.value)} placeholder={'From\tTo\tSegment 1\tSegment 2\n05:00\t06:00\t12\t15'} /></label>
+    <p className="copy-scope">Times may exceed 24:00. Segment runtimes accept minutes or MM:SS. Total is calculated and is not imported.</p>
+    {parseIssues.length > 0 && <section className="runtime-findings" role="alert"><strong>Fix the pasted rows</strong><ul>{parseIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul></section>}
+    {findings.length > 0 && <section className={hasValidationErrors ? 'runtime-findings' : 'runtime-paste-notes'} role={hasValidationErrors ? 'alert' : 'status'}><strong>{hasValidationErrors ? 'The pasted profile has validation errors' : 'Review profile findings'}</strong><ul>{[...new Set(findings.map(userMessage))].map((message) => <li key={message}>{message}</li>)}</ul></section>}
+    {candidate && <section className="runtime-paste-preview" aria-label="Runtime row preview">
+      <h3>{previewBands.length} pasted time band{previewBands.length === 1 ? '' : 's'}</h3>
+      <div className="table-scroll"><table><thead><tr><th>Source row</th><th>From</th><th>To</th>{Array.from({ length: segmentCount }, (_, index) => <th key={index}><span className="segment-header">{segmentName(index)}</span></th>)}<th className="runtime-total-heading">Total</th></tr></thead>
+        <tbody>{previewBands.map((band, index) => <tr key={band.id}><td>{parsedRows[index]?.sourceRowNumber ?? '—'}</td><td>{formatServiceTime(band.startTime)}</td><td>{formatServiceTime(band.endTime)}</td>{band.segmentRuntimeSeconds.map((duration, segmentIndex) => <td key={`${band.id}-${segmentIndex}`}>{formatRuntimeDuration(duration)}</td>)}<td className="runtime-total">{formatRuntimeDuration(runtimeBandTotalSeconds(band))}</td></tr>)}</tbody>
+      </table></div>
+      <p>Applying changes the editor draft only. Use Save in the Runtimes header to save the profile.</p>
+    </section>}
+    <div className="dialog-actions"><button type="button" onClick={onClose} disabled={reviewing}>Cancel</button><button type="button" onClick={() => void reviewRows()} disabled={reviewing || !text.trim()}>{reviewing ? 'Reviewing…' : 'Review rows'}</button>{candidate && <button className="primary" type="button" onClick={() => onApply(candidate)} disabled={!canApply}>{mode === 'replace' ? `Replace with ${previewBands.length} rows` : `Append ${previewBands.length} rows`}</button>}</div>
+  </section></div>;
+}
 
 function ScheduleTable({ trips, previewTrips, stagedShiftSeconds, draft, patterns, direction, nodes, blockAssignments, blockOptions, blockAssignmentDisabled, onAssignBlock, onUnassignBlock, selectedIds, changedRuntimeTripIds, onToggle, onSelectAll, onDelete, onPatternChange, onDraftChange, onDraftSave, onDraftCancel, busy }: { trips: Trip[]; previewTrips?: Trip[]; stagedShiftSeconds?: number; draft?: { patternId: string; firstTrip: string }; patterns: RoutePattern[]; direction: NonNullable<RouteDefinitionAggregate['directions']>[number]; nodes: Node[]; blockAssignments: Map<string, BlockingBlock>; blockOptions: TripBlockOption[]; blockAssignmentDisabled: boolean; onAssignBlock: (trip: Trip, blockId: string, trigger: HTMLButtonElement | null) => void; onUnassignBlock: (trip: Trip, trigger: HTMLButtonElement | null) => void; selectedIds: string[]; changedRuntimeTripIds: Set<string>; onToggle: (id: string, index: number, shiftKey: boolean) => void; onSelectAll: (selected: boolean) => void; onDelete: (trip: Trip) => void; onPatternChange: (trip: Trip, patternId: string) => void; onDraftChange: (draft: { patternId: string; firstTrip: string }) => void; onDraftSave: () => void; onDraftCancel: () => void; busy: boolean }) {
   const columns = [...direction.columns].sort((left, right) => left.sequence - right.sequence);
