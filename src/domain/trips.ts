@@ -1,9 +1,15 @@
-import type { Block, DurationSeconds, GenerateTripsRequest, RoutePattern, RuntimeProfile, ScheduledPoint, ServiceSeconds, Trip, TripGenerationSet, ValidationFinding } from './types';
+import type { Block, DurationSeconds, GenerateTripsRequest, RoutePattern, RuntimeBand, RuntimeProfile, ScheduledPoint, ServiceSeconds, Trip, TripGenerationSet, ValidationFinding } from './types';
 import { metadata, newId, withUpdatedAt } from './ids';
-import { propagatePatternTimes, selectRuntimeBand } from './runtime';
+import { propagatePatternTimes, propagatePatternTimesWithBand, selectRuntimeBand } from './runtime';
 
 export class TripGenerationError extends Error {
   constructor(readonly findings: ValidationFinding[]) { super(findings.map((item) => item.messageKey).join('; ') || 'Trip generation failed'); this.name = 'TripGenerationError'; }
+}
+
+export interface AnchorBandChoice { bandId: string; bandLabel: string; startTime: ServiceSeconds; endTime: ServiceSeconds; departure: ServiceSeconds; distanceSeconds: number; side?: 'before' | 'after' }
+
+export class AnchorBandChoiceError extends TripGenerationError {
+  constructor(readonly tripId: string, readonly choices: AnchorBandChoice[], finding: ValidationFinding) { super([finding]); this.name = 'AnchorBandChoiceError'; }
 }
 
 export interface GenerateTripsPreview {
@@ -134,9 +140,23 @@ export interface RecalculationImpact {
 export interface RecalculationPreview {
   trips: Trip[];
   impact: RecalculationImpact;
+  bandSelections?: RecalculationBandSelection[];
   anchorByTripId?: Record<string, string>;
+  bandOverrideByTripId?: Record<string, string>;
   sourceSignature?: string;
 }
+
+/** An anchored trip may use a nearby band once without storing a permanent band assignment. */
+export interface RecalculationBandSelection {
+  tripId: string;
+  bandLabel: string;
+  departure: ServiceSeconds;
+  distanceSeconds: number;
+  side?: 'before' | 'after';
+  selection: 'automatic' | 'manual';
+}
+
+export const MAX_NEAREST_BAND_DISTANCE_SECONDS = 10 * 60;
 
 export function calculateRecalculationImpact(trips: Trip[], blocks: Block[]): RecalculationImpact {
   const selected = new Set(trips.map((trip) => trip.id));
@@ -151,21 +171,46 @@ export function calculateRecalculationImpact(trips: Trip[], blocks: Block[]): Re
   return { tripIds: trips.map((trip) => trip.id), manualTimeShiftTripIds, manualPatternChangeTripIds, blockIds, requiresConfirmation: hasUnverifiedRuntimeSource || manualTimeShiftTripIds.length > 0 || manualPatternChangeTripIds.length > 0 || blockIds.length > 0 };
 }
 
-export function markTripRecalculated(trip: Trip, pattern: RoutePattern, profile: RuntimeProfile, now = new Date().toISOString(), anchorPointId?: string): Trip {
+export function recalculateTripWithAnchor(trip: Trip, pattern: RoutePattern, profile: RuntimeProfile, now = new Date().toISOString(), anchorPointId?: string, chosenBandId?: string): { trip: Trip; bandSelection?: RecalculationBandSelection } {
   const departure = trip.stopTimes[0]?.time;
   if (departure === undefined) throw new TripGenerationError([tripFinding(trip, 'trip.departureMissing', 'trip.departureMissing')]);
   const anchorIndex = anchorPointId === undefined ? 0 : pattern.points.findIndex((point) => point.id === anchorPointId);
   if (anchorIndex < 0) throw new TripGenerationError([tripFinding(trip, 'trip.anchorMissing', 'trip.anchorMissing')]);
   const anchorTime = trip.stopTimes.find((point) => point.patternPointId === pattern.points[anchorIndex].id)?.time;
   if (anchorTime === undefined) throw new TripGenerationError([tripFinding(trip, 'trip.anchorTimeMissing', 'trip.anchorTimeMissing')]);
-  const candidates = anchorIndex === 0 ? [departure] : profile.bands.filter((band) => band.segmentRuntimeSeconds.length === pattern.points.length - 1).map((band) => ({ band, first: anchorTime - band.segmentRuntimeSeconds.slice(0, anchorIndex).reduce((total, seconds) => total + seconds, 0) })).filter(({ band, first }) => first >= 0 && selectRuntimeBand(profile, first)?.id === band.id).map(({ first }) => first);
-  const distinctCandidates = [...new Set(candidates)];
-  if (distinctCandidates.length !== 1) throw new TripGenerationError([tripFinding(trip, distinctCandidates.length ? 'trip.anchorAmbiguous' : 'trip.anchorNoRuntime', distinctCandidates.length ? 'trip.anchorAmbiguous' : 'trip.anchorNoRuntime')]);
-  const propagated = propagatePatternTimes(pattern, distinctCandidates[0], profile);
+  const candidates = anchorIndex === 0 ? [] : profile.bands.filter((band) => band.segmentRuntimeSeconds.length === pattern.points.length - 1).map((band) => {
+    const first = anchorTime - band.segmentRuntimeSeconds.slice(0, anchorIndex).reduce((total, seconds) => total + seconds, 0);
+    const distanceSeconds = first < band.startTime ? band.startTime - first : Math.max(0, first - band.endTime);
+    return { band, first, distanceSeconds };
+  }).filter(({ first }) => first >= 0);
+  const exact = candidates.filter(({ band, first }) => selectRuntimeBand(profile, first)?.id === band.id);
+  if (exact.length > 1 && !chosenBandId) throw new AnchorBandChoiceError(trip.id, exact.map((candidate): AnchorBandChoice => ({ bandId: candidate.band.id, bandLabel: candidate.band.label, startTime: candidate.band.startTime, endTime: candidate.band.endTime, departure: candidate.first, distanceSeconds: 0 })), tripFinding(trip, 'trip.anchorAmbiguous', 'trip.anchorAmbiguous'));
+  if (exact.length > 1 && chosenBandId && !exact.some((candidate) => candidate.band.id === chosenBandId)) throw new TripGenerationError([tripFinding(trip, 'trip.anchorBandChoiceInvalid', 'trip.anchorBandChoiceInvalid')]);
+  let chosen: { band: RuntimeBand; first: number; distanceSeconds: number } | undefined = exact.length > 1 ? exact.find((candidate) => candidate.band.id === chosenBandId) : exact[0];
+  let bandSelection: RecalculationBandSelection | undefined = exact.length > 1 && chosen ? { tripId: trip.id, bandLabel: chosen.band.label, departure: chosen.first, distanceSeconds: 0, selection: 'manual' } : undefined;
+  if (anchorIndex > 0 && !chosen) {
+    const nearestDistance = Math.min(...candidates.map((candidate) => candidate.distanceSeconds));
+    const nearest = candidates.filter((candidate) => candidate.distanceSeconds === nearestDistance);
+    if (!nearest.length) throw new TripGenerationError([tripFinding(trip, 'trip.anchorNoRuntime', 'trip.anchorNoRuntime')]);
+    const manualChoice = candidates.find((candidate) => candidate.band.id === chosenBandId);
+    if (chosenBandId && !manualChoice) throw new TripGenerationError([tripFinding(trip, 'trip.anchorBandChoiceInvalid', 'trip.anchorBandChoiceInvalid')]);
+    if (manualChoice) chosen = manualChoice;
+    else if (nearestDistance <= MAX_NEAREST_BAND_DISTANCE_SECONDS && nearest.length === 1) chosen = nearest[0];
+    else {
+      const ruleId = nearest.length > 1 && nearestDistance <= MAX_NEAREST_BAND_DISTANCE_SECONDS ? 'trip.anchorNearestTie' : 'trip.anchorNoRuntime';
+      throw new AnchorBandChoiceError(trip.id, candidates.map((candidate): AnchorBandChoice => ({ bandId: candidate.band.id, bandLabel: candidate.band.label, startTime: candidate.band.startTime, endTime: candidate.band.endTime, departure: candidate.first, distanceSeconds: candidate.distanceSeconds, side: candidate.first < candidate.band.startTime ? 'before' : 'after' })).sort((left, right) => left.distanceSeconds - right.distanceSeconds), tripFinding(trip, ruleId, ruleId));
+    }
+    bandSelection = { tripId: trip.id, bandLabel: chosen.band.label, departure: chosen.first, distanceSeconds: chosen.distanceSeconds, side: chosen.first < chosen.band.startTime ? 'before' : 'after', selection: manualChoice ? 'manual' : 'automatic' };
+  }
+  const propagated = bandSelection && chosen ? { stopTimes: propagatePatternTimesWithBand(pattern, chosen.first, chosen.band), band: chosen.band } : propagatePatternTimes(pattern, chosen?.first ?? departure, profile);
   if ('finding' in propagated) throw new TripGenerationError([{ ...propagated.finding, entityType: 'trip', entityId: trip.id }]);
   if (propagated.stopTimes[anchorIndex].time !== anchorTime) throw new TripGenerationError([tripFinding(trip, 'trip.anchorAmbiguous', 'trip.anchorAmbiguous')]);
   const revision = profile.calculationRevision ?? 0;
-  return withUpdatedAt({ ...trip, patternId: pattern.id, stopTimes: propagated.stopTimes, provenance: { ...trip.provenance, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision }, manuallyChangedFields: [], manualTimeShiftSeconds: undefined } }, now);
+  return { trip: withUpdatedAt({ ...trip, patternId: pattern.id, stopTimes: propagated.stopTimes, provenance: { ...trip.provenance, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision }, manuallyChangedFields: [], manualTimeShiftSeconds: undefined } }, now), bandSelection };
+}
+
+export function markTripRecalculated(trip: Trip, pattern: RoutePattern, profile: RuntimeProfile, now = new Date().toISOString(), anchorPointId?: string): Trip {
+  return recalculateTripWithAnchor(trip, pattern, profile, now, anchorPointId).trip;
 }
 
 function generationFinding(set: TripGenerationSet, ruleId: string, messageKey: string, field?: string, parameters?: Record<string, string | number>): ValidationFinding {

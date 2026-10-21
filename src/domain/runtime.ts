@@ -207,12 +207,16 @@ export function propagatePatternTimes(
 ): { stopTimes: ScheduledPoint[]; band: RuntimeBand } | { finding: ValidationFinding } {
   const resolution = resolveRuntimeForDeparture(profile, pattern, departure);
   if (!resolution.band || !resolution.segmentRuntimeSeconds) return { finding: resolution.finding! };
+  return { stopTimes: propagatePatternTimesWithBand(pattern, departure, resolution.band), band: resolution.band };
+}
+
+/** Propagate times using a band selected by an anchored-regeneration exception. */
+export function propagatePatternTimesWithBand(pattern: RoutePattern, departure: ServiceSeconds, band: RuntimeBand): ScheduledPoint[] {
   let elapsed = 0;
-  const stopTimes = pattern.points.map((point, sequence) => {
-    if (sequence > 0) elapsed += resolution.segmentRuntimeSeconds![sequence - 1];
+  return pattern.points.map((point, sequence) => {
+    if (sequence > 0) elapsed += band.segmentRuntimeSeconds[sequence - 1];
     return { patternPointId: point.id, sequence, time: departure + elapsed };
   });
-  return { stopTimes, band: resolution.band };
 }
 
 /** Create an independent profile copy with new profile and band identifiers. */

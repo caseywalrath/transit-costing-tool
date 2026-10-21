@@ -35,7 +35,7 @@ The product is a planning tool. It is not intended to dispatch service, manage o
 | Service-day types | Weekday, Saturday, Sunday, and holiday |
 | Time representation | Integer seconds from service-day midnight |
 | Extended time | Times greater than 24:00 are supported |
-| Runtime selection | The trip departure time selects one runtime band for the full trip |
+| Runtime selection | The trip departure time normally selects one runtime band for the full trip; anchored regeneration may use a uniquely nearest band within ten minutes or a band explicitly chosen in its preview |
 | Runtime ownership | Complete pattern-specific profiles in the first build |
 | Trip authority | Saved trips and scheduled points; generation requests are transient |
 | Runtime changes | Existing trips remain fixed until explicit recalculation |
