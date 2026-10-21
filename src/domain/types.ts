@@ -32,7 +32,7 @@ export interface DirectionTimepointColumn {
 export interface RoutePattern extends EntityMetadata { id: EntityId; scenarioId: EntityId; routeId: EntityId; name: string; directionId?: EntityId; sequence?: number; directionLabel?: string; notes?: string; points: PatternPoint[]; }
 export interface RouteDefinitionAggregate { route: Route; nodes: Node[]; patterns: RoutePattern[]; directions?: RouteDirection[]; }
 export interface RuntimeBand { id: EntityId; label: string; sequence: number; startTime: ServiceSeconds; endTime: ServiceSeconds; segmentRuntimeSeconds: DurationSeconds[]; }
-export interface RuntimeProfile extends EntityMetadata { id: EntityId; scenarioId: EntityId; routeId: EntityId; patternId: EntityId; name: string; bands: RuntimeBand[]; calculationRevision?: number; }
+export interface RuntimeProfile extends EntityMetadata { id: EntityId; scenarioId: EntityId; routeId: EntityId; patternId: EntityId; name: string; bands: RuntimeBand[]; calculationMethod?: 'singleBand' | 'blendSegments' | 'segmentStart'; calculationRevision?: number; }
 export interface RuntimeAssignment extends EntityMetadata { id: EntityId; scenarioId: EntityId; patternId: EntityId; serviceDayId: EntityId; runtimeProfileId: EntityId; }
 /** A transient additive request. It is never persisted as a scheduling record. */
 export interface GenerateTripsRequest {

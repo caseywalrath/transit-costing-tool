@@ -102,6 +102,32 @@ test('Build Trips uses a right drawer and supports inclusive last-trip and count
   await expect(page.locator('.schedule-table')).toContainText('7:20');
 });
 
+test('regeneration preview shows signed time and Run Time changes for each anchor', async ({ page }) => {
+  await createShiftReadySchedule(page);
+  const runtimeSection = page.locator('[aria-label="Runtimes section"]');
+  await runtimeSection.getByLabel('Time band 1 segment 1').fill(':10:30');
+  await runtimeSection.getByLabel('Time band 1 segment 1').press('Tab');
+  await runtimeSection.getByRole('button', { name: 'Save', exact: true }).click();
+
+  await page.locator('.schedule-table tbody input[type="checkbox"]').check();
+  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
+  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Regenerate selected…' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Regenerate selected trips' });
+  await expect(dialog.locator('.preview-times thead th')).toHaveText([
+    'Trip', 'Anchor', 'Fixed time', 'First: current → new', 'First change',
+    'Last: current → new', 'Last change', 'Run Time change',
+  ]);
+  const cells = dialog.locator('.preview-times tbody tr').first().locator('td');
+  await expect(cells.nth(4)).toHaveText('0:00');
+  await expect(cells.nth(6)).toHaveText('+0:03:30');
+  await expect(cells.nth(7)).toHaveText('+0:03:30');
+
+  await dialog.getByRole('button', { name: 'Last timepoint' }).click();
+  await expect(cells.nth(4)).toHaveText('−0:03:30');
+  await expect(cells.nth(6)).toHaveText('0:00');
+  await expect(cells.nth(7)).toHaveText('+0:03:30');
+});
+
 test('stages Shift actions, guards scope changes, and persists only on Done', async ({ page }) => {
   await createShiftReadySchedule(page);
 

@@ -1,6 +1,6 @@
 import type { TripGenerationRepository } from './ports';
 import type { GenerateTripsPreview, PatternChangePreview, RecalculationPreview, RegenerationPreview, RegenerationResult } from '../domain/trips';
-import { adjustBlockReferences, applyPatternChange, applyRegeneration, calculateRecalculationImpact, createAuthoritativeTrip, findExactTripDuplicates, generateAuthoritativeTrips, generateTrips, markTripRecalculated, previewPatternChange, previewRegeneration, recalculateTripWithAnchor, shiftTrips, TripGenerationError, validateGenerateTripsRequest, validateTrip, type RecalculationBandSelection } from '../domain/trips';
+import { adjustBlockReferences, AnchorBandChoiceError, applyPatternChange, applyRegeneration, calculateRecalculationConnections, calculateRecalculationImpact, createAuthoritativeTrip, findExactTripDuplicates, generateAuthoritativeTrips, generateTrips, markTripRecalculated, previewPatternChange, previewRegeneration, recalculateTripWithAnchor, shiftTrips, TripGenerationError, validateGenerateTripsRequest, validateTrip, type RecalculationBandSelection } from '../domain/trips';
 import type { AddTripRequest, Block, GenerateTripsRequest, RuntimeAssignment, RuntimeProfile, RoutePattern, Trip, TripGenerationSet, TripProfile, ValidationFinding } from '../domain/types';
 import { metadata, newId, withUpdatedAt } from '../domain/ids';
 import { buildBatchPatternChangePreview, buildRuntimeCopyPreview, buildTripCopyPreview, type BatchPatternChangePreview, type BatchPatternChangeRequest, type RuntimeCopyPreview, type RuntimeCopyRequest, type TripCopyPreview, type TripCopyRequest } from '../domain/serviceDayCopy';
@@ -286,20 +286,36 @@ export class TripGenerationService {
     const recalculated: Trip[] = [];
     const bandSelections: RecalculationBandSelection[] = [];
     const sources: unknown[] = [];
+    const findings: TripGenerationError['findings'] = [];
     for (const trip of trips) {
-      const { pattern, profile, assignment } = await this.resolveAuthoritativeProfile({ scenarioId: trip.scenarioId, serviceDayId: trip.serviceDayId, patternId: trip.patternId });
-      sources.push([trip, pattern, profile, assignment]);
-      const result = recalculateTripWithAnchor(trip, pattern, profile, this.now(), anchorByTripId[trip.id], bandOverrideByTripId[trip.id]);
-      recalculated.push(result.trip);
-      if (result.bandSelection) bandSelections.push(result.bandSelection);
+      try {
+        const { pattern, profile, assignment } = await this.resolveAuthoritativeProfile({ scenarioId: trip.scenarioId, serviceDayId: trip.serviceDayId, patternId: trip.patternId });
+        sources.push([trip, pattern, profile, assignment]);
+        const result = recalculateTripWithAnchor(trip, pattern, profile, this.now(), anchorByTripId[trip.id], bandOverrideByTripId[trip.id]);
+        recalculated.push(result.trip);
+        if (result.bandSelection) bandSelections.push(result.bandSelection);
+      } catch (error) {
+        if (!(error instanceof TripGenerationError) || error instanceof AnchorBandChoiceError) throw error;
+        findings.push(...error.findings.map((finding) => ({ ...finding, entityType: 'trip' as const, entityId: trip.id })));
+      }
     }
-    return { trips: recalculated, impact: calculateRecalculationImpact(trips, blocks), bandSelections, anchorByTripId: { ...anchorByTripId }, bandOverrideByTripId: { ...bandOverrideByTripId }, sourceSignature: JSON.stringify([sources, blocks]) };
+    if (findings.length) throw new TripGenerationError(findings);
+    const selectedIds = new Set(tripIds);
+    const relevantBlocks = blocks.filter((block) => block.activities.some((activity) => activity.type === 'revenueTrip' && selectedIds.has(activity.tripId)));
+    const connectedIds = [...new Set(relevantBlocks.flatMap((block) => block.activities.filter((activity) => activity.type === 'revenueTrip').map((activity) => activity.tripId)))].filter((id) => !selectedIds.has(id));
+    const connectedTrips = (await Promise.all(connectedIds.map((id) => this.repository.getTrip(id)))).filter((trip): trip is Trip => Boolean(trip));
+    const connectionTrips = [...trips, ...connectedTrips];
+    const connectionPatternIds = [...new Set(connectionTrips.map((trip) => trip.patternId))];
+    const connectionPatterns = (await Promise.all(connectionPatternIds.map((id) => this.repository.getPattern(id)))).filter((pattern): pattern is RoutePattern => Boolean(pattern));
+    const connectionReview = calculateRecalculationConnections(trips, recalculated, connectionTrips, relevantBlocks, connectionPatterns);
+    return { trips: recalculated, impact: calculateRecalculationImpact(trips, blocks), connections: connectionReview.connections, findings: connectionReview.findings, bandSelections, anchorByTripId: { ...anchorByTripId }, bandOverrideByTripId: { ...bandOverrideByTripId }, sourceSignature: JSON.stringify([sources, blocks, connectedTrips, connectionPatterns]) };
   }
 
   async applyRecalculationPreview(preview: RecalculationPreview, confirm = false): Promise<RecalculationPreview> {
     if (!preview.sourceSignature || !preview.trips.length) throw new Error('Review the selected trips before regenerating.');
     const current = await this.previewRecalculateTrips(preview.impact.tripIds, preview.anchorByTripId, preview.bandOverrideByTripId);
     if (current.sourceSignature !== preview.sourceSignature) throw new Error('Trips or runtimes changed. Review regeneration again.');
+    if (current.findings.some((finding) => finding.severity === 'error')) throw new TripGenerationError(current.findings);
     if (current.impact.requiresConfirmation && !confirm) throw new TripRecalculationConfirmationError(current);
     await this.atomicChanges()(current.trips);
     return current;
@@ -307,6 +323,7 @@ export class TripGenerationService {
 
   async recalculateTrips(tripIds: string[], confirm = false): Promise<{ trips: Trip[]; impact: RecalculationPreview['impact'] }> {
     const preview = await this.previewRecalculateTrips(tripIds);
+    if (preview.findings.some((finding) => finding.severity === 'error')) throw new TripGenerationError(preview.findings);
     if (preview.impact.requiresConfirmation && !confirm) throw new TripRecalculationConfirmationError(preview);
     await this.atomicChanges()(preview.trips);
     return preview;

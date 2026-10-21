@@ -53,6 +53,8 @@ test('assigns, reassigns, and unassigns Trips from the Trips table by pill and b
 
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   const schedule = page.locator('.schedule-table');
+  const headings = (await schedule.locator('thead th').allTextContents()).map((heading) => heading.trim());
+  expect(headings.indexOf('Run Time')).toBe(headings.indexOf('Layover') - 1);
   const firstTripBlock = schedule.getByRole('button', { name: /Block assignment for .*departing 6:00/ });
   await firstTripBlock.click();
   await page.getByRole('menu', { name: /Block assignment for/ }).getByRole('menuitemradio', { name: 'Block 1', exact: true }).click();

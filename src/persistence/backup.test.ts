@@ -65,11 +65,13 @@ describe('backup', () => {
       routes: [{ id: 'r', scenarioId: 's', name: 'Route', ...metadata() }],
       nodes: [{ id: 'a', scenarioId: 's', routeId: 'r', name: 'A', kind: 'terminal' as const, ...metadata() }, { id: 'b', scenarioId: 's', routeId: 'r', name: 'B', kind: 'terminal' as const, ...metadata() }],
       patterns: [{ id: 'pat', scenarioId: 's', routeId: 'r', name: 'A-B', points: [{ id: 'pa', nodeId: 'a', sequence: 0, cumulativeMiles: 0 }, { id: 'pb', nodeId: 'b', sequence: 1, cumulativeMiles: 1 }], ...metadata() }],
-      runtimeProfiles: [{ id: 'rp', scenarioId: 's', routeId: 'r', patternId: 'pat', name: 'All day', bands: [{ id: 'rb', label: 'All day', sequence: 0, startTime: 0, endTime: 100, segmentRuntimeSeconds: [60] }], ...metadata() }],
+      runtimeProfiles: [{ id: 'rp', scenarioId: 's', routeId: 'r', patternId: 'pat', name: 'All day', calculationMethod: 'blendSegments' as const, bands: [{ id: 'rb', label: 'All day', sequence: 0, startTime: 0, endTime: 100, segmentRuntimeSeconds: [60] }], ...metadata() }],
       runtimeAssignments: [{ id: 'ra', scenarioId: 's', patternId: 'pat', serviceDayId: 'd', runtimeProfileId: 'rp', ...metadata() }],
       generationSets: [], trips: [], blocks: [],
     };
     const copy = cloneProjectSnapshot(source, '2026-01-01T00:00:00.000Z');
+    expect(importProjectJson(exportProjectJson(source)).runtimeProfiles[0].calculationMethod).toBe('blendSegments');
+    expect(copy.runtimeProfiles[0].calculationMethod).toBe('blendSegments');
     expect(copy.runtimeProfiles[0].id).not.toBe(source.runtimeProfiles[0].id);
     expect(copy.runtimeProfiles[0].patternId).toBe(copy.patterns[0].id);
     expect(copy.runtimeProfiles[0].bands[0].id).not.toBe(source.runtimeProfiles[0].bands[0].id);

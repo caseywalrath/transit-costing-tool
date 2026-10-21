@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
 import type { Block, GenerateTripsRequest, RoutePattern, RuntimeProfile, Trip, TripGenerationSet } from './types';
-import { adjustBlockReferences, applyPatternChange, applyRegeneration, generateRequestDepartures, generateTrips, markTripRecalculated, MAX_TRIPS_PER_GENERATION, previewPatternChange, previewRegeneration, recalculateTripWithAnchor, shiftTrips, TripGenerationError, validateGenerateTripsRequest, validateTrip, validateTripGenerationSet } from './trips';
+import { adjustBlockReferences, applyPatternChange, applyRegeneration, generateRequestDepartures, generateTrips, markTripRecalculated, MAX_TRIPS_PER_GENERATION, previewPatternChange, previewRegeneration, recalculateTripWithAnchor, shiftTrips, TripGenerationError, tripRunTimeSeconds, validateGenerateTripsRequest, validateTrip, validateTripGenerationSet } from './trips';
 
 const pattern: RoutePattern = { ...metadata(), id: 'p1', scenarioId: 's1', routeId: 'r1', name: 'Outbound', points: [
   { id: 'a', nodeId: 'na', sequence: 0, cumulativeMiles: 0 }, { id: 'b', nodeId: 'nb', sequence: 1, cumulativeMiles: 1 }, { id: 'c', nodeId: 'nc', sequence: 2, cumulativeMiles: 2 },
@@ -13,6 +13,32 @@ const profile: RuntimeProfile = { ...metadata(), id: 'rp1', scenarioId: 's1', ro
 const set = (limit: TripGenerationSet['limit']): TripGenerationSet => ({ ...metadata(), id: 'gs1', scenarioId: 's1', routeId: 'r1', serviceDayId: 'weekday', patternId: 'p1', name: 'All day', firstDeparture: 3500, headwaySeconds: 600, limit, generationRevision: 1 });
 
 describe('trip generation and overrides', () => {
+  it('calculates the displayed run time from a trip’s first and last scheduled points', () => {
+    const trip: Trip = {
+      ...metadata(), id: 'trip1', scenarioId: 's1', routeId: 'r1', serviceDayId: 'weekday', patternId: 'p1',
+      stopTimes: [
+        { patternPointId: 'a', sequence: 0, time: 4 * 3600 + 60 },
+        { patternPointId: 'b', sequence: 1, time: 4 * 3600 + 8 * 60 },
+        { patternPointId: 'c', sequence: 2, time: 4 * 3600 + 45 * 60 },
+      ],
+      provenance: { kind: 'manual', manuallyChangedFields: [] },
+    };
+    expect(tripRunTimeSeconds(trip)).toBe(44 * 60);
+    expect(tripRunTimeSeconds({ ...trip, stopTimes: [
+      { patternPointId: 'c', sequence: 2, time: 5 * 3600 + 21 * 60 },
+      { patternPointId: 'b', sequence: 1, time: 4 * 3600 + 27 * 60 },
+    ] })).toBe(54 * 60);
+    expect(tripRunTimeSeconds({ ...trip, stopTimes: [trip.stopTimes[0]] })).toBeUndefined();
+  });
+
+  it('preserves a later anchor when segment blending crosses a boundary', () => {
+    const blended = { ...profile, calculationMethod: 'blendSegments' as const };
+    const trip = generateTrips(set({ mode: 'tripCount', tripCount: 1 }), pattern, blended)[0];
+    const changed = { ...blended, bands: blended.bands.map((band) => ({ ...band, segmentRuntimeSeconds: band.id === 'am' ? [90, 120] : [180, 180] })) };
+    const result = recalculateTripWithAnchor(trip, pattern, changed, undefined, 'c');
+    expect(result.trip.stopTimes[2].time).toBe(trip.stopTimes[2].time);
+    expect(result.bandSelection).toBeUndefined();
+  });
   it('preserves a chosen timepoint and resolves the band from the resulting first departure', () => {
     const trip = generateTrips(set({ mode: 'tripCount', tripCount: 1 }), pattern, profile)[0];
     const changed = { ...profile, bands: profile.bands.map((band) => ({ ...band, segmentRuntimeSeconds: band.id === 'am' ? [120, 240] : [180, 240] })) };
