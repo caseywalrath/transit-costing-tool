@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
 import type { Block, GenerateTripsRequest, RoutePattern, RuntimeProfile, Trip, TripGenerationSet } from './types';
-import { adjustBlockReferences, applyPatternChange, applyRegeneration, generateRequestDepartures, generateTrips, MAX_TRIPS_PER_GENERATION, previewPatternChange, previewRegeneration, shiftTrips, validateGenerateTripsRequest, validateTrip, validateTripGenerationSet } from './trips';
+import { adjustBlockReferences, applyPatternChange, applyRegeneration, generateRequestDepartures, generateTrips, markTripRecalculated, MAX_TRIPS_PER_GENERATION, previewPatternChange, previewRegeneration, shiftTrips, TripGenerationError, validateGenerateTripsRequest, validateTrip, validateTripGenerationSet } from './trips';
 
 const pattern: RoutePattern = { ...metadata(), id: 'p1', scenarioId: 's1', routeId: 'r1', name: 'Outbound', points: [
   { id: 'a', nodeId: 'na', sequence: 0, cumulativeMiles: 0 }, { id: 'b', nodeId: 'nb', sequence: 1, cumulativeMiles: 1 }, { id: 'c', nodeId: 'nc', sequence: 2, cumulativeMiles: 2 },
@@ -13,6 +13,20 @@ const profile: RuntimeProfile = { ...metadata(), id: 'rp1', scenarioId: 's1', ro
 const set = (limit: TripGenerationSet['limit']): TripGenerationSet => ({ ...metadata(), id: 'gs1', scenarioId: 's1', routeId: 'r1', serviceDayId: 'weekday', patternId: 'p1', name: 'All day', firstDeparture: 3500, headwaySeconds: 600, limit, generationRevision: 1 });
 
 describe('trip generation and overrides', () => {
+  it('preserves a chosen timepoint and resolves the band from the resulting first departure', () => {
+    const trip = generateTrips(set({ mode: 'tripCount', tripCount: 1 }), pattern, profile)[0];
+    const changed = { ...profile, bands: profile.bands.map((band) => ({ ...band, segmentRuntimeSeconds: band.id === 'am' ? [120, 240] : [180, 240] })) };
+    expect(markTripRecalculated(trip, pattern, changed, undefined, 'a').stopTimes.map((point) => point.time)).toEqual([3500, 3620, 3860]);
+    expect(markTripRecalculated(trip, pattern, changed, undefined, 'b').stopTimes.map((point) => point.time)).toEqual([3440, 3560, 3800]);
+    expect(markTripRecalculated(trip, pattern, changed, undefined, 'c').stopTimes.map((point) => point.time)).toEqual([3320, 3440, 3680]);
+    expect(() => markTripRecalculated(trip, pattern, changed, undefined, 'missing')).toThrow(TripGenerationError);
+  });
+
+  it('rejects an anchor with two consistent departure bands', () => {
+    const trip = generateTrips(set({ mode: 'tripCount', tripCount: 1 }), pattern, profile)[0];
+    const ambiguous = { ...profile, bands: [{ ...profile.bands[0], segmentRuntimeSeconds: [60, 120] }, { ...profile.bands[1], segmentRuntimeSeconds: [30, 30] }] };
+    expect(() => markTripRecalculated(trip, pattern, ambiguous, undefined, 'c')).toThrow(TripGenerationError);
+  });
   it('validates controls and includes an end-time departure', () => {
     expect(validateTripGenerationSet(set({ mode: 'endTime', endTime: 4700 }))).toEqual([]);
     expect(generateTrips(set({ mode: 'endTime', endTime: 4700 }), pattern, profile).map((trip) => trip.stopTimes[0].time)).toEqual([3500, 4100, 4700]);

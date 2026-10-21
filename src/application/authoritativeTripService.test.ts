@@ -168,6 +168,19 @@ describe('authoritative trip workflow', () => {
     expect(result.impact.blockIds).toEqual(['block']);
   });
 
+  it('applies a reviewed anchor and rejects a stale recalculation preview', async () => {
+    const p = pattern('p1', 'Southbound 1', 0); const repository = new AuthoritativeFake([p], [profile('rp1', 'p1', 10000, 1)]);
+    repository.assignments.push({ ...metadata(), id: 'a1', scenarioId: 'scenario', patternId: 'p1', serviceDayId: 'weekday', runtimeProfileId: 'rp1' });
+    const service = new TripGenerationService(repository);
+    const added = await service.addTrip({ scenarioId: 'scenario', routeId: 'route', serviceDayId: 'weekday', patternId: 'p1', directionId: 'southbound', firstTrip: 1200 });
+    const anchorId = p.points[p.points.length - 1].id;
+    const reviewed = await service.previewRecalculateTrips([added.trip.id], { [added.trip.id]: anchorId });
+    const applied = await service.applyRecalculationPreview(reviewed);
+    expect(applied.trips[0].stopTimes.at(-1)?.time).toBe(added.trip.stopTimes.at(-1)?.time);
+    await repository.saveTrips([{ ...applied.trips[0], updatedAt: '2026-09-14T02:00:00.000Z' }]);
+    await expect(service.applyRecalculationPreview(reviewed)).rejects.toThrow('Review regeneration again');
+  });
+
   it('deletes selected trips and removes their revenue activities from blocks atomically', async () => {
     const p = pattern('p1', 'Southbound 1', 0); const repository = new AuthoritativeFake([p], [profile('rp1', 'p1')]);
     repository.assignments.push({ ...metadata(), id: 'a1', scenarioId: 'scenario', patternId: 'p1', serviceDayId: 'weekday', runtimeProfileId: 'rp1' });

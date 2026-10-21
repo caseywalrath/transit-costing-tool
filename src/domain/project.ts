@@ -17,12 +17,17 @@ import type {
   BlockingScenario,
   CostingAssumptions,
 } from './types';
-import { metadata, newId } from './ids';
+import { metadata, newId, withUpdatedAt } from './ids';
 import { createStandardServiceDays } from './serviceDays';
 
 export function createProject(name: string, now = new Date().toISOString()): Project {
   if (!name.trim()) throw new Error('Project name is required');
   return { id: newId(), name: name.trim(), distanceUnit: 'miles', currencyCode: 'USD', ...metadata(now) };
+}
+
+export function renameProject(project: Project, name: string, now = new Date().toISOString()): Project {
+  if (!name.trim()) throw new Error('Project name is required');
+  return withUpdatedAt({ ...project, name: name.trim() }, now);
 }
 
 export function createScenario(projectId: string, name: string, now = new Date().toISOString()): Scenario {
@@ -171,7 +176,7 @@ export function duplicateScenario(source: ScenarioRecords, targetName: string, n
     id: directionIds.get(direction.id)!,
     scenarioId: scenario.id,
     routeId: routeIds.get(direction.routeId) ?? direction.routeId,
-    columns: direction.columns.map((column) => ({ ...column, id: newId() })),
+    columns: direction.columns.map((column) => ({ ...column, id: newId(), nodeId: nodeIds.get(column.nodeId) ?? column.nodeId })),
     ...metadata(now),
   }));
   const columnIds = new Map<string, string>();

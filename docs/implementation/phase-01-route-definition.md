@@ -15,17 +15,18 @@ Phase 1 must establish domain and persistence boundaries that later runtime, tri
 At completion, a user can:
 
 1. create and name a project;
-2. create, rename, duplicate, and select scenarios;
-3. edit the four initial service-day definitions and annual service-day counts;
-4. create and edit a route;
-5. create scheduling nodes;
-6. create full, short, staggered, or loop patterns from those nodes;
-7. repeat the same node within a loop pattern;
-8. enter cumulative pattern miles;
-9. create an independently editable reverse pattern;
-10. close and reopen the application without losing locally saved data;
-11. export and restore a complete project through versioned JSON;
-12. export route-definition tables as CSV.
+2. rename a project or delete it with a review of its dependent data;
+3. create, rename, duplicate, and select scenarios;
+4. edit the four initial service-day definitions and annual service-day counts;
+5. create and edit a route;
+6. create scheduling nodes;
+7. create full, short, staggered, or loop patterns from those nodes;
+8. repeat the same node within a loop pattern;
+9. enter cumulative pattern miles;
+10. create an independently editable reverse pattern;
+11. close and reopen the application without losing locally saved data;
+12. export and restore a complete project through versioned JSON;
+13. export route-definition tables as CSV.
 
 ## Scope
 
@@ -368,6 +369,7 @@ The primary agent performs cross-layer review and final verification. Luna may p
 ### Projects and scenarios
 
 - A new project can be created with a required name.
+- A project can be renamed or deleted. Deletion requires confirmation and removes all Project-owned records atomically; deleting the final Project returns to the empty state.
 - A project can contain multiple scenarios.
 - A scenario can be duplicated.
 - Editing a duplicated scenario does not alter its source.

@@ -21,9 +21,10 @@ describe('scenario duplication', () => {
         { id: 'a', scenarioId: 'source-scenario', routeId: 'route', name: 'A', kind: 'terminal' as const, ...metadata('2026-01-01T00:00:00.000Z') },
         { id: 'b', scenarioId: 'source-scenario', routeId: 'route', name: 'B', kind: 'terminal' as const, ...metadata('2026-01-01T00:00:00.000Z') },
       ],
+      directions: [{ id: 'direction', scenarioId: 'source-scenario', routeId: 'route', name: 'Outbound', group: 'outbound' as const, sequence: 0, columns: [{ id: 'column-a', nodeId: 'a', sequence: 0 }, { id: 'column-b', nodeId: 'b', sequence: 1 }], ...metadata('2026-01-01T00:00:00.000Z') }],
       patterns: [{ id: 'pattern', scenarioId: 'source-scenario', routeId: 'route', name: 'A-B', points: [
-        { id: 'point-a', nodeId: 'a', sequence: 0, cumulativeMiles: 0 },
-        { id: 'point-b', nodeId: 'b', sequence: 1, cumulativeMiles: 2 },
+        { id: 'point-a', nodeId: 'a', sequence: 0, cumulativeMiles: 0, directionColumnId: 'column-a' },
+        { id: 'point-b', nodeId: 'b', sequence: 1, cumulativeMiles: 2, directionColumnId: 'column-b' },
       ], ...metadata('2026-01-01T00:00:00.000Z') }],
       runtimeProfiles: [{ id: 'profile', scenarioId: 'source-scenario', routeId: 'route', patternId: 'pattern', name: 'All day', bands: [{ id: 'band', label: 'All day', sequence: 0, startTime: 0, endTime: 100, segmentRuntimeSeconds: [60] }], ...metadata('2026-01-01T00:00:00.000Z') }],
       runtimeAssignments: [{ id: 'assignment', scenarioId: 'source-scenario', patternId: 'pattern', serviceDayId: 'weekday', runtimeProfileId: 'profile', ...metadata('2026-01-01T00:00:00.000Z') }],
@@ -37,6 +38,8 @@ describe('scenario duplication', () => {
     expect(copy.patterns[0].routeId).toBe(copy.routes[0].id);
     expect(copy.patterns[0].points[0].nodeId).toBe(copy.nodes[0].id);
     expect(copy.patterns[0].points[0].id).not.toBe(source.patterns[0].points[0].id);
+    expect(copy.directions?.[0].columns.map((column) => column.nodeId)).toEqual(copy.nodes.map((node) => node.id));
+    expect(copy.patterns[0].points.map((point) => point.directionColumnId)).toEqual(copy.directions?.[0].columns.map((column) => column.id));
     expect(copy.runtimeProfiles[0].id).not.toBe(source.runtimeProfiles[0].id);
     expect(copy.runtimeProfiles[0].patternId).toBe(copy.patterns[0].id);
     expect(copy.runtimeAssignments[0].runtimeProfileId).toBe(copy.runtimeProfiles[0].id);
