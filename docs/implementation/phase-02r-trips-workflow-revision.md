@@ -31,7 +31,7 @@ The workflow must prevent missing prerequisites through visible context, disable
 1. Trips are the authoritative saved schedule records.
 2. A Generate Trips request is transient. First Trip, Headway, and Last Trip are not saved as a generation set after the trips are created.
 3. Generation is additive. It never replaces existing trips and may interlace new trips with existing trips.
-4. Existing trips remain unchanged when a runtime profile changes. The user must explicitly recalculate selected trips.
+4. Existing trips remain unchanged when a runtime profile changes. The user must explicitly recalculate selected trips. Regeneration review defaults to first departure, permits bulk first/last/shared timepoint choices and per-trip overrides, and previews first/last results before applying.
 5. Initial generation does not require a trip preview. Destructive recalculation and future service-day replacement still require an impact confirmation when manual changes or block references are affected.
 6. Each route has application-managed Outbound and Inbound groups. Every pattern belongs to exactly one group.
 7. Each group has an authoritative internal ordered set of timetable columns. Patterns map their pattern points to those columns. A pattern may omit columns.
@@ -164,6 +164,8 @@ Each trip stores its pattern, scheduled points, creation method, and the runtime
 The structural package must define a calculation revision that changes when runtime bands or segment durations change but does not change for a profile rename. A trip records the profile ID and calculation revision used for its current scheduled points.
 
 A runtime edit does not alter trips. A query may identify trips calculated with an earlier runtime revision so the interface can offer Recalculate without treating the state as invalid.
+
+For legacy or imported trips without a complete runtime-profile source, compare their saved timepoints with the current assigned profile's calculated output. Flag trips whose times differ. Recalculation of trips with an unverified source requires explicit confirmation because the original runtime and any unrecorded manual timing changes cannot be recovered.
 
 ### Add Trip
 

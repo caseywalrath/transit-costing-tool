@@ -28,6 +28,14 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
   async listProjects(): Promise<Project[]> { return [...this.projects.values()]; }
   async getProject(id: string): Promise<Project | undefined> { return this.projects.get(id); }
   async saveProject(value: Project): Promise<void> { this.projects.set(value.id, value); }
+  async deleteProject(projectId: string): Promise<void> {
+    if (!this.projects.has(projectId)) throw new Error('Project not found.');
+    const scenarioIds = new Set([...this.scenarios.values()].filter((scenario) => scenario.projectId === projectId).map((scenario) => scenario.id));
+    const removeScenarioOwned = <T extends { scenarioId: string }>(collection: Map<string, T>) => { for (const [id, value] of collection) if (scenarioIds.has(value.scenarioId)) collection.delete(id); };
+    removeScenarioOwned(this.serviceDays); removeScenarioOwned(this.routes); removeScenarioOwned(this.nodes); removeScenarioOwned(this.patterns); removeScenarioOwned(this.directions); removeScenarioOwned(this.runtimeProfiles); removeScenarioOwned(this.runtimeAssignments); removeScenarioOwned(this.tripProfiles); removeScenarioOwned(this.blockingScenarios); removeScenarioOwned(this.generationSets); removeScenarioOwned(this.trips); removeScenarioOwned(this.blocks); removeScenarioOwned(this.costingAssumptions);
+    for (const [id, scenario] of this.scenarios) if (scenarioIds.has(scenario.id)) this.scenarios.delete(id);
+    this.projects.delete(projectId);
+  }
   async listScenarios(projectId: string): Promise<Scenario[]> { return [...this.scenarios.values()].filter((value) => value.projectId === projectId); }
   async saveScenario(value: Scenario): Promise<void> { this.scenarios.set(value.id, value); }
 

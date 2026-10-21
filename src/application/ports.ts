@@ -10,6 +10,7 @@ export interface RouteDefinitionRepository {
   listProjects(): Promise<Project[]>;
   getProject(id: string): Promise<Project | undefined>;
   saveProject(project: Project): Promise<void>;
+  deleteProject(projectId: string): Promise<void>;
   listScenarios(projectId: string): Promise<Scenario[]>;
   saveScenario(scenario: Scenario): Promise<void>;
   getScenarioRecords(scenarioId: string): Promise<ScenarioRecords | undefined>;
@@ -141,7 +142,8 @@ export interface AuthoritativeTripCommands {
   addTrip(request: AddTripRequest): Promise<{ trip: Trip; warnings: ValidationFinding[] }>;
   previewTripPatternChange(tripId: string, targetPatternId: string, directionId: string): Promise<PatternChangePreview>;
   changeTripPattern(preview: PatternChangePreview): Promise<Trip>;
-  previewRecalculateTrips(tripIds: string[]): Promise<RecalculationPreview>;
+  previewRecalculateTrips(tripIds: string[], anchorByTripId?: Record<string, string>): Promise<RecalculationPreview>;
+  applyRecalculationPreview(preview: RecalculationPreview, confirm?: boolean): Promise<RecalculationPreview>;
   recalculateTrips(tripIds: string[], confirm?: boolean): Promise<{ trips: Trip[]; impact: RecalculationPreview['impact'] }>;
   previewTripDeletion(tripIds: string[]): Promise<{ deletedTripIds: string[]; affectedBlockIds: string[] }>;
   deleteTrips(tripIds: string[]): Promise<{ deletedTripIds: string[]; affectedBlockIds: string[] }>;

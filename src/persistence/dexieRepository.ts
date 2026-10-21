@@ -15,6 +15,30 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
   async listProjects(): Promise<Project[]> { return this.db.projects.toArray(); }
   async getProject(id: string): Promise<Project | undefined> { return this.db.projects.get(id); }
   async saveProject(project: Project): Promise<void> { await this.db.projects.put(project); }
+  async deleteProject(projectId: string): Promise<void> {
+    await this.db.transaction('rw', [this.db.projects, this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.costingAssumptions, this.db.generationSets, this.db.trips, this.db.blocks, this.db.costPlans], async () => {
+      if (!await this.db.projects.get(projectId)) throw new Error('Project not found.');
+      const scenarioIds = (await this.db.scenarios.where('projectId').equals(projectId).primaryKeys()) as string[];
+      if (scenarioIds.length) {
+        await this.db.scenarios.bulkDelete(scenarioIds);
+        await this.db.serviceDays.where('scenarioId').anyOf(scenarioIds).delete();
+        await this.db.routes.where('scenarioId').anyOf(scenarioIds).delete();
+        await this.db.nodes.where('scenarioId').anyOf(scenarioIds).delete();
+        await this.db.patterns.where('scenarioId').anyOf(scenarioIds).delete();
+        await this.db.directions.where('scenarioId').anyOf(scenarioIds).delete();
+        await this.db.runtimeProfiles.where('scenarioId').anyOf(scenarioIds).delete();
+        await this.db.runtimeAssignments.where('scenarioId').anyOf(scenarioIds).delete();
+        await this.db.tripProfiles.where('scenarioId').anyOf(scenarioIds).delete();
+        await this.db.blockingScenarios.where('scenarioId').anyOf(scenarioIds).delete();
+        await this.db.costingAssumptions.where('scenarioId').anyOf(scenarioIds).delete();
+        await this.db.generationSets.where('scenarioId').anyOf(scenarioIds).delete();
+        await this.db.trips.where('scenarioId').anyOf(scenarioIds).delete();
+        await this.db.blocks.where('scenarioId').anyOf(scenarioIds).delete();
+        await this.db.costPlans.where('scenarioId').anyOf(scenarioIds).delete();
+      }
+      await this.db.projects.delete(projectId);
+    });
+  }
   async listScenarios(projectId: string): Promise<Scenario[]> { return this.db.scenarios.where('projectId').equals(projectId).toArray(); }
   async saveScenario(scenario: Scenario): Promise<void> { await this.db.scenarios.put(scenario); }
 

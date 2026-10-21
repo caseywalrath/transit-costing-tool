@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 
-export type MenuItem = { id: string; label: string; onSelect: () => void; disabled?: boolean; title?: string; checked?: boolean; destructive?: boolean; restoreFocus?: boolean };
+export type MenuItem = { id: string; label: string; onSelect: () => void; disabled?: boolean; title?: string; checked?: boolean; destructive?: boolean; restoreFocus?: boolean; wrapLabel?: boolean };
 export type MenuGroup = { label?: string; items: MenuItem[] };
 
 /** Compact, keyboard-operable action menu used by workspace headers. */
@@ -42,7 +42,7 @@ export function MenuButton({ label, menuLabel, groups, disabled = false, fieldLa
     }}>{groups.map((group, groupIndex) => <div className="action-menu-group" key={`${group.label ?? 'commands'}-${groupIndex}`}>
       {groupIndex > 0 && <div className="action-menu-separator" role="separator" />}
       {group.label && <div className="action-menu-label" role="presentation">{group.label}</div>}
-      {group.items.map((item) => <button key={item.id} type="button" role={item.checked !== undefined ? 'menuitemradio' : 'menuitem'} aria-checked={item.checked} className={[item.destructive && 'subtle-danger', item.checked && selectionStyle === 'highlight' && 'menu-item-selected'].filter(Boolean).join(' ') || undefined} disabled={item.disabled} title={item.title} onClick={() => { if (item.disabled) return; dismiss(false); item.onSelect(); if (item.restoreFocus !== false) window.setTimeout(() => triggerRef.current?.focus()); }}>{item.checked && selectionStyle === 'check' && <span className="menu-check" aria-hidden="true">✓</span>}{item.label}</button>)}
+      {group.items.map((item) => <button key={item.id} type="button" role={item.checked !== undefined ? 'menuitemradio' : 'menuitem'} aria-checked={item.checked} className={[item.destructive && 'subtle-danger', item.checked && selectionStyle === 'highlight' && 'menu-item-selected'].filter(Boolean).join(' ') || undefined} disabled={item.disabled} title={item.title} onClick={() => { if (item.disabled) return; dismiss(false); item.onSelect(); if (item.restoreFocus !== false) window.setTimeout(() => triggerRef.current?.focus()); }}>{item.checked && selectionStyle === 'check' && <span className="menu-check" aria-hidden="true">✓</span>}<span className={item.wrapLabel ? 'menu-item-label menu-item-label--wrap' : 'menu-item-label'}>{item.label}</span></button>)}
     </div>)}</div>}
   </div>;
 }

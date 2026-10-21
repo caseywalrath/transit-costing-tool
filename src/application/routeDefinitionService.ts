@@ -1,6 +1,6 @@
 import { makePatternPoint } from '../domain/commands';
 import { metadata, newId, withUpdatedAt } from '../domain/ids';
-import { createProject, createScenarioRecords, duplicateRouteRecords, duplicateScenario, type ScenarioRecords } from '../domain/project';
+import { createProject, createScenarioRecords, duplicateRouteRecords, duplicateScenario, renameProject as renameProjectRecord, type ScenarioRecords } from '../domain/project';
 import { duplicatePattern, getSegmentMiles, normalizePattern, reversePattern, validatePattern } from '../domain/patterns';
 import { createDirectionColumn, createManagedDirections, createRouteDirection, ensureManagedDirections, mapPatternPointsToDirection, normalizeDirections, oppositeDirectionGroup } from '../domain/directions';
 import { classifyPatternEdit, describePatternPointChange, getPatternServiceImpact, rebalanceRuntimeProfile, rebalanceTripForPattern, reconcileRouteTimetables, resetPatternService, type DirectionOrderConflict, type PatternServiceImpact, type RouteEditClassification, type RouteEditMode } from '../domain/safeRouteEditing';
@@ -78,6 +78,15 @@ export interface ScenarioDeletionImpact {
   runtimeAssignmentCount: number;
   tripProfileCount: number;
   generationSetCount: number;
+  tripCount: number;
+  blockCount: number;
+}
+
+export interface ProjectDeletionImpact {
+  projectId: string;
+  scenarioCount: number;
+  routeCount: number;
+  patternCount: number;
   tripCount: number;
   blockCount: number;
 }
@@ -277,6 +286,25 @@ export class RouteDefinitionService {
     const records = createScenarioRecords(project.id, 'Scenario 1', this.now());
     await this.save(() => this.repository.saveProjectSnapshot({ project, scenarios: [records.scenario], serviceDays: records.serviceDays, routes: [], nodes: [], patterns: [], runtimeProfiles: [], runtimeAssignments: [], tripProfiles: records.tripProfiles, generationSets: [], trips: [], blocks: [] }));
     return { project, records };
+  }
+
+  async renameProject(projectId: string, name: string): Promise<Project> {
+    const project = await this.repository.getProject(projectId);
+    if (!project) throw new Error('Project not found.');
+    const renamed = renameProjectRecord(project, name, this.now());
+    await this.save(() => this.repository.saveProject(renamed));
+    return renamed;
+  }
+
+  async getProjectDeletionImpact(projectId: string): Promise<ProjectDeletionImpact> {
+    const snapshot = await this.repository.getProjectSnapshot(projectId);
+    if (!snapshot) throw new Error('Project not found.');
+    return { projectId, scenarioCount: snapshot.scenarios.length, routeCount: snapshot.routes.length, patternCount: snapshot.patterns.length, tripCount: snapshot.trips.length, blockCount: snapshot.blocks.length };
+  }
+
+  async deleteProject(projectId: string): Promise<void> {
+    if (!await this.repository.getProject(projectId)) throw new Error('Project not found.');
+    await this.save(() => this.repository.deleteProject(projectId));
   }
 
   async createScenario(projectId: string, name: string): Promise<ScenarioRecords> {
@@ -986,6 +1014,9 @@ export type RouteDefinitionApplication = Pick<RouteDefinitionService,
   | 'subscribeToSaveStatus'
   | 'loadWorkspace'
   | 'createProject'
+  | 'renameProject'
+  | 'getProjectDeletionImpact'
+  | 'deleteProject'
   | 'createScenario'
   | 'renameScenario'
   | 'duplicateScenario'

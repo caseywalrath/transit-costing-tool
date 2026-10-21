@@ -1,6 +1,6 @@
 import type { Block, DurationSeconds, GenerateTripsRequest, RoutePattern, RuntimeProfile, ScheduledPoint, ServiceSeconds, Trip, TripGenerationSet, ValidationFinding } from './types';
 import { metadata, newId, withUpdatedAt } from './ids';
-import { propagatePatternTimes } from './runtime';
+import { propagatePatternTimes, selectRuntimeBand } from './runtime';
 
 export class TripGenerationError extends Error {
   constructor(readonly findings: ValidationFinding[]) { super(findings.map((item) => item.messageKey).join('; ') || 'Trip generation failed'); this.name = 'TripGenerationError'; }
@@ -134,21 +134,36 @@ export interface RecalculationImpact {
 export interface RecalculationPreview {
   trips: Trip[];
   impact: RecalculationImpact;
+  anchorByTripId?: Record<string, string>;
+  sourceSignature?: string;
 }
 
 export function calculateRecalculationImpact(trips: Trip[], blocks: Block[]): RecalculationImpact {
   const selected = new Set(trips.map((trip) => trip.id));
   const manualTimeShiftTripIds = trips.filter((trip) => trip.provenance.manuallyChangedFields.includes('times')).map((trip) => trip.id);
   const manualPatternChangeTripIds = trips.filter((trip) => trip.provenance.manuallyChangedFields.includes('patternId')).map((trip) => trip.id);
+  const hasUnverifiedRuntimeSource = trips.some((trip) => {
+    const runtimeProfileId = trip.provenance.calculationSource?.runtimeProfileId ?? trip.provenance.runtimeProfileId;
+    const runtimeRevision = trip.provenance.calculationSource?.runtimeCalculationRevision ?? trip.provenance.runtimeCalculationRevision;
+    return !runtimeProfileId || runtimeRevision === undefined;
+  });
   const blockIds = blocks.filter((block) => block.activities.some((activity) => activity.type === 'revenueTrip' && selected.has(activity.tripId))).map((block) => block.id);
-  return { tripIds: trips.map((trip) => trip.id), manualTimeShiftTripIds, manualPatternChangeTripIds, blockIds, requiresConfirmation: manualTimeShiftTripIds.length > 0 || manualPatternChangeTripIds.length > 0 || blockIds.length > 0 };
+  return { tripIds: trips.map((trip) => trip.id), manualTimeShiftTripIds, manualPatternChangeTripIds, blockIds, requiresConfirmation: hasUnverifiedRuntimeSource || manualTimeShiftTripIds.length > 0 || manualPatternChangeTripIds.length > 0 || blockIds.length > 0 };
 }
 
-export function markTripRecalculated(trip: Trip, pattern: RoutePattern, profile: RuntimeProfile, now = new Date().toISOString()): Trip {
+export function markTripRecalculated(trip: Trip, pattern: RoutePattern, profile: RuntimeProfile, now = new Date().toISOString(), anchorPointId?: string): Trip {
   const departure = trip.stopTimes[0]?.time;
   if (departure === undefined) throw new TripGenerationError([tripFinding(trip, 'trip.departureMissing', 'trip.departureMissing')]);
-  const propagated = propagatePatternTimes(pattern, departure, profile);
+  const anchorIndex = anchorPointId === undefined ? 0 : pattern.points.findIndex((point) => point.id === anchorPointId);
+  if (anchorIndex < 0) throw new TripGenerationError([tripFinding(trip, 'trip.anchorMissing', 'trip.anchorMissing')]);
+  const anchorTime = trip.stopTimes.find((point) => point.patternPointId === pattern.points[anchorIndex].id)?.time;
+  if (anchorTime === undefined) throw new TripGenerationError([tripFinding(trip, 'trip.anchorTimeMissing', 'trip.anchorTimeMissing')]);
+  const candidates = anchorIndex === 0 ? [departure] : profile.bands.filter((band) => band.segmentRuntimeSeconds.length === pattern.points.length - 1).map((band) => ({ band, first: anchorTime - band.segmentRuntimeSeconds.slice(0, anchorIndex).reduce((total, seconds) => total + seconds, 0) })).filter(({ band, first }) => first >= 0 && selectRuntimeBand(profile, first)?.id === band.id).map(({ first }) => first);
+  const distinctCandidates = [...new Set(candidates)];
+  if (distinctCandidates.length !== 1) throw new TripGenerationError([tripFinding(trip, distinctCandidates.length ? 'trip.anchorAmbiguous' : 'trip.anchorNoRuntime', distinctCandidates.length ? 'trip.anchorAmbiguous' : 'trip.anchorNoRuntime')]);
+  const propagated = propagatePatternTimes(pattern, distinctCandidates[0], profile);
   if ('finding' in propagated) throw new TripGenerationError([{ ...propagated.finding, entityType: 'trip', entityId: trip.id }]);
+  if (propagated.stopTimes[anchorIndex].time !== anchorTime) throw new TripGenerationError([tripFinding(trip, 'trip.anchorAmbiguous', 'trip.anchorAmbiguous')]);
   const revision = profile.calculationRevision ?? 0;
   return withUpdatedAt({ ...trip, patternId: pattern.id, stopTimes: propagated.stopTimes, provenance: { ...trip.provenance, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision }, manuallyChangedFields: [], manualTimeShiftSeconds: undefined } }, now);
 }

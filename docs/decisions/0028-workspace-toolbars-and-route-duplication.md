@@ -10,7 +10,7 @@ Project, Scenario, Route, Blocking, and Costing controls had accumulated in sepa
 ## Decision
 
 1. Keep Project and Scenario selectors in a permanent row on every tab. Each entity has its own accessible Actions menu.
-2. Project Actions contains new-project and JSON backup/restore commands. Scenario Actions contains create, rename, duplicate, and delete commands.
+2. Project Actions contains create, rename, delete, and JSON backup/restore commands. Project deletion follows Decision 0029. Scenario Actions contains create, rename, duplicate, and delete commands.
 3. Put each module's governing selectors in a second toolbar. Route uses Route plus Actions; Trips uses Route, Day, and Direction; Blocking uses Route, Trip Profile, Blocking Scenario, Day, and Actions; Costing uses Blocking Scenario, derived read-only Trip Profile, View year, and Actions.
 4. Keep Route visible in Blocking because candidate Trips remain filtered to one Route. Future interlining may replace it with a broader Route-scope control without changing Block ownership.
 5. Keep CSV exports in their owning module's Actions menu.

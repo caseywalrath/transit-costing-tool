@@ -27,6 +27,16 @@ function tripProfileDeletionToken(profile: TripProfile, profiles: TripProfile[],
   });
 }
 
+function hasSameScheduledPoints(trip: Trip, recalculated: Trip): boolean {
+  return trip.stopTimes.length === recalculated.stopTimes.length
+    && trip.stopTimes.every((point, index) => {
+      const next = recalculated.stopTimes[index];
+      return point.patternPointId === next.patternPointId
+        && point.sequence === next.sequence
+        && point.time === next.time;
+    });
+}
+
 /** Application coordinator for the historical and authoritative trip workflows. */
 export class TripGenerationService {
   constructor(private readonly repository: TripGenerationRepository, private readonly now: () => string = () => new Date().toISOString()) {}
@@ -59,14 +69,11 @@ export class TripGenerationService {
     const profile = await this.findTripProfile(profileId); const profiles = await this.listTripProfiles(profile.scenarioId);
     const trips = this.repository.listTripsForProfile ? await this.repository.listTripsForProfile(profileId) : [];
     const blocks = this.repository.listBlocksForProfile ? await this.repository.listBlocksForProfile(profileId) : [];
-    let staleTripCount = 0;
-    for (const trip of trips) {
-      const sourceProfileId = trip.provenance.calculationSource?.runtimeProfileId ?? trip.provenance.runtimeProfileId;
-      const sourceRevision = trip.provenance.calculationSource?.runtimeCalculationRevision ?? trip.provenance.runtimeCalculationRevision;
-      const assignment = (await this.repository.listRuntimeAssignments(trip.scenarioId, trip.serviceDayId, trip.patternId))[0];
-      const runtime = assignment ? await this.repository.getRuntimeProfile(assignment.runtimeProfileId) : undefined;
-      if (sourceProfileId && sourceRevision !== undefined && (!assignment || !runtime || assignment.runtimeProfileId !== sourceProfileId || (runtime.calculationRevision ?? 0) !== sourceRevision)) staleTripCount += 1;
+    const staleTripIds = new Set<string>();
+    for (const serviceDayId of new Set(trips.map((trip) => trip.serviceDayId))) {
+      for (const staleTrip of await this.listStaleTrips(serviceDayId, profileId)) staleTripIds.add(staleTrip.id);
     }
+    const staleTripCount = staleTripIds.size;
     const preview = { profileId, tripCount: trips.length, manuallyAdjustedTripCount: trips.filter((trip) => trip.provenance.manuallyChangedFields.length > 0).length, staleTripCount, blockCount: blocks.length, blockActivityCount: blocks.reduce((sum, block) => sum + block.activities.length, 0), isLastProfile: profiles.length <= 1 };
     return { ...preview, previewToken: tripProfileDeletionToken(profile, profiles, trips, blocks, staleTripCount) };
   }
@@ -270,18 +277,29 @@ export class TripGenerationService {
     return sourced;
   }
 
-  async previewRecalculateTrips(tripIds: string[]): Promise<RecalculationPreview> {
+  async previewRecalculateTrips(tripIds: string[], anchorByTripId: Record<string, string> = {}): Promise<RecalculationPreview> {
     const trips = (await Promise.all(tripIds.map((id) => this.repository.getTrip(id)))).filter((trip): trip is Trip => Boolean(trip));
     if (trips.length !== tripIds.length) throw new Error('One or more selected trips are no longer available.');
     const blocksByDay = new Map<string, Block[]>();
     for (const trip of trips) if (!blocksByDay.has(trip.serviceDayId)) blocksByDay.set(trip.serviceDayId, await this.repository.listBlocks(trip.serviceDayId));
     const blocks = [...blocksByDay.values()].flat();
     const recalculated: Trip[] = [];
+    const sources: unknown[] = [];
     for (const trip of trips) {
-      const { pattern, profile } = await this.resolveAuthoritativeProfile({ scenarioId: trip.scenarioId, serviceDayId: trip.serviceDayId, patternId: trip.patternId });
-      recalculated.push(markTripRecalculated(trip, pattern, profile, this.now()));
+      const { pattern, profile, assignment } = await this.resolveAuthoritativeProfile({ scenarioId: trip.scenarioId, serviceDayId: trip.serviceDayId, patternId: trip.patternId });
+      sources.push([trip, pattern, profile, assignment]);
+      recalculated.push(markTripRecalculated(trip, pattern, profile, this.now(), anchorByTripId[trip.id]));
     }
-    return { trips: recalculated, impact: calculateRecalculationImpact(trips, blocks) };
+    return { trips: recalculated, impact: calculateRecalculationImpact(trips, blocks), anchorByTripId: { ...anchorByTripId }, sourceSignature: JSON.stringify([sources, blocks]) };
+  }
+
+  async applyRecalculationPreview(preview: RecalculationPreview, confirm = false): Promise<RecalculationPreview> {
+    if (!preview.sourceSignature || !preview.trips.length) throw new Error('Review the selected trips before regenerating.');
+    const current = await this.previewRecalculateTrips(preview.impact.tripIds, preview.anchorByTripId);
+    if (current.sourceSignature !== preview.sourceSignature) throw new Error('Trips or runtimes changed. Review regeneration again.');
+    if (current.impact.requiresConfirmation && !confirm) throw new TripRecalculationConfirmationError(current);
+    await this.atomicChanges()(current.trips);
+    return current;
   }
 
   async recalculateTrips(tripIds: string[], confirm = false): Promise<{ trips: Trip[]; impact: RecalculationPreview['impact'] }> {
@@ -421,15 +439,48 @@ export class TripGenerationService {
   async listStaleTrips(serviceDayId: string, tripProfileId?: string): Promise<Trip[]> {
     const trips = await this.repository.listTrips(serviceDayId, tripProfileId);
     const stale: Trip[] = [];
+    const assignmentsByKey = new Map<string, RuntimeAssignment | undefined>();
+    const profilesById = new Map<string, RuntimeProfile | undefined>();
+    const patternsById = new Map<string, RoutePattern | undefined>();
     for (const trip of trips) {
       const sourceProfileId = trip.provenance.calculationSource?.runtimeProfileId ?? trip.provenance.runtimeProfileId;
       const sourceRevision = trip.provenance.calculationSource?.runtimeCalculationRevision ?? trip.provenance.runtimeCalculationRevision;
-      if (!sourceProfileId || sourceRevision === undefined) continue;
-      const assignments = await this.repository.listRuntimeAssignments(trip.scenarioId, trip.serviceDayId, trip.patternId);
-      const assignment = assignments[0];
+      const assignmentKey = `${trip.scenarioId}:${trip.serviceDayId}:${trip.patternId}`;
+      if (!assignmentsByKey.has(assignmentKey)) {
+        const assignments = await this.repository.listRuntimeAssignments(trip.scenarioId, trip.serviceDayId, trip.patternId);
+        assignmentsByKey.set(assignmentKey, assignments[0]);
+      }
+      const assignment = assignmentsByKey.get(assignmentKey);
       if (!assignment) continue;
-      const profile = await this.repository.getRuntimeProfile(assignment.runtimeProfileId);
-      if (!profile || assignment.runtimeProfileId !== sourceProfileId || (profile.calculationRevision ?? 0) !== sourceRevision) stale.push(trip);
+      if (!profilesById.has(assignment.runtimeProfileId)) profilesById.set(assignment.runtimeProfileId, await this.repository.getRuntimeProfile(assignment.runtimeProfileId));
+      const profile = profilesById.get(assignment.runtimeProfileId);
+
+      if (sourceProfileId && sourceRevision !== undefined) {
+        if (!profile || assignment.runtimeProfileId !== sourceProfileId || (profile.calculationRevision ?? 0) !== sourceRevision) stale.push(trip);
+        continue;
+      }
+
+      // Older imports may not record which runtime produced their saved times.
+      // Compare them with the current assignment so changed results are still surfaced.
+      if (sourceProfileId && assignment.runtimeProfileId !== sourceProfileId) {
+        stale.push(trip);
+        continue;
+      }
+      if (!profile) {
+        stale.push(trip);
+        continue;
+      }
+      if (!patternsById.has(trip.patternId)) patternsById.set(trip.patternId, await this.repository.getPattern(trip.patternId));
+      const pattern = patternsById.get(trip.patternId);
+      if (!pattern || profile.patternId !== pattern.id || profile.routeId !== pattern.routeId || profile.scenarioId !== pattern.scenarioId) {
+        stale.push(trip);
+        continue;
+      }
+      try {
+        if (!hasSameScheduledPoints(trip, markTripRecalculated(trip, pattern, profile, this.now()))) stale.push(trip);
+      } catch {
+        stale.push(trip);
+      }
     }
     return stale;
   }
@@ -474,7 +525,7 @@ export class TripGenerationService {
 }
 
 export class TripRecalculationConfirmationError extends Error {
-  constructor(readonly preview: RecalculationPreview) { super('Recalculation requires confirmation because manual changes or block references would be affected.'); this.name = 'TripRecalculationConfirmationError'; }
+  constructor(readonly preview: RecalculationPreview) { super('Recalculation requires confirmation because trip times may be unverified, manually changed, or referenced by Blocks.'); this.name = 'TripRecalculationConfirmationError'; }
 }
 
 export class ServiceDayCopyStalePreviewError extends Error {
@@ -490,4 +541,4 @@ export class TripShiftStalePreviewError extends Error {
 }
 
 // Keep the historical application surface while exposing the authoritative trip commands.
-export type TripGenerationApplication = Pick<TripGenerationService, 'getGenerationSet' | 'listGenerationSets' | 'previewTripGeneration' | 'applyTripGeneration' | 'previewTripShift' | 'applyTripShift' | 'previewStagedTripShift' | 'applyStagedTripShift' | 'previewPatternChange' | 'applyPatternChange' | 'listServiceDayTrips' | 'validateTrip' | 'resolveRuntimeProfile' | 'previewGenerateTrips' | 'generateTrips' | 'addTrip' | 'previewTripPatternChange' | 'changeTripPattern' | 'previewRecalculateTrips' | 'recalculateTrips' | 'previewTripDeletion' | 'deleteTrips' | 'listStaleTrips' | 'listScheduleTrips' | 'listTripProfiles' | 'ensureDefaultTripProfile' | 'renameTripProfile' | 'copyTripProfile' | 'previewTripProfileDeletion' | 'deleteTripProfile' | 'previewRuntimeCopy' | 'applyRuntimeCopy' | 'previewTripCopy' | 'applyTripCopy' | 'previewBatchPatternChange' | 'applyBatchPatternChange'>;
+export type TripGenerationApplication = Pick<TripGenerationService, 'getGenerationSet' | 'listGenerationSets' | 'previewTripGeneration' | 'applyTripGeneration' | 'previewTripShift' | 'applyTripShift' | 'previewStagedTripShift' | 'applyStagedTripShift' | 'previewPatternChange' | 'applyPatternChange' | 'listServiceDayTrips' | 'validateTrip' | 'resolveRuntimeProfile' | 'previewGenerateTrips' | 'generateTrips' | 'addTrip' | 'previewTripPatternChange' | 'changeTripPattern' | 'previewRecalculateTrips' | 'applyRecalculationPreview' | 'recalculateTrips' | 'previewTripDeletion' | 'deleteTrips' | 'listStaleTrips' | 'listScheduleTrips' | 'listTripProfiles' | 'ensureDefaultTripProfile' | 'renameTripProfile' | 'copyTripProfile' | 'previewTripProfileDeletion' | 'deleteTripProfile' | 'previewRuntimeCopy' | 'applyRuntimeCopy' | 'previewTripCopy' | 'applyTripCopy' | 'previewBatchPatternChange' | 'applyBatchPatternChange'>;
