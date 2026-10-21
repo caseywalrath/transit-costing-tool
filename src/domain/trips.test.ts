@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
 import type { Block, GenerateTripsRequest, RoutePattern, RuntimeProfile, Trip, TripGenerationSet } from './types';
-import { adjustBlockReferences, applyPatternChange, applyRegeneration, generateRequestDepartures, generateTrips, markTripRecalculated, MAX_TRIPS_PER_GENERATION, previewPatternChange, previewRegeneration, shiftTrips, TripGenerationError, validateGenerateTripsRequest, validateTrip, validateTripGenerationSet } from './trips';
+import { adjustBlockReferences, applyPatternChange, applyRegeneration, generateRequestDepartures, generateTrips, markTripRecalculated, MAX_TRIPS_PER_GENERATION, previewPatternChange, previewRegeneration, recalculateTripWithAnchor, shiftTrips, TripGenerationError, validateGenerateTripsRequest, validateTrip, validateTripGenerationSet } from './trips';
 
 const pattern: RoutePattern = { ...metadata(), id: 'p1', scenarioId: 's1', routeId: 'r1', name: 'Outbound', points: [
   { id: 'a', nodeId: 'na', sequence: 0, cumulativeMiles: 0 }, { id: 'b', nodeId: 'nb', sequence: 1, cumulativeMiles: 1 }, { id: 'c', nodeId: 'nc', sequence: 2, cumulativeMiles: 2 },
@@ -26,6 +26,27 @@ describe('trip generation and overrides', () => {
     const trip = generateTrips(set({ mode: 'tripCount', tripCount: 1 }), pattern, profile)[0];
     const ambiguous = { ...profile, bands: [{ ...profile.bands[0], segmentRuntimeSeconds: [60, 120] }, { ...profile.bands[1], segmentRuntimeSeconds: [30, 30] }] };
     expect(() => markTripRecalculated(trip, pattern, ambiguous, undefined, 'c')).toThrow(TripGenerationError);
+    expect(recalculateTripWithAnchor(trip, pattern, ambiguous, undefined, 'c', 'pm')).toMatchObject({
+      trip: { stopTimes: [{ time: 3620 }, { time: 3650 }, { time: 3680 }] },
+      bandSelection: { bandLabel: 'PM', departure: 3620, selection: 'manual' },
+    });
+  });
+  it('uses the uniquely nearest band within ten minutes when no band contains its implied departure', () => {
+    const trip = generateTrips(set({ mode: 'tripCount', tripCount: 1 }), pattern, profile)[0];
+    const anchored = { ...trip, stopTimes: trip.stopTimes.map((point, index) => index === 2 ? { ...point, time: 3860 } : point) };
+    const result = recalculateTripWithAnchor(anchored, pattern, profile, undefined, 'c');
+    expect(result.trip.stopTimes.map((point) => point.time)).toEqual([3560, 3680, 3860]);
+    expect(result.bandSelection).toMatchObject({ tripId: trip.id, bandLabel: 'PM', departure: 3560, distanceSeconds: 40, side: 'before', selection: 'automatic' });
+  });
+  it('requires a choice for equally near bands and rejects distant bands', () => {
+    const trip = generateTrips(set({ mode: 'tripCount', tripCount: 1 }), pattern, profile)[0];
+    const anchored = (time: number) => ({ ...trip, stopTimes: trip.stopTimes.map((point, index) => index === 2 ? { ...point, time } : point) });
+    expect(() => recalculateTripWithAnchor(anchored(3840), pattern, profile, undefined, 'c')).toThrow(/trip.anchorNearestTie/);
+    expect(recalculateTripWithAnchor(anchored(3840), pattern, profile, undefined, 'c', 'pm').bandSelection).toMatchObject({ departure: 3540, selection: 'manual' });
+    const separated = { ...profile, bands: profile.bands.map((band) => band.id === 'pm' ? { ...band, startTime: 4800 } : band) };
+    expect(recalculateTripWithAnchor(anchored(4500), pattern, separated, undefined, 'c').bandSelection).toMatchObject({ bandLabel: 'PM', distanceSeconds: 600, selection: 'automatic' });
+    expect(() => recalculateTripWithAnchor(anchored(4499), pattern, separated, undefined, 'c')).toThrow(/trip.anchorNoRuntime/);
+    expect(recalculateTripWithAnchor(anchored(4499), pattern, separated, undefined, 'c', 'pm').trip.stopTimes[2].time).toBe(4499);
   });
   it('validates controls and includes an end-time departure', () => {
     expect(validateTripGenerationSet(set({ mode: 'endTime', endTime: 4700 }))).toEqual([]);

@@ -1,6 +1,6 @@
 import type { TripGenerationRepository } from './ports';
 import type { GenerateTripsPreview, PatternChangePreview, RecalculationPreview, RegenerationPreview, RegenerationResult } from '../domain/trips';
-import { adjustBlockReferences, applyPatternChange, applyRegeneration, calculateRecalculationImpact, createAuthoritativeTrip, findExactTripDuplicates, generateAuthoritativeTrips, generateTrips, markTripRecalculated, previewPatternChange, previewRegeneration, shiftTrips, TripGenerationError, validateGenerateTripsRequest, validateTrip } from '../domain/trips';
+import { adjustBlockReferences, applyPatternChange, applyRegeneration, calculateRecalculationImpact, createAuthoritativeTrip, findExactTripDuplicates, generateAuthoritativeTrips, generateTrips, markTripRecalculated, previewPatternChange, previewRegeneration, recalculateTripWithAnchor, shiftTrips, TripGenerationError, validateGenerateTripsRequest, validateTrip, type RecalculationBandSelection } from '../domain/trips';
 import type { AddTripRequest, Block, GenerateTripsRequest, RuntimeAssignment, RuntimeProfile, RoutePattern, Trip, TripGenerationSet, TripProfile, ValidationFinding } from '../domain/types';
 import { metadata, newId, withUpdatedAt } from '../domain/ids';
 import { buildBatchPatternChangePreview, buildRuntimeCopyPreview, buildTripCopyPreview, type BatchPatternChangePreview, type BatchPatternChangeRequest, type RuntimeCopyPreview, type RuntimeCopyRequest, type TripCopyPreview, type TripCopyRequest } from '../domain/serviceDayCopy';
@@ -277,25 +277,28 @@ export class TripGenerationService {
     return sourced;
   }
 
-  async previewRecalculateTrips(tripIds: string[], anchorByTripId: Record<string, string> = {}): Promise<RecalculationPreview> {
+  async previewRecalculateTrips(tripIds: string[], anchorByTripId: Record<string, string> = {}, bandOverrideByTripId: Record<string, string> = {}): Promise<RecalculationPreview> {
     const trips = (await Promise.all(tripIds.map((id) => this.repository.getTrip(id)))).filter((trip): trip is Trip => Boolean(trip));
     if (trips.length !== tripIds.length) throw new Error('One or more selected trips are no longer available.');
     const blocksByDay = new Map<string, Block[]>();
     for (const trip of trips) if (!blocksByDay.has(trip.serviceDayId)) blocksByDay.set(trip.serviceDayId, await this.repository.listBlocks(trip.serviceDayId));
     const blocks = [...blocksByDay.values()].flat();
     const recalculated: Trip[] = [];
+    const bandSelections: RecalculationBandSelection[] = [];
     const sources: unknown[] = [];
     for (const trip of trips) {
       const { pattern, profile, assignment } = await this.resolveAuthoritativeProfile({ scenarioId: trip.scenarioId, serviceDayId: trip.serviceDayId, patternId: trip.patternId });
       sources.push([trip, pattern, profile, assignment]);
-      recalculated.push(markTripRecalculated(trip, pattern, profile, this.now(), anchorByTripId[trip.id]));
+      const result = recalculateTripWithAnchor(trip, pattern, profile, this.now(), anchorByTripId[trip.id], bandOverrideByTripId[trip.id]);
+      recalculated.push(result.trip);
+      if (result.bandSelection) bandSelections.push(result.bandSelection);
     }
-    return { trips: recalculated, impact: calculateRecalculationImpact(trips, blocks), anchorByTripId: { ...anchorByTripId }, sourceSignature: JSON.stringify([sources, blocks]) };
+    return { trips: recalculated, impact: calculateRecalculationImpact(trips, blocks), bandSelections, anchorByTripId: { ...anchorByTripId }, bandOverrideByTripId: { ...bandOverrideByTripId }, sourceSignature: JSON.stringify([sources, blocks]) };
   }
 
   async applyRecalculationPreview(preview: RecalculationPreview, confirm = false): Promise<RecalculationPreview> {
     if (!preview.sourceSignature || !preview.trips.length) throw new Error('Review the selected trips before regenerating.');
-    const current = await this.previewRecalculateTrips(preview.impact.tripIds, preview.anchorByTripId);
+    const current = await this.previewRecalculateTrips(preview.impact.tripIds, preview.anchorByTripId, preview.bandOverrideByTripId);
     if (current.sourceSignature !== preview.sourceSignature) throw new Error('Trips or runtimes changed. Review regeneration again.');
     if (current.impact.requiresConfirmation && !confirm) throw new TripRecalculationConfirmationError(current);
     await this.atomicChanges()(current.trips);

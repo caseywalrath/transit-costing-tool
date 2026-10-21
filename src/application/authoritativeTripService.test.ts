@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
+import { AnchorBandChoiceError } from '../domain/trips';
 import type { Block, GenerateTripsRequest, RoutePattern, RuntimeAssignment, RuntimeProfile, Trip, TripGenerationSet } from '../domain/types';
 import { TripGenerationService, TripRecalculationConfirmationError, TripShiftStalePreviewError } from './tripGenerationService';
 import type { TripGenerationRepository } from './ports';
@@ -179,6 +180,25 @@ describe('authoritative trip workflow', () => {
     expect(applied.trips[0].stopTimes.at(-1)?.time).toBe(added.trip.stopTimes.at(-1)?.time);
     await repository.saveTrips([{ ...applied.trips[0], updatedAt: '2026-09-14T02:00:00.000Z' }]);
     await expect(service.applyRecalculationPreview(reviewed)).rejects.toThrow('Review regeneration again');
+  });
+
+  it('carries a manual band choice through preview and atomic application', async () => {
+    const p = pattern('p1', 'Southbound 1', 0);
+    const runtime = { ...profile('rp1', 'p1'), bands: [
+      { id: 'early', label: 'Early', sequence: 0, startTime: 0, endTime: 3600, segmentRuntimeSeconds: [180] },
+      { id: 'late', label: 'Late', sequence: 1, startTime: 3600, endTime: 9000, segmentRuntimeSeconds: [300] },
+    ] };
+    const repository = new AuthoritativeFake([p], [runtime]);
+    repository.assignments.push({ ...metadata(), id: 'a1', scenarioId: 'scenario', patternId: 'p1', serviceDayId: 'weekday', runtimeProfileId: 'rp1' });
+    const service = new TripGenerationService(repository);
+    const added = await service.addTrip({ scenarioId: 'scenario', routeId: 'route', serviceDayId: 'weekday', patternId: 'p1', directionId: 'southbound', firstTrip: 3500 });
+    await repository.saveTrips([{ ...added.trip, stopTimes: [added.trip.stopTimes[0], { ...added.trip.stopTimes[1], time: 3840 }] }]);
+    const anchor = p.points[1].id;
+    await expect(service.previewRecalculateTrips([added.trip.id], { [added.trip.id]: anchor })).rejects.toBeInstanceOf(AnchorBandChoiceError);
+    const reviewed = await service.previewRecalculateTrips([added.trip.id], { [added.trip.id]: anchor }, { [added.trip.id]: 'late' });
+    expect(reviewed.bandSelections).toMatchObject([{ bandLabel: 'Late', departure: 3540, selection: 'manual' }]);
+    const applied = await service.applyRecalculationPreview(reviewed);
+    expect(applied.trips[0].stopTimes.map((point) => point.time)).toEqual([3540, 3840]);
   });
 
   it('deletes selected trips and removes their revenue activities from blocks atomically', async () => {

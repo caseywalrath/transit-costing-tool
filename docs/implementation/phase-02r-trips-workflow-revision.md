@@ -702,3 +702,7 @@ Primary agent.
 ### Closeout gate
 
 Present the revised Phase 3 service-day workflow plan and recommended model. Do not begin Phase 3 automatically.
+
+### Anchored regeneration follow-up (2026-10-20)
+
+For a later fixed timepoint, calculate the implied first departure under each runtime band. Use an applicable band when exactly one exists. If none exists, use the uniquely nearest band only when its implied departure is within ten minutes of that band's boundary. Keep the fixed timepoint unchanged, label the exception in the preview, and require the normal preview application. Multiple applicable bands, nearest-band ties, and larger gaps require an explicit band or anchor choice. First-departure anchoring retains normal departure-based band selection. Test the boundary, tie, threshold, manual selection, and preview behavior.
