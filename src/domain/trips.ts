@@ -1,6 +1,6 @@
 import type { Block, DurationSeconds, GenerateTripsRequest, RoutePattern, RuntimeBand, RuntimeProfile, ScheduledPoint, ServiceSeconds, Trip, TripGenerationSet, ValidationFinding } from './types';
 import { metadata, newId, withUpdatedAt } from './ids';
-import { propagatePatternTimes, propagatePatternTimesWithBand, selectRuntimeBand } from './runtime';
+import { propagatePatternTimes, propagatePatternTimesWithBand, resolveSegmentStartBand, selectRuntimeBand } from './runtime';
 
 export class TripGenerationError extends Error {
   constructor(readonly findings: ValidationFinding[]) { super(findings.map((item) => item.messageKey).join('; ') || 'Trip generation failed'); this.name = 'TripGenerationError'; }
@@ -101,6 +101,39 @@ export function generateAuthoritativeTrips(request: GenerateTripsRequest, patter
 
 export const generateTripsFromRequest = generateAuthoritativeTrips;
 
+/** Return elapsed time between a Trip's first and last scheduled points. */
+export function tripRunTimeSeconds(trip: Trip): DurationSeconds | undefined {
+  if (trip.stopTimes.length < 2) return undefined;
+  const points = [...trip.stopTimes].sort((left, right) => left.sequence - right.sequence);
+  const first = points[0].time;
+  const last = points.at(-1)!.time;
+  return Number.isInteger(first) && Number.isInteger(last) && last >= first ? last - first : undefined;
+}
+
+/** Find each Trip's chronological predecessor at every timetable column it serves. */
+export function calculateTimepointHeadways(trips: Trip[], patterns: RoutePattern[]): Map<string, Map<string, { time: ServiceSeconds; previousTime?: ServiceSeconds }>> {
+  const patternsById = new Map(patterns.map((pattern) => [pattern.id, pattern]));
+  const visits = new Map<string, { tripId: string; time: ServiceSeconds; order: number }[]>();
+  trips.forEach((trip, order) => {
+    const pattern = patternsById.get(trip.patternId);
+    for (const point of pattern?.points ?? []) {
+      if (!point.directionColumnId) continue;
+      const time = trip.stopTimes.find((stop) => stop.patternPointId === point.id)?.time;
+      if (time === undefined) continue;
+      const columnVisits = visits.get(point.directionColumnId) ?? [];
+      columnVisits.push({ tripId: trip.id, time, order });
+      visits.set(point.directionColumnId, columnVisits);
+    }
+  });
+  return new Map([...visits].map(([columnId, columnVisits]) => {
+    columnVisits.sort((left, right) => left.time - right.time || left.order - right.order);
+    return [columnId, new Map(columnVisits.map((visit, index) => [visit.tripId, {
+      time: visit.time,
+      ...(index > 0 ? { previousTime: columnVisits[index - 1].time } : {}),
+    }]))];
+  }));
+}
+
 /** Possible duplicates are warnings: additive generation never rejects them. */
 export function findExactTripDuplicates(proposed: Trip[], existing: Trip[]): ValidationFinding[] {
   const existingKeys = new Set(existing.map((trip) => `${trip.serviceDayId}:${trip.patternId}:${trip.stopTimes[0]?.time ?? ''}`));
@@ -140,10 +173,63 @@ export interface RecalculationImpact {
 export interface RecalculationPreview {
   trips: Trip[];
   impact: RecalculationImpact;
+  connections: RecalculationConnection[];
+  findings: ValidationFinding[];
   bandSelections?: RecalculationBandSelection[];
   anchorByTripId?: Record<string, string>;
   bandOverrideByTripId?: Record<string, string>;
   sourceSignature?: string;
+}
+
+export interface RecalculationConnection {
+  tripId: string;
+  blockId: string;
+  blockLabel: string;
+  nextTripId: string;
+  currentGapSeconds: number;
+  revisedGapSeconds: number;
+  currentLayoverSeconds?: number;
+  revisedLayoverSeconds?: number;
+  nextDeparture: ServiceSeconds;
+}
+
+export function calculateRecalculationConnections(selectedTrips: Trip[], recalculatedTrips: Trip[], allTrips: Trip[], blocks: Block[], patterns: RoutePattern[]): { connections: RecalculationConnection[]; findings: ValidationFinding[] } {
+  const selectedIds = new Set(selectedTrips.map((trip) => trip.id));
+  const saved = new Map(allTrips.map((trip) => [trip.id, trip]));
+  const revised = new Map(recalculatedTrips.map((trip) => [trip.id, trip]));
+  const patternsById = new Map(patterns.map((pattern) => [pattern.id, pattern]));
+  const connections: RecalculationConnection[] = [];
+  const findings: ValidationFinding[] = [];
+  for (const block of blocks) {
+    const activities = [...block.activities].sort((left, right) => left.sequence - right.sequence).filter((activity) => activity.type === 'revenueTrip');
+    for (let index = 0; index < activities.length - 1; index += 1) {
+      const previousId = activities[index].tripId;
+      const nextId = activities[index + 1].tripId;
+      if (!selectedIds.has(previousId) && !selectedIds.has(nextId)) continue;
+      const previousSaved = saved.get(previousId);
+      const nextSaved = saved.get(nextId);
+      if (!previousSaved || !nextSaved) continue;
+      const currentEnd = previousSaved.stopTimes.at(-1)?.time;
+      const currentStart = nextSaved.stopTimes[0]?.time;
+      const revisedEnd = (revised.get(previousId) ?? previousSaved).stopTimes.at(-1)?.time;
+      const revisedStart = (revised.get(nextId) ?? nextSaved).stopTimes[0]?.time;
+      if (currentEnd === undefined || currentStart === undefined || revisedEnd === undefined || revisedStart === undefined) continue;
+      const currentGapSeconds = currentStart - currentEnd;
+      const revisedGapSeconds = revisedStart - revisedEnd;
+      const between = block.activities.filter((activity) => activity.sequence > activities[index].sequence && activity.sequence < activities[index + 1].sequence);
+      const deadhead = between.find((activity) => activity.type === 'deadhead');
+      const deadheadSeconds = deadhead ? deadhead.minutesAfterPreviousTrip !== undefined ? deadhead.minutesAfterPreviousTrip * 60 : deadhead.startTime !== undefined && deadhead.endTime !== undefined ? deadhead.endTime - deadhead.startTime : undefined : 0;
+      const previousEndNode = patternsById.get(previousSaved.patternId)?.points.at(-1)?.nodeId;
+      const nextStartNode = patternsById.get(nextSaved.patternId)?.points[0]?.nodeId;
+      const layoverDefined = deadhead ? deadheadSeconds !== undefined : Boolean(previousEndNode && nextStartNode && previousEndNode === nextStartNode);
+      if (selectedIds.has(previousId)) connections.push({ tripId: previousId, blockId: block.id, blockLabel: block.label, nextTripId: nextId, currentGapSeconds, revisedGapSeconds, ...(layoverDefined ? { currentLayoverSeconds: currentGapSeconds - (deadheadSeconds ?? 0), revisedLayoverSeconds: revisedGapSeconds - (deadheadSeconds ?? 0) } : {}), nextDeparture: revisedStart });
+      if (currentGapSeconds >= 0 && revisedGapSeconds < 0) {
+        const precedingTripSelected = selectedIds.has(previousId);
+        findings.push({ ruleId: 'trip.regenerationBlockOverlap', severity: 'warning', entityType: 'trip', entityId: precedingTripSelected ? previousId : nextId, messageKey: 'trip.regenerationBlockOverlap', parameters: { blockLabel: block.label, nextDeparture: revisedStart, precedingEnd: revisedEnd, precedingTripSelected: precedingTripSelected ? 1 : 0 } });
+      }
+    }
+  }
+  return { connections, findings };
 }
 
 /** An anchored trip may use a nearby band once without storing a permanent band assignment. */
@@ -178,6 +264,49 @@ export function recalculateTripWithAnchor(trip: Trip, pattern: RoutePattern, pro
   if (anchorIndex < 0) throw new TripGenerationError([tripFinding(trip, 'trip.anchorMissing', 'trip.anchorMissing')]);
   const anchorTime = trip.stopTimes.find((point) => point.patternPointId === pattern.points[anchorIndex].id)?.time;
   if (anchorTime === undefined) throw new TripGenerationError([tripFinding(trip, 'trip.anchorTimeMissing', 'trip.anchorTimeMissing')]);
+  if (profile.calculationMethod === 'segmentStart') {
+    if (chosenBandId) throw new TripGenerationError([tripFinding(trip, 'trip.anchorBandChoiceInvalid', 'trip.anchorBandChoiceInvalid')]);
+    let departures = new Set([anchorTime]);
+    for (let index = anchorIndex - 1; index >= 0; index -= 1) {
+      const earlier = new Set<number>();
+      for (const arrival of departures) for (const band of profile.bands) {
+        const duration = band.segmentRuntimeSeconds[index];
+        if (!Number.isInteger(duration) || duration < 0) continue;
+        const candidate = arrival - duration;
+        if (candidate >= 0 && resolveSegmentStartBand(profile, candidate)?.id === band.id) earlier.add(candidate);
+      }
+      departures = earlier;
+    }
+    const matches = [...departures].filter((candidate) => selectRuntimeBand(profile, candidate)).flatMap((candidate) => {
+      const result = propagatePatternTimes(pattern, candidate, profile);
+      return 'finding' in result || result.stopTimes[anchorIndex]?.time !== anchorTime ? [] : [{ departure: candidate, stopTimes: result.stopTimes }];
+    });
+    const chosen = matches.sort((left, right) => Math.abs(left.departure - departure) - Math.abs(right.departure - departure))[0];
+    if (!chosen) throw new TripGenerationError([tripFinding(trip, 'trip.anchorNoRuntime', 'trip.anchorNoRuntime')]);
+    const revision = profile.calculationRevision ?? 0;
+    return { trip: withUpdatedAt({ ...trip, patternId: pattern.id, stopTimes: chosen.stopTimes, provenance: { ...trip.provenance, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision }, manuallyChangedFields: [], manualTimeShiftSeconds: undefined } }, now) };
+  }
+  if (profile.calculationMethod === 'blendSegments') {
+    if (chosenBandId) throw new TripGenerationError([tripFinding(trip, 'trip.anchorBandChoiceInvalid', 'trip.anchorBandChoiceInvalid')]);
+    const matches: { departure: number; stopTimes: ScheduledPoint[] }[] = [];
+    for (const band of profile.bands) {
+      let low = Math.max(0, band.startTime);
+      let high = Math.min(anchorTime, band.endTime - 1);
+      while (low <= high) {
+        const candidate = Math.floor((low + high) / 2);
+        const result = propagatePatternTimes(pattern, candidate, profile);
+        if ('finding' in result) break;
+        const actual = result.stopTimes[anchorIndex].time;
+        if (actual < anchorTime) low = candidate + 1;
+        else high = candidate - 1;
+        if (actual === anchorTime) { matches.push({ departure: candidate, stopTimes: result.stopTimes }); break; }
+      }
+    }
+    const chosen = matches.sort((left, right) => Math.abs(left.departure - departure) - Math.abs(right.departure - departure))[0];
+    if (!chosen) throw new TripGenerationError([tripFinding(trip, 'trip.anchorNoRuntime', 'trip.anchorNoRuntime')]);
+    const revision = profile.calculationRevision ?? 0;
+    return { trip: withUpdatedAt({ ...trip, patternId: pattern.id, stopTimes: chosen.stopTimes, provenance: { ...trip.provenance, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision }, manuallyChangedFields: [], manualTimeShiftSeconds: undefined } }, now) };
+  }
   const candidates = anchorIndex === 0 ? [] : profile.bands.filter((band) => band.segmentRuntimeSeconds.length === pattern.points.length - 1).map((band) => {
     const first = anchorTime - band.segmentRuntimeSeconds.slice(0, anchorIndex).reduce((total, seconds) => total + seconds, 0);
     const distanceSeconds = first < band.startTime ? band.startTime - first : Math.max(0, first - band.endTime);

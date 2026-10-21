@@ -35,7 +35,7 @@ The product is a planning tool. It is not intended to dispatch service, manage o
 | Service-day types | Weekday, Saturday, Sunday, and holiday |
 | Time representation | Integer seconds from service-day midnight |
 | Extended time | Times greater than 24:00 are supported |
-| Runtime selection | The trip departure time normally selects one runtime band for the full trip; anchored regeneration may use a uniquely nearest band within ten minutes or a band explicitly chosen in its preview |
+| Runtime selection | Each profile selects one band for the trip or a band at each segment start. Existing continuous-blend profiles remain readable. Single-band anchored regeneration may use a uniquely nearest band within ten minutes or a band explicitly chosen in its preview |
 | Runtime ownership | Complete pattern-specific profiles in the first build |
 | Trip authority | Saved trips and scheduled points; generation requests are transient |
 | Runtime changes | Existing trips remain fixed until explicit recalculation |
@@ -209,7 +209,7 @@ The Runtimes editor accepts row-oriented tab-separated clipboard data and CSV fo
 
 Runtime bands are continuous half-open intervals: start time is inclusive and end time is exclusive. A label covering disjoint periods must use separate bands. For example, off-peak service from 04:00-06:00 and 22:00-26:00 uses two bands.
 
-The trip's initial departure time selects the runtime band. The selected band applies for the entire trip even if the trip crosses into another band.
+Profiles default to single-band calculation: the trip's initial departure selects the band for the full trip. A profile may instead blend each segment across bands by integrating progress at each band's segment runtime rate. Gaps use the nearest adjacent band's rate while a trip is in motion; the first and last bands extend beyond their outer bounds for trips that started within a defined band. Changing the method increments the profile's calculation revision and marks existing trips stale until explicit regeneration. The optional Trips band view derives segment contributions from saved times and the current profile; it omits shading when those times do not match the profile.
 
 Pattern-specific profiles are an initial simplification. The application should provide copy and reverse-copy operations. Shared segment defaults or pattern overrides may be considered after the first runtime implementation is evaluated.
 
@@ -217,7 +217,7 @@ Pattern-specific profiles are an initial simplification. The application should 
 
 Phase 2R replaces saved generation sets with transient additive generation requests. A request contains a pattern, First Trip, Headway, and inclusive Last Trip. It validates and creates ordinary trips but is not retained as authoritative data. Package 2R-C exposes this through `previewGenerateTrips` and `generateTrips`; no generation-set row is created by either command.
 
-Each trip stores its ordered scheduled times, creation method, and runtime-profile calculation source used to produce them. Runtime changes do not silently alter trips. Users explicitly recalculate selected trips while retaining their trip IDs and block references. The regeneration review defaults to each trip's first departure and permits a different saved timepoint anchor per trip. The domain resolves a runtime band consistent with the resulting first departure and rejects missing or ambiguous solutions. The application rechecks source data before applying the review. Recalculation requires impact confirmation when it would overwrite manual changes or affect blocks. Additive generation and Add Trip use atomic trip-only inserts; pattern changes and recalculation use atomic trip-change writes.
+Each trip stores its ordered scheduled times, creation method, and runtime-profile calculation source used to produce them. Runtime changes do not silently alter trips. Users explicitly recalculate selected trips while retaining their trip IDs and block references. The regeneration review defaults to each trip's first departure and permits a different saved timepoint anchor per trip. The domain resolves a runtime band consistent with the resulting first departure and rejects missing or ambiguous solutions. The preview derives layover changes to adjacent Block Trips after assigned deadhead and warns about newly overlapping departures without blocking regeneration. The application rechecks selected and adjacent Trip data before applying the review. Recalculation requires impact confirmation when it would overwrite manual changes or affect blocks. Additive generation and Add Trip use atomic trip-only inserts; pattern changes and recalculation use atomic trip-change writes.
 
 The schedule selects one service day and direction and interlaces trips from every pattern in that direction. When multiple patterns share a direction timetable column, rows are ordered by the earliest shared column (the first common timepoint in the direction); when no common column exists, the first scheduled time is used. Direction columns provide the stable timetable layout, and patterns that omit a column display an empty marker.
 

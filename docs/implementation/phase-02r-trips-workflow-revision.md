@@ -2,6 +2,10 @@
 
 ## Status
 
+The 2026-10-21 follow-up adds a profile-owned blended-segment calculation method and an optional Trips band-contribution view. Decision 0032 defines the calculation and display behavior.
+
+The Route and Trips tabs retain the user's selected pattern when switching tabs or reloading workspace data. Trips retains a pattern per scenario, route, and direction. A missing pattern falls back to the first available pattern.
+
 Approved for implementation planning on 2026-09-11. The Phase 2R replacement workflow is implemented and accepted through the subsequent safe-route-editing, Trip-profile, Phase 3, and Phase 3R integration records. The package-level 2R-D and 2R-E gates are closed by that later acceptance work.
 
 This revision supersedes the generation-set-centered portions of the accepted Phase 2 implementation. The existing Phase 2 code remains the running implementation until the packages below replace it.
@@ -706,3 +710,19 @@ Present the revised Phase 3 service-day workflow plan and recommended model. Do 
 ### Anchored regeneration follow-up (2026-10-20)
 
 For a later fixed timepoint, calculate the implied first departure under each runtime band. Use an applicable band when exactly one exists. If none exists, use the uniquely nearest band only when its implied departure is within ten minutes of that band's boundary. Keep the fixed timepoint unchanged, label the exception in the preview, and require the normal preview application. Multiple applicable bands, nearest-band ties, and larger gaps require an explicit band or anchor choice. First-departure anchoring retains normal departure-based band selection. Test the boundary, tie, threshold, manual selection, and preview behavior.
+
+### Regeneration preview changes (2026-10-21)
+
+For each selected Trip, show signed changes to its first departure, last timepoint, and total Run Time beside the existing current-to-new comparisons. Derive the values from the current Trip and recalculation preview; show an em dash until a valid preview is available. Keep second-level precision when needed.
+
+Show the current and regenerated layover to the next Block Trip, after assigned deadhead, plus its signed change. Leave layover undefined where a connection lacks required deadhead. Warn on any selected Trip whose regeneration creates an overlap with its adjacent Block Trip, but allow the user to proceed. Include adjacent unselected Trip times in stale-preview review.
+
+In the Trips table, mark both Trips in any connection with a Blocking finding in the active Blocking Scenario. Place a compact warning icon beside each affected Block pill and expose the specific reason on hover and to assistive technology.
+
+### Segment-start and display follow-up (2026-10-21)
+
+Add the segment-start runtime method under Runtimes Actions while preserving legacy continuous-blend profiles. Each segment selects its band at its start and adds its entered duration exactly. A method switch changes the calculation revision and requires explicit regeneration; saved Trips stay fixed. Show one band color per segment when the current calculation reproduces its saved times. In Trips Actions, add an off-by-default **Round displayed times** option that rounds table clock times to the nearest minute, with 30 seconds rounded up. The default table view shows nonzero seconds; neither display mode changes calculations or exports.
+
+### Headway display follow-up (2026-10-21)
+
+Add **Show headways** to Trips Actions Display. Each timepoint column uses the chronological predecessor among Trips that serve that same column, regardless of pattern or table row order. Skipped timepoints do not affect the sequence. Show the first Trip's scheduled clock time with a subtle accent; show subsequent exact headway durations. The setting changes only the Trips table view and works with staged shifts and the existing rounding option.

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
 import {
+  blendSegmentTimes,
   copyRuntimeProfile,
   normalizeRuntimeProfile,
   propagatePatternTimes,
@@ -72,6 +73,17 @@ describe('runtime profiles', () => {
     expect(resolveRuntimeForDeparture(profile, pattern, 1000).finding?.messageKey).toBe('runtime.noApplicableBand');
     const result = propagatePatternTimes(pattern, 21600, profile);
     expect('stopTimes' in result ? result.stopTimes.map((point) => point.time) : []).toEqual([21600, 21960, 22260]);
+  });
+
+  it('blends each segment by progress across its own band boundary', () => {
+    const blended = { ...profile, calculationMethod: 'blendSegments' as const, bands: [
+      { ...profile.bands[1], startTime: 0, endTime: 3600, segmentRuntimeSeconds: [60, 120] },
+      { ...profile.bands[0], startTime: 3600, endTime: 9000, segmentRuntimeSeconds: [120, 180] },
+    ] };
+    const result = blendSegmentTimes(pattern, 3550, blended);
+    expect('stopTimes' in result && result.stopTimes.map((point) => point.time)).toEqual([3550, 3620, 3800]);
+    if ('segments' in result) expect(result.segments[0].contributions.map((part) => [part.bandLabel, part.seconds])).toEqual([['AM', 50], ['PM', 20]]);
+    expect(withRuntimeCalculationRevision({ ...blended, calculationMethod: 'singleBand' }, blended).calculationRevision).toBe(1);
   });
 
   it('creates independent copies and reverses segment runtimes', () => {

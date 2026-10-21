@@ -36,7 +36,7 @@ export class RuntimeProfileDeletionError extends Error {
 export function runtimeCalculationRevision(profile: RuntimeProfile): number { return profile.calculationRevision ?? 0; }
 
 function calculationShape(profile: RuntimeProfile): string {
-  return JSON.stringify(orderedBands(profile).map((band) => ({ id: band.id, label: band.label, startTime: band.startTime, endTime: band.endTime, segmentRuntimeSeconds: band.segmentRuntimeSeconds })));
+  return JSON.stringify({ method: profile.calculationMethod ?? 'singleBand', bands: orderedBands(profile).map((band) => ({ id: band.id, label: band.label, startTime: band.startTime, endTime: band.endTime, segmentRuntimeSeconds: band.segmentRuntimeSeconds })) });
 }
 
 /** Apply the revision rule: band or segment changes increment, rename does not. */
@@ -88,6 +88,82 @@ export function selectRuntimeBand(profile: RuntimeProfile, departure: ServiceSec
   return orderedBands(profile).find((band) => departure >= band.startTime && departure < band.endTime);
 }
 
+export interface SegmentBandContribution { bandId: string; bandLabel: string; seconds: number }
+export interface BlendedSegment { segmentIndex: number; durationSeconds: number; contributions: SegmentBandContribution[] }
+
+/** Resolve a segment-start band, including the nearest band at gaps and outer edges. */
+export function resolveSegmentStartBand(profile: RuntimeProfile, time: ServiceSeconds): RuntimeBand | undefined {
+  const bands = orderedBands(profile);
+  return selectRuntimeBand(profile, time) ?? bands.reduce<RuntimeBand | undefined>((best, candidate) => {
+    if (!best) return candidate;
+    const distance = time < candidate.startTime ? candidate.startTime - time : time >= candidate.endTime ? time - candidate.endTime : 0;
+    const bestDistance = time < best.startTime ? best.startTime - time : time >= best.endTime ? time - best.endTime : 0;
+    return distance < bestDistance ? candidate : best;
+  }, undefined);
+}
+
+/** Use one band's duration for each segment, selected when that segment begins. */
+export function segmentStartTimes(pattern: RoutePattern, departure: ServiceSeconds, profile: RuntimeProfile): { stopTimes: ScheduledPoint[]; segments: BlendedSegment[] } | { finding: ValidationFinding } {
+  const bands = orderedBands(profile);
+  if (!selectRuntimeBand(profile, departure)) return { finding: finding(profile, 'runtime.noApplicableBand', 'runtime.noApplicableBand', 'bands', { departure }) };
+  if (bands.some((band) => band.segmentRuntimeSeconds.length !== pattern.points.length - 1)) return { finding: finding(profile, 'runtime.segmentCountMismatch', 'runtime.segmentCountMismatch', 'bands') };
+  let time = departure;
+  const stopTimes: ScheduledPoint[] = [{ patternPointId: pattern.points[0].id, sequence: 0, time }];
+  const segments: BlendedSegment[] = [];
+  for (let index = 0; index < pattern.points.length - 1; index += 1) {
+    const band = resolveSegmentStartBand(profile, time)!;
+    const durationSeconds = band.segmentRuntimeSeconds[index];
+    if (!Number.isInteger(durationSeconds) || durationSeconds < 0) return { finding: finding(profile, 'runtime.segmentDurationInvalid', 'runtime.segmentDurationInvalid', 'bands') };
+    time += durationSeconds;
+    segments.push({ segmentIndex: index, durationSeconds, contributions: [{ bandId: band.id, bandLabel: band.label, seconds: durationSeconds }] });
+    stopTimes.push({ patternPointId: pattern.points[index + 1].id, sequence: index + 1, time });
+  }
+  return { stopTimes, segments };
+}
+
+/** Integrate segment progress at each band's rate. At a gap, use the nearer band; outside the profile, use its edge band. */
+export function blendSegmentTimes(pattern: RoutePattern, departure: ServiceSeconds, profile: RuntimeProfile): { stopTimes: ScheduledPoint[]; segments: BlendedSegment[] } | { finding: ValidationFinding } {
+  const bands = orderedBands(profile);
+  if (!selectRuntimeBand(profile, departure)) return { finding: finding(profile, 'runtime.noApplicableBand', 'runtime.noApplicableBand', 'bands', { departure }) };
+  if (bands.some((band) => band.segmentRuntimeSeconds.length !== pattern.points.length - 1)) return { finding: finding(profile, 'runtime.segmentCountMismatch', 'runtime.segmentCountMismatch', 'bands') };
+  const boundaries = [...new Set(bands.flatMap((band, index) => index === 0 ? [band.startTime, band.endTime] : [band.startTime, band.endTime, (bands[index - 1].endTime + band.startTime) / 2]))].sort((a, b) => a - b);
+  const bandAt = (time: number): RuntimeBand => bands.find((band) => time >= band.startTime && time < band.endTime) ?? bands.reduce((best, band) => {
+    const distance = time < band.startTime ? band.startTime - time : time >= band.endTime ? time - band.endTime : 0;
+    const bestDistance = time < best.startTime ? best.startTime - time : time >= best.endTime ? time - best.endTime : 0;
+    return distance < bestDistance ? band : best;
+  });
+  let time = departure;
+  const stopTimes: ScheduledPoint[] = [{ patternPointId: pattern.points[0].id, sequence: 0, time: departure }];
+  const segments: BlendedSegment[] = [];
+  for (let index = 0; index < pattern.points.length - 1; index += 1) {
+    const start = time;
+    let progress = 0;
+    const contributions: SegmentBandContribution[] = [];
+    while (progress < 1 - 1e-10) {
+      const band = bandAt(time + 1e-7);
+      const runtime = band.segmentRuntimeSeconds[index];
+      if (!Number.isFinite(runtime) || runtime < 0) return { finding: finding(profile, 'runtime.segmentDurationInvalid', 'runtime.segmentDurationInvalid', 'bands') };
+      if (runtime === 0) break;
+      const boundary = boundaries.find((value) => value > time + 1e-6) ?? Number.POSITIVE_INFINITY;
+      const elapsed = Math.min((1 - progress) * runtime, boundary - time);
+      const prior = contributions.at(-1);
+      if (prior?.bandId === band.id) prior.seconds += elapsed;
+      else contributions.push({ bandId: band.id, bandLabel: band.label, seconds: elapsed });
+      time += elapsed;
+      progress += elapsed / runtime;
+    }
+    time = Math.round(time);
+    let assignedSeconds = 0;
+    contributions.forEach((part, contributionIndex) => {
+      part.seconds = contributionIndex === contributions.length - 1 ? time - start - assignedSeconds : Math.round(part.seconds);
+      assignedSeconds += part.seconds;
+    });
+    segments.push({ segmentIndex: index, durationSeconds: time - start, contributions });
+    stopTimes.push({ patternPointId: pattern.points[index + 1].id, sequence: index + 1, time });
+  }
+  return { stopTimes, segments };
+}
+
 /** Return segment miles derived from cumulative pattern miles. */
 export function patternSegmentMiles(pattern: RoutePattern): number[] {
   return pattern.points.slice(1).map((point, index) => point.cumulativeMiles - pattern.points[index].cumulativeMiles);
@@ -109,6 +185,7 @@ export function validateRuntimeProfile(profile: RuntimeProfile, pattern: RoutePa
   if (profile.routeId !== pattern.routeId) findings.push(finding(profile, 'runtime.profileRouteMismatch', 'runtime.profileRouteMismatch', 'routeId'));
   if (profile.patternId !== pattern.id) findings.push(finding(profile, 'runtime.profilePatternMismatch', 'runtime.profilePatternMismatch', 'patternId'));
   if (profile.calculationRevision !== undefined && (!Number.isInteger(profile.calculationRevision) || profile.calculationRevision < 0)) findings.push(finding(profile, 'runtime.calculationRevisionInvalid', 'runtime.calculationRevisionInvalid', 'calculationRevision'));
+  if (profile.calculationMethod !== undefined && profile.calculationMethod !== 'singleBand' && profile.calculationMethod !== 'blendSegments' && profile.calculationMethod !== 'segmentStart') findings.push(finding(profile, 'runtime.calculationMethodInvalid', 'runtime.calculationMethodInvalid', 'calculationMethod'));
   if (profile.bands.length === 0) findings.push(finding(profile, 'runtime.noBands', 'runtime.noBands', 'bands'));
 
   for (const band of profile.bands) {
@@ -204,7 +281,17 @@ export function propagatePatternTimes(
   pattern: RoutePattern,
   departure: ServiceSeconds,
   profile: RuntimeProfile,
-): { stopTimes: ScheduledPoint[]; band: RuntimeBand } | { finding: ValidationFinding } {
+): { stopTimes: ScheduledPoint[]; band: RuntimeBand; segments?: BlendedSegment[] } | { finding: ValidationFinding } {
+  if (profile.calculationMethod === 'segmentStart') {
+    const segmented = segmentStartTimes(pattern, departure, profile);
+    if ('finding' in segmented) return segmented;
+    return { ...segmented, band: selectRuntimeBand(profile, departure)! };
+  }
+  if (profile.calculationMethod === 'blendSegments') {
+    const blended = blendSegmentTimes(pattern, departure, profile);
+    if ('finding' in blended) return blended;
+    return { ...blended, band: selectRuntimeBand(profile, departure)! };
+  }
   const resolution = resolveRuntimeForDeparture(profile, pattern, departure);
   if (!resolution.band || !resolution.segmentRuntimeSeconds) return { finding: resolution.finding! };
   return { stopTimes: propagatePatternTimesWithBand(pattern, departure, resolution.band), band: resolution.band };

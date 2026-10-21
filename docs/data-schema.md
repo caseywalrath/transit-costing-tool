@@ -199,6 +199,7 @@ interface RuntimeProfile extends EntityMetadata {
   patternId: EntityId;
   name: string;
   bands: RuntimeBand[];
+  calculationMethod?: 'singleBand' | 'blendSegments' | 'segmentStart';
   calculationRevision?: number;
 }
 
@@ -214,6 +215,8 @@ interface RuntimeAssignment extends EntityMetadata {
 Each runtime band must contain exactly `pattern.points.length - 1` segment values. Runtime assignments must be unique by pattern and service day.
 
 Phase 2R-B adds `RuntimeProfile.calculationRevision`. It starts at zero for a new or copied profile and increments when runtime bands or segment values change; renaming a profile does not increment it. Package 2R-C records the profile ID and revision used for each trip's current scheduled points.
+
+Decision 0032 adds the optional calculation method. Missing values mean `singleBand` for existing backups. Changing the method increments the calculation revision.
 
 ## Trip generation and trip entities
 

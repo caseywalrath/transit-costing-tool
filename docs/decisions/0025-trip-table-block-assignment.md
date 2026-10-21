@@ -26,6 +26,8 @@ Decision 0021 established a Blocking Scenario selector in Trips so the displayed
 - The feature uses the existing Blocking persistence graph. No database migration, JSON backup-version change, CSV-format change, or new authoritative Trip field is required.
 - The confirmation dialog must disclose source deadheads removed by reassignment. Operational feasibility remains the responsibility of existing Blocking findings.
 
+The Trips Block column also displays a compact warning icon for Trips involved in a connection finding in the active Blocking Scenario. Both Trips in an overlapping pair are marked. The icon's hover and accessible label state the specific connection problem; assignment and regeneration remain available.
+
 ## Rejected alternatives
 
 ### Choose one source Block before a multi-Trip assignment
