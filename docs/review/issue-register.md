@@ -7,7 +7,7 @@
 ## Operating model
 
 - The review lead (Opus-class) collected, de-duplicated, calibrated, and grouped every finding. The lead is the only orchestrator.
-- One independent Sonnet verifier, which wrote no finding, reproduced the sample below from the written evidence alone. It wrote no file outside the scratchpad and left `git status` clean.
+- One independent Sonnet verifier, which wrote no finding, reproduced the sample below from the written evidence alone. Its temporary `zz-verify-*` copies in `docs/review/golden/` were deleted, and `git status` was clean afterwards.
 - Severity uses the plan Section 5.2 rubric. A merged issue takes the highest severity of its findings before calibration.
 
 ## Verification sample
@@ -17,7 +17,8 @@
   - Method: sort the 46 S2 IDs as strings, then `random.Random(20261022).shuffle(ids)` in Python 3, and take the first 12.
   - Seed: **20261022**.
   - Sample: 2-001, 3-007, 3-012, 4-004, 4-009, 5-009, 5-011, 5-013, 6-001, A-003, A-004, A-007.
-- Results: VERIFICATION_SUMMARY
+- Results: 17 of 17 reproduced. 16 reproduced from their written evidence; 1 (4-004) was repaired by the lead and then reproduced. 0 dropped. No severity disagreement. No new S0.
+- The verifier ran copies of the golden tests with the defect marker removed, in Vitest and in Chromium on port 4187, and confirmed that each failure was on the data assertion. It deleted every copy (`git status` empty). Full report (scratch, not committed): `s3a/verifier/report.md` in the session scratchpad.
 
 ## Counts by severity
 
@@ -25,7 +26,7 @@
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Stage 2 findings, as written | 2 | 3 | 46 | 67 | 118 | A-006 (counted in S2) |
 | After de-duplication (16 merges), before calibration | 2 | 3 | 40 | 56 | 101 | 1 (I-102) |
-| After calibration | COUNT_S0 | COUNT_S1 | COUNT_S2 | COUNT_S3 | COUNT_TOTAL | 1 (I-102) |
+| After calibration | 2 | 3 | 41 | 55 | 101 | 1 (I-102) |
 
 ## Severity changes (step 4)
 
@@ -77,7 +78,16 @@ Rejected during Stage 2, by the phase that received them. None became a finding.
 | 6-008 needs a user decision. | Analyst S1 | Phase 6 lead | `styles.css` already states the intended 14 px. |
 | Declared ranges block every update. | Haiku H1 | Phase 6 lead | The caret ranges allow the patched versions. |
 
-Stage 3A verification results: REJECTED_3A
+Stage 3A verification results (no finding was dropped):
+
+| Finding | Result | Correction to the written evidence |
+| --- | --- | --- |
+| 4-004 | Repaired, then reproduced | The cited test (`p4-stale-preview.golden.test.ts`, A1-03) asserts only that no error finding is raised. The lead ran the same setup and applied the import: Trip `in-1` (inbound) is stored with `patternId` `outbound`, and Block `b1` still references it. Corrected location: `tripGenerationService.ts:238-239`. |
+| 4-009 | Reproduced | The test asserts the 3 orphan Trips; "shows no error" is a spec comment, not an assertion. |
+| 3-001 | Reproduced | Reproduced in Node. The one-profile round-trip claim and the Chromium variant were not re-run in 3A. |
+| 3-006 | Reproduced | Hypothesis 2: the select value is `""`, which is the "Select Node" option, so "not among its options" is imprecise. The outcome (source ID written back silently) matches. |
+| 5-011 | Reproduced | Calling `applyTripShift([id], -600)` directly stores −300, after which the Trips tab throws until the Trip is repaired. No UI path reaches this, so S2 stands. |
+| 4-001 | Reproduced | Rename scenario, New route, and Duplicate route remain Probable (not run). |
 
 ## De-duplication (step 2)
 
@@ -108,31 +118,31 @@ Verification column: **3A Reproduced** means the Stage 3A verifier reproduced th
 
 | ID | Sev | Category | Title | Merged finding IDs | Verification | Root-cause group | Fix package |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| I-001 | S0 | data-integrity | Service-day edits (and Scenario rename, New Route, Duplicate Route) write the App's startup Scenario snapshot over newer Trips, Blocks, and Runtime profiles | 4-001 | V_4001 | G01 | |
-| I-002 | S0 | data-integrity | A second tab silently deletes or reverts data saved in the other tab; stale checks run outside the write transaction (UD 10) | 4-002, 4-021 | V_4002 | G01 | |
-| I-003 | S1 | data-integrity | A backup with two or more Trip Profiles cannot be restored; export → import is not stable with one profile | 3-001 | V_3001 | G03 | |
-| I-004 | S1 | data-integrity | Scenario duplication fails when a non-first Trip Profile's Blocking Scenario has Trips; otherwise it stamps every copied Block with the first profile | 3-002 | V_3002 | G02 | |
-| I-005 | S1 | data-integrity | Scenario duplication leaves pull-out, pull-in, and deadhead Nodes pointing at the source Scenario; deadhead Blocks become ineligible for Costing (UD 4: recover on load) | 3-006, A-004 | V_3006 | G02 | |
+| I-001 | S0 | data-integrity | Service-day edits (and Scenario rename, New Route, Duplicate Route) write the App's startup Scenario snapshot over newer Trips, Blocks, and Runtime profiles | 4-001 | 3A Reproduced (Service day path; other 3 triggers still Probable) | G01 | |
+| I-002 | S0 | data-integrity | A second tab silently deletes or reverts data saved in the other tab; stale checks run outside the write transaction (UD 10) | 4-002, 4-021 | 3A Reproduced (6 overwrite cases; control passes) | G01 | |
+| I-003 | S1 | data-integrity | A backup with two or more Trip Profiles cannot be restored; export → import is not stable with one profile | 3-001 | 3A Reproduced (Node; one-profile round trip not re-observed) | G03 | |
+| I-004 | S1 | data-integrity | Scenario duplication fails when a non-first Trip Profile's Blocking Scenario has Trips; otherwise it stamps every copied Block with the first profile | 3-002 | 3A Reproduced (Node) | G02 | |
+| I-005 | S1 | data-integrity | Scenario duplication leaves pull-out, pull-in, and deadhead Nodes pointing at the source Scenario; deadhead Blocks become ineligible for Costing (UD 4: recover on load) | 3-006, A-004 | 3A Reproduced (Node and Chromium; H2 wording corrected) | G02 | |
 | I-006 | S2 | test-gap | Seven browser tests fail: a stale menu label, and two tests assert the nested scroller that D0035-05 forbids | A-001, 5-001 | Stage 2 Confirmed (6 runs) | G15 | |
 | I-007 | S2 | test-gap | The production Dexie repository has no unit-test coverage | A-002 | Stage 2 Confirmed (coverage run) | G04 | |
-| I-008 | S2 | test-gap | The migration unit test never runs and asserts version 5; the browser migration test seeds raw version 4, which is Dexie 0.4 | A-003, 3-014 | V_A003 | G04 | |
+| I-008 | S2 | test-gap | The migration unit test never runs and asserts version 5; the browser migration test seeds raw version 4, which is Dexie 0.4 | A-003, 3-014 | 3A Reproduced | G04 | |
 | I-009 | S2 | contract | `updateServiceDay` saves annual counts above 365, negative, fractional, or NaN, and blank or untrimmed names | A-005, 4-005 | Stage 2 Confirmed (A1 test) | G08 | |
 | I-010 | S2 | contract | v3/v4 backup import keeps placeholder Blocks with no Blocking Scenario, against D0019-13; they inflate deletion counts | 1-010 | Stage 2 Confirmed | G03 | |
-| I-011 | S2 | contract | A Last Trip generation request is not limited to 500 Trips | 2-001, 1-009 | V_2001 | G07 | |
-| I-012 | S2 | correctness | Shifting Trips before 0:00 yields negative times; staging such a Shift crashes the app (no error boundary) | 2-002, 5-011 | V_5011 | G07 | |
+| I-011 | S2 | contract | A Last Trip generation request is not limited to 500 Trips | 2-001, 1-009 | 3A Reproduced | G07 | |
+| I-012 | S2 | correctness | Shifting Trips before 0:00 yields negative times; staging such a Shift crashes the app (no error boundary) | 2-002, 5-011 | 3A Reproduced (5-011; root empties) | G07 | |
 | I-013 | S2 | contract | `segmentStart` and blend anchored regeneration silently pick one of several valid departures (UD 3: reject and list) | 2-003, 1-005 | Stage 2 Confirmed | G07 | |
 | I-014 | S2 | correctness | A deterministic route edit stamps the new runtime revision on every Trip, hiding stale Trips and `segmentStart` mismatches | 2-004, 2-005 | Stage 2 Confirmed | G06 | |
 | I-015 | S2 | correctness | Legacy explicit-time deadheads and pull-outs are not checked against their placement; layover and Platform hours are wrong | 2-006 | Stage 2 Confirmed | G12 | |
 | I-016 | S2 | correctness | Runtime "Copy from day" always fails on IndexedDB: the transaction omits `patterns` and `serviceDays` (UD 6) | 3-009 | Stage 2 Confirmed (lead re-run) | G04 | |
 | I-017 | S2 | data-integrity | Backup import accepts dangling, cross-Scenario, duplicate, and negative Block and Trip data; two inputs raise raw TypeErrors | 3-005 | Stage 2 Confirmed | G03 | |
-| I-018 | S2 | data-integrity | Node deletion in the Node editor leaves non-revenue activities pointing at the deleted Node, and the preview does not report them | 3-007 | V_3007 | G05 | |
-| I-019 | S2 | pipeline | CSV header cells are not escaped; a Pattern or Node name with a comma or quote breaks the Trips CSV round trip | 3-012 | V_3012 | G13 | |
+| I-018 | S2 | data-integrity | Node deletion in the Node editor leaves non-revenue activities pointing at the deleted Node, and the preview does not report them | 3-007 | 3A Reproduced | G05 | |
+| I-019 | S2 | pipeline | CSV header cells are not escaped; a Pattern or Node name with a comma or quote breaks the Trips CSV round trip | 3-012 | 3A Reproduced | G13 | |
 | I-020 | S2 | contract | In-memory and Dexie repositories diverge on stale rejection, Scenario cascade, ordering, and error types | 3-013 | Stage 2 Confirmed | G04 | |
 | I-021 | S2 | contract | A single-Trip Pattern change commits without a stale check | 4-003 | Stage 2 Confirmed (lead re-run) | G06 | |
-| I-022 | S2 | data-integrity | Trips CSV import moves a Trip from the other Direction onto this Direction's Pattern | 4-004 | V_4004 | G06 | |
+| I-022 | S2 | data-integrity | Trips CSV import moves a Trip from the other Direction onto this Direction's Pattern | 4-004 | 3A Repaired (evidence asserted only the missing finding; lead added the move check) | G06 | |
 | I-023 | S2 | contract | Only Route saves publish the save status (UD 11: every write) | 4-006 | Stage 2 Confirmed (3 traces) | G09 | |
 | I-024 | S2 | correctness | "Apply to all similar Trips" in the deadhead dialog skips every second matching connection | 4-007 | Stage 2 Probable (loop executed on a copy) | G11 | |
-| I-025 | S2 | data-integrity | Trip generation stores Trips for a Trip Profile that no longer exists | 4-009 | V_4009 | G01 | |
+| I-025 | S2 | data-integrity | Trip generation stores Trips for a Trip Profile that no longer exists | 4-009 | 3A Reproduced (3 orphan Trips; "no error" not asserted) | G01 | |
 | I-026 | S2 | correctness | A JSON `null` in either selection-preference key blanks the app on every load | 4-010 | Stage 2 Confirmed (lead re-run) | G18 | |
 | I-027 | S2 | contract | Deletion reviews are incomplete: Trip Profile token ignores Blocking Scenarios; `deleteTrips` removes unshown activities; Route, Scenario, Runtime profile, and Project deletes have no token | 4-012, 4-011 | Stage 2 Confirmed (A1 tests) | G05 | |
 | I-028 | S2 | contract | The Trips CSV review signature omits Patterns; a stale review saves a Trip with the wrong number of times | 4-019 | Stage 2 Confirmed (A1 test) | G06 | |
@@ -142,19 +152,19 @@ Verification column: **3A Reproduced** means the Stage 3A verifier reproduced th
 | I-032 | S2 | ux | Saving Nodes discards an unsaved Pattern draft, and saving a Pattern discards unsaved Node edits | 5-006 | Stage 2 Probable (lead code read) | G17 | |
 | I-033 | S2 | ux | The Costing results table overflows at 1024 px and hides Annual cost (AC7) | 5-007 | Stage 2 Confirmed | G20 | |
 | I-034 | S2 | ux | Removing a Trip, Pull-out, or Pull-in from a Block is one click with no confirmation or undo | 5-008 | Stage 2 Confirmed | G19 | |
-| I-035 | S2 | ux | Delete Block and Delete Blocking Scenario show no impact counts; Delete Pattern's button reads "Confirm" | 5-009 | V_5009 | G19 | |
+| I-035 | S2 | ux | Delete Block and Delete Blocking Scenario show no impact counts; Delete Pattern's button reads "Confirm" | 5-009 | 3A Reproduced (code trace) | G19 | |
 | I-036 | S2 | a11y | Modal dialogs have no focus trap, lose initial focus when opened from a menu, ignore Escape (10), or lack a name (2) | 5-010 | Stage 2 Confirmed (lead re-run) | G16 | |
 | I-037 | S2 | a11y | Focus drops to the page body after Shift drawer steps and common confirms | 5-012 | Stage 2 Confirmed (lead re-run) | G16 | |
-| I-038 | S2 | a11y | `index.html` has no doctype, charset, viewport, `lang`, or title; the app renders in quirks mode | 5-013, 6-008 | V_5013 | G21 | |
+| I-038 | S2 | a11y | `index.html` has no doctype, charset, viewport, `lang`, or title; the app renders in quirks mode | 5-013, 6-008 | 3A Reproduced | G21 | |
 | I-039 | S2 | ux | After a stale-source rejection, Blocking rejects every edit until the day changes or the page reloads | 5-014 | Stage 2 Probable | G01 | |
 | I-040 | S2 | ux | Blocks with Trips from another Route show "Missing pattern" and "—" (UD 15) | 5-015 | Stage 2 Probable | G11 | |
 | I-041 | S2 | contract | The shared Runtime-profile display names only the selected day (02R-AC18) | 5-016 | Stage 2 Confirmed (code) | G24 | |
 | I-042 | S2 | ux | Escape in numeric and runtime time inputs commits the typed value instead of cancelling | 5-024 | Stage 2 Probable; lead trace in 3A | G16 | |
-| I-043 | S2 | performance | The Blocking compatibility review takes about 22 s at 300 unassigned Trips and blocks Assign | 6-001, 4-008 | V_6001 | G10 | |
+| I-043 | S2 | performance | The Blocking compatibility review takes about 22 s at 300 unassigned Trips and blocks Assign | 6-001, 4-008 | 3A Reproduced (24.2 s) | G10 | |
 | I-044 | S2 | performance | The Costing tab takes about 31 s at capacity and shows "Select a valid Blocking Scenario" while it waits | 6-002 | Stage 2 Confirmed (lead re-run) | G10 | |
 | I-045 | S2 | data-integrity | No persistent-storage request, no backup reminder, and raw text on quota failure (UD 16) | 6-003 | Stage 2 Confirmed (grep, simulated quota) | G09 | |
 | I-046 | S2 | pipeline | Deployment publishes every push to `main` without tests; no workflow runs on pull requests | 6-004 | Stage 2 Confirmed | G22 | |
-| I-047 | S3 | test-gap | The `segmentStart` calculation tests exist only in the review golden suite, not in `pnpm test` | A-007 | V_A007 | G15 | |
+| I-047 | S3 | test-gap | The `segmentStart` calculation tests exist only in the review golden suite, not in `pnpm test` | A-007 | 3A Reproduced; closure confirmed (14 review tests pass) | G15 | |
 | I-048 | S3 | docs | The overview describes a bounded Trips scroll viewport that D0035-05 forbids | 1-001 | Stage 2 Confirmed | G23 | |
 | I-049 | S3 | docs | Roadmap constraints and deletion rules contradict Decisions 0011, 0019, 0033, 0035 | 1-002 | Stage 2 Confirmed | G23 | |
 | I-050 | S3 | docs | Overview, schema, glossary, and roadmap omit the Number of Trips limit | 1-003 | Stage 2 Confirmed | G23 | |
