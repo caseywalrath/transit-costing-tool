@@ -1,6 +1,6 @@
 # Code Review Issue Register
 
-- Status: Stage 3A complete (plan Section 8.1 steps 1–5). Stage 3B (steps 6–7) fills the "Fix package" column.
+- Status: Stage 3A (plan Section 8.1 steps 1–5) and Stage 3B (steps 6–7) complete. Packages: `docs/review/fix-packages.md`. Open user-decision candidates C1–C8: `docs/review/user-decisions.md`.
 - Date: 2026-10-22. Branch `claude/upbeat-ritchie-51mpy5`; code baseline `main` at `baed9f1`.
 - Sources: `docs/review/findings/phase-A.md` and `phase-1.md` to `phase-6.md`. User decisions 1–18 in `docs/review/user-decisions.md` are settled and are cited, not re-opened.
 
@@ -27,6 +27,7 @@
 | Stage 2 findings, as written | 2 | 3 | 46 | 67 | 118 | A-006 (counted in S2) |
 | After de-duplication (16 merges), before calibration | 2 | 3 | 40 | 56 | 101 | 1 (I-102) |
 | After calibration | 2 | 3 | 41 | 55 | 101 | 1 (I-102) |
+| After Stage 3B packaging (I-074 split into a, b, c) | 2 | 3 | 41 | 57 | 103 | 1 (I-102) |
 
 ## Severity changes (step 4)
 
@@ -118,108 +119,115 @@ Verification column: **3A Reproduced** means the Stage 3A verifier reproduced th
 
 | ID | Sev | Category | Title | Merged finding IDs | Verification | Root-cause group | Fix package |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| I-001 | S0 | data-integrity | Service-day edits (and Scenario rename, New Route, Duplicate Route) write the App's startup Scenario snapshot over newer Trips, Blocks, and Runtime profiles | 4-001 | 3A Reproduced (Service day path; other 3 triggers still Probable) | G01 | |
-| I-002 | S0 | data-integrity | A second tab silently deletes or reverts data saved in the other tab; stale checks run outside the write transaction (UD 10) | 4-002, 4-021 | 3A Reproduced (6 overwrite cases; control passes) | G01 | |
-| I-003 | S1 | data-integrity | A backup with two or more Trip Profiles cannot be restored; export → import is not stable with one profile | 3-001 | 3A Reproduced (Node; one-profile round trip not re-observed) | G03 | |
-| I-004 | S1 | data-integrity | Scenario duplication fails when a non-first Trip Profile's Blocking Scenario has Trips; otherwise it stamps every copied Block with the first profile | 3-002 | 3A Reproduced (Node) | G02 | |
-| I-005 | S1 | data-integrity | Scenario duplication leaves pull-out, pull-in, and deadhead Nodes pointing at the source Scenario; deadhead Blocks become ineligible for Costing (UD 4: recover on load) | 3-006, A-004 | 3A Reproduced (Node and Chromium; H2 wording corrected) | G02 | |
-| I-006 | S2 | test-gap | Seven browser tests fail: a stale menu label, and two tests assert the nested scroller that D0035-05 forbids | A-001, 5-001 | Stage 2 Confirmed (6 runs) | G15 | |
-| I-007 | S2 | test-gap | The production Dexie repository has no unit-test coverage | A-002 | Stage 2 Confirmed (coverage run) | G04 | |
-| I-008 | S2 | test-gap | The migration unit test never runs and asserts version 5; the browser migration test seeds raw version 4, which is Dexie 0.4 | A-003, 3-014 | 3A Reproduced | G04 | |
-| I-009 | S2 | contract | `updateServiceDay` saves annual counts above 365, negative, fractional, or NaN, and blank or untrimmed names | A-005, 4-005 | Stage 2 Confirmed (A1 test) | G08 | |
-| I-010 | S2 | contract | v3/v4 backup import keeps placeholder Blocks with no Blocking Scenario, against D0019-13; they inflate deletion counts | 1-010 | Stage 2 Confirmed | G03 | |
-| I-011 | S2 | contract | A Last Trip generation request is not limited to 500 Trips | 2-001, 1-009 | 3A Reproduced | G07 | |
-| I-012 | S2 | correctness | Shifting Trips before 0:00 yields negative times; staging such a Shift crashes the app (no error boundary) | 2-002, 5-011 | 3A Reproduced (5-011; root empties) | G07 | |
-| I-013 | S2 | contract | `segmentStart` and blend anchored regeneration silently pick one of several valid departures (UD 3: reject and list) | 2-003, 1-005 | Stage 2 Confirmed | G07 | |
-| I-014 | S2 | correctness | A deterministic route edit stamps the new runtime revision on every Trip, hiding stale Trips and `segmentStart` mismatches | 2-004, 2-005 | Stage 2 Confirmed | G06 | |
-| I-015 | S2 | correctness | Legacy explicit-time deadheads and pull-outs are not checked against their placement; layover and Platform hours are wrong | 2-006 | Stage 2 Confirmed | G12 | |
-| I-016 | S2 | correctness | Runtime "Copy from day" always fails on IndexedDB: the transaction omits `patterns` and `serviceDays` (UD 6) | 3-009 | Stage 2 Confirmed (lead re-run) | G04 | |
-| I-017 | S2 | data-integrity | Backup import accepts dangling, cross-Scenario, duplicate, and negative Block and Trip data; two inputs raise raw TypeErrors | 3-005 | Stage 2 Confirmed | G03 | |
-| I-018 | S2 | data-integrity | Node deletion in the Node editor leaves non-revenue activities pointing at the deleted Node, and the preview does not report them | 3-007 | 3A Reproduced | G05 | |
-| I-019 | S2 | pipeline | CSV header cells are not escaped; a Pattern or Node name with a comma or quote breaks the Trips CSV round trip | 3-012 | 3A Reproduced | G13 | |
-| I-020 | S2 | contract | In-memory and Dexie repositories diverge on stale rejection, Scenario cascade, ordering, and error types | 3-013 | Stage 2 Confirmed | G04 | |
-| I-021 | S2 | contract | A single-Trip Pattern change commits without a stale check | 4-003 | Stage 2 Confirmed (lead re-run) | G06 | |
-| I-022 | S2 | data-integrity | Trips CSV import moves a Trip from the other Direction onto this Direction's Pattern | 4-004 | 3A Repaired (evidence asserted only the missing finding; lead added the move check) | G06 | |
-| I-023 | S2 | contract | Only Route saves publish the save status (UD 11: every write) | 4-006 | Stage 2 Confirmed (3 traces) | G09 | |
-| I-024 | S2 | correctness | "Apply to all similar Trips" in the deadhead dialog skips every second matching connection | 4-007 | Stage 2 Probable (loop executed on a copy) | G11 | |
-| I-025 | S2 | data-integrity | Trip generation stores Trips for a Trip Profile that no longer exists | 4-009 | 3A Reproduced (3 orphan Trips; "no error" not asserted) | G01 | |
-| I-026 | S2 | correctness | A JSON `null` in either selection-preference key blanks the app on every load | 4-010 | Stage 2 Confirmed (lead re-run) | G18 | |
-| I-027 | S2 | contract | Deletion reviews are incomplete: Trip Profile token ignores Blocking Scenarios; `deleteTrips` removes unshown activities; Route, Scenario, Runtime profile, and Project deletes have no token | 4-012, 4-011 | Stage 2 Confirmed (A1 tests) | G05 | |
-| I-028 | S2 | contract | The Trips CSV review signature omits Patterns; a stale review saves a Trip with the wrong number of times | 4-019 | Stage 2 Confirmed (A1 test) | G06 | |
-| I-029 | S2 | test-gap | Three layout tests assert hand-written fixture HTML that no longer matches the app | 5-002 | Stage 2 Confirmed (lead re-run) | G15 | |
-| I-030 | S2 | ux | Runtime editor drafts, Build Trips input, the Add-trip row, and Blocking dialog drafts are discarded silently; a staged Shift is lost on a profile change (UD 14) | 5-004 | Stage 2 Confirmed (lead re-run) | G17 | |
-| I-031 | S2 | ux | Costing shows an invalid estimate for a service-day total above 365 without listing the problem | 5-005 | Stage 2 Confirmed (lead re-run) | G08 | |
-| I-032 | S2 | ux | Saving Nodes discards an unsaved Pattern draft, and saving a Pattern discards unsaved Node edits | 5-006 | Stage 2 Probable (lead code read) | G17 | |
-| I-033 | S2 | ux | The Costing results table overflows at 1024 px and hides Annual cost (AC7) | 5-007 | Stage 2 Confirmed | G20 | |
-| I-034 | S2 | ux | Removing a Trip, Pull-out, or Pull-in from a Block is one click with no confirmation or undo | 5-008 | Stage 2 Confirmed | G19 | |
-| I-035 | S2 | ux | Delete Block and Delete Blocking Scenario show no impact counts; Delete Pattern's button reads "Confirm" | 5-009 | 3A Reproduced (code trace) | G19 | |
-| I-036 | S2 | a11y | Modal dialogs have no focus trap, lose initial focus when opened from a menu, ignore Escape (10), or lack a name (2) | 5-010 | Stage 2 Confirmed (lead re-run) | G16 | |
-| I-037 | S2 | a11y | Focus drops to the page body after Shift drawer steps and common confirms | 5-012 | Stage 2 Confirmed (lead re-run) | G16 | |
-| I-038 | S2 | a11y | `index.html` has no doctype, charset, viewport, `lang`, or title; the app renders in quirks mode | 5-013, 6-008 | 3A Reproduced | G21 | |
-| I-039 | S2 | ux | After a stale-source rejection, Blocking rejects every edit until the day changes or the page reloads | 5-014 | Stage 2 Probable | G01 | |
-| I-040 | S2 | ux | Blocks with Trips from another Route show "Missing pattern" and "—" (UD 15) | 5-015 | Stage 2 Probable | G11 | |
-| I-041 | S2 | contract | The shared Runtime-profile display names only the selected day (02R-AC18) | 5-016 | Stage 2 Confirmed (code) | G24 | |
-| I-042 | S2 | ux | Escape in numeric and runtime time inputs commits the typed value instead of cancelling | 5-024 | Stage 2 Probable; lead trace in 3A | G16 | |
-| I-043 | S2 | performance | The Blocking compatibility review takes about 22 s at 300 unassigned Trips and blocks Assign | 6-001, 4-008 | 3A Reproduced (24.2 s) | G10 | |
-| I-044 | S2 | performance | The Costing tab takes about 31 s at capacity and shows "Select a valid Blocking Scenario" while it waits | 6-002 | Stage 2 Confirmed (lead re-run) | G10 | |
-| I-045 | S2 | data-integrity | No persistent-storage request, no backup reminder, and raw text on quota failure (UD 16) | 6-003 | Stage 2 Confirmed (grep, simulated quota) | G09 | |
-| I-046 | S2 | pipeline | Deployment publishes every push to `main` without tests; no workflow runs on pull requests | 6-004 | Stage 2 Confirmed | G22 | |
-| I-047 | S3 | test-gap | The `segmentStart` calculation tests exist only in the review golden suite, not in `pnpm test` | A-007 | 3A Reproduced; closure confirmed (14 review tests pass) | G15 | |
-| I-048 | S3 | docs | The overview describes a bounded Trips scroll viewport that D0035-05 forbids | 1-001 | Stage 2 Confirmed | G23 | |
-| I-049 | S3 | docs | Roadmap constraints and deletion rules contradict Decisions 0011, 0019, 0033, 0035 | 1-002 | Stage 2 Confirmed | G23 | |
-| I-050 | S3 | docs | Overview, schema, glossary, and roadmap omit the Number of Trips limit | 1-003 | Stage 2 Confirmed | G23 | |
-| I-051 | S3 | docs | Decision status lines are missing, stale, or omit supersession | 1-004 | Stage 2 Confirmed | G23 | |
-| I-052 | S3 | docs | The overview says service-day counts are "capped at 365"; the code treats more than 365 as an error | 1-006 | Stage 2 Confirmed | G08 | |
-| I-053 | S3 | docs | `codex.md` and the overview repeat status paragraphs; `codex.md` makes false repository claims (UD 9) | 1-007 | Stage 2 Confirmed | G23 | |
-| I-054 | S3 | docs | `data-schema.md` index table, migration history, and entity shapes drift from the code | 1-008 | Stage 2 Confirmed | G23 | |
-| I-055 | S3 | docs | The minimum-layover preference has no decision record and contradicts D0020-19 | 1-011 | Stage 2 Confirmed | G23 | |
-| I-056 | S3 | docs | Decisions 0017 and 0018 were overtaken by `ui-conventions.md` without an amendment | 1-012 | Stage 2 Confirmed | G23 | |
-| I-057 | S3 | docs | Trips labels "Scenario" (UD 7: "Blocking Scenario") and "Run Time" are not glossary terms | 1-013 | Stage 2 Confirmed | G23 | |
-| I-058 | S3 | docs | The Phase 5 plan's Costing column list does not match the implemented table (UD 2) | 1-014 | Stage 2 Confirmed | G20 | |
-| I-059 | S3 | docs | `ui-conventions.md` mixes current and historical rules, including the modal Node-removal rule | 1-015, 5-022 | Stage 2 Confirmed | G23 | |
-| I-060 | S3 | contract | The validation-finding shape differs between documents, `ValidationFinding`, `CostingFinding`, and Blocking string errors | 1-016, 2-015 | Stage 2 Confirmed | G12 | |
-| I-061 | S3 | contract | At an exact gap midpoint, `segmentStart` picks the earlier band and the blend picks the later band | 2-007 | Stage 2 Confirmed | G12 | |
-| I-062 | S3 | correctness | Half-second decimal-minute runtime entries round inconsistently | 2-008 | Stage 2 Confirmed | G12 | |
-| I-063 | S3 | contract | The direction-order conflict message does not name the Direction | 2-009 | Stage 2 Confirmed | G12 | |
-| I-064 | S3 | contract | A zero-second Trip shift is accepted and marks Trips manually changed | 2-010 | Stage 2 Confirmed | G07 | |
-| I-065 | S3 | contract | Renaming a runtime band label increments the revision and marks Trips stale | 2-011 | Stage 2 Confirmed | G06 | |
-| I-066 | S3 | contract | A 0-mile Pattern is reported as complete (UD 8: treat as incomplete) | 2-012 | Stage 2 Confirmed | G12 | |
-| I-067 | S3 | correctness | Per-day hour totals accumulate in floating hours and can break the half-away-from-zero tie | 2-013 | Stage 2 Confirmed | G12 | |
-| I-068 | S3 | layering | Domain ID generation and two timestamp paths are not injectable | 2-014 | Stage 2 Confirmed (trace) | G12 | |
-| I-069 | S3 | data-integrity | The unused `RouteDefinitionService.deleteNode` deletes other Routes' Nodes and commits in two transactions (S0 if wired) | 3-008 | Stage 2 Confirmed | G14 | |
-| I-070 | S3 | pipeline | `csvEscape` does not quote a bare CR | 3-010 | Stage 2 Confirmed | G13 | |
-| I-071 | S3 | pipeline | CSV exports write text beginning with `=`, `+`, `-`, `@` unescaped (UD 5) | 3-011 | Stage 2 Confirmed | G13 | |
-| I-072 | S3 | ux | Twelve UI error paths bypass or defeat the technical-error filter; the filter misses some Dexie names | 3-015, 4-017 | Stage 2 Probable (one path executed) | G09 | |
-| I-073 | S3 | layering | UI modules import persistence CSV serializers (UD 12: move to `src/application`) | 4-013 | Stage 2 Confirmed | G13 | |
-| I-074 | S3 | layering | Business rules implemented in React components (inventory by workspace) | 4-014 | Stage 2 Confirmed (code) | G11, G20, G24 | |
-| I-075 | S3 | layering | Dead legacy generation-set UI, App route handlers, service methods, and exports (UD 13) | 4-015 | Stage 2 Confirmed | G14 | |
-| I-076 | S3 | correctness | Startup, selection reloads, and JSON/CSV export have no error handling | 4-016 | Stage 2 Probable | G09 | |
-| I-077 | S3 | correctness | A blank minutes field saves a 0-minute deadhead in a single save but is rejected in bulk | 4-018 | Stage 2 Probable | G11 | |
-| I-078 | S3 | contract | `renameScenario` accepts a blank name; legacy route mutators bypass preview and Pattern validation | 4-020 | Stage 2 Confirmed (A1 tests) | G08 | |
-| I-079 | S3 | contract | Nine `ports.ts` interfaces are unused; four no longer match their services | 4-022 | Stage 2 Confirmed | G14 | |
-| I-080 | S3 | test-gap | The costing context assembly in `main.tsx` is untested | 4-023 | Stage 2 Confirmed | G15 | |
-| I-081 | S3 | correctness | `listStaleTrips` marks a Trip stale on any error, including programming errors | 4-024 | Stage 2 Confirmed (code) | G06 | |
-| I-082 | S3 | correctness | Runtime paste replaces the calculation method, also in Append mode, without showing it | 4-025 | Stage 2 Probable; lead read in 3A (`App.tsx:1339`) | G24 | |
-| I-083 | S3 | correctness | Blocking loads have no request guard against out-of-order responses | 4-026 | Stage 2 Suspected | G11 | |
-| I-084 | S3 | test-gap | No test covers Trips table rounding, headways, shading, duplicate header, overlaps, scroll restoration, or net-zero discard | 5-003 | Stage 2 Confirmed | G15 | |
-| I-085 | S3 | test-gap | Weak browser assertions (no reload, unasserted screenshots, conditional branches) | 5-017 | Stage 2 Confirmed | G15 | |
-| I-086 | S3 | a11y | Menu semantics: `menuitemradio` for independent toggles, menus stay open on Tab, no typeahead | 5-018 | Stage 2 Confirmed | G16 | |
-| I-087 | S3 | ux | Costing Total row is not the sum of displayed rows; cross-day-type hours total; two View year selectors; pluralization | 5-019 | Stage 2 Confirmed | G20 | |
-| I-088 | S3 | ux | Blocking (`toFixed`) and Costing (half away from zero) round the same hours differently | 5-020 | Stage 2 Confirmed (lead re-run) | G11 | |
-| I-089 | S3 | ux | Labels and names: truncated Pattern pills, warning style on "No current issues", off-by-one "Move Trip N", capitalization | 5-021 | Stage 2 Confirmed | G11 | |
-| I-090 | S3 | a11y | Missing `aria-invalid`, headings, landmarks, labelled file inputs, and table header scope | 5-023 | Stage 2 Confirmed | G16 | |
-| I-091 | S3 | ux | The remembered Blocking Scenario is overwritten after a Trip Profile change | 5-025 | Stage 2 Probable | G18 | |
-| I-092 | S3 | correctness | Shift drawer Undo and Redo update history before the preview resolves | 5-026 | Stage 2 Suspected | G24 | |
-| I-093 | S3 | ux | The Trips CSV import preview shows raw Trip and Pattern UUIDs | 5-027 | Stage 2 Confirmed (code) | G24 | |
-| I-094 | S3 | ux | Runtime band totals of 60 minutes or more display as ":61" or ":65" | 5-028 | Stage 2 Suspected | G24 | |
-| I-095 | S3 | ux | Message quality: missing next steps, technical terms, wrong text | 5-029 | Stage 2 Confirmed (inventory) | G09 | |
-| I-096 | S3 | performance | "Regenerate selected" on 500 rows takes 2.5 s; capacity restore takes 1.9 s | 6-005 | Stage 2 Confirmed (timings) | G10 | |
-| I-097 | S3 | build | `pnpm typecheck` omits `tests/ui` and `playwright.config.ts`; `@types/node` is absent | 6-006, A-008 | Stage 2 Confirmed (lead re-run) | G22 | |
-| I-098 | S3 | build | Node and pnpm are not pinned; CI uses end-of-life Node 20 (UD 17) | 6-007 | Stage 2 Confirmed | G22 | |
-| I-099 | S3 | build | `zod` and `@tanstack/react-table` are declared and never imported (UD 18; L-08; plan 8.4 item 6) | 6-009 | Stage 2 Confirmed (lead grep) | G22 | |
-| I-100 | S3 | build | `pnpm audit`: 11 dev-toolchain advisories; five dependencies a major version behind | 6-010 | Stage 2 Confirmed (lead re-run) | G22 | |
-| I-101 | S3 | build | One 765 kB JavaScript chunk; every build warns | 6-011 | Stage 2 Confirmed | G22 | |
+| I-001 | S0 | data-integrity | Service-day edits (and Scenario rename, New Route, Duplicate Route) write the App's startup Scenario snapshot over newer Trips, Blocks, and Runtime profiles | 4-001 | 3A Reproduced (Service day path; other 3 triggers still Probable) | G01 | P01 |
+| I-002 | S0 | data-integrity | A second tab silently deletes or reverts data saved in the other tab; stale checks run outside the write transaction (UD 10) | 4-002, 4-021 | 3A Reproduced (6 overwrite cases; control passes) | G01 | P02 |
+| I-003 | S1 | data-integrity | A backup with two or more Trip Profiles cannot be restored; export → import is not stable with one profile | 3-001 | 3A Reproduced (Node; one-profile round trip not re-observed) | G03 | P04 |
+| I-004 | S1 | data-integrity | Scenario duplication fails when a non-first Trip Profile's Blocking Scenario has Trips; otherwise it stamps every copied Block with the first profile | 3-002 | 3A Reproduced (Node) | G02 | P03 |
+| I-005 | S1 | data-integrity | Scenario duplication leaves pull-out, pull-in, and deadhead Nodes pointing at the source Scenario; deadhead Blocks become ineligible for Costing (UD 4: recover on load) | 3-006, A-004 | 3A Reproduced (Node and Chromium; H2 wording corrected) | G02 | P03 |
+| I-006 | S2 | test-gap | Seven browser tests fail: a stale menu label, and two tests assert the nested scroller that D0035-05 forbids | A-001, 5-001 | Stage 2 Confirmed (6 runs) | G15 | P05 |
+| I-007 | S2 | test-gap | The production Dexie repository has no unit-test coverage | A-002 | Stage 2 Confirmed (coverage run) | G04 | P06 |
+| I-008 | S2 | test-gap | The migration unit test never runs and asserts version 5; the browser migration test seeds raw version 4, which is Dexie 0.4 | A-003, 3-014 | 3A Reproduced | G04 | P06 |
+| I-009 | S2 | contract | `updateServiceDay` saves annual counts above 365, negative, fractional, or NaN, and blank or untrimmed names | A-005, 4-005 | Stage 2 Confirmed (A1 test) | G08 | P09 |
+| I-010 | S2 | contract | v3/v4 backup import keeps placeholder Blocks with no Blocking Scenario, against D0019-13; they inflate deletion counts | 1-010 | Stage 2 Confirmed | G03 | P04 |
+| I-011 | S2 | contract | A Last Trip generation request is not limited to 500 Trips | 2-001, 1-009 | 3A Reproduced | G07 | P08 |
+| I-012 | S2 | correctness | Shifting Trips before 0:00 yields negative times; staging such a Shift crashes the app (no error boundary) | 2-002, 5-011 | 3A Reproduced (5-011; root empties) | G07 | P08 |
+| I-013 | S2 | contract | `segmentStart` and blend anchored regeneration silently pick one of several valid departures (UD 3: reject and list) | 2-003, 1-005 | Stage 2 Confirmed | G07 | P08 |
+| I-014 | S2 | correctness | A deterministic route edit stamps the new runtime revision on every Trip, hiding stale Trips and `segmentStart` mismatches | 2-004, 2-005 | Stage 2 Confirmed | G06 | P07 |
+| I-015 | S2 | correctness | Legacy explicit-time deadheads and pull-outs are not checked against their placement; layover and Platform hours are wrong | 2-006 | Stage 2 Confirmed | G12 | P12 |
+| I-016 | S2 | correctness | Runtime "Copy from day" always fails on IndexedDB: the transaction omits `patterns` and `serviceDays` (UD 6) | 3-009 | Stage 2 Confirmed (lead re-run) | G04 | P01 |
+| I-017 | S2 | data-integrity | Backup import accepts dangling, cross-Scenario, duplicate, and negative Block and Trip data; two inputs raise raw TypeErrors | 3-005 | Stage 2 Confirmed | G03 | P04 |
+| I-018 | S2 | data-integrity | Node deletion in the Node editor leaves non-revenue activities pointing at the deleted Node, and the preview does not report them | 3-007 | 3A Reproduced | G05 | P09 |
+| I-019 | S2 | pipeline | CSV header cells are not escaped; a Pattern or Node name with a comma or quote breaks the Trips CSV round trip | 3-012 | 3A Reproduced | G13 | P13 |
+| I-020 | S2 | contract | In-memory and Dexie repositories diverge on stale rejection, Scenario cascade, ordering, and error types | 3-013 | Stage 2 Confirmed | G04 | P06 |
+| I-021 | S2 | contract | A single-Trip Pattern change commits without a stale check | 4-003 | Stage 2 Confirmed (lead re-run) | G06 | P07 |
+| I-022 | S2 | data-integrity | Trips CSV import moves a Trip from the other Direction onto this Direction's Pattern | 4-004 | 3A Repaired (evidence asserted only the missing finding; lead added the move check) | G06 | P07 |
+| I-023 | S2 | contract | Only Route saves publish the save status (UD 11: every write) | 4-006 | Stage 2 Confirmed (3 traces) | G09 | P10 |
+| I-024 | S2 | correctness | "Apply to all similar Trips" in the deadhead dialog skips every second matching connection | 4-007 | Stage 2 Probable (loop executed on a copy) | G11 | P14 |
+| I-025 | S2 | data-integrity | Trip generation stores Trips for a Trip Profile that no longer exists | 4-009 | 3A Reproduced (3 orphan Trips; "no error" not asserted) | G01 | P01 |
+| I-026 | S2 | correctness | A JSON `null` in either selection-preference key blanks the app on every load | 4-010 | Stage 2 Confirmed (lead re-run) | G18 | U03 |
+| I-027 | S2 | contract | Deletion reviews are incomplete: Trip Profile token ignores Blocking Scenarios; `deleteTrips` removes unshown activities; Route, Scenario, Runtime profile, and Project deletes have no token | 4-012, 4-011 | Stage 2 Confirmed (A1 tests) | G05 | P09 |
+| I-028 | S2 | contract | The Trips CSV review signature omits Patterns; a stale review saves a Trip with the wrong number of times | 4-019 | Stage 2 Confirmed (A1 test) | G06 | P07 |
+| I-029 | S2 | test-gap | Three layout tests assert hand-written fixture HTML that no longer matches the app | 5-002 | Stage 2 Confirmed (lead re-run) | G15 | P05 |
+| I-030 | S2 | ux | Runtime editor drafts, Build Trips input, the Add-trip row, and Blocking dialog drafts are discarded silently; a staged Shift is lost on a profile change (UD 14) | 5-004 | Stage 2 Confirmed (lead re-run) | G17 | U03 |
+| I-031 | S2 | ux | Costing shows an invalid estimate for a service-day total above 365 without listing the problem | 5-005 | Stage 2 Confirmed (lead re-run) | G08 | U06 |
+| I-032 | S2 | ux | Saving Nodes discards an unsaved Pattern draft, and saving a Pattern discards unsaved Node edits | 5-006 | Stage 2 Probable (lead code read) | G17 | U03 |
+| I-033 | S2 | ux | The Costing results table overflows at 1024 px and hides Annual cost (AC7) | 5-007 | Stage 2 Confirmed | G20 | U06 |
+| I-034 | S2 | ux | Removing a Trip, Pull-out, or Pull-in from a Block is one click with no confirmation or undo | 5-008 | Stage 2 Confirmed | G19 | U05 |
+| I-035 | S2 | ux | Delete Block and Delete Blocking Scenario show no impact counts; Delete Pattern's button reads "Confirm" | 5-009 | 3A Reproduced (code trace) | G19 | U05 |
+| I-036 | S2 | a11y | Modal dialogs have no focus trap, lose initial focus when opened from a menu, ignore Escape (10), or lack a name (2) | 5-010 | Stage 2 Confirmed (lead re-run) | G16 | U04 |
+| I-037 | S2 | a11y | Focus drops to the page body after Shift drawer steps and common confirms | 5-012 | Stage 2 Confirmed (lead re-run) | G16 | U04 |
+| I-038 | S2 | a11y | `index.html` has no doctype, charset, viewport, `lang`, or title; the app renders in quirks mode | 5-013, 6-008 | 3A Reproduced | G21 | U01 |
+| I-039 | S2 | ux | After a stale-source rejection, Blocking rejects every edit until the day changes or the page reloads | 5-014 | Stage 2 Probable | G01 | U02 |
+| I-040 | S2 | ux | Blocks with Trips from another Route show "Missing pattern" and "—" (UD 15) | 5-015 | Stage 2 Probable | G11 | U05 |
+| I-041 | S2 | contract | The shared Runtime-profile display names only the selected day (02R-AC18) | 5-016 | Stage 2 Confirmed (code) | G24 | U07 |
+| I-042 | S2 | ux | Escape in numeric and runtime time inputs commits the typed value instead of cancelling | 5-024 | Stage 2 Probable; lead trace in 3A | G16 | U03 |
+| I-043 | S2 | performance | The Blocking compatibility review takes about 22 s at 300 unassigned Trips and blocks Assign | 6-001, 4-008 | 3A Reproduced (24.2 s) | G10 | P11 |
+| I-044 | S2 | performance | The Costing tab takes about 31 s at capacity and shows "Select a valid Blocking Scenario" while it waits | 6-002 | Stage 2 Confirmed (lead re-run) | G10 | P11 |
+| I-045 | S2 | data-integrity | No persistent-storage request, no backup reminder, and raw text on quota failure (UD 16) | 6-003 | Stage 2 Confirmed (grep, simulated quota) | G09 | P10 |
+| I-046 | S2 | pipeline | Deployment publishes every push to `main` without tests; no workflow runs on pull requests | 6-004 | Stage 2 Confirmed | G22 | B01 |
+| I-047 | S3 | test-gap | The `segmentStart` calculation tests exist only in the review golden suite, not in `pnpm test` | A-007 | 3A Reproduced; closure confirmed (14 review tests pass) | G15 | P06 |
+| I-048 | S3 | docs | The overview describes a bounded Trips scroll viewport that D0035-05 forbids | 1-001 | Stage 2 Confirmed | G23 | D01 |
+| I-049 | S3 | docs | Roadmap constraints and deletion rules contradict Decisions 0011, 0019, 0033, 0035 | 1-002 | Stage 2 Confirmed | G23 | D01 |
+| I-050 | S3 | docs | Overview, schema, glossary, and roadmap omit the Number of Trips limit | 1-003 | Stage 2 Confirmed | G23 | D01 |
+| I-051 | S3 | docs | Decision status lines are missing, stale, or omit supersession | 1-004 | Stage 2 Confirmed | G23 | D01 |
+| I-052 | S3 | docs | The overview says service-day counts are "capped at 365"; the code treats more than 365 as an error | 1-006 | Stage 2 Confirmed | G08 | P09 |
+| I-053 | S3 | docs | `codex.md` and the overview repeat status paragraphs; `codex.md` makes false repository claims (UD 9) | 1-007 | Stage 2 Confirmed | G23 | D01 |
+| I-054 | S3 | docs | `data-schema.md` index table, migration history, and entity shapes drift from the code | 1-008 | Stage 2 Confirmed | G23 | D01 |
+| I-055 | S3 | docs | The minimum-layover preference has no decision record and contradicts D0020-19 | 1-011 | Stage 2 Confirmed | G23 | D01 |
+| I-056 | S3 | docs | Decisions 0017 and 0018 were overtaken by `ui-conventions.md` without an amendment | 1-012 | Stage 2 Confirmed | G23 | D01 |
+| I-057 | S3 | docs | Trips labels "Scenario" (UD 7: "Blocking Scenario") and "Run Time" are not glossary terms | 1-013 | Stage 2 Confirmed | G23 | U07 |
+| I-058 | S3 | docs | The Phase 5 plan's Costing column list does not match the implemented table (UD 2) | 1-014 | Stage 2 Confirmed | G20 | U06 |
+| I-059 | S3 | docs | `ui-conventions.md` mixes current and historical rules, including the modal Node-removal rule | 1-015, 5-022 | Stage 2 Confirmed | G23 | D01 |
+| I-060 | S3 | contract | The validation-finding shape differs between documents, `ValidationFinding`, `CostingFinding`, and Blocking string errors | 1-016, 2-015 | Stage 2 Confirmed | G12 | P12 |
+| I-061 | S3 | contract | At an exact gap midpoint, `segmentStart` picks the earlier band and the blend picks the later band | 2-007 | Stage 2 Confirmed | G12 | P16 |
+| I-062 | S3 | correctness | Half-second decimal-minute runtime entries round inconsistently | 2-008 | Stage 2 Confirmed | G12 | P16 |
+| I-063 | S3 | contract | The direction-order conflict message does not name the Direction | 2-009 | Stage 2 Confirmed | G12 | P16 |
+| I-064 | S3 | contract | A zero-second Trip shift is accepted and marks Trips manually changed | 2-010 | Stage 2 Confirmed | G07 | P08 |
+| I-065 | S3 | contract | Renaming a runtime band label increments the revision and marks Trips stale | 2-011 | Stage 2 Confirmed | G06 | P07 |
+| I-066 | S3 | contract | A 0-mile Pattern is reported as complete (UD 8: treat as incomplete) | 2-012 | Stage 2 Confirmed | G12 | P12 |
+| I-067 | S3 | correctness | Per-day hour totals accumulate in floating hours and can break the half-away-from-zero tie | 2-013 | Stage 2 Confirmed | G12 | P16 |
+| I-068 | S3 | layering | Domain ID generation and two timestamp paths are not injectable | 2-014 | Stage 2 Confirmed (trace) | G12 | P16 |
+| I-069 | S3 | data-integrity | The unused `RouteDefinitionService.deleteNode` deletes other Routes' Nodes and commits in two transactions (S0 if wired) | 3-008 | Stage 2 Confirmed | G14 | X01 |
+| I-070 | S3 | pipeline | `csvEscape` does not quote a bare CR | 3-010 | Stage 2 Confirmed | G13 | P13 |
+| I-071 | S3 | pipeline | CSV exports write text beginning with `=`, `+`, `-`, `@` unescaped (UD 5) | 3-011 | Stage 2 Confirmed | G13 | P13 |
+| I-072 | S3 | ux | Twelve UI error paths bypass or defeat the technical-error filter; the filter misses some Dexie names | 3-015, 4-017 | Stage 2 Probable (one path executed) | G09 | U02 |
+| I-073 | S3 | layering | UI modules import persistence CSV serializers (UD 12: move to `src/application`) | 4-013 | Stage 2 Confirmed | G13 | P13 |
+| I-074a | S3 | layering | Business rules implemented in React: Blocking items (reorder grouping, activity insertion, ownership filter, Layover %) | 4-014 | Stage 2 Confirmed (code) | G11 | P14 |
+| I-074b | S3 | layering | Business rules implemented in React: Costing items (`validateCostingAssumptions`, day total, 365 check, year list) | 4-014 | Stage 2 Confirmed (code) | G20 | P11 |
+| I-074c | S3 | layering | Business rules implemented in React: Trips and Runtime items (band assembly, shift rules, duplicate departures, usable Pattern, ordering, Build Trips validation, render-time runtime calls) | 4-014 | Stage 2 Confirmed (code) | G24 | P15 |
+| I-075 | S3 | layering | Dead legacy generation-set UI, App route handlers, service methods, and exports (UD 13) | 4-015 | Stage 2 Confirmed | G14 | X01 |
+| I-076 | S3 | correctness | Startup, selection reloads, and JSON/CSV export have no error handling | 4-016 | Stage 2 Probable | G09 | U02 |
+| I-077 | S3 | correctness | A blank minutes field saves a 0-minute deadhead in a single save but is rejected in bulk | 4-018 | Stage 2 Probable | G11 | P14 |
+| I-078 | S3 | contract | `renameScenario` accepts a blank name; legacy route mutators bypass preview and Pattern validation | 4-020 | Stage 2 Confirmed (A1 tests) | G08 | P09 |
+| I-079 | S3 | contract | Nine `ports.ts` interfaces are unused; four no longer match their services | 4-022 | Stage 2 Confirmed | G14 | X01 |
+| I-080 | S3 | test-gap | The costing context assembly in `main.tsx` is untested | 4-023 | Stage 2 Confirmed | G15 | P11 |
+| I-081 | S3 | correctness | `listStaleTrips` marks a Trip stale on any error, including programming errors | 4-024 | Stage 2 Confirmed (code) | G06 | P07 |
+| I-082 | S3 | correctness | Runtime paste replaces the calculation method, also in Append mode, without showing it | 4-025 | Stage 2 Probable; lead read in 3A (`App.tsx:1339`) | G24 | U07 |
+| I-083 | S3 | correctness | Blocking loads have no request guard against out-of-order responses | 4-026 | Stage 2 Suspected | G11 | U05 |
+| I-084 | S3 | test-gap | No test covers Trips table rounding, headways, shading, duplicate header, overlaps, scroll restoration, or net-zero discard | 5-003 | Stage 2 Confirmed | G15 | P05 |
+| I-085 | S3 | test-gap | Weak browser assertions (no reload, unasserted screenshots, conditional branches) | 5-017 | Stage 2 Confirmed | G15 | P05 |
+| I-086 | S3 | a11y | Menu semantics: `menuitemradio` for independent toggles, menus stay open on Tab, no typeahead | 5-018 | Stage 2 Confirmed | G16 | U04 |
+| I-087 | S3 | ux | Costing Total row is not the sum of displayed rows; cross-day-type hours total; two View year selectors; pluralization | 5-019 | Stage 2 Confirmed | G20 | U06 |
+| I-088 | S3 | ux | Blocking (`toFixed`) and Costing (half away from zero) round the same hours differently | 5-020 | Stage 2 Confirmed (lead re-run) | G11 | U05 |
+| I-089 | S3 | ux | Labels and names: truncated Pattern pills, warning style on "No current issues", off-by-one "Move Trip N", capitalization | 5-021 | Stage 2 Confirmed | G11 | U05 |
+| I-090 | S3 | a11y | Missing `aria-invalid`, headings, landmarks, labelled file inputs, and table header scope | 5-023 | Stage 2 Confirmed | G16 | U04 |
+| I-091 | S3 | ux | The remembered Blocking Scenario is overwritten after a Trip Profile change | 5-025 | Stage 2 Probable | G18 | U03 |
+| I-092 | S3 | correctness | Shift drawer Undo and Redo update history before the preview resolves | 5-026 | Stage 2 Suspected | G24 | U07 |
+| I-093 | S3 | ux | The Trips CSV import preview shows raw Trip and Pattern UUIDs | 5-027 | Stage 2 Confirmed (code) | G24 | U07 |
+| I-094 | S3 | ux | Runtime band totals of 60 minutes or more display as ":61" or ":65" | 5-028 | Stage 2 Suspected | G24 | U07 |
+| I-095 | S3 | ux | Message quality: missing next steps, technical terms, wrong text | 5-029 | Stage 2 Confirmed (inventory) | G09 | U02 |
+| I-096 | S3 | performance | "Regenerate selected" on 500 rows takes 2.5 s; capacity restore takes 1.9 s | 6-005 | Stage 2 Confirmed (timings) | G10 | U08 |
+| I-097 | S3 | build | `pnpm typecheck` omits `tests/ui` and `playwright.config.ts`; `@types/node` is absent | 6-006, A-008 | Stage 2 Confirmed (lead re-run) | G22 | B01 |
+| I-098 | S3 | build | Node and pnpm are not pinned; CI uses end-of-life Node 20 (UD 17) | 6-007 | Stage 2 Confirmed | G22 | B01 |
+| I-099 | S3 | build | `zod` and `@tanstack/react-table` are declared and never imported (UD 18; L-08; plan 8.4 item 6) | 6-009 | Stage 2 Confirmed (lead grep) | G22 | B01 |
+| I-100 | S3 | build | `pnpm audit`: 11 dev-toolchain advisories; five dependencies a major version behind | 6-010 | Stage 2 Confirmed (lead re-run) | G22 | B01 |
+| I-101 | S3 | build | One 765 kB JavaScript chunk; every build warns | 6-011 | Stage 2 Confirmed | G22 | B01 |
 | I-102 | Closed | contract | Costing applied rate in whole dollars; the documentation was corrected (A-006 resolution) | A-006 | Closed in Phase A | — | none |
+
+## Stage 3B register corrections
+
+- I-074 (4-014) spanned three workspaces. It is split into I-074a (Blocking, package P14), I-074b (Costing, P11), and I-074c (Trips and Runtime, P15), so that each row names one package, following the step 5 rule to group logic-in-UI findings by workspace. Severity S3 is unchanged; the S3 count rises from 55 to 57 rows.
+- No severity, merge, or verification result changed during packaging.
 
 ## Root-cause groups (step 5)
 
@@ -237,7 +245,7 @@ Each group is a set of issues that one fix, or one tightly coupled change in the
 | G08 | Service-day and name edits are not validated in the application layer | I-009, I-031, I-052, I-078 | S2 | Structural (I-009, I-078), then UI (I-031) | `routeDefinitionService.ts`, `CostingWorkspace.tsx`, `App.tsx:508`, `architecture_overview.md` |
 | G09 | Save status, error mapping, and local-data protection | I-023, I-045, I-072, I-076, I-095 | S2 | Structural (status publisher, storage), then UI (messages) | `routeDefinitionService.ts`, `tripGenerationService.ts`, `blockingService.ts`, `costingService.ts`, `App.tsx`, `BlockingWorkspace.tsx`, Decision 0001 or a new record |
 | G10 | Repository reads repeated once per Trip or Block in Blocking and Costing | I-043, I-044, I-096 | S2 | Structural (I-043, I-044), UI Sol-class (I-096, I-044 loading state) | `blockingService.ts`, `ports.ts`, `main.tsx`, `BlockingWorkspace.tsx:199`, `CostingWorkspace.tsx` |
-| G11 | Blocking workspace logic in React and its presentation | I-024, I-040, I-074 (Blocking items), I-077, I-083, I-088, I-089 | S2 | Structural (move bulk apply and rules into `blockingService`), then UI | `BlockingWorkspace.tsx`, `blockingService.ts` |
+| G11 | Blocking workspace logic in React and its presentation | I-024, I-040, I-074a, I-077, I-083, I-088, I-089 | S2 | Structural (move bulk apply and rules into `blockingService`), then UI | `BlockingWorkspace.tsx`, `blockingService.ts` |
 | G12 | Domain calculation and finding-shape rules | I-015, I-060, I-061, I-062, I-063, I-066, I-067, I-068 | S2 | Structural | `blocking.ts`, `runtime.ts`, `durations.ts`, `safeRouteEditing.ts`, `costing.ts`, `ids.ts`, `validation.ts` |
 | G13 | CSV serializers: escaping, injection, and their layer | I-019, I-070, I-071, I-073 | S2 | Structural | `csv.ts`, `runtimePaste.ts`, `tripTableCsv.ts`, `csvDownload.ts` (moved to `src/application`) |
 | G14 | Dead code and unused ports | I-069, I-075, I-079 | S3 | Structural | `App.tsx` (deletions only), `routeDefinitionService.ts`, `tripGenerationService.ts`, `ports.ts` |
@@ -246,11 +254,11 @@ Each group is a set of issues that one fix, or one tightly coupled change in the
 | G17 | Unsaved drafts are discarded without the discard dialog | I-030, I-032 | S2 | UI | `App.tsx`, `BlockingWorkspace.tsx` |
 | G18 | Selection preferences are not shape-checked and are overwritten | I-026, I-091 | S2 | UI | `App.tsx`, `BlockingWorkspace.tsx` |
 | G19 | Destructive Blocking actions lack confirmation and impact counts | I-034, I-035 | S2 | UI plus a structural preview port | `BlockingWorkspace.tsx`, `blockingService.ts`, `App.tsx:283` |
-| G20 | Costing presentation | I-033, I-058, I-074 (Costing items), I-087 | S2 | UI | `CostingWorkspace.tsx`, `styles.css`, `phase-05-costing.md` |
+| G20 | Costing presentation | I-033, I-058, I-074b, I-087 | S2 | UI | `CostingWorkspace.tsx`, `styles.css`, `phase-05-costing.md` |
 | G21 | `index.html` lacks a standards-mode document head | I-038 | S2 | UI/build; re-run layout tests afterwards | `index.html` |
 | G22 | Build, CI, and dependency hygiene | I-046, I-097, I-098, I-099, I-100, I-101 | S2 | Build | `.github/workflows/`, `package.json`, lockfile, `tsconfig.json`, `.nvmrc`, `architecture_overview.md` (OV-TECH-01/02) |
 | G23 | Documentation drift with no code change | I-048, I-049, I-050, I-051, I-053, I-054, I-055, I-056, I-057, I-059 | S3 | Docs (I-057 also has a one-label UI change) | `architecture_overview.md`, `codex.md`, `AGENTS.md`, `docs/data-schema.md`, `docs/domain-glossary.md`, `docs/ui-conventions.md`, roadmap, decision records |
-| G24 | Trips and Runtime workspace presentation and UI logic | I-041, I-074 (Trips and Runtime items), I-082, I-092, I-093, I-094 | S2 | UI, plus a small query for I-041 | `App.tsx`, `routeDefinitionService.ts:765` |
+| G24 | Trips and Runtime workspace presentation and UI logic | I-041, I-074c, I-082, I-092, I-093, I-094 | S2 | UI, plus a small query for I-041 | `App.tsx`, `routeDefinitionService.ts:765` |
 
 Cross-group dependencies for Stage 3B:
 
