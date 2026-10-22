@@ -2,15 +2,17 @@
 
 ## Next sitting
 
-**Sitting 4C: P05 (Browser test-suite repair) and X01 (Dead code removal).** Main session: Sonnet. Sub-agent: Haiku for the X01 deletions only, with an exact file and line list and a mechanical check (typecheck, a grep that returns nothing). No Opus reviewer: P05 is test-only (S2) and X01 is S3. After 4C the full browser suite must be green; every later sitting relies on it.
+**Sitting 4D: P06 (IndexedDB test environment and repository parity), P07 (Trip stale checks and runtime revisions), P08 (Trip generation and shift bounds).** Main session: Sonnet. No sub-agents: none of these packages is S0 or S1 (sitting plan).
 
-- Prerequisite: the sitting 4B pull request (branch `claude/stage-4b-review-fixes`) must be merged into `main`. If it is not, stop and ask the user. Start 4C from current `origin/main`.
-- Known browser-suite state after 4B: 51 tests, 44 passed, 7 failed (`trip-table-layout.spec.ts:40`; `unified-action-layer.spec.ts:83, 112, 140, 169, 186, 226`). These are P05's I-006 set. The `:140` test fails on `toHaveText` when run alone and sometimes on a click timeout under parallel load.
-- `blocking-workspace.spec.ts` is flaky at its "Add node" step under load (seen at `:116`, `:180`, and `:251` across sittings 4A and 4B). It is the L-16 race that P05's `createShiftReadySchedule` fix targets. It is not caused by any 4A or 4B change.
-- Specs added in 4A and 4B that P05 must leave passing: `scenario-write-safety`, `single-tab`, `scenario-copy-recovery`, `backup-import`. Shared helpers are in `tests/ui/support/` (`dexieEnv.ts`, `goldenFixture.ts`). `costing-workspace.spec.ts` waits for the app before seeding (4A hand-off), and `database-migration.spec.ts` now expects IndexedDB version 70 for Dexie version 7 (4B hand-off; P06 owns its seed-version change).
-- X01 deletes `RouteDefinitionService.deleteNode` (the latent S0 path 3-008, handed off from P01) and the dead generation-set UI, handlers, and exports. It must keep the `generationSets` table and backup parsing (decision 13), including the version 3 import path in `backup.ts`.
-- Decided by the user after 4B: enforce Block label uniqueness when a Block is created or renamed (Decision 0039). It is not part of 4C. Carry it into Package P14 (sitting 4F) as an added acceptance criterion: `createBlock` and `updateBlock` reject a label already used in the same Blocking Scenario and service day (trimmed), and the proposed default label is the first free "Block <n>". The browser-test and import expectations stay as they are. Still open and not blocking 4C: clean-up of placeholder Blocks already stored in databases that imported version 3 and 4 files, and presenting the import report and recovery findings (U02).
-- Review documents: read them from the review branch with `git show origin/claude/upbeat-ritchie-51mpy5:docs/review/<file>`.
+- Prerequisite: the sitting 4C pull request (branch `claude/stage-4c-review-fixes`) must be merged into `main`. If it is not, stop and ask the user. Start 4D from current `origin/main`.
+- State after 4C: the full browser suite is green and stays green. 59 tests, 59 passed, in repeated runs; no `test.fail`, `test.skip`, or `test.fixme`. Every later package must keep 0 failures (`PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`). Unit tests: 32 files, 308 tests. Bundle after X01: `index-TR3LK2Mp.js` 770.23 kB (213.02 kB gzip).
+- Browser-test helpers (all in `tests/ui/support/`): `dexieEnv.ts` (`runInPage`, `seedSnapshot`: real IndexedDB from a spec), `goldenFixture.ts` (the Federal BRT project), and from 4C `tripsWorkspace.ts` (`createRouteWithPattern`, `createShiftReadySchedule`, `openGoldenTrips`, `settleFrames`). New browser specs should use them. `createRouteWithPattern` creates the Default Runtime profile itself, before the Trips tab first mounts, to avoid the race in hand-off 1 below; do not remove that step until the race is fixed.
+- P06 specifics: `tests/ui/database-migration.spec.ts` now seeds IndexedDB version 70 for Dexie version 7 (4B hand-off). P06 criterion 3 changes its seed to version 40 for Dexie version 4 (Dexie multiplies by 10). `src/persistence/repository.test.ts` asserts a stale database version (A-003).
+- P07 touches `tripGenerationService.ts`: X01 deleted `previewTripGeneration`, `applyTripGeneration`, `applyTripShift`, `validateTrip`, and `ensureDefaultTripProfile` from it, and their tests. The domain functions `previewRegeneration` and `applyRegeneration` in `src/domain/trips.ts` are now referenced only by their unit tests; P07 may keep or remove them.
+- **Decision for the user (found in 4C, not in the register).** Two app behaviors surfaced while making the browser suite reliable; see "Residual risks, hand-offs, and findings" in the P05 entry. (1) `ensureDefaultRuntimeProfile` is a non-atomic check-then-write that runs twice at once on the first visit to Trips (React `StrictMode` in development; also after a Runtime save): it can store duplicate Runtime assignments (8 instead of 4), show "Duplicate runtime assignment", and reset the Runtime editor draft. Suggested owner: P09 (owns `routeDefinitionService.ts`), with the single-flight load in `App.tsx` going to U07. (2) After a Runtime profile is saved, the Trips table keeps the profiles it loaded earlier, so Show runtime bands shades nothing until a reload. Suggested owner: U07 (or P15). Neither blocks P06 to P08.
+- Still carried forward from 4B, unchanged: enforce Block label uniqueness when a Block is created or renamed (Decision 0039), as an added acceptance criterion of Package P14 (sitting 4F), with a proposed default label of the first free "Block <n>"; clean-up of placeholder Blocks already stored in databases that imported version 3 and 4 files (no owner yet); presenting the import report and recovery findings (U02).
+- Tests deferred to later packages (all recorded in the P05 entry): focus trap, Escape, and focus return (U04's `keyboard.spec.ts`); a unit test for `calculateTimepointHeadways` (P15); Annual cost visible without table scroll at 1024 px (U06).
+- Review documents: read them from the review branch with `git show origin/claude/upbeat-ritchie-51mpy5:docs/review/<file>`. Never copy `docs/review/` into the work branch.
 
 ## About this log
 
@@ -263,7 +265,7 @@ Confirmed all four acceptance criteria, found every case-table row and both `Typ
 
 - Date: 2026-10-22. Sitting 4C. Model: Sonnet (main session). No sub-agents: P05 is test-only (S2), so no Opus review (sitting plan).
 - Type: test-only. Severity: S2.
-- Commit: `@@P05_COMMIT@@`.
+- Commit: `b588bcb`.
 
 ### Issues fixed
 
@@ -352,7 +354,7 @@ The following app behaviors were found while making the suite stable. None is in
 
 - Date: 2026-10-22. Sitting 4C. Model: Sonnet (main session). Sub-agent: Haiku, for the mechanical deletions only (an exact file and line list with line fingerprints, plus typecheck, unit-test, unused-import, and grep checks). The main session rebuilt each file from `HEAD` with only the listed ranges removed and diffed it against Haiku's result before committing. No Opus review (S3).
 - Type: structural (mechanical deletion). Severity: S3.
-- Commit: `@@X01_COMMIT@@`.
+- Commit: `8a2d0d7`.
 
 ### Issues fixed
 
