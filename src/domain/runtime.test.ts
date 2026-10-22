@@ -115,6 +115,15 @@ describe('runtime profiles', () => {
     expect(withRuntimeCalculationRevision(base, { ...base, name: 'Renamed' }).calculationRevision).toBe(4);
     expect(withRuntimeCalculationRevision(base, { ...base, bands: [{ ...base.bands[0], segmentRuntimeSeconds: [481, 420] }, base.bands[1]] }).calculationRevision).toBe(5);
   });
+
+  // I-065 (2-011): a band label is shown to the planner and is not an input to any calculated time.
+  it('does not increment the calculation revision when only a band label changes', () => {
+    const base = { ...profile, calculationRevision: 4 };
+    const relabeled = { ...base, bands: [{ ...base.bands[0], label: 'Evening' }, base.bands[1]] };
+    expect(withRuntimeCalculationRevision(base, relabeled).calculationRevision).toBe(4);
+    expect(withRuntimeCalculationRevision(base, { ...relabeled, bands: [{ ...relabeled.bands[0], endTime: relabeled.bands[0].endTime + 60 }, relabeled.bands[1]] }).calculationRevision).toBe(5);
+    expect(withRuntimeCalculationRevision(base, { ...relabeled, calculationMethod: 'blendSegments' }).calculationRevision).toBe(5);
+  });
 });
 
 // Ported from the review's p2-time-runtime golden test (A-007, I-047): `segmentStart` is the default method for every new

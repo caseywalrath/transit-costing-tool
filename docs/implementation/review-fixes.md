@@ -493,3 +493,78 @@ No user decision applied.
 - One divergence stays by design: a duplicate Trip id. Dexie reports its raw bulk-write failure; the in-memory repository says the Trip exists. Both reject and store nothing. Readable Dexie messages are finding 3-015 (a UI package).
 - Row order is a contract only for the reads that Dexie sorts by key. A future read through an index with several distinct values, or a sorted compound index, would return index order, not key order, and needs its own contract test.
 - What could still be wrong: `fake-indexeddb` is not Chromium's IndexedDB. Transaction timing, auto-commit across awaits, and quota behave differently; the browser specs remain the check for those. The contract suite uses 173 Trips (the full project makes an overwrite take 9 s on this store), so it does not test scale.
+
+## P07: Trip stale checks and runtime revisions
+
+- Date: 2026-10-22. Sitting 4D. Model: Sonnet (main session). No sub-agents: P07 is S2, so no Opus review (sitting plan).
+- Type: structural. Severity: S2.
+- Commit: PLACEHOLDER-P07.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-014 | 2-004, 2-005 | S2 | A deterministic route edit stamped the new runtime revision on every Trip. A segment-start Trip whose time crossed two bands (merged by a point removal) was marked current although the profile no longer calculates it, and a Trip that was already stale was made current. |
+| I-021 | 4-003 | S2 | A single-Trip Pattern change committed its review without checking that the Trip or the target profile was unchanged. A Shift made after the review was discarded; a profile change after the review stamped the Trip with a revision whose profile gives other times. |
+| I-022 | 4-004 | S2 | Trips CSV import looked up existing Trips by Route only, so a Trip ID from the other Direction was moved onto the displayed Direction's Pattern. Its Block activity still referenced it. |
+| I-028 | 4-019 | S2 | The Trips CSV review signature omitted Patterns, so an import reviewed before a Pattern gained a point saved a Trip with 2 times against a 3-point Pattern. |
+| I-065 | 2-011 | S3 | Renaming a runtime band label raised the calculation revision and marked every Trip stale. |
+| I-081 | 4-024 | S3 | `listStaleTrips` marked a Trip stale on any error, including programming errors, and gave no reason. It had no `segmentStart` test. |
+
+No user decision applied.
+
+### What changed
+
+- `src/domain/safeRouteEditing.ts`, `rebalanceTripForPattern`: a Trip moves to the rebalanced profile's revision only when it was current before the edit (its recorded revision is one below the rebalanced profile's) and the rebalanced profile calculates all its new times from its first departure. Every other Trip keeps its recorded revision and is therefore stale (Decision 0030 item 1). A Trip that was already stale stays stale. A Trip that records no revision is unchanged. Manual shifts that stay inside one band are reproduced and stay current; a hand-edited single time is not, so that Trip is stale after the edit. Retained times, manual shifts, and Pattern-point identifiers are preserved as before.
+- `src/domain/runtime.ts`: a band label is not part of the calculation shape. Bounds, segment durations, band ids, and the method still raise the revision.
+- `src/application/tripGenerationService.ts`:
+  - `previewTripPatternChange` returns a review signed over the Trip, the target Pattern's points, the assignment, and the target profile (`TripPatternChangeReview`). `changeTripPattern` recomputes the signature after reading current data and rejects a mismatch, or a review with no signature, with `TripPatternChangeStalePreviewError` ("The Pattern change review is out of date. Review the change again."). The application passes the review object through unchanged, so no screen changed.
+  - Trips CSV import updates only Trips whose Pattern is in the displayed Direction. A Trip ID from the other Direction gets the existing finding `trip.csvTripInvalid` ("A Trip ID does not belong to the selected schedule."), and the Trip keeps its Pattern. The review signature now covers every Pattern used by a Trip of the schedule or by a CSV row (id, Route, Direction, points).
+  - `inspectStaleTrips` returns the stale Trips and a finding for each Trip that its profile cannot calculate. `listStaleTrips` returns its Trips, as before. Only `TripGenerationError` (every error the recalculation raises on purpose) is reported as a finding; any other error surfaces. The Trips tab already catches errors from loading and shows its message.
+- Documentation: Decision 0014 addendum (items 5 and 6 for segment-start and blend profiles); glossary "Calculation revision"; `architecture_overview.md` (Runtime model, Trip generation model, Trips CSV).
+
+### Hand-offs and visible changes
+
+- **Existing spec fixture corrected, assertion unchanged:** `safeRouteEditing.test.ts` "keeps retained trip times and manual shifts while inserting a point" used a profile with `bands: []`, which cannot calculate any time. It now has the single band that the rebalanced profile would have (segments 0 and 600). Its assertion (revision 4, retained times, manual shift 120) is unchanged and still passes; the new rule is what needed the fixture to be realistic.
+- `routeDefinitionService.ts` is P09's file. `rebalanceDependentService` still passes only the rebalanced profiles to `rebalanceTripForPattern`; the function infers "was current" as `recorded === revision - 1`, which is exact because `rebalanceRuntimeProfile` raises the revision by exactly one per save. If P09 changes that, pass the pre-edit profiles.
+- **Visible after the merge:** after a point is added to or removed from a Pattern, a Trip whose times the rebalanced profile does not calculate now shows `Run times changed` (before: it showed nothing). This includes a Trip with a hand-edited time and a segment-start Trip that crossed two bands. A Trip that was already marked changed stays marked. A Trips CSV row that names a Trip of the other Direction is refused with the existing message. An older CSV review, or an older Pattern change review, is refused with a plain message.
+- The user-facing text for `trip.anchorNoRuntime` and the findings that `inspectStaleTrips` returns are not shown anywhere yet; presenting them belongs to U07.
+
+### Tests added
+
+- `src/domain/safeRouteEditing.test.ts`, "Trip revisions after a deterministic route edit" (7 new tests): the 2-004 reproduction (a Trip that crossed two bands keeps revision 3 while the profile is at 4; the profile gives 4200, the Trip stores 4800); revision advances when the rebalanced profile reproduces the Trip, for single-band, `segmentStart`, and blend; an already-stale Trip stays stale (2-005); a stale Trip stays stale even when its times match; a manual shift inside one band stays current; a hand-edited time makes the Trip stale; a Trip with no recorded revision is unchanged.
+- `src/domain/runtime.test.ts`: `does not increment the calculation revision when only a band label changes` (bounds and method still do).
+- `src/application/tripGenerationService.test.ts`, "stale-source checks..." (14 new tests on the in-memory repository, which the P06 contract suite ties to Dexie):
+  - Pattern change (5): applies an unchanged review; rejects after a Shift (and keeps the Shift); after a target profile change; after the target Pattern gained a point; and refuses an unsigned review.
+  - Trips CSV (5): other-Direction `tripId` rejected and the Trip keeps its Pattern; a Trip of the Direction still updates and a new row is created; rejects after the row's Pattern gained a point; rejects after the Pattern of another Trip in the schedule changed; an unchanged import applies.
+  - `listStaleTrips` (4): with a `segmentStart` profile, a Trip that records no source is stale only when its times differ; a Trip no band can calculate is stale with a `trip.anchorNoRuntime` finding; a programming error (a profile with no `bands`) is thrown, not hidden; a Trip that a route edit could not carry forward is reported stale end to end (domain rebalance, then the query).
+
+### Tests first: what failed on the current code
+
+- Domain: 4 of the new tests failed (band label raised the revision to 5; the 2-004 Trip was stamped 4; the already-stale Trip was stamped 4, twice).
+- Application: 10 of the 14 new tests failed (4 Pattern change, 3 CSV, 3 stale-query). The 4 that passed on arrival are controls (an unchanged review and an unchanged import still apply; a Trip of the Direction still updates) and the `segmentStart` legacy-Trip test (a test gap, no defect).
+
+### Deliberate breaks (applied, run, restored)
+
+| Test | Deliberate break | Result |
+| --- | --- | --- |
+| Rebalance tests and the end-to-end stale query | `carryForward` always true (the old unconditional stamp) | 4 fail |
+| Band label test | `label` back in `calculationShape` | 1 fails |
+| Pattern change tests | signature check removed from `changeTripPattern` | 4 fail |
+| CSV Direction test | existing Trips filtered by Route only | 1 fails |
+| CSV Pattern signature tests | signature covers Trips only | 2 fail |
+| `listStaleTrips` error tests | the old bare `catch` that marks every error stale | 2 fail (the programming-error test and the finding test). A first attempt, removing only the `instanceof` check, left one test green because `error.findings.map` itself threw a `TypeError`; that is why the break above replaces the whole `catch`. |
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 33 files, 407 tests passed (385 before; 22 new: 7 rebalance, 1 band label, 14 service). Three runs in a row: all passed.
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 59 passed, 0 failed (2.3 minutes).
+- `pnpm build`: succeeds (existing chunk-size warning only). Bundle `index-DytSo5qe.js` 771.53 kB (770.23 kB before P07, +1.3 kB).
+
+### Residual risks
+
+- The "was current" test is an inference (`recorded === revision - 1`); see the hand-off above.
+- `inspectStaleTrips` findings use the rule ids of the recalculation (`trip.anchorNoRuntime`, `trip.anchorAmbiguous`), not `runtime.noApplicableBand`, because the legacy comparison runs the anchored recalculation from the first departure.
+- A Trip with a hand-edited time now shows as stale after a route edit. That is the rule in the package (a Trip keeps its revision unless the profile reproduces its times) and matches how a Trip without a recorded source is already judged, but it is a visible change for planners who edit single times by hand; Decision 0014's addendum records it.
+- What could still be wrong: the Pattern change signature includes the whole profile (including `updatedAt`), so re-saving the target profile without changing it between review and commit also rejects the review. That fails safe; the review is rebuilt in one click.

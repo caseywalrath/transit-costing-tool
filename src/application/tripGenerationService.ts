@@ -38,6 +38,23 @@ function hasSameScheduledPoints(trip: Trip, recalculated: Trip): boolean {
     });
 }
 
+/** A single-Trip Pattern change review. `sourceSignature` records what the review read; the commit recomputes it and rejects a mismatch. */
+export interface TripPatternChangeReview extends PatternChangePreview { sourceSignature?: string }
+
+/** What a Pattern change review depends on: the Trip, the target Pattern's shape, and the profile that will calculate it. */
+function tripPatternChangeSignature(trip: Trip, target: RoutePattern, assignment: RuntimeAssignment, profile: RuntimeProfile): string {
+  return JSON.stringify({ trip, target: [target.id, target.routeId, target.directionId, target.points.map((point) => [point.id, point.sequence])], assignment: [assignment.id, assignment.runtimeProfileId], profile });
+}
+
+/** What a Trips CSV review depends on: every Trip of the schedule and every Pattern those Trips or the CSV rows use. */
+function tripTableImportSignature(trips: Trip[], patterns: Map<string, RoutePattern | undefined>): string {
+  const byId = (left: unknown[], right: unknown[]) => String(left[0]).localeCompare(String(right[0]));
+  return JSON.stringify({
+    trips: trips.map((trip) => [trip.id, trip.updatedAt, trip.patternId, trip.stopTimes]).sort(byId),
+    patterns: [...patterns.values()].filter((pattern): pattern is RoutePattern => Boolean(pattern)).map((pattern) => [pattern.id, pattern.routeId, pattern.directionId, pattern.points.map((point) => [point.id, point.sequence])]).sort(byId),
+  });
+}
+
 /** Application coordinator for the historical and authoritative trip workflows. */
 export class TripGenerationService {
   constructor(private readonly repository: TripGenerationRepository, private readonly now: () => string = () => new Date().toISOString()) {}
@@ -190,9 +207,9 @@ export class TripGenerationService {
 
   async previewTripTableImport(context: TripTableImportPreview['context'], rows: TripTableImportRow[]): Promise<TripTableImportPreview> {
     if (!rows.length) throw new Error('The CSV contains no Trip rows.');
-    const allContextTrips = await this.repository.listTrips(context.serviceDayId, context.tripProfileId);
-    const contextTrips = allContextTrips.filter((trip) => trip.routeId === context.routeId && trip.scenarioId === context.scenarioId);
-    const existingById = new Map(contextTrips.map((trip) => [trip.id, trip]));
+    const source = await this.readTripTableImportSource(context, rows.map((row) => row.patternId));
+    // Only Trips of the displayed Direction can be updated; a Trip ID from the other Direction is not part of this schedule.
+    const existingById = new Map(source.contextTrips.filter((trip) => source.patterns.get(trip.patternId)?.directionId === context.directionId).map((trip) => [trip.id, trip]));
     const usedIds = new Set<string>();
     const findings: ValidationFinding[] = [];
     const imported: Trip[] = [];
@@ -204,7 +221,7 @@ export class TripGenerationService {
         continue;
       }
       if (row.tripId) usedIds.add(row.tripId);
-      const pattern = await this.repository.getPattern(row.patternId);
+      const pattern = source.patterns.get(row.patternId);
       if (!pattern || pattern.scenarioId !== context.scenarioId || pattern.routeId !== context.routeId || pattern.directionId !== context.directionId) {
         findings.push({ ruleId: 'trip.csvPatternInvalid', severity: 'error', entityType: 'trip', entityId: row.tripId ?? row.patternId, field: 'patternId', messageKey: 'trip.csvPatternInvalid' });
         continue;
@@ -243,15 +260,21 @@ export class TripGenerationService {
       imported.push(trip);
       if (existing) updatedCount += 1; else createdCount += 1;
     }
-    const sourceSignature = JSON.stringify(contextTrips.map((trip) => [trip.id, trip.updatedAt, trip.patternId, trip.stopTimes]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
-    return { context, rows, trips: imported, createdCount, updatedCount, findings, sourceSignature };
+    return { context, rows, trips: imported, createdCount, updatedCount, findings, sourceSignature: source.signature };
+  }
+
+  private async readTripTableImportSource(context: TripTableImportPreview['context'], rowPatternIds: string[]) {
+    const allContextTrips = await this.repository.listTrips(context.serviceDayId, context.tripProfileId);
+    const contextTrips = allContextTrips.filter((trip) => trip.routeId === context.routeId && trip.scenarioId === context.scenarioId);
+    const patterns = new Map<string, RoutePattern | undefined>();
+    for (const id of new Set([...contextTrips.map((trip) => trip.patternId), ...rowPatternIds])) patterns.set(id, await this.repository.getPattern(id));
+    return { contextTrips, patterns, signature: tripTableImportSignature(contextTrips, patterns) };
   }
 
   async applyTripTableImport(preview: TripTableImportPreview): Promise<TripTableImportPreview> {
     if (preview.findings.some((finding) => finding.severity === 'error') || !preview.trips.length) throw new Error('Fix the CSV issues before importing Trips.');
-    const current = (await this.repository.listTrips(preview.context.serviceDayId, preview.context.tripProfileId)).filter((trip) => trip.routeId === preview.context.routeId && trip.scenarioId === preview.context.scenarioId);
-    const sourceSignature = JSON.stringify(current.map((trip) => [trip.id, trip.updatedAt, trip.patternId, trip.stopTimes]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
-    if (sourceSignature !== preview.sourceSignature) throw new Error('The schedule changed while the CSV was being reviewed. Import it again.');
+    const current = await this.readTripTableImportSource(preview.context, preview.rows.map((row) => row.patternId));
+    if (current.signature !== preview.sourceSignature) throw new Error('The schedule changed while the CSV was being reviewed. Import it again.');
     await this.atomicChanges()(preview.trips);
     return preview;
   }
@@ -289,7 +312,7 @@ export class TripGenerationService {
   }
 
   /** Preview a same-direction pattern change using the target pattern's assignment. */
-  async previewTripPatternChange(tripId: string, targetPatternId: string, directionId: string): Promise<PatternChangePreview> {
+  async previewTripPatternChange(tripId: string, targetPatternId: string, directionId: string): Promise<TripPatternChangeReview> {
     const trip = await this.repository.getTrip(tripId);
     if (!trip) throw new Error('The selected trip is no longer available.');
     const source = await this.repository.getPattern(trip.patternId);
@@ -298,18 +321,20 @@ export class TripGenerationService {
     const blocks = await this.repository.listBlocks(trip.serviceDayId);
     const affectedBlockIds = blocks.filter((block) => block.activities.some((activity) => activity.type === 'revenueTrip' && activity.tripId === trip.id)).map((block) => block.id);
     if ((source?.directionId !== undefined && source.directionId !== directionId) || target.directionId !== directionId) return { tripId, sourcePatternId: trip.patternId, targetPatternId, oldStopTimes: [...trip.stopTimes], affectedBlockIds, finding: { ruleId: 'trip.patternDirectionMismatch', severity: 'error', entityType: 'trip', entityId: trip.id, field: 'patternId', messageKey: 'trip.patternDirectionMismatch' } };
-    const { profile } = await this.resolveAuthoritativeProfile({ scenarioId: trip.scenarioId, serviceDayId: trip.serviceDayId, patternId: targetPatternId });
-    return { ...previewPatternChange(trip, target, profile), affectedBlockIds };
+    const { assignment, profile } = await this.resolveAuthoritativeProfile({ scenarioId: trip.scenarioId, serviceDayId: trip.serviceDayId, patternId: targetPatternId });
+    return { ...previewPatternChange(trip, target, profile), affectedBlockIds, sourceSignature: tripPatternChangeSignature(trip, target, assignment, profile) };
   }
 
-  async changeTripPattern(preview: PatternChangePreview): Promise<Trip> {
+  async changeTripPattern(preview: TripPatternChangeReview): Promise<Trip> {
     const trip = await this.repository.getTrip(preview.tripId);
     const target = await this.repository.getPattern(preview.targetPatternId);
     if (!trip || !target) throw new Error('The selected trip or pattern is no longer available.');
     const source = await this.repository.getPattern(trip.patternId);
     if (target.routeId !== trip.routeId) throw new TripGenerationError([{ ruleId: 'trip.patternRouteMismatch', severity: 'error', entityType: 'trip', entityId: trip.id, field: 'patternId', messageKey: 'trip.patternRouteMismatch' }]);
     if (source?.directionId !== undefined && target.directionId !== source.directionId) throw new TripGenerationError([{ ruleId: 'trip.patternDirectionMismatch', severity: 'error', entityType: 'trip', entityId: trip.id, field: 'patternId', messageKey: 'trip.patternDirectionMismatch' }]);
-    const { profile } = await this.resolveAuthoritativeProfile({ scenarioId: trip.scenarioId, serviceDayId: trip.serviceDayId, patternId: target.id });
+    const { assignment, profile } = await this.resolveAuthoritativeProfile({ scenarioId: trip.scenarioId, serviceDayId: trip.serviceDayId, patternId: target.id });
+    // The review was built from the Trip, the target Pattern, and the target profile as they were then. Commit only if they still are.
+    if (!preview.sourceSignature || preview.sourceSignature !== tripPatternChangeSignature(trip, target, assignment, profile)) throw new TripPatternChangeStalePreviewError();
     const updated = applyPatternChange(trip, target, preview, this.now());
     const revision = profile.calculationRevision ?? 0;
     const sourced = { ...updated, provenance: { ...updated.provenance, creationMethod: updated.provenance.creationMethod ?? updated.provenance.kind, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision } } };
@@ -501,8 +526,18 @@ export class TripGenerationService {
   }
 
   async listStaleTrips(serviceDayId: string, tripProfileId?: string): Promise<Trip[]> {
+    return (await this.inspectStaleTrips(serviceDayId, tripProfileId)).trips;
+  }
+
+  /**
+   * The stale Trips of a service day, and why a Trip could not be checked. A Trip that its assigned profile cannot calculate (no band
+   * for its departure, for example) is stale and carries the finding that says so. Any other error is a defect and is not reported
+   * as a stale Trip: it surfaces to the caller.
+   */
+  async inspectStaleTrips(serviceDayId: string, tripProfileId?: string): Promise<{ trips: Trip[]; findings: ValidationFinding[] }> {
     const trips = await this.repository.listTrips(serviceDayId, tripProfileId);
     const stale: Trip[] = [];
+    const findings: ValidationFinding[] = [];
     const assignmentsByKey = new Map<string, RuntimeAssignment | undefined>();
     const profilesById = new Map<string, RuntimeProfile | undefined>();
     const patternsById = new Map<string, RoutePattern | undefined>();
@@ -542,11 +577,13 @@ export class TripGenerationService {
       }
       try {
         if (!hasSameScheduledPoints(trip, markTripRecalculated(trip, pattern, profile, this.now()))) stale.push(trip);
-      } catch {
+      } catch (error) {
+        if (!(error instanceof TripGenerationError)) throw error;
         stale.push(trip);
+        findings.push(...error.findings.map((finding): ValidationFinding => ({ ...finding, entityType: 'trip', entityId: trip.id })));
       }
     }
-    return stale;
+    return { trips: stale, findings };
   }
 
   async listScheduleTrips(serviceDayId: string, directionId?: string, tripProfileId?: string): Promise<Trip[]> {
@@ -600,9 +637,13 @@ export class ServiceDayCopyValidationError extends Error {
   constructor(readonly findings: ValidationFinding[]) { super('The service-day operation has validation errors.'); this.name = 'ServiceDayCopyValidationError'; }
 }
 
+export class TripPatternChangeStalePreviewError extends Error {
+  constructor() { super('The Pattern change review is out of date. Review the change again.'); this.name = 'TripPatternChangeStalePreviewError'; }
+}
+
 export class TripShiftStalePreviewError extends Error {
   constructor() { super('The Trip shift review is out of date. Review the selected Trips again.'); this.name = 'TripShiftStalePreviewError'; }
 }
 
 // Keep the historical application surface while exposing the authoritative trip commands.
-export type TripGenerationApplication = Pick<TripGenerationService, 'getGenerationSet' | 'listGenerationSets' | 'previewTripShift' | 'previewStagedTripShift' | 'applyStagedTripShift' | 'previewPatternChange' | 'applyPatternChange' | 'listServiceDayTrips' | 'resolveRuntimeProfile' | 'previewGenerateTrips' | 'generateTrips' | 'addTrip' | 'previewTripPatternChange' | 'changeTripPattern' | 'previewRecalculateTrips' | 'applyRecalculationPreview' | 'recalculateTrips' | 'getLastTripRegenerationUndo' | 'undoLastTripRegeneration' | 'previewTripTableImport' | 'applyTripTableImport' | 'previewTripDeletion' | 'deleteTrips' | 'listStaleTrips' | 'listScheduleTrips' | 'listTripProfiles' | 'renameTripProfile' | 'copyTripProfile' | 'previewTripProfileDeletion' | 'deleteTripProfile' | 'previewRuntimeCopy' | 'applyRuntimeCopy' | 'previewTripCopy' | 'applyTripCopy' | 'previewBatchPatternChange' | 'applyBatchPatternChange'>;
+export type TripGenerationApplication = Pick<TripGenerationService, 'getGenerationSet' | 'listGenerationSets' | 'previewTripShift' | 'previewStagedTripShift' | 'applyStagedTripShift' | 'previewPatternChange' | 'applyPatternChange' | 'listServiceDayTrips' | 'resolveRuntimeProfile' | 'previewGenerateTrips' | 'generateTrips' | 'addTrip' | 'previewTripPatternChange' | 'changeTripPattern' | 'previewRecalculateTrips' | 'applyRecalculationPreview' | 'recalculateTrips' | 'getLastTripRegenerationUndo' | 'undoLastTripRegeneration' | 'previewTripTableImport' | 'applyTripTableImport' | 'previewTripDeletion' | 'deleteTrips' | 'listStaleTrips' | 'inspectStaleTrips' | 'listScheduleTrips' | 'listTripProfiles' | 'renameTripProfile' | 'copyTripProfile' | 'previewTripProfileDeletion' | 'deleteTripProfile' | 'previewRuntimeCopy' | 'applyRuntimeCopy' | 'previewTripCopy' | 'applyTripCopy' | 'previewBatchPatternChange' | 'applyBatchPatternChange'>;

@@ -100,7 +100,7 @@ The association selecting a runtime profile for one pattern and service day.
 
 ### Calculation revision
 
-The integer version of a runtime profile's band bounds and segment values. It increments when those calculation inputs change and remains unchanged when only the profile name changes. Trips record the revision used for their current times.
+The integer version of a runtime profile's calculation method, band bounds, and segment values. It increments when those calculation inputs change and remains unchanged when only the profile name or a band label changes: a band label is a display name, not a calculation input. Trips record the revision used for their current times.
 
 ### Trip generation set (historical)
 
