@@ -15,6 +15,12 @@ export interface RouteDefinitionRepository {
   saveScenario(scenario: Scenario): Promise<void>;
   getScenarioRecords(scenarioId: string): Promise<ScenarioRecords | undefined>;
   saveScenarioRecords(records: ScenarioRecords): Promise<void>;
+  /**
+   * Reads the stored records of one Scenario inside the write, applies `change` to them, and writes the result.
+   * Callers use this instead of `saveScenarioRecords` when their own copy of the Scenario may be older than storage.
+   * `change` must be synchronous. Returning the records it was given writes nothing. Rejects when the Scenario no longer exists.
+   */
+  updateScenarioRecords(scenarioId: string, change: (current: ScenarioRecords) => ScenarioRecords): Promise<ScenarioRecords>;
   /** Writes a reviewed route edit and all affected runtimes, trips, and blocks atomically. */
   commitRouteEdit(records: ScenarioRecords): Promise<void>;
   getRouteDefinition(routeId: string): Promise<RouteDefinitionAggregate | undefined>;
