@@ -66,9 +66,24 @@
 - Evidence: line 222 maps each non-revenue activity to `{ ...activity, id: newId() }` and does not apply the `nodeIds` map built at lines 156-160. Backup import-as-copy does remap them (`src/persistence/backup.ts:557`). Reproduction: `docs/review/golden/dupNodes.golden.test.ts`. On the golden dataset, **138 of 138** Node references in the duplicated Scenario point at the source Scenario's Nodes.
 - Consequence today: the duplicated Scenario's Block hours, eligibility (69/69), and findings are identical to the source, measured by the same reproduction. Validation does not currently compare activity Node IDs against Scenario ownership.
 - Latent consequence (unverified; assigned to Phase 3 tasks 3.4 and 3.5): Node rename and delete in the copy will not reach these activities, and deleting the source Scenario leaves the copy referencing Nodes that no longer exist. Display names and any later location-continuity check would then be wrong.
+- User context (2026-10-22): the user recalls Nodes appearing as unknown after a copy and an agent attributing it to incorrect Node IDs. The earlier defect matching that description was fixed in commit `4fc88ba` ("Fix backup direction references", 2026-09-23). Import-as-copy had left Direction timetable columns, which label the Trips table headings, pointing at the source Nodes. That commit also added recovery for files copied before the fix (`recoverCopiedDirectionColumnNodeReferences` in `backup.ts`). A-004 is the same class of defect in a different copy path.
+- Copy-path sweep: `docs/review/golden/copyReferences.golden.test.ts` scans every `*Id` field of a copy for IDs that belong to the source and not the copy, on the golden dataset.
+
+  | Copy path | References back to the source |
+  | --- | --- |
+  | Scenario duplication | **138**: `blocks[].activities[].fromNodeId` (69) and `toNodeId` (69) |
+  | Project import-as-copy | 0 |
+  | Route duplication (Route-owned Nodes, Patterns, Directions, Runtime profiles and assignments, Trips) | 0 |
+
+  In a duplicated Scenario, Pattern points, Direction columns, and Trip scheduled points all reference the copy. The Trips table headings are therefore correct there; the defect is limited to Block activities.
+- Hypotheses for Phases 3 and 5 (not yet tested):
+  1. The Blocking workspace resolves Node names from the current Route's Nodes (`src/ui/BlockingWorkspace.tsx:118`). Pull-out, pull-in, and deadhead From/To values in a duplicated Scenario may display as missing or blank.
+  2. An activity edit dialog opened in the copy may preselect a Node ID that is not among its options. Saving could then silently change the Node.
+  3. Bulk deadhead "apply to matching" compares stored Node IDs with Pattern endpoint IDs (`BlockingWorkspace.tsx:212-214`). It may match nothing in a duplicated Scenario.
+  4. After the source Scenario is deleted, these references point at Nodes that no longer exist.
 - Confidence: Confirmed (reference defect); consequence partly verified
-- Verified by: orchestrator (reproduction)
-- Fix scope: structural, 1 file plus a test. Route duplication (`duplicateRouteRecords`) must be checked for the same pattern; it does not copy Block activities (Decision 0028), so it is probably unaffected.
+- Verified by: orchestrator (reproduction and copy-path sweep)
+- Fix scope: structural, 1 file plus a test (`project.ts:222` applies the existing `nodeIds` map, as `backup.ts:557` does). A recovery path for already-duplicated Scenarios, like the one added in `4fc88ba`, should be considered in the same package.
 - User decision required: no
 
 ### A-005: Service-day annual counts can be saved with a total above 365
@@ -84,7 +99,7 @@
 - Fix scope: structural validation, plus a small UI message using the existing field-error pattern.
 - User decision required: no
 
-### A-006: Costing shows the applied rate in whole dollars; the approved plan requires four decimal places
+### A-006: Costing shows the applied rate in whole dollars; the approved plan required four decimal places (closed)
 
 - Severity: S2
 - Category: contract
@@ -93,8 +108,9 @@
 - Evidence: the display change arrived in commit `d990e5a` ("Refine costing year controls and table labels", 2026-10-09), which changed no documentation. The browser test was updated to lock in whole-dollar display.
 - Confidence: Confirmed
 - Verified by: orchestrator
-- Fix scope: either a docs change or a UI change.
-- User decision required: **yes**. Is whole-dollar display an intended product change (update the plan and the acceptance criterion), or a regression (restore four decimals)?
+- Resolution (2026-10-22): the user confirmed whole-dollar display is correct. The documentation was wrong, not the code. `phase-05-costing.md` now states that the Costing workspace shows USD amounts, the applied rate, and hours as whole numbers, and that CSV exports keep 2 decimals for USD and 4 for hours and the applied rate. No code change.
+- Status: **Closed (documentation corrected)**
+- User decision required: resolved
 
 ### A-007: The default runtime calculation method for new profiles has no calculation test
 
