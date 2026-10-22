@@ -1,27 +1,10 @@
 import { expect, test } from '@playwright/test';
+import { createRouteWithPattern } from './support/tripsWorkspace';
 
 test.setTimeout(60_000);
 
 async function createUsableRoute(page: import('@playwright/test').Page) {
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
-  await page.locator('#dialog-name').fill('Blocking verification');
-  await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
-  await page.getByRole('button', { name: 'Route actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
-  await page.getByRole('button', { name: 'New node', exact: true }).click();
-  await page.getByLabel('Node name').fill('A');
-  await page.getByRole('button', { name: 'Save nodes', exact: true }).click();
-  await page.getByRole('button', { name: 'New node', exact: true }).click();
-  await page.getByLabel('Node name').last().fill('B');
-  await page.getByRole('button', { name: 'Save nodes', exact: true }).click();
-  await page.getByRole('button', { name: 'Add pattern', exact: true }).click();
-  await page.getByRole('button', { name: 'Add node', exact: true }).click();
-  await page.getByRole('button', { name: 'Add node', exact: true }).click();
-  await page.getByLabel('Point 2 node').selectOption({ label: 'B' });
-  await page.getByRole('button', { name: 'Save Pattern', exact: true }).click();
-  await page.getByRole('button', { name: 'Save and rebalance', exact: true }).click();
+  await createRouteWithPattern(page, 'Blocking verification');
 }
 
 test('assigns, reassigns, and unassigns Trips from the Trips table by pill and bulk Actions', async ({ page }) => {
@@ -37,7 +20,8 @@ test('assigns, reassigns, and unassigns Trips from the Trips table by pill and b
 
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   const discardRouteChanges = page.getByRole('button', { name: 'Discard', exact: true });
-  if (await discardRouteChanges.isVisible()) await discardRouteChanges.click();
+  // No Route draft is open, so there is nothing to discard. A conditional click here would hide a stray unsaved-Route banner.
+  await expect(discardRouteChanges).toHaveCount(0);
   await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New Blocking Scenario…', exact: true }).click();
   await page.getByRole('dialog', { name: 'New Blocking Scenario' }).getByLabel('Name').fill('Trips assignment');
@@ -117,7 +101,8 @@ test('creates an empty Blocking Scenario and an empty Block, then exposes its Tr
   await createUsableRoute(page);
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   const discardRouteChanges = page.getByRole('button', { name: 'Discard', exact: true });
-  if (await discardRouteChanges.isVisible()) await discardRouteChanges.click();
+  // No Route draft is open, so there is nothing to discard. A conditional click here would hide a stray unsaved-Route banner.
+  await expect(discardRouteChanges).toHaveCount(0);
   await expect(page.getByLabel('Blocking controls')).toBeVisible();
   const blockingActions = page.getByRole('button', { name: 'Blocking actions', exact: true });
   await blockingActions.click();
@@ -153,7 +138,6 @@ test('creates an empty Blocking Scenario and an empty Block, then exposes its Tr
   const download = page.waitForEvent('download');
   await exportButton.click();
   expect((await download).suggestedFilename()).toBe('Base-blocks-csv.zip');
-  await page.screenshot({ path: 'test-results/blocking-workspace.png', fullPage: true });
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await expect(page.getByLabel('Current Block').getByRole('button', { name: /Block 11/ })).toBeVisible();
@@ -168,7 +152,14 @@ test('creates an empty Blocking Scenario and an empty Block, then exposes its Tr
   await page.setViewportSize({ width: 600, height: 800 });
   await page.getByLabel('Current Block').getByRole('button', { name: 'Current Block actions', exact: true }).click();
   await expect(page.getByRole('menuitem', { name: 'Add pull-out…', exact: true })).toBeVisible();
-  await page.screenshot({ path: 'test-results/blocking-workspace-narrow.png', fullPage: true });
+  // At 600 px the Current Block menu opens inside the viewport and the page itself does not scroll sideways.
+  const narrowMenu = page.getByRole('menu', { name: 'Current Block actions' });
+  const menuBox = await narrowMenu.boundingBox();
+  expect(menuBox).not.toBeNull();
+  expect(menuBox!.x).toBeGreaterThanOrEqual(0);
+  expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(600);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.keyboard.press('Escape');
 
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   const tripsScenarioMenu = page.getByRole('button', { name: /Base blocks/ });
@@ -192,7 +183,8 @@ test('shift-click selects inclusive ranges in Unassigned Trips and Current Block
 
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   const discardRouteChanges = page.getByRole('button', { name: 'Discard', exact: true });
-  if (await discardRouteChanges.isVisible()) await discardRouteChanges.click();
+  // No Route draft is open, so there is nothing to discard. A conditional click here would hide a stray unsaved-Route banner.
+  await expect(discardRouteChanges).toHaveCount(0);
   await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New Blocking Scenario…', exact: true }).click();
   const scenarioDialog = page.getByRole('dialog', { name: 'New Blocking Scenario' });
@@ -240,7 +232,6 @@ test('shift-click selects inclusive ranges in Unassigned Trips and Current Block
   await pullOutDialog.getByRole('button', { name: 'Review Blocks' }).click();
   await expect(pullOutDialog.getByRole('status')).toContainText('2 node matches · 2 add');
   await expect(pullOutDialog.getByRole('button', { name: 'Apply to Blocks' })).toBeEnabled();
-  await page.screenshot({ path: 'test-results/bulk-boundary-preview.png', fullPage: true });
   await pullOutDialog.getByRole('button', { name: 'Apply to Blocks' }).click();
   await expect(currentBlock.getByRole('cell', { name: 'Pull-out', exact: true })).toBeVisible();
   await currentBlock.getByRole('button', { name: /Block 2/ }).click();
@@ -262,7 +253,8 @@ test('filters and sorts Unassigned Trips while assignments insert by From Time',
 
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   const discardRouteChanges = page.getByRole('button', { name: 'Discard', exact: true });
-  if (await discardRouteChanges.isVisible()) await discardRouteChanges.click();
+  // No Route draft is open, so there is nothing to discard. A conditional click here would hide a stray unsaved-Route banner.
+  await expect(discardRouteChanges).toHaveCount(0);
   await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New Blocking Scenario…', exact: true }).click();
   await page.getByRole('dialog', { name: 'New Blocking Scenario' }).getByLabel('Name').fill('Chronological blocks');

@@ -31,4 +31,5 @@
 - `pnpm typecheck` passed.
 - `pnpm test` passed: 29 files, 205 tests.
 - Trips browser checks passed, including sticky headers, undo across reload, and shift scroll restoration. A full serial browser run had one unrelated existing Blocking-workflow timeout; that test passed when rerun alone.
+  - Correction (code review package P05, 2026-10-22): this claim did not hold when the code review ran. Seven of these browser tests failed in every run: six because the shared helper in `tests/ui/unified-action-layer.spec.ts` expected the menu item `Copy from day…` (the app renders `Copy Trips from day…`), and the sticky-header and scroll-restoration tests asserted a nested schedule scroller that Decision 0035 item 5 forbids. P05 rewrote those tests to check the page-level duplicate heading row and page scroll restoration, and the full browser suite now passes. See `docs/implementation/review-fixes.md`.
 - `pnpm build` passed. Vite reports the main JavaScript bundle exceeds its 500 kB advisory threshold.

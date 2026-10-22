@@ -1,84 +1,28 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { runInPage } from './support/dexieEnv';
+import { createShiftReadySchedule, settleFrames } from './support/tripsWorkspace';
 
 test.setTimeout(60_000);
 
-async function createShiftReadySchedule(page: Page, lastTrip = '06:00') {
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
-  await page.locator('#dialog-name').fill('Unified action layer verification');
-  await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
-  await page.getByRole('button', { name: 'Route actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
-
-  await page.getByRole('button', { name: 'New node', exact: true }).click();
-  await page.getByLabel('Node name').fill('A');
-  await page.getByRole('button', { name: 'Save nodes', exact: true }).click();
-  await page.getByRole('button', { name: 'New node', exact: true }).click();
-  await page.getByLabel('Node name').last().fill('B');
-  await page.getByRole('button', { name: 'Save nodes', exact: true }).click();
-
-  await page.getByRole('button', { name: 'Add pattern', exact: true }).click();
-  await page.getByRole('button', { name: 'Add node', exact: true }).click();
-  await page.getByRole('button', { name: 'Add node', exact: true }).click();
-  await page.getByLabel('Point 2 node').selectOption({ label: 'B' });
-  await page.getByRole('button', { name: 'Save Pattern', exact: true }).click();
-  await page.getByRole('button', { name: 'Save and rebalance', exact: true }).click();
-  await page.getByRole('button', { name: 'Trips', exact: true }).click();
-
+test('duplicates a Runtime time band into the draft and discards it without saving', async ({ page }) => {
+  await createShiftReadySchedule(page);
   const runtimeSection = page.locator('[aria-label="Runtimes section"]');
-  await expect(runtimeSection.locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button', { name: 'Default' })).toBeVisible();
-  await runtimeSection.getByLabel('Time band 1 segment 1').fill(':07');
-  await runtimeSection.getByLabel('Time band 1 segment 1').press('Tab');
   await expect(runtimeSection.getByLabel('Time band 1 segment 1')).toHaveValue(':07');
-  await expect(runtimeSection.getByRole('columnheader', { name: 'Total', exact: true })).toBeVisible();
-  await expect(runtimeSection.getByText(':07', { exact: true })).toBeVisible();
-  await expect(runtimeSection.locator('.runtime-table thead th')).toHaveText(['From', 'To', 'A → B', 'Total', 'Time band actions']);
-  await runtimeSection.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(runtimeSection.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
-
   const firstBandStart = await runtimeSection.getByLabel('Time band 1 start').inputValue();
   const firstBandEnd = await runtimeSection.getByLabel('Time band 1 end').inputValue();
+
   await runtimeSection.getByRole('button', { name: 'Duplicate time band 1' }).click();
   await expect(runtimeSection.getByLabel('Time band 2 start')).toHaveValue(firstBandStart);
   await expect(runtimeSection.getByLabel('Time band 2 end')).toHaveValue(firstBandEnd);
+  await expect(runtimeSection.getByLabel('Time band 2 segment 1')).toHaveValue(':07');
+  await expect(runtimeSection.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+  expect(await runInPage(page, 'return (await e.db.runtimeProfiles.toArray()).map((profile) => profile.bands.length)')).toEqual([1]);
+
   await runtimeSection.getByRole('button', { name: 'Discard', exact: true }).click();
   await expect(runtimeSection.getByLabel('Time band 2 start')).toHaveCount(0);
-
-  const tripsSection = page.locator('[aria-label="Trips section"]');
-  await runtimeSection.getByRole('button', { name: 'Runtime actions', exact: true }).click();
-  await expect(page.getByRole('menu', { name: 'Runtime actions' }).getByRole('menuitemradio', { name: 'Band at segment start' })).toHaveAttribute('aria-checked', 'true');
-  await page.keyboard.press('Escape');
-  const actions = tripsSection.getByRole('button', { name: 'Trip actions', exact: true });
-  await actions.focus();
-  await actions.press('ArrowDown');
-  const actionMenu = page.getByRole('menu', { name: 'Trip actions' });
-  await expect(actionMenu.getByRole('menuitem')).toHaveText([
-    'Build trips…',
-    'Add trip…',
-    'Regenerate selected…',
-    'Shift selected…',
-    'Change pattern…',
-    'Assign Block…',
-    'Unassign from Block…',
-    'Copy from day…',
-    'Import Trips CSV…',
-    'Export Trips CSV',
-    'Delete selected…',
-  ]);
-  await actionMenu.getByRole('menuitem', { name: 'Build trips…' }).click();
-  const drawer = page.getByRole('complementary', { name: 'Build Trips' });
-  await expect(drawer).toBeVisible();
-  await drawer.getByLabel('Pattern').selectOption({ index: 1 });
-  await drawer.getByLabel('First Trip').fill('06:00');
-  await drawer.getByLabel('Headway').fill('10');
-  await drawer.getByLabel('Last Trip').fill(lastTrip);
-  await drawer.getByRole('button', { name: 'Build', exact: true }).click();
-  await expect(drawer).toBeHidden();
-  const [lastHours, lastMinutes] = lastTrip.split(':').map(Number);
-  const expectedTripCount = Math.floor(((lastHours * 60 + lastMinutes) - 6 * 60) / 10) + 1;
-  await expect(page.locator('.schedule-table tbody tr')).toHaveCount(expectedTripCount);
-}
+  await expect(runtimeSection.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+  expect(await runInPage(page, 'return (await e.db.runtimeProfiles.toArray()).map((profile) => profile.bands.length)')).toEqual([1]);
+});
 
 test('Build Trips uses a right drawer and supports inclusive last-trip and count limits', async ({ page }) => {
   await createShiftReadySchedule(page);
@@ -166,21 +110,30 @@ test('keeps one regeneration undo through reload and restores the prior trip tim
   await expect(page.locator('.schedule-table')).toContainText('6:07');
 });
 
-test('restores Trips table scroll position after committing a shift', async ({ page }) => {
-  await createShiftReadySchedule(page, '09:00');
-  const table = page.locator('.schedule-table');
-  await table.evaluate((element) => { element.scrollTop = 260; });
-  await expect.poll(() => table.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+test('restores the page scroll position after committing a shift', async ({ page }) => {
+  // Decision 0035 item 5: Trips scrolls at page level. The schedule region is not a vertical scroller, so the page position is what
+  // must survive a committed Shift.
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await createShiftReadySchedule(page, '12:00');
+  const table = page.locator('.trips-workspace .schedule-table');
+  await expect(table).toHaveCSS('max-height', 'none');
+  expect(await table.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)).toBeGreaterThan(300);
+
   await page.locator('.schedule-table tbody input[type="checkbox"]').nth(8).check();
   const tripsSection = page.locator('[aria-label="Trips section"]');
   await tripsSection.getByRole('button', { name: 'Trip actions', exact: true }).click();
   await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
   const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
   await drawer.getByRole('button', { name: '+ Forward' }).click();
-  await table.evaluate((element) => { element.scrollTop = 230; });
-  const scrollTop = await table.evaluate((element) => element.scrollTop);
+  await expect(page.getByText('Staged 1 minute later')).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 300));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(300);
   await drawer.getByRole('button', { name: 'Done', exact: true }).click();
-  await expect.poll(() => table.evaluate((element) => element.scrollTop)).toBe(scrollTop);
+  await expect(drawer).toHaveCount(0);
+  await expect(table.locator('tbody tr').nth(8)).toContainText('7:21');
+  await settleFrames(page);
+  expect(await page.evaluate(() => window.scrollY)).toBe(300);
 });
 
 test('stages Shift actions, guards scope changes, and persists only on Done', async ({ page }) => {

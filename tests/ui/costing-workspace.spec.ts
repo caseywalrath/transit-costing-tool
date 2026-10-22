@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('Costing workspace displays a partial estimate, supports year selection, and remains usable at a narrow width', async ({ page }, testInfo) => {
+test('Costing workspace displays a partial estimate, supports year selection, and remains usable at a narrow width', async ({ page }) => {
   await page.goto('/');
   // The app creates the database when it starts; wait for it before seeding the stores directly.
   await expect(page.getByRole('button', { name: 'Project actions', exact: true })).toBeVisible();
@@ -56,10 +56,23 @@ test('Costing workspace displays a partial estimate, supports year selection, an
 
   await page.setViewportSize({ width: 1440, height: 900 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await page.screenshot({ path: testInfo.outputPath('costing-workspace-desktop.png'), fullPage: true });
 
   await page.setViewportSize({ width: 760, height: 900 });
   await expect(page.getByRole('heading', { name: 'Exclusions' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Yearly outlook' })).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('costing-workspace.png'), fullPage: true });
+  // Narrow widths: the page itself never scrolls sideways, and the results and outlook tables stay inside the viewport and keep
+  // their content (they scroll inside their own regions). Showing the Annual cost column without any table scroll is package U06's.
+  for (const width of [1024, 760]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(page.getByRole('heading', { name: 'Cost Breakdown' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+    await expect(page.locator('.costing-results-table tfoot')).toContainText('$');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    for (const table of await page.locator('.costing-results-table, .costing-outlook-table').all()) {
+      const box = await table.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+    }
+  }
 });
