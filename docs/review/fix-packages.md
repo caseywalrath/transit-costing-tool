@@ -1,7 +1,7 @@
 # Code Review Fix Packages (Stage 4 plan)
 
-- Status: Stage 3B output, 2026-10-22. Ready for user review. Stage 4 starts only on user approval (plan Section 4.1).
-- Input: `docs/review/issue-register.md` (issue IDs, severities, root-cause groups) and `docs/review/user-decisions.md` (decisions 1–18; open candidates C1–C8).
+- Status: Stage 3B output, 2026-10-22. Decisions C1–C8 approved by the user on 2026-10-22 (option (a) each); C7 moved X01 to follow P05. Each Stage 4 package still starts only on user request (plan Section 9 step 6).
+- Input: `docs/review/issue-register.md` (issue IDs, severities, root-cause groups) and `docs/review/user-decisions.md` (decisions 1–18 and C1–C8).
 - Every open issue (I-001 to I-101, with I-074 split into I-074a, b, and c) belongs to exactly one package. I-102 is closed.
 
 ## Rules that apply to every package
@@ -10,7 +10,7 @@ These restate plan Sections 8.3 and 9, and `AGENTS.md`.
 
 1. **Type.** A package is structural, UI/UX, test-only, build, or docs. Structural packages may wire an existing UI port (for example, change one call) without changing layout, states, or interaction. A UI package must not add business rules: it consumes application ports.
 2. **Branch.** Each package runs on its own branch from current `main` (plan Section 9). Never two packages at once on overlapping owned files. "Owned files" lists every file the package may change; changing any other file needs a recorded hand-off.
-3. **Test first.** Write a failing test from the register evidence before the fix, and commit it with the fix. The review reproductions in `docs/review/golden/` are the source; port the relevant one into `src/**/*.test.ts` or `tests/ui/` (open candidate C6, recommendation (a)). Do not change files in `docs/review/`.
+3. **Test first.** Write a failing test from the register evidence before the fix, and commit it with the fix. The review reproductions in `docs/review/golden/` are the source; port the relevant one into `src/**/*.test.ts` or `tests/ui/` (decision C6). Do not change files in `docs/review/`.
 4. **Dexie-backed tests before P06.** Until P06 adds an IndexedDB test environment to Vitest, a persistence test that needs real IndexedDB is a Playwright spec under `tests/ui/` that imports `src/` modules from the Vite dev server, as `docs/review/golden/p3-env.ts` does.
 5. **Verification** (`AGENTS.md`):
    - Domain or persistence logic: focused tests and `pnpm typecheck`.
@@ -32,27 +32,27 @@ These restate plan Sections 8.3 and 9, and `AGENTS.md`.
 | ---: | --- | --- | --- | ---: | --- | --- |
 | 1 | P01 Scenario-wide writes re-read current data | Structural | Luna | 3 | S0 | — |
 | 2 | P02 Single active tab | Structural | Luna | 1 | S0 | P01 |
-| 3 | P03 Scenario duplication remap and recovery | Structural | Luna | 2 | S1 | C8 answered |
+| 3 | P03 Scenario duplication remap and recovery | Structural | Luna | 2 | S1 | decision C8 |
 | 4 | P04 Backup import normalization and validation | Structural | Luna | 3 | S1 | P03 |
 | 5 | P05 Browser test-suite repair | Test-only | Luna | 4 | S2 | — |
-| 6 | P06 IndexedDB test environment and repository parity | Structural (test) | Luna | 4 | S2 | P01, P02 |
-| 7 | P07 Trip stale checks and runtime revisions | Structural | Luna | 6 | S2 | P06 |
-| 8 | P08 Trip generation and shift bounds | Structural | Luna | 4 | S2 | — |
-| 9 | P09 Application validation and deletion reviews | Structural | Luna | 5 | S2 | P01, P07 |
-| 10 | P10 Save status and local-data protection | Structural | Luna | 2 | S2 | P02, P09 |
-| 11 | P11 Blocking and Costing read paths | Structural | Luna | 4 | S2 | P10 |
-| 12 | P12 Blocking calculation rules and finding shape | Structural | Luna | 3 | S2 | C2 answered |
-| 13 | P13 CSV serializers | Structural | Luna | 4 | S2 | P07 |
-| 14 | P14 Blocking rules into `blockingService` | Structural | Luna | 3 | S2 | P11, P12 |
-| 15 | B01 CI, typecheck scope, and dependencies | Build | Luna | 6 | S2 | P05, C4 answered |
-| 16 | U01 Standards-mode `index.html` | UI/build | Luna | 1 | S2 | P05 |
-| 17 | U02 Data-safety and error presentation | UI | Luna | 4 | S2 | P02, P10, U01 |
-| 18 | U03 Drafts, inputs, and preferences | UI | Luna | 5 | S2 | U02 |
-| 19 | U04 Dialogs, focus, and keyboard | UI | Luna | 4 | S2 | U03 |
-| 20 | U05 Blocking presentation and destructive actions | UI | Luna | 6 | S2 | P14, U04 |
-| 21 | U06 Costing and service-day presentation | UI | Luna | 4 | S2 | P09, P11, U04, C3 answered |
-| 22 | U07 Trips and Runtime presentation | UI | Luna | 6 | S2 | P08, P09, U04 |
-| 23 | X01 Dead code removal | Structural | Luna | 3 | S3 | P09 (see C7) |
+| 6 | X01 Dead code removal | Structural | Luna | 3 | S3 | P01, P02, P05 (decision C7) |
+| 7 | P06 IndexedDB test environment and repository parity | Structural (test) | Luna | 4 | S2 | P01, P02 |
+| 8 | P07 Trip stale checks and runtime revisions | Structural | Luna | 6 | S2 | P06 |
+| 9 | P08 Trip generation and shift bounds | Structural | Luna | 4 | S2 | — |
+| 10 | P09 Application validation and deletion reviews | Structural | Luna | 5 | S2 | P01, P07 |
+| 11 | P10 Save status and local-data protection | Structural | Luna | 2 | S2 | P02, P09 |
+| 12 | P11 Blocking and Costing read paths | Structural | Luna | 4 | S2 | P10 |
+| 13 | P12 Blocking calculation rules and finding shape | Structural | Luna | 3 | S2 | decision C2 |
+| 14 | P13 CSV serializers | Structural | Luna | 4 | S2 | P07 |
+| 15 | P14 Blocking rules into `blockingService` | Structural | Luna | 3 | S2 | P11, P12 |
+| 16 | B01 CI, typecheck scope, and dependencies | Build | Luna | 6 | S2 | P05, decision C4 |
+| 17 | U01 Standards-mode `index.html` | UI/build | Luna | 1 | S2 | P05 |
+| 18 | U02 Data-safety and error presentation | UI | Luna | 4 | S2 | P02, P10, U01 |
+| 19 | U03 Drafts, inputs, and preferences | UI | Luna | 5 | S2 | U02 |
+| 20 | U04 Dialogs, focus, and keyboard | UI | Luna | 4 | S2 | U03 |
+| 21 | U05 Blocking presentation and destructive actions | UI | Luna | 6 | S2 | P14, U04 |
+| 22 | U06 Costing and service-day presentation | UI | Luna | 4 | S2 | P09, P11, U04, decision C3 |
+| 23 | U07 Trips and Runtime presentation | UI | Luna | 6 | S2 | P08, P09, U04 |
 | 24 | P15 Trips and Runtime rules out of `App.tsx` | Structural | Luna | 1 | S3 | U07, X01 |
 | 25 | P16 Domain precision and message polish | Structural | Luna | 5 | S3 | P07, P08, P12 |
 | 26 | U08 Recalculation dialog at capacity | UI | Sol | 1 | S3 | U07 |
@@ -63,7 +63,7 @@ Ordering notes:
 - The plan's order is S0, S1, test-suite repair, S2, S3, documentation. P05 has no code dependency and may run in parallel with P01 to P04 on its own branch, because it owns only `tests/ui/` and `tests/fixtures/`.
 - P06 follows the S0 packages because it changes `dexieRepository.ts` and `inMemoryRepository.ts`, which P01 and P02 own.
 - Every UI package from U02 to U07 changes `src/ui/App.tsx`, so they run one after another in the order shown. U01 goes first because quirks mode changes every layout measurement (I-038).
-- X01 deletes dead code from `App.tsx`. Open candidate C7 asks whether to move it ahead of the UI packages.
+- X01 runs right after P05 (decision C7): it is mechanical, removes the latent S0 path `deleteNode` (3-008), and shrinks `App.tsx` before the S2 packages edit it. It follows P01 and P02 because it deletes methods from services they own.
 
 ---
 
@@ -101,7 +101,7 @@ Ordering notes:
 ## P03: Scenario duplication remap and recovery
 
 - Type: structural. Class: Luna-class.
-- Issues: I-004 (3-002, S1), I-005 (3-006 and A-004, S1). Implements decision 4. Depends on open candidate C8 for copies whose source Scenario no longer exists.
+- Issues: I-004 (3-002, S1), I-005 (3-006 and A-004, S1). Implements decision 4. Decision C8 governs copies whose source Scenario no longer exists.
 - Owned files: `src/domain/project.ts`, `src/domain/project.test.ts`, new `src/domain/scenarioCopyRecovery.ts` and its test, `src/persistence/database.ts` (version 7 upgrade with no store change), `src/persistence/backup.ts` (only the call to the recovery during parse), `docs/data-schema.md` (migration history), `architecture_overview.md`, new decision record.
 - Required design: `project.ts:222` applies the existing `nodeIds` map to `fromNodeId` and `toNodeId`, and keeps `tripProfileId` only on legacy Blocks without `blockingScenarioId`, remapped through `tripProfileIds`. Recovery: for each non-revenue activity whose Node ID belongs to another Scenario, map it to the copy's Node with the same Route, the same position in the Route's Node order, and the same name (3-006 option A). Run it once in a Dexie version 7 upgrade and in backup parsing, for files exported before the fix.
 - Acceptance criteria:
@@ -109,7 +109,7 @@ Ordering notes:
   2. With two Trip Profiles and a Blocking Scenario on the non-first profile, `duplicateScenario` succeeds on in-memory and Dexie, and 0 copied normalized Blocks carry `tripProfileId`.
   3. In the `p3-a004-consequences` fixture, the copied deadhead Block is eligible, as the source is.
   4. Recovery: a database seeded with an already-duplicated Scenario (138 leaking references) has 0 after upgrade. A backup file with the same content has 0 after import. Records outside non-revenue activities are byte-equal before and after.
-  5. Copies whose source no longer exists follow the answer to C8.
+  5. Copies whose source no longer exists (decision C8): pull-out To, pull-in From, and deadhead From/To are inferred from the adjacent Trip endpoints; each garage end that cannot be inferred (pull-out From, pull-in To) gets a finding naming the Block.
 - Test first: un-mark the A-004, 3-002, and 3-006 golden reproductions and port them.
 - Verification: domain and migration rules: round trip of the recovered backup; schema version 7 asserted; full regression.
 - Documentation: data-schema migration history (version 7), overview, decision record.
@@ -210,7 +210,7 @@ Ordering notes:
   3. A `QuotaExceededError` maps to a typed error with the plain message "Browser storage is full. Export a backup, then free space." (simulated as in `p6-quota.spec.ts`).
   4. The time of the last JSON backup export is stored (non-authoritative, like selection state) and exposed through a port for U02.
 - Verification: application rules plus the quota browser spec; full regression.
-- Documentation: Decision 0001 amendment (decision 16), including the shared-origin risk per open candidate C5.
+- Documentation: Decision 0001 amendment (decision 16), including the shared-origin risk (decision C5).
 
 ## P11: Blocking and Costing read paths
 
@@ -228,10 +228,10 @@ Ordering notes:
 ## P12: Blocking calculation rules and finding shape
 
 - Type: structural. Class: Luna-class.
-- Issues: I-015 (2-006; open candidate C2), I-060 (1-016, 2-015), I-066 (2-012; decision 8).
+- Issues: I-015 (2-006; decision C2), I-060 (1-016, 2-015), I-066 (2-012; decision 8).
 - Owned files: `src/domain/blocking.ts`, `src/domain/costing.ts`, `src/domain/validation.ts`, `src/domain/types.ts`, their tests, `architecture_overview.md` (validation section), `docs/data-schema.md` (finding shape).
 - Acceptance criteria:
-  1. Per C2 (a): an explicit-time deadhead outside [previous end, next start] gets a placement finding, and a pull-out ending after the first Trip start (or a pull-in starting before the last end) gets a boundary-overlap finding (S14 and S16 shapes).
+  1. Decision C2: an explicit-time deadhead outside [previous end, next start] gets a placement finding, and a pull-out ending after the first Trip start (or a pull-in starting before the last end) gets a boundary-overlap finding (S14 and S16 shapes).
   2. A Pattern whose total distance is 0 is treated as incomplete mileage (decision 8).
   3. `CostingFinding` uses the `ValidationFinding` shape; Blocking structural rejections throw a typed error that carries findings; the dead `validation.ts` `validateBlock` is removed.
   4. The 16 Blocking shapes and the golden reconciliation still pass unchanged except where criteria 1–2 change a status.
@@ -267,7 +267,7 @@ Ordering notes:
 ## B01: CI, typecheck scope, and dependencies
 
 - Type: build. Class: Luna-class.
-- Issues: I-046 (6-004), I-097 (6-006, A-008), I-098 (6-007; decision 17), I-099 (6-009; decision 18), I-100 (6-010; C4), I-101 (6-011; C4).
+- Issues: I-046 (6-004), I-097 (6-006, A-008), I-098 (6-007; decision 17), I-099 (6-009; decision 18), I-100 (6-010; decision C4), I-101 (6-011; decision C4).
 - Owned files: new `.github/workflows/ci.yml`, `.github/workflows/deploy-pages.yml`, `package.json`, `pnpm-lock.yaml`, `tsconfig.json`, new `.nvmrc`, `vite.config.ts`, `architecture_overview.md` (OV-TECH-01, OV-TECH-02), `codex.md` (verified commands).
 - Acceptance criteria:
   1. A CI workflow runs on pull requests and pushes to `main`: install, typecheck, unit tests, build (the `phase-6.md` Section 3 proposal), plus a Playwright job, which is required because P05 has landed.
@@ -275,7 +275,7 @@ Ordering notes:
   3. `pnpm typecheck` covers `tests/ui` and `playwright.config.ts`; `@types/node` is added for Node 22.
   4. Node 22 is pinned in CI, `engines`, `packageManager`, and `.nvmrc`.
   5. `zod` and `@tanstack/react-table` are removed; OV-TECH-01 and OV-TECH-02 record hand-written validation (decision 18).
-  6. Per C4 (a): `vite` is updated within its range so that `pnpm audit` reports no `vite` advisory; `chunkSizeWarningLimit` is raised with a comment stating the reason. The `vitest` major upgrade is recorded as follow-up work, not done here.
+  6. Decision C4: `vite` is updated within its range so that `pnpm audit` reports no `vite` advisory; `chunkSizeWarningLimit` is raised with a comment stating the reason. The `vitest` major upgrade is recorded as follow-up work, not done here.
 - Verification: CI run on the package branch; full regression; `pnpm audit` before and after.
 
 ## U01: Standards-mode `index.html`
@@ -349,14 +349,14 @@ Ordering notes:
 ## U06: Costing and service-day presentation
 
 - Type: UI. Class: Luna-class.
-- Issues: I-031 (5-005), I-033 (5-007), I-058 (1-014), I-087 (5-019; open candidate C3). Also the I-044 loading state.
+- Issues: I-031 (5-005), I-033 (5-007), I-058 (1-014), I-087 (5-019; decision C3). Also the I-044 loading state.
 - Owned files: `src/ui/CostingWorkspace.tsx`, `src/ui/App.tsx` (Service days table only), `src/styles.css`, `tests/ui/costing-workspace.spec.ts`, `docs/implementation/phase-05-costing.md`.
 - Acceptance criteria:
   1. The Service days table shows the P09 field errors for a total above 365 using the existing field-error pattern.
   2. An invalid Costing estimate lists each finding.
   3. At 1024 px, Annual cost is visible without horizontal page scroll (AC7). Checked after U01.
   4. While the estimate loads, the workspace says "Calculating estimate…" instead of "Select a valid Blocking Scenario…".
-  5. Per C3 (a): the Total row leaves the daily columns blank, keeps the annual totals, and a note says totals are computed before rounding. "1 excluded Block" is singular. View year appears only in the toolbar (D0028).
+  5. Decision C3: the Total row leaves the daily columns blank, keeps the annual totals, and a note says totals are computed before rounding. "1 excluded Block" is singular. View year appears only in the toolbar (D0028).
   6. `phase-05-costing.md` lists the implemented columns (decision 2: 5C is accepted).
 - Verification: UI rules, with the width check at 768, 1024, and 1440 px.
 
@@ -419,7 +419,7 @@ Ordering notes:
 ## D01: Documentation-only remainder
 
 - Type: docs. Class: Luna-class.
-- Issues: I-048 (1-001), I-049 (1-002), I-050 (1-003), I-051 (1-004), I-053 (1-007; decision 9), I-054 (1-008), I-055 (1-011; open candidate C1), I-056 (1-012), I-059 (1-015, 5-022). Also records decisions 1 and 2 in `phase-05-costing.md`.
-- Owned files: `architecture_overview.md`, `codex.md`, `AGENTS.md`, `docs/data-schema.md`, `docs/domain-glossary.md`, `docs/ui-conventions.md`, `docs/implementation/schedule-development-roadmap.md`, `docs/implementation/phase-05-costing.md`, `docs/decisions/*.md`, a new minimum-layover decision record if C1 is (a).
+- Issues: I-048 (1-001), I-049 (1-002), I-050 (1-003), I-051 (1-004), I-053 (1-007; decision 9), I-054 (1-008), I-055 (1-011; decision C1), I-056 (1-012), I-059 (1-015, 5-022). Also records decisions 1 and 2 in `phase-05-costing.md`.
+- Owned files: `architecture_overview.md`, `codex.md`, `AGENTS.md`, `docs/data-schema.md`, `docs/domain-glossary.md`, `docs/ui-conventions.md`, `docs/implementation/schedule-development-roadmap.md`, `docs/implementation/phase-05-costing.md`, `docs/decisions/*.md`, a new minimum-layover decision record (decision C1).
 - Acceptance criteria: every quoted contradiction in the listed findings is resolved toward the source the register names; every decision record has Status and Date lines and annotates its supersessions; `AGENTS.md` and `codex.md` use agent-neutral wording and capability classes without renaming `codex.md` (decision 9); `phase-05-costing.md` records that the review replaces 5D except user acceptance (decision 1) and that 5C review is complete (decision 2).
 - Verification: documentation rules: proofread and a cross-file consistency check against the rule catalogue rows the findings cite.

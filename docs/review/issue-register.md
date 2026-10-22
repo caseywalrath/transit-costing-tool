@@ -1,6 +1,6 @@
 # Code Review Issue Register
 
-- Status: Stage 3A (plan Section 8.1 steps 1–5) and Stage 3B (steps 6–7) complete. Packages: `docs/review/fix-packages.md`. Open user-decision candidates C1–C8: `docs/review/user-decisions.md`.
+- Status: Stage 3A (plan Section 8.1 steps 1–5) and Stage 3B (steps 6–7) complete. Packages: `docs/review/fix-packages.md`. User decisions C1–C8 (approved 2026-10-22): `docs/review/user-decisions.md`.
 - Date: 2026-10-22. Branch `claude/upbeat-ritchie-51mpy5`; code baseline `main` at `baed9f1`.
 - Sources: `docs/review/findings/phase-A.md` and `phase-1.md` to `phase-6.md`. User decisions 1–18 in `docs/review/user-decisions.md` are settled and are cited, not re-opened.
 
