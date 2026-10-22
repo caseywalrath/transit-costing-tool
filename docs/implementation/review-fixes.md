@@ -140,3 +140,60 @@ Confirmed all four acceptance criteria and found no unprotected write path (Dexi
 - U02 must present `SessionStatus` (the read-only status port) so a read-only tab shows its state before a save fails, disables editing controls, and replaces the generic message a closed database produces. The data-safety package P10/U02 owns it.
 - `tests/ui/blocking-workspace.spec.ts:116` is flaky under repeated parallel load (about 1 run in 8 times out at "Add node"). It fails the same way on the P01 commit without the guard, so it is not caused by P02. P05 owns the browser suite.
 - Other pre-existing risk unchanged: GitHub Pages sibling sites share the origin (decision C5, P10).
+
+## P03: Scenario duplication remap and recovery
+
+- Date: 2026-10-22. Sitting 4B. Model: Sonnet (main session). Independent diff review by an Opus sub-agent.
+- Type: structural. Severity: S1.
+- Commit: `P03_HASH`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-004 | 3-002 | S1 | Duplicate scenario stamped every copied Block with the copy's first Trip Profile. With Blocking Scenarios on two Trip Profiles the save failed ("Block ... cannot reference a Trip from another Trip profile"); with one profile it added a Trip Profile to every normalized Block, against Decision 0019 item 9. |
+| I-005 | 3-006, A-004 | S1 | Duplicate scenario did not remap the Node of pull-out, deadhead, and pull-in activities. All 138 such references in a copy of the Federal BRT project named the source's Nodes: the Nodes showed blank, the edit dialog held the source ID, bulk apply matched nothing, and a copied Block with a deadhead dropped out of Costing. |
+
+User decisions implemented: decision 4 (repair Scenarios already duplicated, on load) and decision C8 (copies whose source Scenario no longer exists).
+
+### What changed
+
+- `src/domain/project.ts`: `duplicateScenario` applies its Node map to `fromNodeId` and `toNodeId` of every non-revenue activity. A Block that has a Blocking Scenario keeps no `tripProfileId` in the copy. A legacy Block without a Blocking Scenario keeps its Trip Profile, remapped to the copy's profile (the copy's first profile when it had none, as before).
+- New `src/domain/scenarioCopyRecovery.ts` (pure): `recoverScenarioCopyNodeReferences` repairs Scenarios copied by the older code. It touches only Blocks of a Scenario that records a `sourceScenarioId`, and only `fromNodeId` and `toNodeId` of non-revenue activities. A Node of another Scenario maps to the copy's Node by Route name and Node name; a repeated name maps by position when both Routes list the same names in the same order. Where a Scenario in the copy's lineage no longer exists, pull-out To, pull-in From, and deadhead From and To are taken from the adjacent Trip endpoints (C8); an optional garage end (pull-out From, pull-in To) that names a missing Node is cleared; every reference it cannot repair gets a finding that names the Block. Unchanged Blocks are returned as the same objects.
+- `src/persistence/database.ts`: Dexie version 7 changes no store. Its upgrade runs the recovery once over all Scenarios in the database and writes only the Blocks that changed. It runs in a read-only tab too, because the write guard of Decision 0037 lets upgrades through. A recovery that throws is logged and skipped so the database still opens.
+- `src/persistence/backup.ts`: `parseProjectBackupWithReport` runs the recovery after the Block checks and returns `{ snapshot, report }` (`recoveredNodeReferences`, `recoveryFindings`). `parseProjectBackup` is unchanged for callers.
+- Behavior before: Scenarios duplicated before this change, and backups of them, kept pointing at the source's Nodes; a second Trip Profile made Duplicate scenario fail. After: new copies are correct, old copies are repaired when the app first opens at database version 7, and an old backup of a copy imports repaired.
+- Decision record `docs/decisions/0038-scenario-copy-node-references-and-recovery.md`; `docs/data-schema.md` migration history (version 7); `architecture_overview.md` (schema version 7, copy and recovery text).
+
+### Tests added
+
+- `src/domain/project.test.ts` (5 tests): no reference back to the source Scenario on the golden project (was 138); pull-out, deadhead, and pull-in Nodes map to the same Node in the copy; a copied Block with a deadhead keeps the source's eligibility, hours, and findings; normalized Blocks of two Blocking Scenarios on different Trip Profiles copy with no Block Trip Profile and pass the Trip Profile check; legacy Blocks keep and remap their Trip Profile.
+- `src/domain/scenarioCopyRecovery.test.ts` (15 tests): the 140 leaking references (138 plus a deadhead) are repointed and nothing else changes (recovered copy equals a correctly made copy, byte-equal outside the Node fields); idempotent; a Scenario that is not a copy is left alone; an unknown Node in an intact lineage is left and reported; copy of a copy; a Pattern renamed after duplication; same-named Nodes kept apart by position; unique name mapped when the order changed, repeated name left; renamed Node and renamed Route are reported; C8 inference from adjacent Trips; garage ends cleared with a finding naming the Block; a required end with no Trip is reported and left; copy of a copy with the first source deleted.
+- `src/persistence/backup.test.ts` (4 tests): a backup of a leaky copy imports with 138 references repaired and every other record as exported; the recovered backup round trips; import-as-copy of it has no reference to the source; a copy whose source is not in the file is inferred (C8).
+- `tests/ui/scenario-copy-recovery.spec.ts` (4 tests, real IndexedDB, Federal BRT project): Duplicate scenario with Blocking Scenarios on two Trip Profiles succeeds on IndexedDB and in memory with no Block Trip Profile; a version 6 database holding a copy with 138 leaking references has none after the version 7 upgrade and equals a correctly made copy (no other table changes); the same with the source Scenario deleted (C8); the upgrade runs in a read-only tab while its ordinary writes stay rejected.
+- Before the fix: 4 of the 5 new `project.test.ts` tests failed (the legacy-Block test is a control that must keep passing), 2 of the `scenarioCopyRecovery` tests (the ones that compare with a correctly made copy) failed, all 4 browser tests failed (Duplicate scenario threw "cannot reference a Trip from another Trip profile"; the database stayed at version 6), and 3 of the 4 `backup.test.ts` tests failed with the recovery call removed. The recovery module was written against its tests; three of its tests were added after the review (below) from the reviewer's confirmed probes.
+- Shared test support, new: `src/testSupport/goldenBackup.ts` and `rawImports.d.ts` (golden project fixtures for unit tests, read through Vite's `?raw` import because `@types/node` is not installed). Package P04 uses them.
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 31 files, 247 tests passed (223 before: +5 project, +15 recovery, +4 backup).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 40 passed, 7 failed. The 7 are the known baseline failures (I-006): `trip-table-layout.spec.ts:40` and `unified-action-layer.spec.ts:83, 112, 140, 169, 186, 226`. The baseline on `origin/main` in this session was 36 passed, 7 failed, so the 4 new tests are the only change. One baseline run showed `:140` failing on a click timeout instead of `toHaveText`; run alone three times, it fails on `toHaveText` both on untouched `origin/main` and on this branch, so the difference is load, not this change.
+- `pnpm build`: succeeds (only the existing chunk-size warning).
+
+### Independent review (Opus)
+
+Confirmed all five acceptance criteria (the original golden reproductions, run with `it.fails` removed, pass; the ported tests fail when the fix is reverted). Findings and disposition:
+
+- Confirmed and fixed: renaming one Pattern, in the source or the copy, shifted the position rule and left all 140 references unrepaired. Names that are unique in the Route now map by name; position is used only for repeated names, and only when both Routes list the same names in the same order.
+- Confirmed and fixed: a copy of a copy whose first source was deleted (S0 → S1 → S2, S0 gone) was skipped silently, because its direct source still existed. The C8 test now follows the whole `sourceScenarioId` chain. A Node that exists nowhere in an intact lineage is now reported as a finding instead of skipped.
+- Confirmed and fixed: wrong Node when names repeat and a Route was reordered. Position is trusted only when both Routes list identical names in identical order. The remaining case (a palindromic name list) cannot be told apart and is recorded in Decision 0038.
+- Accepted and fixed: a recovery error would have stopped the database from opening; it is now logged and skipped.
+- Accepted as is: copies that lost their `sourceScenarioId` (import-as-copy of a file without the source, by earlier code) are not recognized and stay unrepaired; recovery findings are not shown anywhere yet; garage-end clearing can also apply to references left by Node deletion (3-007) in a copy whose lineage is broken. All recorded in Decision 0038.
+
+### Residual risks and hand-offs
+
+- Hand-off (U02, with P12 and P14): present `recoveryFindings` and `recoveredNodeReferences` after an import, and a Blocking rule that flags an activity Node outside its Scenario. The findings from the database upgrade can be recomputed by running the recovery on the stored data; nothing calls it yet.
+- Hand-off (files outside the package's owned list): `src/persistence/database.test.ts` and `src/persistence/repository.test.ts` assert the schema version, now 7; `tests/ui/database-migration.spec.ts` expects the upgraded IndexedDB version 70 (was 60). Only the version numbers changed. P06 owns these files.
+- What could still be wrong: a Route renamed or Nodes renamed or removed after duplication leave references unrepaired (reported, not guessed); the upgrade reads every Trip and Block into memory once (the Federal BRT project is about 2 MB); a leak whose Node was deleted from a live source is reported, not repaired.
+- `tests/ui/blocking-workspace.spec.ts` is flaky at its "Add node" step under parallel load (one failure in about 4 full runs; the documented race, not caused by this change). P05 owns the browser suite.

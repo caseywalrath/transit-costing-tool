@@ -16,9 +16,9 @@ describe('route-definition persistence', () => {
     expect(await repository.getRouteDefinition(route.id)).toEqual({ route, nodes: [], patterns: [] });
   });
 
-  it('defines IndexedDB schema version 6 with Costing, Blocking Scenario, normalized Block lookups, and regeneration undo', () => {
+  it('defines IndexedDB schema version 7 with Costing, Blocking Scenario, normalized Block lookups, and regeneration undo', () => {
     const database = new TransitDatabase(`transit-costing-test-${Date.now()}`);
-    expect(database.verno).toBe(6);
+    expect(database.verno).toBe(7);
     expect(database.tables.map((table) => table.name)).toEqual(expect.arrayContaining(['runtimeProfiles', 'runtimeAssignments', 'tripProfiles', 'blockingScenarios', 'costingAssumptions', 'tripRegenerationUndo']));
     expect(database.runtimeAssignments.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['runtimeProfileId']));
     expect(database.blockingScenarios.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['tripProfileId', '[scenarioId+name]', '[tripProfileId+name]']));

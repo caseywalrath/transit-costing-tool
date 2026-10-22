@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { asSnapshot, goldenRaw, goldenWithAltBlocking, goldenWithDeadhead } from '../testSupport/goldenBackup';
+import { summarizeBlock } from './blocking';
+import { evaluateBlockEligibility } from './costing';
 import { metadata } from './ids';
-import { createScenarioRecords, duplicateRouteRecords, duplicateScenario } from './project';
+import { createScenarioRecords, duplicateRouteRecords, duplicateScenario, snapshotForScenario } from './project';
+import { assertTripProfileReferences } from './trips';
+import type { Block, BlockingBlock, ProjectSnapshot } from './types';
 
 describe('scenario duplication', () => {
   it('creates the four standard service days for a new scenario', () => {
@@ -77,5 +82,96 @@ describe('route duplication', () => {
     expect(copiedTrip.stopTimes[0].patternPointId).toBe(copiedPattern.points[0].id);
     expect(copiedTrip.provenance.runtimeProfileId).toBe(copiedRuntime.id);
     expect(duplicate.records.blocks).toEqual(source.blocks);
+  });
+});
+
+function collectIds(value: unknown, ids = new Set<string>()): Set<string> {
+  if (Array.isArray(value)) value.forEach((item) => collectIds(item, ids));
+  else if (value && typeof value === 'object') for (const [key, item] of Object.entries(value)) { if (key === 'id' && typeof item === 'string') ids.add(item); collectIds(item, ids); }
+  return ids;
+}
+/** Field paths whose `*Id` value is a source record's ID and does not exist in the copy. `sourceScenarioId` and `sourceTripProfileId` record where a copy came from. */
+function sourceReferences(copy: unknown, sourceIds: Set<string>, copyIds: Set<string>, path = '', found: Record<string, number> = {}): Record<string, number> {
+  if (Array.isArray(copy)) copy.forEach((item) => sourceReferences(item, sourceIds, copyIds, `${path}[]`, found));
+  else if (copy && typeof copy === 'object') {
+    for (const [key, item] of Object.entries(copy)) {
+      const field = `${path}.${key}`.replace(/^\./, '');
+      if (key !== 'id' && /Id$/.test(key) && key !== 'sourceScenarioId' && key !== 'sourceTripProfileId' && typeof item === 'string' && sourceIds.has(item) && !copyIds.has(item)) found[field] = (found[field] ?? 0) + 1;
+      else sourceReferences(item, sourceIds, copyIds, `${path}.${key}`, found);
+    }
+  }
+  return found;
+}
+
+describe('scenario duplication of Blocks (P03: I-004, I-005)', () => {
+  it('leaves no reference back to the source Scenario (was 138 Node references)', () => {
+    const snapshot = asSnapshot(goldenRaw());
+    const source = snapshotForScenario(snapshot, snapshot.scenarios[0].id)!;
+    const copy = duplicateScenario(source, 'Copy');
+    expect(sourceReferences(copy, collectIds(source), collectIds(copy))).toEqual({});
+  });
+
+  it('remaps pull-out, deadhead, and pull-in Nodes to the copy Nodes by the same Node', () => {
+    const snapshot = asSnapshot(goldenWithDeadhead());
+    const source = snapshotForScenario(snapshot, snapshot.scenarios[0].id)!;
+    const copy = duplicateScenario(source, 'Copy');
+    const copyNodeFor = new Map(source.nodes.map((node, index) => [node.id, copy.nodes[index].id]));
+    const sourceActivities = source.blocks.flatMap((block) => block.activities).filter((activity) => activity.type !== 'revenueTrip');
+    const copyActivities = copy.blocks.flatMap((block) => block.activities).filter((activity) => activity.type !== 'revenueTrip');
+    expect(copyActivities).toHaveLength(sourceActivities.length);
+    expect(copyActivities.some((activity) => activity.type === 'deadhead')).toBe(true);
+    sourceActivities.forEach((activity, index) => {
+      for (const end of ['fromNodeId', 'toNodeId'] as const) {
+        const sourceNode = (activity as any)[end] as string | undefined;
+        expect((copyActivities[index] as any)[end]).toBe(sourceNode === undefined ? undefined : copyNodeFor.get(sourceNode));
+      }
+    });
+  });
+
+  it('keeps the source Block eligibility, hours, and findings in the copy when a Block has a deadhead', () => {
+    const snapshot = asSnapshot(goldenWithDeadhead());
+    const source = snapshotForScenario(snapshot, snapshot.scenarios[0].id)!;
+    const copy = duplicateScenario(source, 'Copy');
+    const measure = (records: typeof source) => {
+      const blockingScenario = records.blockingScenarios![0];
+      const serviceDayIds = new Set(records.serviceDays.map((day) => day.id));
+      return (records.blocks as BlockingBlock[]).map((block) => {
+        const summary = summarizeBlock(block, { scenario: records.scenario, blockingScenario, trips: records.trips, patterns: records.patterns });
+        const eligibility = evaluateBlockEligibility(block, summary, records.scenario, blockingScenario, serviceDayIds);
+        return { label: block.label, day: records.serviceDays.find((day) => day.id === block.serviceDayId)!.name, eligible: Boolean(eligibility.eligible), revenueHours: summary.revenueHours, findings: summary.findings.map((found) => found.ruleId).sort() };
+      });
+    };
+    const before = measure(source);
+    expect(before.some((block) => block.eligible)).toBe(true);
+    expect(measure(copy)).toEqual(before);
+  });
+
+  it('stamps no Trip Profile on normalized Blocks, so Blocking Scenarios on different Trip Profiles copy', () => {
+    const snapshot = asSnapshot(goldenWithAltBlocking());
+    const source = snapshotForScenario(snapshot, snapshot.scenarios[0].id)!;
+    expect(source.blocks.some((block) => block.blockingScenarioId === 'alt-blocking')).toBe(true);
+    const copy = duplicateScenario(source, 'Copy');
+    expect(copy.blocks.filter((block) => block.blockingScenarioId && block.tripProfileId)).toHaveLength(0);
+    expect(copy.blocks).toHaveLength(source.blocks.length);
+    expect(() => assertTripProfileReferences(copy.trips, copy.blocks)).not.toThrow();
+    // Each copied Blocking Scenario still holds the Trips of its own copied Trip Profile.
+    const profileOf = new Map(copy.blockingScenarios!.map((scenario) => [scenario.id, scenario.tripProfileId]));
+    const tripById = new Map(copy.trips.map((trip) => [trip.id, trip]));
+    for (const block of copy.blocks) for (const activity of block.activities) if (activity.type === 'revenueTrip') expect(tripById.get(activity.tripId)!.tripProfileId).toBe(profileOf.get(block.blockingScenarioId!));
+  });
+
+  it('keeps and remaps the Trip Profile of a legacy Block that has no Blocking Scenario', () => {
+    const snapshot = asSnapshot(goldenWithAltBlocking());
+    const original = snapshot.blocks[0] as Block;
+    const legacyOnAlt: Block = { ...original, id: 'legacy-alt', label: 'LEGACY-ALT', blockingScenarioId: undefined, tripProfileId: 'alt-profile', activities: [] };
+    const legacyUnowned: Block = { ...original, id: 'legacy-none', label: 'LEGACY-NONE', blockingScenarioId: undefined, tripProfileId: undefined, activities: [] };
+    const withLegacy: ProjectSnapshot = { ...snapshot, blocks: [...snapshot.blocks, legacyOnAlt, legacyUnowned] };
+    const copy = duplicateScenario(snapshotForScenario(withLegacy, snapshot.scenarios[0].id)!, 'Copy');
+    const copiedAlt = copy.tripProfiles!.find((profile) => profile.sourceTripProfileId === 'alt-profile')!;
+    const copiedDefault = copy.tripProfiles!.find((profile) => profile.sourceTripProfileId === snapshot.tripProfiles![0].id)!;
+    expect(copy.blocks.find((block) => block.label === 'LEGACY-ALT')!.tripProfileId).toBe(copiedAlt.id);
+    // A legacy Block with no profile still receives the copy's first Trip Profile, as before.
+    expect(copy.blocks.find((block) => block.label === 'LEGACY-NONE')!.tripProfileId).toBe(copy.tripProfiles![0].id);
+    expect(copiedDefault.id).toBe(copy.tripProfiles![0].id);
   });
 });

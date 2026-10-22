@@ -16,6 +16,7 @@ import type {
   TripProfile,
   BlockingScenario,
   CostingAssumptions,
+  ValidationFinding,
 } from '../domain/types';
 import { metadata, newId } from '../domain/ids';
 import { validatePattern } from '../domain/patterns';
@@ -23,6 +24,7 @@ import { validateDirection, validatePatternDirection } from '../domain/direction
 import { assertRuntimeGraph } from './runtimePersistence';
 import { assertTripProfileReferences } from '../domain/trips';
 import { MAX_COSTING_FUTURE_YEARS, MAX_COSTING_YEAR, MIN_COSTING_YEAR, validatePersistedCostingAssumptions } from '../domain/costing';
+import { recoverScenarioCopyNodeReferences } from '../domain/scenarioCopyRecovery';
 
 export const PROJECT_BACKUP_FORMAT = 'transit-costing-tool.project' as const;
 export const PROJECT_BACKUP_SCHEMA_VERSION = 6 as const;
@@ -101,6 +103,14 @@ export interface ProjectBackup extends Omit<ProjectSnapshot, 'generationSets' | 
   exportSchemaVersion: typeof PROJECT_BACKUP_SCHEMA_VERSION;
   exportedAt: string;
   applicationVersion?: string;
+}
+
+/** What parsing a backup repaired or could not repair. Parsing never rejects a file for it. Presenting it to the planner is the data-safety package (U02). */
+export interface BackupImportReport {
+  /** Pull-out, deadhead, and pull-in Node references of Scenario copies that were repointed to the copy's own Nodes. */
+  recoveredNodeReferences: number;
+  /** One finding per Node reference of a Scenario copy that could not be repaired, naming the Block. */
+  recoveryFindings: ValidationFinding[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -381,6 +391,10 @@ function validateBlocks(values: unknown[], scenarioIds: Set<string>, serviceDays
 }
 
 export function parseProjectBackup(payload: string): ProjectSnapshot {
+  return parseProjectBackupWithReport(payload).snapshot;
+}
+
+export function parseProjectBackupWithReport(payload: string): { snapshot: ProjectSnapshot; report: BackupImportReport } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(payload);
@@ -427,7 +441,10 @@ export function parseProjectBackup(payload: string): ProjectSnapshot {
   const costingAssumptions = parsed.exportSchemaVersion === PROJECT_BACKUP_SCHEMA_VERSION
     ? validateCostingAssumptions(requiredArray(parsed.costingAssumptions, 'costingAssumptions'), scenarioIds)
     : [];
-  const blocks = [3, 4, 5, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateBlocks(requiredArray(parsed.blocks, 'blocks'), scenarioIds, serviceDays, trips, blockingScenarios) : [];
+  const validatedBlocks = [3, 4, 5, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateBlocks(requiredArray(parsed.blocks, 'blocks'), scenarioIds, serviceDays, trips, blockingScenarios) : [];
+  // Files exported after a Scenario was duplicated by the older code name the source Scenario's Nodes in the copy's Blocks (Decision 0038).
+  const recovery = recoverScenarioCopyNodeReferences({ scenarios, routes, nodes, patterns, trips, blocks: validatedBlocks });
+  const blocks = recovery.blocks;
   assertTripProfileReferences(trips, blocks);
   const tripProfiles = provisionalTripProfiles;
   const defaultProfileByScenario = new Map(tripProfiles.map((profile) => [profile.scenarioId, profile.id]));
@@ -446,7 +463,10 @@ export function parseProjectBackup(payload: string): ProjectSnapshot {
   }
   const normalizedTrips = trips.map((trip) => ({ ...trip, tripProfileId: trip.tripProfileId ?? defaultProfileByScenario.get(trip.scenarioId) }));
   const normalizedBlocks = blocks.map((block) => ({ ...block, tripProfileId: block.tripProfileId ?? defaultProfileByScenario.get(block.scenarioId) }));
-  return { project, scenarios, serviceDays, routes, nodes, patterns, ...(directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions.length ? { costingAssumptions } : {}), generationSets, trips: normalizedTrips, blocks: normalizedBlocks };
+  return {
+    snapshot: { project, scenarios, serviceDays, routes, nodes, patterns, ...(directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions.length ? { costingAssumptions } : {}), generationSets, trips: normalizedTrips, blocks: normalizedBlocks },
+    report: { recoveredNodeReferences: recovery.recoveredReferences, recoveryFindings: recovery.findings },
+  };
 }
 
 export function exportProjectJson(snapshot: ProjectSnapshot, applicationVersion?: string): string {

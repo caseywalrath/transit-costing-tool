@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import type { DatabaseRecordMap } from '../domain/types';
 import { metadata, newId } from '../domain/ids';
+import { recoverScenarioCopyNodeReferences } from '../domain/scenarioCopyRecovery';
 import type { WriteGuard } from './tabGuard';
 export class TransitDatabase extends Dexie {
   projects!: Table<DatabaseRecordMap['projects'], string>; scenarios!: Table<DatabaseRecordMap['scenarios'], string>; serviceDays!: Table<DatabaseRecordMap['serviceDays'], string>; routes!: Table<DatabaseRecordMap['routes'], string>; nodes!: Table<DatabaseRecordMap['nodes'], string>; patterns!: Table<DatabaseRecordMap['patterns'], string>; directions!: Table<DatabaseRecordMap['directions'], string>; runtimeProfiles!: Table<DatabaseRecordMap['runtimeProfiles'], string>; runtimeAssignments!: Table<DatabaseRecordMap['runtimeAssignments'], string>; generationSets!: Table<DatabaseRecordMap['generationSets'], string>; tripProfiles!: Table<DatabaseRecordMap['tripProfiles'], string>; blockingScenarios!: Table<DatabaseRecordMap['blockingScenarios'], string>; trips!: Table<DatabaseRecordMap['trips'], string>; tripRegenerationUndo!: Table<DatabaseRecordMap['tripRegenerationUndo'], string>; blocks!: Table<DatabaseRecordMap['blocks'], string>; costingAssumptions!: Table<DatabaseRecordMap['costingAssumptions'], string>; /** @deprecated Kept untyped and unused so the upgrade does not discard any data in the preliminary table. */ costPlans!: Table<Record<string, unknown>, string>; appMetadata!: Table<DatabaseRecordMap['appMetadata'], string>;
@@ -45,6 +46,26 @@ export class TransitDatabase extends Dexie {
     // Version 6 adds one local, one-step undo record for trip regeneration.
     // It is operational state and is intentionally excluded from project backups.
     this.version(6).stores({ tripRegenerationUndo: 'id,scenarioId,tripProfileId' });
+    // Version 7 changes no store. It repairs Scenarios that were duplicated before duplication remapped the Node references of
+    // pull-out, deadhead, and pull-in activities (Decision 0038). It writes only Blocks of Scenario copies, once, and runs in
+    // whichever tab opens the database first, including a read-only one (the write guard lets upgrades through).
+    this.version(7).stores({}).upgrade(async (tx) => {
+      const scenarios = await tx.table('scenarios').toArray();
+      if (!scenarios.some((scenario) => scenario.sourceScenarioId)) return;
+      const [routes, nodes, patterns, trips, blocks] = await Promise.all(['routes', 'nodes', 'patterns', 'trips', 'blocks'].map((name) => tx.table(name).toArray()));
+      let recovery: ReturnType<typeof recoverScenarioCopyNodeReferences>;
+      try {
+        recovery = recoverScenarioCopyNodeReferences({ scenarios, routes, nodes, patterns, trips, blocks });
+      } catch (error) {
+        // A repair that cannot run must not stop the database from opening; the Scenarios stay as they were.
+        console.warn('Scenario copy recovery was skipped.', error);
+        return;
+      }
+      if (recovery.changedBlockIds.length) {
+        const changed = new Set(recovery.changedBlockIds);
+        await tx.table('blocks').bulkPut(recovery.blocks.filter((block) => changed.has(block.id)));
+      }
+    });
   }
 
   private installWriteGuard(guard: WriteGuard): void {
