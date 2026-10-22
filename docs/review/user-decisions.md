@@ -26,3 +26,13 @@ The user approved every recommendation from the Wave 2 gate.
 | 13 | 4-015, L-11 | Dead generation-set UI and commands | Delete them. Keep the `generationSets` table and backup parsing for old backups. |
 | 14 | 5-004 | Unsaved Runtime editor and Build Trips input | Guard the Runtime editor draft and the staged Shift with the discard dialog. Build Trips may close without a prompt but keeps its values until the drawer is reopened. |
 | 15 | 5-015 | Trips from another Route inside a Block | Show the Route short name in the Pattern pill, only for activities from another Route. No new column. |
+
+## Wave 3 gate decisions (2026-10-22)
+
+The user approved every recommendation from the Wave 3 gate.
+
+| # | Source findings | Question | Decision |
+| --- | --- | --- | --- |
+| 16 | 6-003 | How should the app protect local data? | Request persistent storage, map quota errors to plain guidance, and show when the last backup was exported. Record the choice in Decision 0001 or a new decision record. |
+| 17 | 6-007 | Which Node line? | Node 22 LTS in CI, `engines`, `packageManager`, and `.nvmrc`. |
+| 18 | 6-009, plan 8.4 item 6 | `zod` and `@tanstack/react-table` | Remove both; amend OV-TECH-01 and OV-TECH-02 to record hand-written validation. |
