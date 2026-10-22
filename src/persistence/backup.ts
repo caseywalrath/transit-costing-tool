@@ -385,9 +385,9 @@ function validateTrips(values: unknown[], scenarioIds: Set<string>, routes: Map<
 const ACTIVITY_TYPES = ['pullOut', 'revenueTrip', 'deadhead', 'pullIn'];
 const ACTIVITY_NUMBER_FIELDS = ['startTime', 'endTime', 'minutesBeforeFirstTrip', 'minutesAfterLastTrip', 'minutesAfterPreviousTrip', 'miles'];
 
-/** A Block without a Blocking Scenario is a pre-Phase-4 placeholder; Decision 0019 item 13 discards it on import. */
+/** A Block without a Blocking Scenario is a pre-Phase-4 placeholder; Decision 0019 item 13 discards it on import. A malformed value is not "absent": the Block is kept so validation rejects it. */
 function isPlaceholderBlock(value: unknown): boolean {
-  return isRecord(value) && !(typeof value.blockingScenarioId === 'string' && value.blockingScenarioId.length > 0);
+  return isRecord(value) && (value.blockingScenarioId === undefined || value.blockingScenarioId === null || value.blockingScenarioId === '');
 }
 
 /** Checks the shape of one Block's activities, so the later checks can rely on it. */
@@ -409,12 +409,13 @@ function validateActivityShapes(block: Block, index: number): void {
   });
 }
 
-function validateBlocks(values: unknown[], scenarioIds: Set<string>, serviceDays: ServiceDayDefinition[], trips: Trip[], blockingScenarios: BlockingScenario[] = []): Block[] {
+/** `entries` carry each Block's position in the file, so a message names the right `blocks[n]` after placeholders are removed. */
+function validateBlocks(entries: Array<{ value: unknown; index: number }>, scenarioIds: Set<string>, serviceDays: ServiceDayDefinition[], trips: Trip[], blockingScenarios: BlockingScenario[] = []): Block[] {
   const ids = new Set<string>(); const tripIds = new Set(trips.map((trip) => trip.id)); const dayIds = new Set(serviceDays.map((day) => day.id));
   const dayScenario = new Map(serviceDays.map((day) => [day.id, day.scenarioId]));
   const labels = new Set<string>();
   const blockingScenarioById = new Map(blockingScenarios.map((scenario) => [scenario.id, scenario]));
-  return values.map((value, index) => {
+  return entries.map(({ value, index }) => {
     if (!isRecord(value)) throw new Error(`Invalid project backup: blocks[${index}] must be an object`);
     const block = value as unknown as Block; requiredString(block.id, `blocks[${index}].id`); if (ids.has(block.id)) throw new Error(`Invalid project backup: duplicate block id ${block.id}`); ids.add(block.id);
     if (!scenarioIds.has(block.scenarioId) || !dayIds.has(block.serviceDayId)) throw new Error(`Invalid project backup: blocks[${index}] references a missing record`); requiredString(block.label, `blocks[${index}].label`); if (!Array.isArray(block.activities)) throw new Error(`Invalid project backup: blocks[${index}].activities`);
@@ -424,7 +425,7 @@ function validateBlocks(values: unknown[], scenarioIds: Set<string>, serviceDays
     // A normalized Block stores no Trip Profile of its own (Decision 0019 item 9). An older export may carry the one its Blocking Scenario has.
     if (block.tripProfileId && block.tripProfileId !== owner.tripProfileId) throw new Error(`Invalid project backup: normalized block ${block.id} duplicates mismatched Trip Profile ownership`);
     const labelKey = `${owner.id}\u0000${block.serviceDayId}\u0000${block.label.trim()}`;
-    if (labels.has(labelKey)) throw new Error(`Invalid project backup: Blocking Scenario "${owner.name}" has more than one Block labeled "${block.label}" on the same service day`);
+    if (labels.has(labelKey)) throw new Error(`Invalid project backup: Blocking Scenario "${owner.name}" has more than one Block labeled "${block.label}" on the same service day. Rename one of them in the app that made this file, then export again.`);
     labels.add(labelKey);
     validateActivityShapes(block, index);
     for (const activity of block.activities) { if (activity.type === 'revenueTrip' && !tripIds.has(activity.tripId)) throw new Error(`Invalid project backup: block ${block.id} references a missing trip`); }
@@ -452,7 +453,7 @@ const BLOCK_PROBLEMS: Record<string, string> = {
 };
 
 /** Checks that need the recovered Node references and the normalized Trips: Node ownership, Trip ownership, and the Blocking rules. */
-function validateBlockContents(blocks: Block[], trips: Trip[], patterns: RoutePattern[], nodes: Node[], blockingScenarios: BlockingScenario[]): void {
+function validateBlockContents(blocks: Block[], trips: Trip[], patterns: RoutePattern[], nodes: Node[], blockingScenarios: BlockingScenario[], reported: ReadonlySet<string>): void {
   const nodeScenario = new Map(nodes.map((node) => [node.id, node.scenarioId]));
   const tripById = new Map(trips.map((trip) => [trip.id, trip]));
   const patternById = new Map(patterns.map((pattern) => [pattern.id, pattern]));
@@ -462,7 +463,8 @@ function validateBlockContents(blocks: Block[], trips: Trip[], patterns: RoutePa
       if (activity.type === 'revenueTrip') continue;
       for (const end of ['fromNodeId', 'toNodeId'] as const) {
         const nodeId = (activity as { fromNodeId?: string; toNodeId?: string })[end];
-        if (nodeId && nodeScenario.get(nodeId) !== block.scenarioId) throw new Error(`Invalid project backup: block "${block.label}" has a ${activity.type === 'pullOut' ? 'pull-out' : activity.type === 'pullIn' ? 'pull-in' : 'deadhead'} that references a Node that is not in its Scenario`);
+        // A reference of a Scenario copy that recovery could not repair is reported to the planner instead (Decision 0038); the file still imports.
+        if (nodeId && nodeScenario.get(nodeId) !== block.scenarioId && !reported.has(`${block.id}\u0000${activity.id}\u0000${end}`)) throw new Error(`Invalid project backup: block "${block.label}" has a ${activity.type === 'pullOut' ? 'pull-out' : activity.type === 'pullIn' ? 'pull-in' : 'deadhead'} that references a Node that is not in its Scenario`);
       }
     }
   }
@@ -492,7 +494,10 @@ export function parseProjectBackupWithReport(payload: string): { snapshot: Proje
     return parseValidatedBackup(payload);
   } catch (error) {
     // A field of the wrong type that no check above names would otherwise surface as a raw runtime error.
-    if (error instanceof TypeError || error instanceof RangeError) throw new Error('Invalid project backup: the file contains data in an unexpected form');
+    if (error instanceof TypeError || error instanceof RangeError) {
+      console.error('Backup import failed on unexpected data.', error);
+      throw new Error('Invalid project backup: the file contains data in an unexpected form', { cause: error });
+    }
     throw error;
   }
 }
@@ -546,8 +551,8 @@ function parseValidatedBackup(payload: string): { snapshot: ProjectSnapshot; rep
     : [];
   // Blocks without a Blocking Scenario are pre-Phase-4 placeholders (version 3 and 4 files hold only those). They are discarded and counted.
   const blockValues = [3, 4, 5, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? requiredArray(parsed.blocks, 'blocks') : [];
-  const keptBlockValues = blockValues.filter((value) => !isPlaceholderBlock(value));
-  const validatedBlocks = validateBlocks(keptBlockValues, scenarioIds, serviceDays, trips, blockingScenarios);
+  const keptBlockEntries = blockValues.map((value, index) => ({ value, index })).filter((entry) => !isPlaceholderBlock(entry.value));
+  const validatedBlocks = validateBlocks(keptBlockEntries, scenarioIds, serviceDays, trips, blockingScenarios);
   // Files exported after a Scenario was duplicated by the older code name the source Scenario's Nodes in the copy's Blocks (Decision 0038).
   const recovery = recoverScenarioCopyNodeReferences({ scenarios, routes, nodes, patterns, trips, blocks: validatedBlocks });
   const blocks = recovery.blocks;
@@ -568,12 +573,13 @@ function parseValidatedBackup(payload: string): { snapshot: ProjectSnapshot; rep
     }
   }
   const normalizedTrips = trips.map((trip) => ({ ...trip, tripProfileId: trip.tripProfileId ?? defaultProfileByScenario.get(trip.scenarioId) }));
-  validateBlockContents(blocks, normalizedTrips, patterns, nodes, blockingScenarios);
+  const reportedReferences = new Set(recovery.findings.map((found) => `${found.entityId}\u0000${found.parameters?.activityId}\u0000${found.parameters?.end === 'from' ? 'fromNodeId' : 'toNodeId'}`));
+  validateBlockContents(blocks, normalizedTrips, patterns, nodes, blockingScenarios, reportedReferences);
   // A normalized Block stores no Trip Profile of its own; it follows from its Blocking Scenario (Decision 0019 item 9).
   const normalizedBlocks = blocks.map(({ tripProfileId: _derivedFromBlockingScenario, ...block }) => block);
   return {
     snapshot: { project, scenarios, serviceDays, routes, nodes, patterns, ...(directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions.length ? { costingAssumptions } : {}), generationSets, trips: normalizedTrips, blocks: normalizedBlocks },
-    report: { recoveredNodeReferences: recovery.recoveredReferences, recoveryFindings: recovery.findings, discardedPlaceholderBlocks: blockValues.length - keptBlockValues.length },
+    report: { recoveredNodeReferences: recovery.recoveredReferences, recoveryFindings: recovery.findings, discardedPlaceholderBlocks: blockValues.length - keptBlockEntries.length },
   };
 }
 

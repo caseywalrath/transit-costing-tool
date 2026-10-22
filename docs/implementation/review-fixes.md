@@ -2,13 +2,14 @@
 
 ## Next sitting
 
-**Sitting 4B: P03 (Scenario duplication remap and recovery) and P04 (Backup import normalization and validation).** Main session: Sonnet. Sub-agents: one Opus reviewer for each package diff. Both are S1.
+**Sitting 4C: P05 (Browser test-suite repair) and X01 (Dead code removal).** Main session: Sonnet. Sub-agent: Haiku for the X01 deletions only, with an exact file and line list and a mechanical check (typecheck, a grep that returns nothing). No Opus reviewer: P05 is test-only (S2) and X01 is S3. After 4C the full browser suite must be green; every later sitting relies on it.
 
-- Prerequisite: the sitting 4A pull request (branch `claude/stage-4a-review-fixes`) must be merged into `main`. If it is not, stop and ask the user. Start 4B from current `origin/main`.
-- P03 changes `src/persistence/database.ts` (Dexie version 7 upgrade, no store change). That file now also holds the tab write guard from P02: `TransitDatabase(name, guard?)`, a middleware that rejects writes in a read-only tab, and a `versionchange` handler. The guard lets writes through while IndexedDB runs an upgrade (`versionchange` mode), so the version 7 recovery runs in any tab. Keep that exemption.
-- Browser-test helpers for real IndexedDB already exist in `tests/ui/support/` (`dexieEnv.ts`, `goldenFixture.ts`). Reuse them for the P03 Dexie recovery test.
-- Known browser-suite state: 7 failures in `trip-table-layout.spec.ts:40` and `unified-action-layer.spec.ts` (83, 112, 140, 169, 186, 226) until P05 (sitting 4C). A package passes when it adds no new failure and the same 7 fail with the same messages. `blocking-workspace.spec.ts:116` is flaky under repeated parallel load; it also fails that way on code without the guard.
-- Open questions: none. Decision C8 (copies whose source Scenario no longer exists) is settled in `docs/review/user-decisions.md`.
+- Prerequisite: the sitting 4B pull request (branch `claude/stage-4b-review-fixes`) must be merged into `main`. If it is not, stop and ask the user. Start 4C from current `origin/main`.
+- Known browser-suite state after 4B: 51 tests, 44 passed, 7 failed (`trip-table-layout.spec.ts:40`; `unified-action-layer.spec.ts:83, 112, 140, 169, 186, 226`). These are P05's I-006 set. The `:140` test fails on `toHaveText` when run alone and sometimes on a click timeout under parallel load.
+- `blocking-workspace.spec.ts` is flaky at its "Add node" step under load (seen at `:116`, `:180`, and `:251` across sittings 4A and 4B). It is the L-16 race that P05's `createShiftReadySchedule` fix targets. It is not caused by any 4A or 4B change.
+- Specs added in 4A and 4B that P05 must leave passing: `scenario-write-safety`, `single-tab`, `scenario-copy-recovery`, `backup-import`. Shared helpers are in `tests/ui/support/` (`dexieEnv.ts`, `goldenFixture.ts`). `costing-workspace.spec.ts` waits for the app before seeding (4A hand-off), and `database-migration.spec.ts` now expects IndexedDB version 70 for Dexie version 7 (4B hand-off; P06 owns its seed-version change).
+- X01 deletes `RouteDefinitionService.deleteNode` (the latent S0 path 3-008, handed off from P01) and the dead generation-set UI, handlers, and exports. It must keep the `generationSets` table and backup parsing (decision 13), including the version 3 import path in `backup.ts`.
+- Open questions for the user, not blocking 4C: (1) the Block-label rule (see P04, Independent review): enforce DS-20 when a Block is created or renamed, or relax the import check; (2) clean-up of placeholder Blocks already stored in databases that imported version 3 and 4 files; (3) presenting the import report and the recovery findings belongs to U02.
 - Review documents: read them from the review branch with `git show origin/claude/upbeat-ritchie-51mpy5:docs/review/<file>`.
 
 ## About this log
@@ -145,7 +146,7 @@ Confirmed all four acceptance criteria and found no unprotected write path (Dexi
 
 - Date: 2026-10-22. Sitting 4B. Model: Sonnet (main session). Independent diff review by an Opus sub-agent.
 - Type: structural. Severity: S1.
-- Commit: `P03_HASH`.
+- Commit: `d80d801`.
 
 ### Issues fixed
 
@@ -197,3 +198,63 @@ Confirmed all five acceptance criteria (the original golden reproductions, run w
 - Hand-off (files outside the package's owned list): `src/persistence/database.test.ts` and `src/persistence/repository.test.ts` assert the schema version, now 7; `tests/ui/database-migration.spec.ts` expects the upgraded IndexedDB version 70 (was 60). Only the version numbers changed. P06 owns these files.
 - What could still be wrong: a Route renamed or Nodes renamed or removed after duplication leave references unrepaired (reported, not guessed); the upgrade reads every Trip and Block into memory once (the Federal BRT project is about 2 MB); a leak whose Node was deleted from a live source is reported, not repaired.
 - `tests/ui/blocking-workspace.spec.ts` is flaky at its "Add node" step under parallel load (one failure in about 4 full runs; the documented race, not caused by this change). P05 owns the browser suite.
+
+## P04: Backup import normalization and validation
+
+- Date: 2026-10-22. Sitting 4B. Model: Sonnet (main session). Independent diff review by an Opus sub-agent.
+- Type: structural. Severity: S1.
+- Commits: `83c057e` (implementation) and `P04_FIX_HASH` (review fixes and this entry).
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-003 | 3-001 | S1 | Parsing stamped every Block without a `tripProfileId`, normalized Blocks included, with the last Trip Profile of its Scenario. A backup with Blocking Scenarios on two or more Trip Profiles could not be restored through the app (import is always import-as-copy and re-parses), and with one profile `export(import(file))` added a `tripProfileId` to every Block. |
+| I-010 | 1-010 | S2 | Version 3 and 4 backups imported their placeholder Blocks (no Blocking Scenario), against Decision 0019 item 13. They were invisible in Blocking and Costing but inflated deletion counts and persisted into later backups. |
+| I-017 | 3-005 | S2 | Import accepted dangling, cross-Scenario, duplicate, and negative Block and Trip data, and two inputs (a generation set without `limit`, a Trip without `provenance`) reached the planner as raw `TypeError` text. |
+
+### What changed
+
+- `src/persistence/backup.ts`:
+  - No `tripProfileId` is added to a normalized Block; a stamped one from an older export is dropped when it equals the Blocking Scenario's profile and rejects the file when it differs.
+  - A Block whose `blockingScenarioId` is absent, null, or empty is a placeholder: discarded in any file version and counted. A malformed value rejects the file.
+  - New checks, all before any write: Trip needs a `provenance` object, a Route, Pattern (on the Trip's Route), and service day of its own Scenario, and may not repeat a stop; Block's service day belongs to its Scenario; Block labels unique per Blocking Scenario and service day; activities need a unique `id`, a supported `type`, a whole `sequence`, numeric time, offset, and mile fields, and Node references in the Block's Scenario; every Block passes `validateBlockingBlock` (structural findings, except gaps in `sequence`); each Trip is assigned once per Blocking Scenario (`validateBlockingAssignments`); a generation set needs a `limit`.
+  - A reference in a Scenario copy that P03's recovery reported as unrepairable does not reject the file; it is in the import report.
+  - Any remaining `TypeError` or `RangeError` becomes "Invalid project backup: the file contains data in an unexpected form", with the original kept as `cause` and written to the console.
+  - `BackupImportReport` gains `discardedPlaceholderBlocks`. Messages name the Block's position in the file.
+- `src/persistence/backupRepository.ts`: `ProjectBackupService.importProjectWithReport(payload, mode)` returns `{ project, report }`; `importProject` is unchanged for callers.
+- Behavior before: a two-profile backup was refused after export; v3/v4 placeholder Blocks were kept; malformed Block and Trip data was stored. After: those restore, are discarded and counted, and are refused with a readable message and no write.
+- Decision record `docs/decisions/0039-backup-import-normalization-and-validation.md`; `docs/data-schema.md` ("Import rules"); `architecture_overview.md` (backup text); Decision 0038 consequence updated.
+
+### Tests added
+
+- `src/persistence/backupImportValidation.test.ts` (64 tests): the 3-001 cases (parse leaves normalized Blocks without a Trip Profile; the app import path restores two Blocking Scenarios on two Trip Profiles with Block counts per Blocking Scenario unchanged; `export(import(golden))` equals the original for every key but `exportedAt`; an older stamped profile is dropped, a mismatching one rejects); the 1-010 cases (69 placeholder Blocks discarded and counted for v3 and v4; stored deletion count 0; the count through the service; a placeholder in a current file; zero for golden); versions 1 to 6 import through the app path; the whole case table of `phase-3.md` Section 4 (every accepted-but-should-reject row and both `TypeError` paths reject with a matching message and no repository write; the accepted-by-design rows import); import-as-copy of a Trip without `provenance`; prototype keys inert; a 20-fold Trip file inside the time budget; recovery and validation together (C8 inference through a file, a cleared garage end with a finding, an unrepairable required end and a renamed-Route copy that import with findings, sequence gaps, a malformed `blockingScenarioId`, the Block position in a message, the `cause` kept).
+- `src/persistence/backup.test.ts`: the P03 tests no longer need a workaround for stamped Trip Profiles.
+- `tests/ui/backup-import.spec.ts` (4 tests, the Import JSON control on real IndexedDB): a two-Trip-Profile backup restores with Block counts per Blocking Scenario unchanged and no Block Trip Profile; a version 4 backup imports with no Blocks; a Trip assigned to two Blocks and a pull-out Node outside its Scenario are refused with a readable message in the error banner and nothing written.
+- Before the fix (on the P03 code): 30 of the first 56 unit tests failed (the others were controls, the rows already rejected, and the accepted-by-design rows); all 4 browser tests failed (restore refused, 69 placeholder Blocks kept, both malformed files accepted).
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 32 files, 311 tests passed (247 after P03; +64 `backupImportValidation.test.ts`).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 44 passed, 7 failed. The 7 are the known baseline failures (I-006), the same tests as before: `trip-table-layout.spec.ts:40` and `unified-action-layer.spec.ts:83, 112, 140, 169, 186, 226`. 40 passed after P03, plus the 4 new tests. In one full run `:140` failed on a click timeout instead of `toHaveText`; alone it fails on `toHaveText` on untouched `origin/main` too, so the difference is load.
+- `pnpm build`: succeeds (only the existing chunk-size warning).
+- Schema versions: the JSON backup schema is still 6 (asserted by the existing export tests); the Dexie schema is 7 (P03).
+
+### Independent review (Opus)
+
+Confirmed all four acceptance criteria, found every case-table row and both `TypeError` paths rejected before any write, and found no other importer that bypasses `parseProjectBackup`. Findings and disposition:
+
+- Confirmed and fixed: a Scenario copy whose Node references recovery could not repair (a Route renamed after copying, a copy that lost its `sourceScenarioId`) made the whole file unrestorable, although earlier versions imported it. Such references are now reported in the import report and the file imports. A wrong reference in a Scenario that is not a copy still rejects.
+- Confirmed and fixed: a `blockingScenarioId` that was present but malformed made the Block a placeholder and dropped it silently; it now rejects.
+- Confirmed and fixed: messages named the Block's index after placeholders were removed; they now use the position in the file.
+- Confirmed and fixed: the data-schema text claimed every rejection begins "Invalid project backup:"; reworded.
+- Accepted and fixed: the catch-all kept no trace of the original error; it now keeps it as `cause` and logs it.
+- **Confirmed, not changed, decision for the user:** the application's own default Block label ("Block <count + 1>") can repeat after a Block is deleted, and `createBlock` does not check labels, so the application can create two Blocks with the same label. The acceptance criteria require rejecting duplicate labels (DS-20), so such a database exports a file this import refuses, with a message that names the Blocking Scenario and the label. Renaming one Block and exporting again fixes it. Options: enforce DS-20 when a Block is created or renamed and propose a free label (a later structural package), or relax the import check. Recorded in Decision 0039.
+- Speculative, recorded: a version 4 to 6 Trip without a Trip Profile receives its Scenario's last profile and could then fail the Block profile check in a multi-profile file (the Dexie version 3 upgrade stamped every Trip, so none is expected); `validateBlockingBlock` is quadratic in the activities of one Block (20,000 deadheads took 1.7 s) and no size cap exists.
+
+### Residual risks and hand-offs
+
+- Hand-off (U02): present the import report (`discardedPlaceholderBlocks`, `recoveredNodeReferences`, `recoveryFindings`) after an import. `BackupPort.importProject` and `RouteDefinitionService.importProject` still return only the Project, so the planner does not see the count yet. `ports.ts` is outside this package.
+- Databases that already hold placeholder Blocks from earlier imports of version 3 and 4 files keep them (they stay invisible and inflate deletion counts) until something removes them. A backup exported from such a database imports without them. No package owns a database clean-up yet.
+- What could still be wrong: an unusually large Block validates slowly; Trip Profile defaulting for a version 4 to 6 Trip without a profile is unchanged and takes the last profile; the label rule above.

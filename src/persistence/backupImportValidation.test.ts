@@ -1,6 +1,6 @@
 // Package P04 (issues I-003, I-010, I-017): backup import keeps Block ownership as exported, discards pre-Phase-4 placeholder Blocks,
 // and rejects malformed Block and Trip data before any write, with messages a planner can read.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { RouteDefinitionService } from '../application/routeDefinitionService';
 import { duplicateScenario, projectSnapshotWithScenario, snapshotForScenario } from '../domain/project';
 import { goldenJson, goldenRaw, goldenWithAltBlocking } from '../testSupport/goldenBackup';
@@ -271,11 +271,38 @@ describe('recovery and validation work together', () => {
     expect(stored.activities.find((activity) => activity.type === 'pullOut')).not.toHaveProperty('fromNodeId');
   });
 
-  it('rejects a copy that has a required Node it cannot recover, naming the Block', () => {
+  it('imports a copy whose required Node cannot be recovered, leaves it, and reports a finding that names the Block', () => {
     const backup = copyOfDeletedSource();
     const block = backup.blocks[0];
     block.activities = [{ id: 'only-activity', type: 'pullOut', sequence: 0, minutesBeforeFirstTrip: 5, toNodeId: 'node-of-the-deleted-source' }];
-    expect(() => importProjectJson(JSON.stringify(backup))).toThrow(new RegExp(`block "${block.label}" has a pull-out that references a Node that is not in its Scenario`));
+    const { snapshot, report } = parseProjectBackupWithReport(JSON.stringify(backup));
+    expect(report.recoveryFindings).toEqual([expect.objectContaining({ entityId: block.id, field: 'pullOut.toNodeId', parameters: expect.objectContaining({ blockLabel: block.label }) })]);
+    expect(snapshot.blocks.find((candidate) => candidate.id === block.id)!.activities[0]).toMatchObject({ toNodeId: 'node-of-the-deleted-source' });
+  });
+
+  it('imports a Scenario copy whose Route was renamed, so its leaked Node references stay and are reported', () => {
+    const backup = twoScenarios();
+    const copyScenarioId = scenarioTwo(backup);
+    backup.routes.find((route: any) => route.scenarioId === copyScenarioId).name = 'Renamed after copying';
+    const block = backup.blocks.find((candidate: any) => candidate.scenarioId === copyScenarioId && candidate.activities.some((activity: any) => activity.type === 'pullOut'));
+    block.activities.find((activity: any) => activity.type === 'pullOut').toNodeId = backup.nodes.find((node: any) => node.scenarioId === backup.scenarios[0].id).id;
+    const { report } = parseProjectBackupWithReport(JSON.stringify(backup));
+    expect(report.recoveryFindings).toEqual([expect.objectContaining({ entityId: block.id, field: 'pullOut.toNodeId' })]);
+  });
+
+  it('rejects, rather than discards, a Block whose blockingScenarioId is present but malformed', () => {
+    for (const malformed of [7, { id: 'x' }, true]) {
+      const backup = goldenRaw();
+      backup.blocks[2].blockingScenarioId = malformed;
+      expect(() => importProjectJson(JSON.stringify(backup))).toThrow(/Blocking Scenario/);
+    }
+  });
+
+  it('names the position of a bad Block as it is in the file, even after placeholder Blocks are removed', () => {
+    const backup = goldenRaw();
+    backup.blocks.unshift({ ...backup.blocks[0], id: 'placeholder', blockingScenarioId: undefined, tripProfileId: backup.tripProfiles[0].id, activities: [] });
+    backup.blocks[3] = 'not a block';
+    expect(() => importProjectJson(JSON.stringify(backup))).toThrow('Invalid project backup: blocks[3] must be an object');
   });
 
   it('still imports a file whose activity sequence numbers have gaps', () => {
@@ -284,11 +311,15 @@ describe('recovery and validation work together', () => {
     expect(() => importProjectJson(JSON.stringify(backup))).not.toThrow();
   });
 
-  it('turns a field of an unexpected type that no check names into a readable message', () => {
+  it('turns a field of an unexpected type that no check names into a readable message and keeps the cause', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     const backup = goldenRaw();
-    backup.nodes[0] = null;
-    let message = '';
-    try { importProjectJson(JSON.stringify(backup)); } catch (error) { message = (error as Error).message; }
-    expect(message).toMatch(/^Invalid project backup: /);
+    backup.patterns[0].points[1] = null;
+    let failure: Error | undefined;
+    try { importProjectJson(JSON.stringify(backup)); } catch (error) { failure = error as Error; }
+    expect(failure?.message).toMatch(/^Invalid project backup: /);
+    expect(failure?.cause).toBeInstanceOf(Error);
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
   });
 });
