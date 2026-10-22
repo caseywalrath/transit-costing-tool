@@ -240,10 +240,3 @@ export function applyTripAssignment(request: Omit<BlockingAssignmentRequest, 'so
   const destinationRoutes = destination.activities.flatMap((activity) => activity.type === 'revenueTrip' ? [map.get(activity.tripId)?.routeId] : []).filter((value): value is string => Boolean(value)); if (destinationRoutes.length && destinationRoutes.some((routeId) => routeId !== trip.routeId)) throw new Error('Phase 4 assignment cannot add another Route to a non-empty Block.');
   let next = blocks.map((block) => block.id === source?.id ? { ...block, activities: block.activities.filter((activity) => activity.type !== 'revenueTrip' || activity.tripId !== trip.id) } : block); const target = next.find((block) => block.id === destination.id)!; const revenueActivity = { id: newId(), type: 'revenueTrip' as const, sequence: 0, tripId: trip.id }; const activities = sortedActivities(target.activities); const revenuePositions = activities.map((activity, index) => activity.type === 'revenueTrip' ? index : -1).filter((index) => index >= 0); const requestedPosition = request.destinationIndex === undefined ? suggestChronologicalInsertionIndex(target, trip, map) : Math.max(0, Math.min(request.destinationIndex, revenuePositions.length)); const pullInIndex = activities.findIndex((activity) => activity.type === 'pullIn'); const insertion = requestedPosition < revenuePositions.length ? revenuePositions[requestedPosition] : pullInIndex >= 0 ? pullInIndex : activities.length; activities.splice(insertion, 0, revenueActivity); next = next.map((block) => block.id === target.id ? withUpdatedAt({ ...block, activities: activities.map((activity, sequence) => ({ ...activity, sequence })) }, now) : block); return next.map(normalizeBlockActivities);
 }
-
-// Behavior-oriented aliases keep callers independent from the internal function names.
-export const normalizeBlock = normalizeBlockActivities;
-export const validateBlock = validateBlockingBlock;
-export const deriveBlockSummary = summarizeBlock;
-export const deriveBlockingSummary = summarizeBlockingScenario;
-export const evaluateBlockingInsertion = classifyBlockingInsertion;

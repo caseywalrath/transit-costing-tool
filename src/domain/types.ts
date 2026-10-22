@@ -80,8 +80,6 @@ export interface Trip extends EntityMetadata { id: EntityId; scenarioId: EntityI
 /** One-step local undo state for the most recently applied trip regeneration. */
 export interface TripRegenerationUndo { id: 'last'; scenarioId: EntityId; tripProfileId: EntityId; createdAt: string; beforeTrips: Trip[]; afterTrips: Trip[]; }
 export interface TripTableImportRow { tripId?: EntityId; patternId: EntityId; publicLabel?: string; stopTimes: Array<{ patternPointId: EntityId; time: ServiceSeconds }>; }
-/** Phase 4 command-boundary Trip shape. Legacy imports may omit the profile until normalized. */
-export type NormalizedTrip = Omit<Trip, 'tripProfileId'> & { tripProfileId: EntityId };
 /** A named, scenario-wide blocking alternative. Its Trip Profile source is immutable after creation. */
 export interface BlockingScenario extends EntityMetadata { id: EntityId; scenarioId: EntityId; tripProfileId: EntityId; name: string; description?: string; }
 /** A pull-out may use legacy explicit times or an offset from the first revenue Trip. */
@@ -95,8 +93,6 @@ export interface PullInActivity { id: EntityId; type: 'pullIn'; sequence: number
 export type BlockActivity = PullOutActivity | RevenueTripActivity | DeadheadActivity | PullInActivity;
 /** Phase 4 normalized Block ownership. Legacy `Block` remains readable at import/migration boundaries. */
 export interface BlockingBlock extends EntityMetadata { id: EntityId; scenarioId: EntityId; blockingScenarioId: EntityId; serviceDayId: EntityId; label: string; activities: BlockActivity[]; notes?: string; }
-export type NormalizedBlock = BlockingBlock;
-export type NormalizedBlockingBlock = BlockingBlock;
 export interface Block extends EntityMetadata { id: EntityId; scenarioId: EntityId; serviceDayId: EntityId; /** Phase 4 ownership. Legacy records may omit this until migration/import normalization. */ blockingScenarioId?: EntityId; /** Historical timetable ownership retained only at legacy boundaries. */ tripProfileId?: EntityId; label: string; activities: BlockActivity[]; notes?: string; }
 export interface CostingAssumptions extends EntityMetadata {
   id: EntityId;

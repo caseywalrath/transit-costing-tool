@@ -2,15 +2,17 @@
 
 ## Next sitting
 
-**Sitting 4C: P05 (Browser test-suite repair) and X01 (Dead code removal).** Main session: Sonnet. Sub-agent: Haiku for the X01 deletions only, with an exact file and line list and a mechanical check (typecheck, a grep that returns nothing). No Opus reviewer: P05 is test-only (S2) and X01 is S3. After 4C the full browser suite must be green; every later sitting relies on it.
+**Sitting 4D: P06 (IndexedDB test environment and repository parity), P07 (Trip stale checks and runtime revisions), P08 (Trip generation and shift bounds).** Main session: Sonnet. No sub-agents: none of these packages is S0 or S1 (sitting plan).
 
-- Prerequisite: the sitting 4B pull request (branch `claude/stage-4b-review-fixes`) must be merged into `main`. If it is not, stop and ask the user. Start 4C from current `origin/main`.
-- Known browser-suite state after 4B: 51 tests, 44 passed, 7 failed (`trip-table-layout.spec.ts:40`; `unified-action-layer.spec.ts:83, 112, 140, 169, 186, 226`). These are P05's I-006 set. The `:140` test fails on `toHaveText` when run alone and sometimes on a click timeout under parallel load.
-- `blocking-workspace.spec.ts` is flaky at its "Add node" step under load (seen at `:116`, `:180`, and `:251` across sittings 4A and 4B). It is the L-16 race that P05's `createShiftReadySchedule` fix targets. It is not caused by any 4A or 4B change.
-- Specs added in 4A and 4B that P05 must leave passing: `scenario-write-safety`, `single-tab`, `scenario-copy-recovery`, `backup-import`. Shared helpers are in `tests/ui/support/` (`dexieEnv.ts`, `goldenFixture.ts`). `costing-workspace.spec.ts` waits for the app before seeding (4A hand-off), and `database-migration.spec.ts` now expects IndexedDB version 70 for Dexie version 7 (4B hand-off; P06 owns its seed-version change).
-- X01 deletes `RouteDefinitionService.deleteNode` (the latent S0 path 3-008, handed off from P01) and the dead generation-set UI, handlers, and exports. It must keep the `generationSets` table and backup parsing (decision 13), including the version 3 import path in `backup.ts`.
-- Decided by the user after 4B: enforce Block label uniqueness when a Block is created or renamed (Decision 0039). It is not part of 4C. Carry it into Package P14 (sitting 4F) as an added acceptance criterion: `createBlock` and `updateBlock` reject a label already used in the same Blocking Scenario and service day (trimmed), and the proposed default label is the first free "Block <n>". The browser-test and import expectations stay as they are. Still open and not blocking 4C: clean-up of placeholder Blocks already stored in databases that imported version 3 and 4 files, and presenting the import report and recovery findings (U02).
-- Review documents: read them from the review branch with `git show origin/claude/upbeat-ritchie-51mpy5:docs/review/<file>`.
+- Prerequisite: the sitting 4C pull request (branch `claude/stage-4c-review-fixes`) must be merged into `main`. If it is not, stop and ask the user. Start 4D from current `origin/main`.
+- State after 4C: the full browser suite is green and stays green. 59 tests, 59 passed, in repeated runs; no `test.fail`, `test.skip`, or `test.fixme`. Every later package must keep 0 failures (`PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`). Unit tests: 32 files, 308 tests. Bundle after X01: `index-TR3LK2Mp.js` 770.23 kB (213.02 kB gzip).
+- Browser-test helpers (all in `tests/ui/support/`): `dexieEnv.ts` (`runInPage`, `seedSnapshot`: real IndexedDB from a spec), `goldenFixture.ts` (the Federal BRT project), and from 4C `tripsWorkspace.ts` (`createRouteWithPattern`, `createShiftReadySchedule`, `openGoldenTrips`, `settleFrames`). New browser specs should use them. `createRouteWithPattern` creates the Default Runtime profile itself, before the Trips tab first mounts, to avoid the race in hand-off 1 below; do not remove that step until the race is fixed.
+- P06 specifics: `tests/ui/database-migration.spec.ts` now seeds IndexedDB version 70 for Dexie version 7 (4B hand-off). P06 criterion 3 changes its seed to version 40 for Dexie version 4 (Dexie multiplies by 10). `src/persistence/repository.test.ts` asserts a stale database version (A-003).
+- P07 touches `tripGenerationService.ts`: X01 deleted `previewTripGeneration`, `applyTripGeneration`, `applyTripShift`, `validateTrip`, and `ensureDefaultTripProfile` from it, and their tests. The domain functions `previewRegeneration` and `applyRegeneration` in `src/domain/trips.ts` are now referenced only by their unit tests; P07 may keep or remove them.
+- **Decision for the user (found in 4C, not in the register).** Two app behaviors surfaced while making the browser suite reliable; see "Residual risks, hand-offs, and findings" in the P05 entry. (1) `ensureDefaultRuntimeProfile` is a non-atomic check-then-write that runs twice at once on the first visit to Trips (React `StrictMode` in development; also after a Runtime save): it can store duplicate Runtime assignments (8 instead of 4), show "Duplicate runtime assignment", and reset the Runtime editor draft. Suggested owner: P09 (owns `routeDefinitionService.ts`), with the single-flight load in `App.tsx` going to U07. (2) After a Runtime profile is saved, the Trips table keeps the profiles it loaded earlier, so Show runtime bands shades nothing until a reload. Suggested owner: U07 (or P15). Neither blocks P06 to P08.
+- Still carried forward from 4B, unchanged: enforce Block label uniqueness when a Block is created or renamed (Decision 0039), as an added acceptance criterion of Package P14 (sitting 4F), with a proposed default label of the first free "Block <n>"; clean-up of placeholder Blocks already stored in databases that imported version 3 and 4 files (no owner yet); presenting the import report and recovery findings (U02).
+- Tests deferred to later packages (all recorded in the P05 entry): focus trap, Escape, and focus return (U04's `keyboard.spec.ts`); a unit test for `calculateTimepointHeadways` (P15); Annual cost visible without table scroll at 1024 px (U06).
+- Review documents: read them from the review branch with `git show origin/claude/upbeat-ritchie-51mpy5:docs/review/<file>`. Never copy `docs/review/` into the work branch.
 
 ## About this log
 
@@ -258,3 +260,147 @@ Confirmed all four acceptance criteria, found every case-table row and both `Typ
 - Hand-off (U02): present the import report (`discardedPlaceholderBlocks`, `recoveredNodeReferences`, `recoveryFindings`) after an import. `BackupPort.importProject` and `RouteDefinitionService.importProject` still return only the Project, so the planner does not see the count yet. `ports.ts` is outside this package.
 - Databases that already hold placeholder Blocks from earlier imports of version 3 and 4 files keep them (they stay invisible and inflate deletion counts) until something removes them. A backup exported from such a database imports without them. No package owns a database clean-up yet.
 - What could still be wrong: an unusually large Block validates slowly; Trip Profile defaulting for a version 4 to 6 Trip without a profile is unchanged and takes the last profile; the label rule above.
+
+## P05: Browser test-suite repair
+
+- Date: 2026-10-22. Sitting 4C. Model: Sonnet (main session). No sub-agents: P05 is test-only (S2), so no Opus review (sitting plan).
+- Type: test-only. Severity: S2.
+- Commit: `b588bcb`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-006 | A-001, 5-001 | S2 | Seven browser tests failed in every run. Six failed in the shared helper of `unified-action-layer.spec.ts`, which expected the menu item `Copy from day…` (the app renders `Copy Trips from day…`). `trip-table-layout.spec.ts:40` asserted a nested schedule scroller that Decision 0035 item 5 forbids. `unified-action-layer.spec.ts:169` set `scrollTop` on `.schedule-table`, which has no vertical scroll, so the value was always 0. Behind the label error, `:140` also fails under load for an app reason (hand-off 1). |
+| I-029 | 5-002 | S2 | `service-day-copy-layout`, `workflow-section-layout`, and the draft-row test in `trip-table-layout` loaded hand-written fixture HTML. The fixture listed buttons the app no longer renders, and the draft-row test asserted classes the fixture wrote itself, so none could fail when the app changed. |
+| I-084 | 5-003 | S3 | No browser test covered rounding of displayed times, Show headways, band shading, duplicate-departure and Block overlap warnings, scroll restoration, or net-zero Shift discard. |
+| I-085 | 5-017 | S3 | Weak assertions: `route-editing` never reloaded or read IndexedDB; the Costing test claimed narrow-width usability but checked two headings; screenshots were taken and never asserted; four conditional `Discard` clicks could hide a stray unsaved-Route banner; the Runtime paste dialog had no test. |
+
+No user decision applied (finding 5-001: Decision 0035 governs).
+
+### What changed
+
+All changes are under `tests/` plus two documentation notes. No file under `src/` changed.
+
+- New shared helper `tests/ui/support/tripsWorkspace.ts` (outside the package's listed owned files; recorded here): `createRouteWithPattern` (project, Route, Nodes A and B, a saved Pattern, and the Default Runtime profile), `createShiftReadySchedule` (the former local helper, now with a configurable Runtime segment), `openGoldenTrips` (the Federal BRT golden project on the Weekday Southbound Trips: 138 Trips, 11 timepoints, Blocks assigned), and `settleFrames`.
+- Label: the helper expects `Copy Trips from day…`.
+- The `Add node` race (L-16). The cause is a reload that lands after a save and replaces the draft the next step just created, so `Add node` never appears. The setup now waits for each save to finish (`Save nodes` disabled and the saved Node listed; the Pattern draft showing; each Pattern point visible before the next click) before the next step. `Add pattern` is clicked again if it opened no draft (seen once in about 700 setups under heavy load). The four specs that repeated the sequence (`blocking-workspace`, `trip-profile`, `unified-action-layer`, `route-editing`) share it or carry the same waits.
+- Setup also waits for the stored Runtime value before reloading and building Trips, because the `Save` button disappears while the write is still running (the original helper had this race too).
+- `trip-table-layout.spec.ts` (4 tests, all on the real app): Pattern column no wider than its selector; the draft row is first and the saved rows follow; the fixed duplicate heading row appears at page level once the real headings scroll away (`position: fixed`, same headings and column widths as the grid, horizontal scroll synchronized both ways, gone when the headings are back in view, and the grid has no vertical scroller); the page and horizontal grid position are restored after a committed Shift.
+- `service-day-copy-layout.spec.ts` and `workflow-section-layout.spec.ts` now drive the real Runtimes and Trips sections (header layer button lists, geometry, and the 380 px right-docked Shift drawer).
+- `tests/fixtures/trip-table-layout.html`, `service-day-copy-layout.html`, and `workflow-section-layout.html` are deleted. `runtime-table-layout.html` stays with `runtime-table-layout.spec.ts`, which now says in a comment that it is reduced to the geometry Decision 0013 permits.
+- `unified-action-layer.spec.ts`: scroll restoration rewritten to the page-level behavior; the duplicate-and-discard Runtime band check moved out of the setup helper into its own test (it had been an incidental part of setup).
+- `route-editing.spec.ts`: reads IndexedDB (a discarded Node was never stored; two Nodes and one Pattern after the saves; two Routes after rename and duplicate) and reloads. `costing-workspace.spec.ts`: at 1024 and 760 px the page does not scroll sideways, the tables stay inside the viewport, and the results keep their content; the two unasserted screenshots are removed. `blocking-workspace.spec.ts`: the four conditional `Discard` clicks are now `toHaveCount(0)` assertions, the three unasserted screenshots are removed, and at 600 px the Current Block menu is asserted to open inside the viewport with no sideways page scroll.
+- Documentation: `docs/implementation/phase-02r-trip-table-interchange-undo.md` Verification claim corrected; `docs/decisions/0013-browser-layout-regression-tests.md` addendum (layout specs drive the real app).
+
+### Tests added
+
+New `tests/ui/trips-table-display.spec.ts` (6 tests, real app):
+
+- rounds displayed times to the minute and keeps the exact time in the cell title (6:07:30 shows as 6:08; whole minutes carry no "Exact" note);
+- Show headways replaces each later time with the gap from the previous Trip (`0:10`), marks the first time, and restores the times when switched off;
+- Show runtime bands lists the band and shades the run-time cells in the legend's color, and the first timepoint is unshaded;
+- a duplicate departure is flagged on both Trips, and two Trips in one Block that overlap each get the Block warning with the arrival and departure times;
+- a Shift whose net offset is zero writes nothing (stored Trips deep-equal before and after) while a real Shift does;
+- the Runtime paste dialog refuses a row with no runtime, previews valid rows, replaces the draft only, and stores nothing until Save.
+
+Also new or rewritten: `unified-action-layer.spec.ts` (page scroll restoration; duplicate and discard a time band), `trip-table-layout.spec.ts` (4), `service-day-copy-layout.spec.ts`, `workflow-section-layout.spec.ts`. Total browser tests: 51 before, 59 after (8 more: 6 in `trips-table-display`, the duplicate-band test in `unified-action-layer`, and the position-restore test in `trip-table-layout`).
+
+### Deliberate breaks (each new or rewritten test fails when its behavior is broken)
+
+Each break was applied to the source, the one spec run, and the source restored with `git checkout`:
+
+| Test | Deliberate break | Result |
+| --- | --- | --- |
+| `service-day-copy-layout`: header action layers | `.section-header-actions` gets `margin-top: 90px` | fails: actions sit below the title (`<= 304`, received 317) |
+| `workflow-section-layout`: right-docked Shift drawer | drawer width `min(360px, 40vw)` instead of 380 | fails: expected 380, received 360 |
+| `trip-table-layout`: Pattern column | `.trip-pattern-column` 140 px wide | fails: column `<= 97`, received 140 |
+| `trip-table-layout`: draft row first | `DraftTripRow` rendered after the saved rows | fails: first row has no `draft-trip-row` class |
+| `trip-table-layout`: duplicate heading row | the `show` condition in `ScheduleTable` forced to `false` | fails: the heading region is never visible |
+| `trip-table-layout`: page and grid position after Shift | restore scrolls the page to 0; restore sets grid `scrollLeft` to 0 (two runs) | fails both ways: expected 2400, received 0; expected 140, received 0 |
+| `unified-action-layer`: page scroll restoration | restore scrolls the page to 0 | fails: expected 300, received 0 |
+| `unified-action-layer`: duplicate and discard a band | `duplicateBand` omits the copy | fails: `Time band 2 start` not found |
+| `trips-table-display`: rounding | `formatTripTableClock` ignores `roundToMinute` | fails: times stay `6:07:30` |
+| `trips-table-display`: headways | headway lookup returns nothing | fails: cells keep clock times |
+| `trips-table-display`: band shading | the cell `style` with the gradient removed | fails: `none` instead of `linear-gradient` |
+| `trips-table-display`: duplicate departure and Block overlap | the `Duplicate departure` note removed; separately the `trip-block-warning` span removed | each fails: no duplicate notes; 0 warnings instead of 2 |
+| `trips-table-display`: net-zero Shift | the `netOffsetSeconds === 0` shortcut removed from `completeStagedShift` | fails: stored Trips differ after a zero-net Shift |
+| `trips-table-display`: Runtime paste dialog | parse issues are not shown | fails: `Fix the pasted rows` not found |
+
+The first demonstration of the scroll tests was too weak: removing the restore code did not fail them, because the browser keeps the position anyway. The behavior they protect is that the position is preserved, so the break that counts is one that moves it, and the tests now wait for the shifted data and two animation frames before reading the position.
+
+### Verification run
+
+- Baseline before the package: 51 browser tests, 44 passed, 7 failed (the I-006 set).
+- `pnpm typecheck`: clean.
+- `pnpm test`: 32 files, 311 tests passed (unchanged; P05 changes no file under `src/`).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`, run three times in a row on the committed code: 59 tests, 59 passed, 0 failed, 0 flaky, each run (2.4 minutes). An earlier set of three runs before two last test tweaks also passed 59 of 59 each time. No `test.fail`, `test.skip`, or `test.fixme` in `tests/ui`.
+- Stress runs with 8 to 16 workers while the setup was being made reliable: `createRouteWithPattern` 420 of 420; the regeneration-undo test 40 of 40; the Trips specs 152 of 152.
+- `pnpm build`: succeeds (existing chunk-size warning only); the bundle is unchanged: `index-C3-9F8IV.js` 779.07 kB (214.79 kB gzip), the baseline for X01.
+
+### Residual risks, hand-offs, and findings made while repairing
+
+The following app behaviors were found while making the suite stable. None is in the review register. P05 is test-only, so none was fixed; each is worked around in the test setup and handed off.
+
+1. **Runtime section reloads overlap (not in the register; suggest adding to P09, which owns `routeDefinitionService.ts`, with the App part in U07).** On the first visit to Trips, `loadRuntime` runs twice at once (React `StrictMode` runs effects twice in development). Both runs find no default Runtime profile and both create one, and the assignment check-then-write is not atomic. Observed: eight stored assignments where four are expected, a "Duplicate runtime assignment" banner, and a Runtime editor draft that is reset after the user has started editing. Saving a Runtime profile also starts two overlapping reloads (`onSaved` calls `loadRuntime`, then `onRuntimeChanged` triggers it again); while they run they disable the Runtime menus, close an open menu, and can reset the draft. The test setup creates the defaults once through `ensureDefaultRuntimeProfile` before Trips mounts, waits for the stored Runtime value, and reloads, so the browser tests no longer exercise the app's own first-visit creation path.
+2. **Stale Runtime profiles in the Trips table (not in the register; suggest U07 or P15).** `onRuntimeChanged` only bumps `runtimeVersion`; the Scenario records the Trips table reads (`records.runtimeProfiles`, `records.runtimeAssignments`) are not reloaded. After a Runtime profile is saved, Show runtime bands shades nothing until the page is reloaded, because the table compares the Trip times with the pre-save profile. The band-shading test reloads first and says why.
+3. React warns on every Trips render: "You provided a `checked` prop to a form field without an `onChange` handler" (the row checkboxes use `onClick`). Cosmetic; U04.
+4. Not done: focus trap, Escape, and focus return in dialogs (B4-19), part of 5-017. Those tests would fail today (I-036 is open) and AC1 forbids `test.fail`, so they belong to U04's `keyboard.spec.ts`.
+5. Not done: a unit test for `calculateTimepointHeadways` (5-003 location). It is in `src/domain/trips.ts`, which P15 owns; the browser test now covers the displayed headways.
+6. Strengthened existing tests (`route-editing`, `costing-workspace`, `blocking-workspace`) were checked against the current app, not given a deliberate break. The Costing width check does not assert that Annual cost is visible without table scroll; that is U06 criterion 3.
+7. What could still be wrong: the browser suite runs against the Vite dev server (`StrictMode` on), not a production build. `settleFrames` waits a fixed number of frames; a very slow machine could in principle read a scroll position before the app's two-frame restore runs, which would make the restore tests pass wrongly, never fail wrongly.
+
+## X01: Dead code removal
+
+- Date: 2026-10-22. Sitting 4C. Model: Sonnet (main session). Sub-agent: Haiku, for the mechanical deletions only (an exact file and line list with line fingerprints, plus typecheck, unit-test, unused-import, and grep checks). The main session rebuilt each file from `HEAD` with only the listed ranges removed and diffed it against Haiku's result before committing. No Opus review (S3).
+- Type: structural (mechanical deletion). Severity: S3.
+- Commit: `8a2d0d7`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-069 | 3-008 | S3 | `RouteDefinitionService.deleteNode` was unreachable and, if wired, would have deleted other Routes' Nodes and Patterns and committed in two transactions (S0). Its only caller was a dead App handler. |
+| I-075 | 4-015 | S3 | The legacy generation-set screens, 11 App-level route handlers, unused service methods, and 22 zero-reference exports (user decision 13: delete the dead UI and commands, keep the table and backup parsing). |
+| I-079 | 4-022 | S3 | Nine `ports.ts` interfaces were unused; four no longer matched their services. |
+
+User decision implemented: decision 13.
+
+### What changed
+
+Deleted, each re-verified by grep on the current code (the review's line numbers were stale) before it was removed:
+
+- `src/ui/App.tsx` (265 lines): the legacy generation-set screens `TripScheduleWorkspace`, `RuntimeWorkspace`, and `DirectionSetup`, with their exclusive children `RuntimeProfileEditor`, `RuntimeProfileDialog`, `ServiceTimeField`, `FragmentTripRow`, `GenerationPreviewDialog`, `PatternChangeDialog`, `PatternChangePreviewDialog`, and `type RuntimeDialog`; the 11 App-level handlers (`addNode`, `updateNode`, `deleteNode`, `addPattern`, `updatePattern`, `addPoint`, `updatePoint`, `movePoint`, `removePoint`, `reverseSelectedPattern`, `duplicateSelectedPattern`); `UndoIcon` and `RedoIcon`. Imports that became unused were removed.
+- Service methods (14): `RouteDefinitionService` `deleteDirection`, `updateDirectionColumn`, `getNodeDeletionFindings`, `deleteNode`, `ensureDefaultProfile`, `validateRuntimeAssignments`, `resolveRuntimeBand`; `TripGenerationService` `ensureDefaultTripProfile`, `previewTripGeneration`, `applyTripGeneration`, `applyTripShift`, `validateTrip`; `BlockingApplicationService` `validateBlock`, `getTripBlockingContext`. Their names are gone from the `Pick` aliases (`RouteDefinitionApplication`, `TripGenerationApplication`), and the two Blocking entries from `BlockingQueries`. The aliases themselves remain.
+- `src/application/ports.ts` (100 lines): the nine unused interfaces `RouteDefinitionCommands`, `RouteDefinitionQueries`, `RuntimeCommands`, `RuntimeQueries`, `AuthoritativeTripRepository`, `TripGenerationCommands`, `AuthoritativeTripCommands`, `AuthoritativeTripQueries`, `TripGenerationQueries`. The `TripGenerationRepository` comment no longer says it serves a running pre-2R UI.
+- The 22 zero-reference exports: `normalizeBlock`, `validateBlock` (alias), `deriveBlockSummary`, `deriveBlockingSummary`, `evaluateBlockingInsertion` (`blocking.ts`); `parseDuration`, `formatDuration`, `parseRuntimeDurationSeconds`, `formatRuntimeDurationSeconds` (`durations.ts`, and from the re-export lists in `time.ts` and `runtime.ts`); `patternSegmentMiles`; `PatternEditAnalysis`; `SERVICE_DAY_ORDER`, `orderServiceDays`, `sortServiceDayDefinitions`; `addDuration`; `generateTripsFromRequest`, `previewGenerateAuthoritativeTrips`, `tripLogicalKey`; `NormalizedTrip`, `NormalizedBlock`, `NormalizedBlockingBlock`; `RUNTIME_PROJECT_BACKUP_SCHEMA_VERSION`.
+- Tests of the deleted methods: two `TripGenerationService` generation-set tests, the `applyTripShift` test, and one `deleteDirection` assertion (311 unit tests before, 308 after). The staged-Shift, Trip-list, and runtime-profile tests are untouched.
+- `docs/data-schema.md`: the two stale claims that the generation-set repository methods and a legacy export method serve a "running pre-2R UI" now say what is true (the methods remain for old backups; `RouteDefinitionService.exportCsv` remains but no screen calls it).
+
+Kept, as required: the `generationSets` table, all generation-set backup parsing including the version 3 import path (the version 3 placeholder-Block tests pass), `SessionStatusQueries` in `ports.ts`, `recoverScenarioCopyNodeReferences`, `parseProjectBackupWithReport`, `importProjectWithReport`.
+
+Behavior before and after: none. No screen, menu, or stored value reached any deleted code.
+
+### Deviations from the finding
+
+- **`selectedUnassignedTripIds` was not deleted.** The finding lists it as dead, but on current code `BlockingWorkspace.tsx` reads it twice (the select-all checkbox and each row's selected state) and sets it five times. It is live.
+- **`type PatternPreviewDialog` was deleted although the finding does not list it.** The removed `TripScheduleWorkspace` and `PatternChangePreviewDialog` were its only users.
+- The finding's line numbers had moved; the list was rebuilt from the current code with a reference sweep (identifier counts across `src` and `tests`) and AST line ranges.
+
+### Tests added
+
+None (deletion only). The existing suites are the check: nothing outside tests referenced any deleted symbol.
+
+### Verification run
+
+- `pnpm typecheck`: clean. `tsc --noUnusedLocals` diagnostics fell from 31 to 14, all 14 present before; none is new, and the 17 that disappeared are the dead handlers and components themselves.
+- `pnpm test`: 32 files, 308 tests passed (311 before; 3 test cases of deleted methods removed).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 59 passed, 0 failed, twice in a row (2.5 and 2.4 minutes).
+- `pnpm build`: succeeds (existing chunk-size warning only). **Bundle size:** `index-C3-9F8IV.js` 779.07 kB (214.79 kB gzip) before, `index-TR3LK2Mp.js` 770.23 kB (213.02 kB gzip) after, 8.84 kB smaller (1.1%); the CSS bundle is unchanged at 42.47 kB.
+- Grep for every deleted name across `src` and `tests`: no match, except `validateRuntimeAssignments`, `validateTrip`, and `validateBlock`, which still exist as domain functions (`runtime.ts`, `trips.ts`, `validation.ts`) and in `backup.ts`.
+
+### Residual risks and hand-offs
+
+- Left in place because 4-015 does not list them: the domain functions `previewRegeneration` and `applyRegeneration` (now referenced only by their unit tests, since the generation-set commands are gone), `validateBlock` in `src/domain/validation.ts` (P12 removes it), `RouteDefinitionService.exportCsv` (referenced only by a test), and the generation-set repository and service methods that the kept table and backup parsing still use (`getGenerationSet`, `listGenerationSets`, `saveGenerationSet`, `replaceGenerationSet`, and the CSV generation-sets file). A later cleanup could remove the first three once the user agrees.
+- `docs/implementation/phase-02tp-trip-profiles.md` (line 181) and two Phase 2R closeout documents still describe the deleted methods and the "running pre-2R UI". They are historical records and were not edited.
+- What could still be wrong: the unused-reference sweep is by identifier name, so a symbol reachable only through string lookups or dynamic access would be missed; the typecheck, 308 unit tests, and 59 browser tests would catch a static or tested use, and none exists.

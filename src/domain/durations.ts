@@ -54,9 +54,3 @@ export function formatRuntimeDuration(value: DurationSeconds | undefined): strin
   const seconds = value % 60;
   return `:${String(minutes).padStart(2, '0')}${seconds === 0 ? '' : `:${String(seconds).padStart(2, '0')}`}`;
 }
-
-// Short aliases keep the utility convenient for domain and application callers.
-export const parseDuration = parseRuntimeDuration;
-export const formatDuration = formatRuntimeDuration;
-export const parseRuntimeDurationSeconds = parseRuntimeDuration;
-export const formatRuntimeDurationSeconds = formatRuntimeDuration;

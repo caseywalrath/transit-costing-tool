@@ -1,29 +1,10 @@
 import { expect, test } from '@playwright/test';
+import { createRouteWithPattern } from './support/tripsWorkspace';
 
 test.setTimeout(60_000);
 
 test('places Trip profile selection and lifecycle actions in the Trips header menu', async ({ page }) => {
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
-  await page.locator('#dialog-name').fill('Trip profile verification');
-  await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
-  await page.getByRole('button', { name: 'Route actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
-
-  await page.getByRole('button', { name: 'New node', exact: true }).click();
-  await page.getByLabel('Node name').fill('A');
-  await page.getByRole('button', { name: 'Save nodes', exact: true }).click();
-  await page.getByRole('button', { name: 'New node', exact: true }).click();
-  await page.getByLabel('Node name').last().fill('B');
-  await page.getByRole('button', { name: 'Save nodes', exact: true }).click();
-
-  await page.getByRole('button', { name: 'Add pattern', exact: true }).click();
-  await page.getByRole('button', { name: 'Add node', exact: true }).click();
-  await page.getByRole('button', { name: 'Add node', exact: true }).click();
-  await page.getByLabel('Point 2 node').selectOption({ label: 'B' });
-  await page.getByRole('button', { name: 'Save Pattern', exact: true }).click();
-  await page.getByRole('button', { name: 'Save and rebalance', exact: true }).click();
+  await createRouteWithPattern(page, 'Trip profile verification');
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
 
   const tripsSection = page.locator('[aria-label="Trips section"]');

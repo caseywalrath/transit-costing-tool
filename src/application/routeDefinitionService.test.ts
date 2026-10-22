@@ -151,7 +151,6 @@ describe('RouteDefinitionService', () => {
     const block = { id: 'block', scenarioId: created.records.scenario.id, serviceDayId: created.records.serviceDays[0].id, label: '1', activities: [{ id: 'activity', type: 'revenueTrip' as const, sequence: 0, tripId: trip.id }], ...metadata() };
     repository.trips.set(trip.id, trip); repository.blocks.set(block.id, block);
     expect((await service.getDirectionDeletionImpact(aggregate, directionId)).patternIds).toEqual([pattern.id]);
-    await expect(service.deleteDirection(aggregate, directionId)).rejects.toThrow(/managed automatically/);
     expect(await service.getPatternDeletionImpact(pattern.id)).toMatchObject({ runtimeProfileCount: 1, runtimeAssignmentCount: 4, tripCount: 1, affectedBlockCount: 1 });
     await service.deletePattern(pattern.id);
     expect((await repository.getRouteDefinition(aggregate.route.id))?.patterns).toEqual([]);

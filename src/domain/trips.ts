@@ -99,8 +99,6 @@ export function generateAuthoritativeTrips(request: GenerateTripsRequest, patter
   return trips;
 }
 
-export const generateTripsFromRequest = generateAuthoritativeTrips;
-
 /** Return elapsed time between a Trip's first and last scheduled points. */
 export function tripRunTimeSeconds(trip: Trip): DurationSeconds | undefined {
   if (trip.stopTimes.length < 2) return undefined;
@@ -146,11 +144,6 @@ export function findExactTripDuplicates(proposed: Trip[], existing: Trip[]): Val
     seen.add(key);
   }
   return warnings;
-}
-
-export function previewGenerateAuthoritativeTrips(request: GenerateTripsRequest, pattern: RoutePattern, profile: RuntimeProfile, existing: Trip[] = [], now = new Date().toISOString()): GenerateTripsPreview {
-  const trips = generateAuthoritativeTrips(request, pattern, profile, now);
-  return { request, trips, warnings: findExactTripDuplicates(trips, existing) };
 }
 
 /** Create one authoritative trip using the same propagation rules as generation. */
@@ -373,8 +366,6 @@ export function generationDepartures(set: TripGenerationSet): ServiceSeconds[] {
   for (let departure = set.firstDeparture; departure <= set.limit.endTime; departure += set.headwaySeconds) departures.push(departure);
   return departures;
 }
-
-export function tripLogicalKey(generationSetId: string, generationSequence: number): string { return `${generationSetId}:${generationSequence}`; }
 
 function generatedTrip(set: TripGenerationSet, pattern: RoutePattern, profile: RuntimeProfile, sequence: number, stopTimes: ScheduledPoint[], id = newId(), now = new Date().toISOString()): Trip {
   const revision = profile.calculationRevision ?? 0;

@@ -28,3 +28,7 @@ Run the test with `pnpm test:ui`. It starts a local Vite server and Chromium. Pl
 - Geometry regressions can be detected before user review.
 - UI changes that affect dense tables should add or update a browser layout test when they have a measurable size, overflow, sticky-position, or typography acceptance criterion.
 - The test fixture must remain independent of a user's local IndexedDB records.
+
+## Update: layout specs drive the real app (code review package P05, 2026-10-22)
+
+Hand-written fixtures copy the app's markup and drift from it: by October 2026 the header-action and Trips-table fixtures listed buttons the app no longer rendered, and the draft-row test asserted classes the fixture itself wrote, so none of them could fail when the app changed (review finding 5-002). Browser specs for the Trips table, the Runtime and Trips header action layers, and the Shift drawer now run against the real app in a fresh browser profile, so they stay independent of a user's local IndexedDB records. A fixture remains acceptable only for pure geometry of shared styles that the real app cannot isolate; `tests/fixtures/runtime-table-layout.html` is the one that remains, and its spec says so.

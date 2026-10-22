@@ -96,21 +96,6 @@ describe('authoritative trip workflow', () => {
     expect(repository.trips.size).toBe(2);
   });
 
-  it('shifts only the selected authoritative trips by signed whole minutes', async () => {
-    const p = pattern('p1', 'Southbound 1', 0); const repository = new AuthoritativeFake([p], [profile('rp1', 'p1')]);
-    repository.assignments.push({ ...metadata(), id: 'a1', scenarioId: 'scenario', patternId: 'p1', serviceDayId: 'weekday', runtimeProfileId: 'rp1' });
-    const service = new TripGenerationService(repository);
-    const generated = await service.generateTrips(request('p1', 0, 300));
-    const [first, second] = generated.trips;
-    const shifted = await service.applyTripShift([second.id], -120);
-    expect(shifted).toHaveLength(1);
-    expect(shifted[0].stopTimes[0].time).toBe(180);
-    expect(shifted[0].provenance.manualTimeShiftSeconds).toBe(-120);
-    expect(shifted[0].provenance.manuallyChangedFields).toContain('times');
-    expect((await repository.getTrip(first.id))?.stopTimes[0].time).toBe(0);
-    expect((await repository.getTrip(second.id))?.stopTimes[0].time).toBe(180);
-  });
-
   it('previews and atomically applies a scoped staged Shift', async () => {
     const p = pattern('p1', 'Southbound 1', 0); const repository = new AuthoritativeFake([p], [profile('rp1', 'p1')]);
     repository.assignments.push({ ...metadata(), id: 'a1', scenarioId: 'scenario', patternId: 'p1', serviceDayId: 'weekday', runtimeProfileId: 'rp1' });

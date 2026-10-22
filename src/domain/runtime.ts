@@ -10,7 +10,7 @@ import type {
   ValidationFinding,
 } from './types';
 import { metadata, newId } from './ids';
-export { formatRuntimeDuration, parseRuntimeDuration, RuntimeDurationError, formatRuntimeDurationSeconds, parseRuntimeDurationSeconds } from './durations';
+export { formatRuntimeDuration, parseRuntimeDuration, RuntimeDurationError } from './durations';
 
 export interface RuntimeResolution {
   band?: RuntimeBand;
@@ -162,11 +162,6 @@ export function blendSegmentTimes(pattern: RoutePattern, departure: ServiceSecon
     stopTimes.push({ patternPointId: pattern.points[index + 1].id, sequence: index + 1, time });
   }
   return { stopTimes, segments };
-}
-
-/** Return segment miles derived from cumulative pattern miles. */
-export function patternSegmentMiles(pattern: RoutePattern): number[] {
-  return pattern.points.slice(1).map((point, index) => point.cumulativeMiles - pattern.points[index].cumulativeMiles);
 }
 
 /** Return the total runtime represented by one band’s segment durations. */

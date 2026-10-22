@@ -1,3 +1,6 @@
+// Review package P05 (finding 5-002). This spec stays on a fixture, reduced to the geometry that Decision 0013 permits: it measures how
+// the shared styles lay out the Runtime table's From and To fields and spacing buffer. It does not claim the app renders these
+// columns; the real Runtime section is covered by service-day-copy-layout.spec.ts and unified-action-layer.spec.ts.
 import { expect, test } from '@playwright/test';
 
 test('keeps From and To adjacent before the runtime segments', async ({ page }) => {

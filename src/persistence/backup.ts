@@ -31,7 +31,6 @@ import { recoverScenarioCopyNodeReferences } from '../domain/scenarioCopyRecover
 export const PROJECT_BACKUP_FORMAT = 'transit-costing-tool.project' as const;
 export const PROJECT_BACKUP_SCHEMA_VERSION = 6 as const;
 export const LEGACY_PROJECT_BACKUP_SCHEMA_VERSION = 1 as const;
-export const RUNTIME_PROJECT_BACKUP_SCHEMA_VERSION = 2 as const;
 
 function validateBlockingScenarios(values: unknown[], scenarioIds: Set<string>, tripProfiles: TripProfile[]): BlockingScenario[] {
   const ids = new Set<string>();
