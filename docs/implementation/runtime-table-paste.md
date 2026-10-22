@@ -14,6 +14,7 @@ Allow users to enter several runtime bands from spreadsheet clipboard data or CS
 - The dialog accepts tab-separated spreadsheet clipboard data and comma-separated CSV, including quoted CSV fields and CRLF line endings.
 - Data rows contain `From`, `To`, and one segment runtime for each segment in the selected Pattern, in displayed order.
 - A header row is optional. When present, it may include a leading `Band` column and a trailing `Total` column. Imported Band labels are retained. Total is ignored and recalculated by the application.
+- Full Runtime profile CSV may also include a `Calculation Method` column containing the same supported method on every row. When present, applying the rows updates the draft method along with its bands.
 - Headerless rows must contain only `From`, `To`, and segment runtimes.
 - From and To use the existing service-time parser, including times after 24:00. Segment runtimes use the existing duration parser.
 - Users choose to replace all current time bands or append the pasted rows. Replace is the initial selection.
@@ -32,3 +33,7 @@ Allow users to enter several runtime bands from spreadsheet clipboard data or CS
 - Replace removes existing bands from the draft; Append preserves them and sequences new bands after them.
 - Save continues to use the existing runtime-profile validation and persistence path.
 - The Runtime table's calculated Total remains derived and cannot be imported as authoritative data.
+
+## Later profile CSV exchange
+
+The subsequent profile export adds a `Calculation Method` column to preserve the selected profile's calculation behavior. Runtime profile import continues through this preview-and-save workflow. Trips CSV interchange is documented separately in `docs/implementation/phase-02r-trip-table-interchange-undo.md`.

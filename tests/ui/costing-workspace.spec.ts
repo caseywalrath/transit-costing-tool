@@ -42,12 +42,12 @@ test('Costing workspace displays a partial estimate, supports year selection, an
   await expect(page.getByText('Saved locally', { exact: true })).toHaveCount(0);
   await expect(page.getByText(/Shared across/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '2026 cost estimate' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Cost Breakdown' })).toBeVisible();
   await expect(page.getByText('Partial estimate')).toBeVisible();
   await expect(page.getByText('0 excluded Blocks · 1 unassigned Trips')).toBeVisible();
   await expect(page.locator('.costing-results-table tfoot').getByRole('cell', { name: '$40,170' })).toBeVisible();
   await page.getByLabel('View year').selectOption('2027');
-  await expect(page.getByRole('heading', { name: '2027 cost estimate' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Cost Breakdown' })).toBeVisible();
   await expect(page.getByText('Applied rate 159 USD per Revenue Hour')).toBeVisible();
   await expect(page.getByText('Service quantities remain constant; only the rate changes.')).toHaveCount(0);
   expect(await page.locator('.costing-results-table tbody, .costing-results-table tfoot, .costing-outlook-table tbody').allInnerTexts()).not.toEqual(expect.arrayContaining([expect.stringMatching(/\d+\.\d+/)]));

@@ -1,4 +1,4 @@
-import type { Block, BlockingScenario, CostingAssumptions, Node, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, Trip, TripGenerationSet, TripProfile } from '../domain/types';
+import type { Block, BlockingScenario, CostingAssumptions, Node, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, Trip, TripGenerationSet, TripProfile, TripRegenerationUndo } from '../domain/types';
 import type { ScenarioRecords } from '../domain/project';
 import type { CostingAssumptionsRepository, RouteDefinitionRepository } from '../application/ports';
 import type { RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
@@ -22,6 +22,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
   blockingScenarios = new Map<string, BlockingScenario>();
   generationSets = new Map<string, TripGenerationSet>();
   trips = new Map<string, Trip>();
+  tripRegenerationUndo?: TripRegenerationUndo;
   blocks = new Map<string, Block>();
   costingAssumptions = new Map<string, CostingAssumptions>();
 
@@ -31,6 +32,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
   async deleteProject(projectId: string): Promise<void> {
     if (!this.projects.has(projectId)) throw new Error('Project not found.');
     const scenarioIds = new Set([...this.scenarios.values()].filter((scenario) => scenario.projectId === projectId).map((scenario) => scenario.id));
+    if (this.tripRegenerationUndo && scenarioIds.has(this.tripRegenerationUndo.scenarioId)) this.tripRegenerationUndo = undefined;
     const removeScenarioOwned = <T extends { scenarioId: string }>(collection: Map<string, T>) => { for (const [id, value] of collection) if (scenarioIds.has(value.scenarioId)) collection.delete(id); };
     removeScenarioOwned(this.serviceDays); removeScenarioOwned(this.routes); removeScenarioOwned(this.nodes); removeScenarioOwned(this.patterns); removeScenarioOwned(this.directions); removeScenarioOwned(this.runtimeProfiles); removeScenarioOwned(this.runtimeAssignments); removeScenarioOwned(this.tripProfiles); removeScenarioOwned(this.blockingScenarios); removeScenarioOwned(this.generationSets); removeScenarioOwned(this.trips); removeScenarioOwned(this.blocks); removeScenarioOwned(this.costingAssumptions);
     for (const [id, scenario] of this.scenarios) if (scenarioIds.has(scenario.id)) this.scenarios.delete(id);
@@ -89,6 +91,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     assertRuntimeGraph(records.runtimeProfiles, records.runtimeAssignments, records.patterns, records.serviceDays, records.scenario.id);
     assertTripProfileReferences(records.trips, records.blocks);
     if (records.costingAssumptions) assertCostingAssumptions(records.costingAssumptions, records.scenario.id);
+    this.invalidateUndoWhenScenarioTripsChange(records.scenario.id, records.trips);
     const previousCostingAssumptions = [...this.costingAssumptions.values()].find((candidate) => candidate.scenarioId === records.scenario.id);
     if (records.costingAssumptions && previousCostingAssumptions && previousCostingAssumptions.id !== records.costingAssumptions.id) {
       throw new Error('Scenario already has a different costing assumptions record.');
@@ -189,6 +192,10 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
       const sameId = this.costingAssumptions.get(assumptions.id);
       if (sameId && sameId.scenarioId !== assumptions.scenarioId) throw new Error('Costing assumption ownership cannot be moved to another Scenario.');
     }
+    if (this.tripRegenerationUndo && (ownedScenarioIds.has(this.tripRegenerationUndo.scenarioId) || snapshot.scenarios.some((scenario) => scenario.id === this.tripRegenerationUndo!.scenarioId))) {
+      if (!snapshot.scenarios.some((scenario) => scenario.id === this.tripRegenerationUndo!.scenarioId)) this.tripRegenerationUndo = undefined;
+      else this.invalidateUndoWhenScenarioTripsChange(this.tripRegenerationUndo.scenarioId, snapshot.trips);
+    }
     for (const [id, scenario] of this.scenarios) if (scenario.projectId === snapshot.project.id && !snapshot.scenarios.some((candidate) => candidate.id === id)) this.scenarios.delete(id);
     for (const [id, day] of this.serviceDays) if (snapshot.scenarios.some((scenario) => scenario.projectId === snapshot.project.id && scenario.id === day.scenarioId) && !snapshot.serviceDays.some((candidate) => candidate.id === id)) this.serviceDays.delete(id);
     for (const [id, route] of this.routes) if (snapshot.scenarios.some((scenario) => scenario.projectId === snapshot.project.id && scenario.id === route.scenarioId) && !snapshot.routes.some((candidate) => candidate.id === id)) this.routes.delete(id);
@@ -254,15 +261,17 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     catch (error) { this.tripProfiles = previousProfiles; this.trips = previousTrips; throw error; }
   }
   async deleteTripProfile(profileId: string): Promise<void> {
-    const previousProfiles = new Map(this.tripProfiles); const previousBlockingScenarios = new Map(this.blockingScenarios); const previousTrips = new Map(this.trips); const previousBlocks = new Map(this.blocks);
+    const previousProfiles = new Map(this.tripProfiles); const previousBlockingScenarios = new Map(this.blockingScenarios); const previousTrips = new Map(this.trips); const previousBlocks = new Map(this.blocks); const previousUndo = this.tripRegenerationUndo;
     try {
       this.tripProfiles.delete(profileId);
-      for (const [id, trip] of this.trips) if (trip.tripProfileId === profileId) this.trips.delete(id);
+      const deletedTripIds = [...this.trips.values()].filter((trip) => trip.tripProfileId === profileId).map((trip) => trip.id);
+      this.invalidateRegenerationUndo(deletedTripIds);
+      for (const id of deletedTripIds) this.trips.delete(id);
       const ownedBlockingScenarioIds = new Set([...this.blockingScenarios.values()].filter((scenario) => scenario.tripProfileId === profileId).map((scenario) => scenario.id));
       for (const id of ownedBlockingScenarioIds) this.blockingScenarios.delete(id);
       for (const [id, block] of this.blocks) if (block.tripProfileId === profileId || (block.blockingScenarioId && ownedBlockingScenarioIds.has(block.blockingScenarioId))) this.blocks.delete(id);
     }
-    catch (error) { this.tripProfiles = previousProfiles; this.blockingScenarios = previousBlockingScenarios; this.trips = previousTrips; this.blocks = previousBlocks; throw error; }
+    catch (error) { this.tripProfiles = previousProfiles; this.blockingScenarios = previousBlockingScenarios; this.trips = previousTrips; this.blocks = previousBlocks; this.tripRegenerationUndo = previousUndo; throw error; }
   }
   async listRuntimeAssignments(scenarioId: string, serviceDayId?: string, patternId?: string): Promise<RuntimeAssignment[]> { return [...this.runtimeAssignments.values()].filter((assignment) => assignment.scenarioId === scenarioId && (!serviceDayId || assignment.serviceDayId === serviceDayId) && (!patternId || assignment.patternId === patternId)); }
   async saveRuntimeAssignment(assignment: RuntimeAssignment): Promise<void> {
@@ -303,7 +312,14 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
   async saveGenerationSet(set: TripGenerationSet): Promise<void> { this.generationSets.set(set.id, set); }
   async listTrips(serviceDayId: string, generationSetIdOrProfileId?: string): Promise<Trip[]> { return [...this.trips.values()].filter((trip) => trip.serviceDayId === serviceDayId && (!generationSetIdOrProfileId || trip.provenance.generationSetId === generationSetIdOrProfileId || trip.tripProfileId === generationSetIdOrProfileId)); }
   async getTrip(id: string): Promise<Trip | undefined> { return this.trips.get(id); }
-  async saveTrips(trips: Trip[]): Promise<void> { for (const trip of trips) this.trips.set(trip.id, trip); }
+  private invalidateRegenerationUndo(tripIds: string[]) { if (this.tripRegenerationUndo && tripIds.some((id) => this.tripRegenerationUndo!.afterTrips.some((trip) => trip.id === id))) this.tripRegenerationUndo = undefined; }
+  private invalidateUndoWhenScenarioTripsChange(scenarioId: string, nextTrips: Trip[]) {
+    const snapshot = this.tripRegenerationUndo;
+    if (!snapshot || snapshot.scenarioId !== scenarioId) return;
+    const nextById = new Map(nextTrips.map((trip) => [trip.id, trip]));
+    if (snapshot.afterTrips.some((trip) => JSON.stringify(nextById.get(trip.id)) !== JSON.stringify(trip))) this.tripRegenerationUndo = undefined;
+  }
+  async saveTrips(trips: Trip[]): Promise<void> { for (const trip of trips) this.trips.set(trip.id, trip); this.invalidateRegenerationUndo(trips.map((trip) => trip.id)); }
   /** Atomically append authoritative trips. Existing trips are never replaced. */
   async insertTripsAtomically(trips: Trip[]): Promise<void> {
     const previous = new Map(this.trips);
@@ -318,14 +334,24 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
   async saveTripChangesAtomically(trips: Trip[], blocks: Block[] = []): Promise<void> {
     assertTripProfileReferences([...this.trips.values(), ...trips], blocks);
     const previousTrips = new Map(this.trips); const previousBlocks = new Map(this.blocks);
-    try { for (const trip of trips) this.trips.set(trip.id, trip); for (const block of blocks) this.blocks.set(block.id, block); }
+    try { for (const trip of trips) this.trips.set(trip.id, trip); for (const block of blocks) this.blocks.set(block.id, block); this.invalidateRegenerationUndo(trips.map((trip) => trip.id)); }
     catch (error) { this.trips = previousTrips; this.blocks = previousBlocks; throw error; }
   }
   /** Atomically delete trips and persist only blocks whose activities changed. */
   async deleteTripsAtomically(tripIds: string[], blocks: Block[] = []): Promise<void> {
     const previousTrips = new Map(this.trips); const previousBlocks = new Map(this.blocks);
-    try { for (const tripId of tripIds) this.trips.delete(tripId); for (const block of blocks) this.blocks.set(block.id, block); }
+    try { for (const tripId of tripIds) this.trips.delete(tripId); for (const block of blocks) this.blocks.set(block.id, block); this.invalidateRegenerationUndo(tripIds); }
     catch (error) { this.trips = previousTrips; this.blocks = previousBlocks; throw error; }
+  }
+  async saveRegeneratedTripsWithUndo(_beforeTrips: Trip[], afterTrips: Trip[], snapshot: TripRegenerationUndo): Promise<void> { for (const trip of afterTrips) this.trips.set(trip.id, trip); this.tripRegenerationUndo = snapshot; }
+  async getLastTripRegenerationUndo(): Promise<TripRegenerationUndo | undefined> { return this.tripRegenerationUndo; }
+  async restoreLastTripRegenerationUndo(): Promise<Trip[]> {
+    const snapshot = this.tripRegenerationUndo;
+    if (!snapshot) throw new Error('There is no regeneration to undo.');
+    if (snapshot.afterTrips.some((trip) => JSON.stringify(this.trips.get(trip.id)) !== JSON.stringify(trip))) { this.tripRegenerationUndo = undefined; throw new Error('The regenerated Trips changed. The undo is no longer available.'); }
+    for (const trip of snapshot.beforeTrips) this.trips.set(trip.id, trip);
+    this.tripRegenerationUndo = undefined;
+    return snapshot.beforeTrips;
   }
   async listBlocks(serviceDayId: string, tripProfileId?: string): Promise<Block[]> { return [...this.blocks.values()].filter((block) => block.serviceDayId === serviceDayId && (!tripProfileId || block.tripProfileId === tripProfileId)); }
   async listTripsForProfile(tripProfileId: string): Promise<Trip[]> { return [...this.trips.values()].filter((trip) => trip.tripProfileId === tripProfileId); }
@@ -343,6 +369,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
       const nextTrips = [...this.trips.values()].filter((trip) => !preview.removedTripIds.includes(trip.id)).concat(preview.copiedTrips);
       const nextBlocks = [...this.blocks.values()].map((block) => preview.adjustedBlocks.find((candidate) => candidate.id === block.id) ?? block);
       assertTripProfileReferences(nextTrips, nextBlocks);
+      this.invalidateRegenerationUndo(preview.removedTripIds);
       for (const id of preview.removedTripIds) this.trips.delete(id);
       for (const trip of preview.copiedTrips) this.trips.set(trip.id, trip);
       for (const block of preview.adjustedBlocks) this.blocks.set(block.id, block);
@@ -357,7 +384,9 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     assertTripProfileReferences([...this.trips.values(), ...trips], blocks);
     const previousSets = new Map(this.generationSets); const previousTrips = new Map(this.trips); const previousBlocks = new Map(this.blocks);
     try {
-      for (const [id, trip] of this.trips) if (trip.provenance.generationSetId === set.id && !trips.some((candidate) => candidate.id === id)) this.trips.delete(id);
+      const removedTripIds = [...this.trips.values()].filter((trip) => trip.provenance.generationSetId === set.id && !trips.some((candidate) => candidate.id === trip.id)).map((trip) => trip.id);
+      this.invalidateRegenerationUndo([...removedTripIds, ...trips.map((trip) => trip.id)]);
+      for (const id of removedTripIds) this.trips.delete(id);
       this.generationSets.set(set.id, set); for (const trip of trips) this.trips.set(trip.id, trip); for (const block of blocks) this.blocks.set(block.id, block);
     } catch (error) { this.generationSets = previousSets; this.trips = previousTrips; this.blocks = previousBlocks; throw error; }
   }

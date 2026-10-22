@@ -322,6 +322,7 @@ export function copyRuntimeProfile(
     patternId: target.patternId ?? profile.patternId,
     name: target.name.trim(),
     calculationRevision: 0,
+    calculationMethod: profile.calculationMethod ?? 'singleBand',
     bands: profile.bands.map((band) => ({ ...band, id: newId(), segmentRuntimeSeconds: [...band.segmentRuntimeSeconds] })),
   };
 }

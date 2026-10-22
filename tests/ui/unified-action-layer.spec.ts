@@ -46,6 +46,9 @@ async function createShiftReadySchedule(page: Page, lastTrip = '06:00') {
   await expect(runtimeSection.getByLabel('Time band 2 start')).toHaveCount(0);
 
   const tripsSection = page.locator('[aria-label="Trips section"]');
+  await runtimeSection.getByRole('button', { name: 'Runtime actions', exact: true }).click();
+  await expect(page.getByRole('menu', { name: 'Runtime actions' }).getByRole('menuitemradio', { name: 'Band at segment start' })).toHaveAttribute('aria-checked', 'true');
+  await page.keyboard.press('Escape');
   const actions = tripsSection.getByRole('button', { name: 'Trip actions', exact: true });
   await actions.focus();
   await actions.press('ArrowDown');
@@ -59,6 +62,8 @@ async function createShiftReadySchedule(page: Page, lastTrip = '06:00') {
     'Assign Block…',
     'Unassign from Block…',
     'Copy from day…',
+    'Import Trips CSV…',
+    'Export Trips CSV',
     'Delete selected…',
   ]);
   await actionMenu.getByRole('menuitem', { name: 'Build trips…' }).click();
@@ -70,7 +75,9 @@ async function createShiftReadySchedule(page: Page, lastTrip = '06:00') {
   await drawer.getByLabel('Last Trip').fill(lastTrip);
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
   await expect(drawer).toBeHidden();
-  await expect(page.locator('.schedule-table tbody tr')).toHaveCount(lastTrip === '06:00' ? 1 : 3);
+  const [lastHours, lastMinutes] = lastTrip.split(':').map(Number);
+  const expectedTripCount = Math.floor(((lastHours * 60 + lastMinutes) - 6 * 60) / 10) + 1;
+  await expect(page.locator('.schedule-table tbody tr')).toHaveCount(expectedTripCount);
 }
 
 test('Build Trips uses a right drawer and supports inclusive last-trip and count limits', async ({ page }) => {
@@ -109,23 +116,71 @@ test('regeneration preview shows signed time and Run Time changes for each ancho
   await runtimeSection.getByLabel('Time band 1 segment 1').press('Tab');
   await runtimeSection.getByRole('button', { name: 'Save', exact: true }).click();
 
+  await expect(page.getByText('Run Times Have Changed')).toBeVisible();
   await page.locator('.schedule-table tbody input[type="checkbox"]').check();
+  await expect(page.locator('.schedule-table tbody input[type="checkbox"]').first()).toBeChecked();
   await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
   await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Regenerate selected…' }).click();
   const dialog = page.getByRole('dialog', { name: 'Regenerate selected trips' });
   await expect(dialog.locator('.preview-times thead th')).toHaveText([
-    'Trip', 'Anchor', 'Fixed time', 'First: current → new', 'First change',
-    'Last: current → new', 'Last change', 'Run Time change',
+    'Trip', 'Anchor', 'Fixed time', 'First change', 'First: current → new',
+    'Last change', 'Last: current → new', 'Run Time change', 'Layover change', 'Layover: current → new',
   ]);
   const cells = dialog.locator('.preview-times tbody tr').first().locator('td');
-  await expect(cells.nth(4)).toHaveText('0:00');
-  await expect(cells.nth(6)).toHaveText('+0:03:30');
+  await expect(cells.nth(3)).toHaveText('0:00');
+  await expect(cells.nth(5)).toHaveText('+0:03:30');
   await expect(cells.nth(7)).toHaveText('+0:03:30');
 
   await dialog.getByRole('button', { name: 'Last timepoint' }).click();
-  await expect(cells.nth(4)).toHaveText('−0:03:30');
-  await expect(cells.nth(6)).toHaveText('0:00');
+  await expect(cells.nth(3)).toHaveText('−0:03:30');
+  await expect(cells.nth(5)).toHaveText('0:00');
   await expect(cells.nth(7)).toHaveText('+0:03:30');
+});
+
+test('keeps one regeneration undo through reload and restores the prior trip times', async ({ page }) => {
+  await createShiftReadySchedule(page);
+  const runtimeSection = page.locator('[aria-label="Runtimes section"]');
+  await runtimeSection.getByLabel('Time band 1 segment 1').fill(':10:30');
+  await runtimeSection.getByLabel('Time band 1 segment 1').press('Tab');
+  await runtimeSection.getByRole('button', { name: 'Save', exact: true }).click();
+
+  const tripsSection = page.locator('[aria-label="Trips section"]');
+  await expect(page.getByText('Run Times Have Changed')).toBeVisible();
+  const tripCheckbox = page.locator('.schedule-table tbody input[type="checkbox"]').first();
+  await tripCheckbox.check();
+  await expect(tripCheckbox).toBeChecked();
+  await tripsSection.getByRole('button', { name: 'Trip actions', exact: true }).click();
+  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Regenerate selected…' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Regenerate selected trips' });
+  await dialog.getByRole('button', { name: 'Regenerate trips', exact: true }).click();
+  await expect(page.locator('.schedule-table')).toContainText('6:10:30');
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Trips', exact: true }).click();
+  const actions = page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true });
+  await actions.click();
+  const menu = page.getByRole('menu', { name: 'Trip actions' });
+  const undo = menu.getByRole('menuitem', { name: 'Undo last regeneration (1 Trips)', exact: true });
+  await expect(undo).toBeEnabled();
+  await undo.click();
+  await expect(page.locator('.schedule-table')).toContainText('6:07');
+});
+
+test('restores Trips table scroll position after committing a shift', async ({ page }) => {
+  await createShiftReadySchedule(page, '09:00');
+  const table = page.locator('.schedule-table');
+  await table.evaluate((element) => { element.scrollTop = 260; });
+  await expect.poll(() => table.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await page.locator('.schedule-table tbody input[type="checkbox"]').nth(8).check();
+  const tripsSection = page.locator('[aria-label="Trips section"]');
+  await tripsSection.getByRole('button', { name: 'Trip actions', exact: true }).click();
+  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
+  const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
+  await drawer.getByRole('button', { name: '+ Forward' }).click();
+  await table.evaluate((element) => { element.scrollTop = 230; });
+  const scrollTop = await table.evaluate((element) => element.scrollTop);
+  await drawer.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect.poll(() => table.evaluate((element) => element.scrollTop)).toBe(scrollTop);
 });
 
 test('stages Shift actions, guards scope changes, and persists only on Done', async ({ page }) => {

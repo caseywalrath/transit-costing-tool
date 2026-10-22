@@ -36,3 +36,26 @@ test('places an unsaved new trip before the saved schedule rows', async ({ page 
   await expect(rows.first()).toContainText('New trip');
   await expect(rows.nth(1)).not.toHaveClass(/draft-trip-row/);
 });
+
+test('keeps schedule headers sticky while scrolling the schedule viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 700 });
+  await page.goto('/tests/fixtures/trip-table-layout.html');
+  const region = page.locator('.schedule-table');
+  await region.evaluate((element) => {
+    const body = element.querySelector('tbody')!;
+    for (let index = 0; index < 30; index += 1) {
+      const row = body.insertRow();
+      for (let column = 0; column < 6; column += 1) row.insertCell().textContent = `row ${index + 1}`;
+    }
+  });
+  await expect.poll(() => region.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  await region.evaluate((element) => { element.scrollTop = 240; });
+
+  const [headerTop, regionTop, position] = await Promise.all([
+    page.locator('.schedule-table thead th').first().evaluate((element) => element.getBoundingClientRect().top),
+    region.evaluate((element) => element.getBoundingClientRect().top),
+    page.locator('.schedule-table thead th').first().evaluate((element) => getComputedStyle(element).position),
+  ]);
+  expect(position).toBe('sticky');
+  expect(Math.abs(headerTop - regionTop)).toBeLessThanOrEqual(1);
+});
