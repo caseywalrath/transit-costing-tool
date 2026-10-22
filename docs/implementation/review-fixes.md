@@ -498,7 +498,7 @@ No user decision applied.
 
 - Date: 2026-10-22. Sitting 4D. Model: Sonnet (main session). No sub-agents: P07 is S2, so no Opus review (sitting plan).
 - Type: structural. Severity: S2.
-- Commit: PLACEHOLDER-P07.
+- Commit: `b5b2f3c`.
 
 ### Issues fixed
 
