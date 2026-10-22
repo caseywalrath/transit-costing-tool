@@ -203,7 +203,7 @@ Confirmed all five acceptance criteria (the original golden reproductions, run w
 
 - Date: 2026-10-22. Sitting 4B. Model: Sonnet (main session). Independent diff review by an Opus sub-agent.
 - Type: structural. Severity: S1.
-- Commits: `83c057e` (implementation) and `P04_FIX_HASH` (review fixes and this entry).
+- Commits: `83c057e` (implementation) and `60c2477` (review fixes and this entry).
 
 ### Issues fixed
 
