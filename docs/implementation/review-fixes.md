@@ -404,3 +404,92 @@ None (deletion only). The existing suites are the check: nothing outside tests r
 - Left in place because 4-015 does not list them: the domain functions `previewRegeneration` and `applyRegeneration` (now referenced only by their unit tests, since the generation-set commands are gone), `validateBlock` in `src/domain/validation.ts` (P12 removes it), `RouteDefinitionService.exportCsv` (referenced only by a test), and the generation-set repository and service methods that the kept table and backup parsing still use (`getGenerationSet`, `listGenerationSets`, `saveGenerationSet`, `replaceGenerationSet`, and the CSV generation-sets file). A later cleanup could remove the first three once the user agrees.
 - `docs/implementation/phase-02tp-trip-profiles.md` (line 181) and two Phase 2R closeout documents still describe the deleted methods and the "running pre-2R UI". They are historical records and were not edited.
 - What could still be wrong: the unused-reference sweep is by identifier name, so a symbol reachable only through string lookups or dynamic access would be missed; the typecheck, 308 unit tests, and 59 browser tests would catch a static or tested use, and none exists.
+
+## P06: IndexedDB test environment and repository parity
+
+- Date: 2026-10-22. Sitting 4D. Model: Sonnet (main session). No sub-agents: P06 is S2, so no Opus review (sitting plan).
+- Type: structural (test-first). Severity: S2.
+- Commit: `1f9e64a`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-007 | A-002 | S2 | `dexieRepository.ts` had 0% line coverage. Vitest ran in Node with no IndexedDB, so every atomicity, rollback, and cascade test used the in-memory repository or a fake. |
+| I-008 | A-003, 3-014 | S2 | The only migration unit test returned early (no `indexedDB`) and asserted version 5 for a version 7 database. The browser migration test seeded IndexedDB version 4, which is Dexie 0.4, so it ran every upgrade from the start. No test reported the placeholder-Block discard count. |
+| I-020 | 3-013 | S2 | The in-memory and Dexie repositories diverged on stale-regeneration rejection, Scenario deletion, result order, and error types. |
+| I-047 | A-007 | S3 | The `segmentStart` boundary matrix existed only in the review's golden suite. |
+
+No user decision applied.
+
+### What changed
+
+- `vitest.config.ts`: `setupFiles: ['fake-indexeddb/auto']`. Unit tests can open a real Dexie database. Dev dependency `fake-indexeddb` 6.2.6 (the only one added; `package.json` +1 line, `pnpm-lock.yaml` +9 lines, no other lockfile line changed).
+- `src/persistence/inMemoryRepository.ts` now matches Dexie on every row of the review's parity table (Phase 3 findings, Section 7):
+  - Reads return rows in primary-key order (before: insertion order). One helper, `inKeyOrder`, used by every list and records read.
+  - `saveRegeneratedTripsWithUndo` rejects a stale or missing before-state with "A selected Trip changed. Review regeneration again." and writes nothing (before: it wrote, and a later undo restored the stale Trip).
+  - `saveProjectSnapshot` deletes the service days and Routes of a Scenario that the snapshot no longer contains (before: it left them, for example 4 service days and 1 Route after Scenario deletion).
+  - `saveRuntimeAssignment` with a missing profile raises "Runtime assignment ... references a missing record" (before: a `TypeError`).
+  - `saveScenarioRecords` invalidates the regeneration undo only after every check that can reject the write (before: a write rejected for costing ownership still discarded the undo; Dexie rolls that back).
+  - `getScenarioRecords` omits `directions` when there are none (before: `[]`).
+- Behavior in the application: none. The app uses the Dexie repository; the in-memory repository serves tests only.
+- `src/persistence/database.test.ts`: per-version upgrade tests. `src/persistence/repository.test.ts`: the migration test now runs and asserts version 7.
+- `src/domain/runtime.test.ts`: the `segmentStart` boundary matrix.
+- `tests/ui/database-migration.spec.ts`: seeds IndexedDB version 40 (Dexie 4).
+- Documentation: Decision 0040; `architecture_overview.md` (Technology Direction and Persistence principle); `codex.md` section "Unit tests that need IndexedDB".
+
+### Hand-offs (files outside the package's owned list)
+
+- `src/application/routeDefinitionService.test.ts` (2 assertions): "coordinates a route-definition workflow..." and "provides runtime-profile editing operations..." listed Patterns and Runtime profiles in insertion order. With key order they failed in 22 of 25 and 7 of 25 runs (generated ids are random). They now compare sorted names. Those two tests would also have been wrong against Dexie.
+- `docs/decisions/0040-repository-contract-and-indexeddb-test-environment.md`, `architecture_overview.md`, `codex.md`: records that rule 7 and the package's documentation line require. `dexieRepository.ts` and `database.ts` are unchanged; no Dexie behavior needed to change.
+
+### Tests added
+
+- `src/persistence/repositoryContract.test.ts`: 27 shared tests, each run against both repositories (54 runs), plus 4 Dexie-only tests: 58 tests in the file. Groups:
+  - reads: same data from every read method; primary-key order; project snapshot round trip; Route definition read, write, and removal; `directions` omitted when none.
+  - Scenario deletion and cascades: deleting a Scenario through `RouteDefinitionService` and through a snapshot removes every owned record (13 kinds) and keeps the other Scenario; deleting a Project; the undo of a deleted Project.
+  - Scenario record writes: dropped records removed; `updateScenarioRecords` (re-read, no-change, missing Scenario); a write rejected for costing ownership keeps the undo.
+  - Trip writes: stale and missing before-state rejected; apply, undo once, refuse after a later edit; duplicate Trip id rejected with none of the batch stored; missing or foreign Trip profile rejected; Trip and Block changes and deletions; day replacement.
+  - Runtime: duplicate assignment, missing profile (`Error`, not `TypeError`), delete of an assigned profile with and without a replacement, Runtime copy commit and duplicate-id rejection.
+  - Trip profiles: name collisions in both save paths; copy with Trips in one write; deletion cascade.
+  - Costing assumptions: one record per Scenario and the rejections.
+  - Dexie only: `costPlans` removed with the Project; failed Scenario write, regeneration write, and Trip deletion roll back (failure injected into the named table method).
+- `src/persistence/database.test.ts`: `upgrades a Dexie version N database to version 7 and keeps every record`, N = 1 to 6. Each seeds two Scenarios with Dexie's own historical store definitions (IndexedDB version N × 10), upgrades, checks that every record and every index is intact, and reports the discard count. Counts: 4 of 4 placeholder Blocks discarded from versions 1, 2, and 3; 0 of 2 from versions 4, 5, and 6 (normalized Blocks kept).
+- `src/persistence/repository.test.ts`: the placeholder-Block migration test runs (no early return), asserts Dexie version 7 and IndexedDB version 70, and the discarded count of 1.
+- `src/domain/runtime.test.ts`: `segmentStart boundary matrix` (13 tests): first band start, band end half-open, gap (nearest band), after the last band, rejected departures, contributions, single band, unsorted bands, overlap, zero-length band. The golden "DEFECT 2-007" test (gap midpoint tie) is not ported; it belongs to P16.
+- `tests/ui/database-migration.spec.ts`: seeds version 40, and asserts that no Default Trip profile is created and the normalized Block is kept.
+
+### Tests first: what failed on the current code
+
+- Contract suite, before the in-memory fixes (56 runs at that point; the Route definition test was added later): 8 runs failed, all in-memory, one per parity row: primary-key order; `directions` omitted; Scenario deletion through the service (4 service days and 1 Route left); snapshot without a Scenario (same); undo kept after a rejected costing write; stale before-state (two tests); `TypeError` for a missing profile. All Dexie runs passed (the Dexie repository was the reference).
+- Migration unit test, once an IndexedDB existed: failed with `expected 7 to be 5` (A-003: it had never run).
+- Browser migration spec with the old seed of 4 and the new assertions: failed (`tripProfileCount` expected 0, received 1: the version 3 upgrade ran).
+- The per-version upgrade tests and the `segmentStart` matrix pass on arrival. They close test gaps over code with no defect (A-003 and A-007 are test-gap findings), so they cannot fail first; the deliberate breaks below show that they fail when the code is wrong.
+
+### Deliberate breaks (each applied to the source, the test run, and the source restored with `git checkout` or a saved copy)
+
+| Test | Deliberate break | Result |
+| --- | --- | --- |
+| Per-version upgrade tests and the migration test | the version 4 upgrade no longer clears Blocks (`database.ts`) | 4 fail: versions 1, 2, and 3 (0 discarded instead of 4) and the `repository.test.ts` migration test |
+| `segmentStart` boundary matrix | band lookup uses `<=` for the band end (`runtime.ts`) | 4 fail: the band end, the last band end, the zero-length band, and an existing half-open test |
+| Contract: stale before-state | the Dexie before-state check removed | 2 fail (Dexie): stale and missing before-state |
+| Contract: Dexie only, `costPlans` | `deleteProject` no longer deletes `costPlans` rows | 1 fails |
+| Contract: primary-key order | `inKeyOrder` returns insertion order | 1 fails (in-memory) |
+| Contract: Dexie only, rollback | `deleteTripsAtomically` without its transaction | 1 fails: the Trips stay deleted after the injected Block failure |
+| Browser migration spec | seed 4 instead of 40 | fails on `tripProfileCount` |
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 33 files, 385 tests passed (308 before; 77 new: 58 in the contract file, 6 upgrade tests, 13 matrix tests; the changed migration test is not a new one). Time 8.3 s. Repeated 25 times before the two order-dependent tests were fixed (they failed in 22 and 7 runs) and 8 times after (8 of 8 passed).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 59 passed, 0 failed (2.4 minutes). The migration spec passes alone with seed 40.
+- `pnpm build`: succeeds (existing chunk-size warning only). Bundle unchanged: `index-TR3LK2Mp.js` 770.23 kB.
+- Line coverage, measured with `@vitest/coverage-v8` 3.2.7 installed temporarily and then removed (`package.json` and the lockfile restored): `dexieRepository.ts` 86.54% (0% before), `inMemoryRepository.ts` 95.12%, `database.ts` 51.28% (the uncovered lines are the write-guard and the version 7 upgrade, covered by `tabGuard.test.ts` and the browser specs).
+- Lockfile change: `fake-indexeddb` 6.2.6 only (importer entry, package entry, snapshot entry). The local pnpm version also wanted to delete the `libc` fields of 14 Linux packages; that was reverted by hand, so the diff is the 9 added lines.
+
+### Residual risks and hand-offs
+
+- The contract suite does not cover the legacy generation-set methods (`getGenerationSet`, `listGenerationSets`, `saveGenerationSet`, `replaceGenerationSet`, `saveBlocks`); they remain with the kept table and backup parsing (X01 note).
+- One divergence stays by design: a duplicate Trip id. Dexie reports its raw bulk-write failure; the in-memory repository says the Trip exists. Both reject and store nothing. Readable Dexie messages are finding 3-015 (a UI package).
+- Row order is a contract only for the reads that Dexie sorts by key. A future read through an index with several distinct values, or a sorted compound index, would return index order, not key order, and needs its own contract test.
+- What could still be wrong: `fake-indexeddb` is not Chromium's IndexedDB. Transaction timing, auto-commit across awaits, and quota behave differently; the browser specs remain the check for those. The contract suite uses 173 Trips (the full project makes an overwrite take 9 s on this store), so it does not test scale.
