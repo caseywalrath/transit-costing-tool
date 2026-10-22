@@ -2,7 +2,14 @@
 
 ## Next sitting
 
-Sitting 4A is in progress (Setup, P01, P02). P01 is done. This note is rewritten at the end of every sitting.
+**Sitting 4B: P03 (Scenario duplication remap and recovery) and P04 (Backup import normalization and validation).** Main session: Sonnet. Sub-agents: one Opus reviewer for each package diff. Both are S1.
+
+- Prerequisite: the sitting 4A pull request (branch `claude/stage-4a-review-fixes`) must be merged into `main`. If it is not, stop and ask the user. Start 4B from current `origin/main`.
+- P03 changes `src/persistence/database.ts` (Dexie version 7 upgrade, no store change). That file now also holds the tab write guard from P02: `TransitDatabase(name, guard?)`, a middleware that rejects writes in a read-only tab, and a `versionchange` handler. The guard lets writes through while IndexedDB runs an upgrade (`versionchange` mode), so the version 7 recovery runs in any tab. Keep that exemption.
+- Browser-test helpers for real IndexedDB already exist in `tests/ui/support/` (`dexieEnv.ts`, `goldenFixture.ts`). Reuse them for the P03 Dexie recovery test.
+- Known browser-suite state: 7 failures in `trip-table-layout.spec.ts:40` and `unified-action-layer.spec.ts` (83, 112, 140, 169, 186, 226) until P05 (sitting 4C). A package passes when it adds no new failure and the same 7 fail with the same messages. `blocking-workspace.spec.ts:116` is flaky under repeated parallel load; it also fails that way on code without the guard.
+- Open questions: none. Decision C8 (copies whose source Scenario no longer exists) is settled in `docs/review/user-decisions.md`.
+- Review documents: read them from the review branch with `git show origin/claude/upbeat-ritchie-51mpy5:docs/review/<file>`.
 
 ## About this log
 
@@ -29,7 +36,7 @@ Brought three review-branch changes to this branch: the `PLAYWRIGHT_CHROMIUM_EXE
 
 - Date: 2026-10-22. Sitting 4A. Model: Sonnet (main session). Independent diff review by an Opus sub-agent.
 - Type: structural. Severity: S0.
-- Commit: recorded in the P02 section's "P01 commit" line (the hash is only known after this commit).
+- Commit: `b9df89d`.
 
 ### Issues fixed
 
@@ -84,7 +91,7 @@ Confirmed all five acceptance criteria. Findings and disposition:
 
 - Date: 2026-10-22. Sitting 4A. Model: Sonnet (main session). Independent diff review by an Opus sub-agent.
 - Type: structural. Severity: S0.
-- P01 commit: `b9df89d`. P02 commit: see `git log` for the commit titled "P02: One active tab writes the local database (I-002)".
+- P01 commit: `b9df89d`. P02 commit: `4de45c9`.
 
 ### Issues fixed
 
