@@ -573,7 +573,7 @@ No user decision applied.
 
 - Date: 2026-10-22. Sitting 4D. Model: Sonnet (main session). No sub-agents: P08 is S2, so no Opus review (sitting plan).
 - Type: structural. Severity: S2.
-- Commit: PLACEHOLDER-P08.
+- Commit: `2cdb883`.
 
 ### Issues fixed
 
