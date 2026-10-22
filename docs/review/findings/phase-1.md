@@ -5,7 +5,7 @@
 - Orchestrator: Phase 1 orchestrator (Opus-class).
 - Delegation: none. The Agent tool was not available in this session. Per the common brief ("If the Agent tool is not available to you, do the work yourself — do not skip any task"), the orchestrator performed every task, including the Haiku extraction and Sonnet analysis tasks, directly against the sources.
 - Verification: every finding below was produced and checked by the orchestrator. Document contradictions were checked by re-reading both quoted lines. Code-side claims were checked by reading the cited code or by executing a reproduction test (two new files in `docs/review/golden/`, listed under each finding). No delegated claims exist, so none were rejected.
-- Outputs: this file; `docs/review/findings/rule-catalogue.md` (task 1.2, published first); reproduction tests `docs/review/golden/p1-v4PlaceholderBlocks.golden.test.ts` and `docs/review/golden/p1-generationCap.golden.test.ts`. Both tests fail by design; each failure demonstrates a document-versus-code contradiction.
+- Outputs: this file; `docs/review/findings/rule-catalogue.md` (task 1.2, published first); reproduction tests `docs/review/golden/p1-v4PlaceholderBlocks.golden.test.ts` and `docs/review/golden/p1-generationCap.golden.test.ts`. Both tests use `it.fails`: they assert the documented behaviour, fail on the reviewed code, and report as passing so the golden suite stays green (changed by the review lead to match the Phase 2 and 3 convention). Change `it.fails` to `it` to see each failure.
 
 Run the reproductions:
 

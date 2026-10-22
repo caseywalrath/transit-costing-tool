@@ -1,3 +1,4 @@
+// Defect test (backs a Phase 1 finding): uses it.fails, so it asserts the EXPECTED behaviour, fails on the reviewed code, and is reported as passing. Change it.fails to it to see the failure.
 // Phase 1 reproduction (doc-vs-code): Decision 0019 item 13 says JSON version 4
 // placeholder Blocks "are discarded when normalized into the Phase 4 schema".
 import { readFileSync } from 'node:fs';
@@ -5,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { it, expect } from 'vitest';
 import { importProjectJson, parseProjectBackup } from '../../../src/persistence/backup';
 
-it('a version 4 backup with placeholder Blocks: are they discarded on import?', () => {
+it.fails('a version 4 backup with placeholder Blocks: are they discarded on import?', () => {
   const raw = JSON.parse(readFileSync(fileURLToPath(new URL('../../../output/federal-brt-import/federal-brt-project-backup.json', import.meta.url)), 'utf8'));
   const profileByScenario = new Map(raw.tripProfiles.map((p: any) => [p.scenarioId, p.id]));
   const v4 = { ...raw, exportSchemaVersion: 4 };

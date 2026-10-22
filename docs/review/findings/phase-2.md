@@ -5,6 +5,7 @@
 - Orchestrator: Phase 2 orchestrator (Opus).
 - Delegation: none. The Agent tool was not available in this orchestrator's environment. Per the common brief, the orchestrator performed every task itself. No Sonnet or Haiku output is used in this file.
 - Verification: every finding below was reproduced by the orchestrator with an executed test in `docs/review/golden/p2-*.golden.test.ts`, except 2-014 and 2-015, which are confirmed by code trace (quoted lines). There are no delegated claims to re-verify.
+- Review-lead re-verification (2026-10-22): the lead re-ran all 131 Phase 2 golden tests (all pass) and read the 2-002, 2-004 and 2-005 traces against `src/domain/trips.ts:422-430`. 2-002 is rated S2 provisionally. In the staged Shift path, the preview renders through `formatServiceTime` before commit, and the app has no React error boundary, so the expected failure is a crash before any write, recoverable by reload. Phase 5 must confirm this in a browser.
 - Rule catalogue: rule IDs cite `docs/review/findings/rule-catalogue.md` (Phase 1, pass 1).
 - Phase 1 cross-references: 2-001 is the code-side rating of 1-009. 2-003 is the code-side rating of 1-005. 2-015 is the code-side part of 1-016. L-05 is closed by 1-003, and the "capped at 365" wording by 1-006. Phase 2 does not repeat those documentation findings.
 
