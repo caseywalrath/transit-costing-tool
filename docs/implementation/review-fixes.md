@@ -568,3 +568,82 @@ No user decision applied.
 - `inspectStaleTrips` findings use the rule ids of the recalculation (`trip.anchorNoRuntime`, `trip.anchorAmbiguous`), not `runtime.noApplicableBand`, because the legacy comparison runs the anchored recalculation from the first departure.
 - A Trip with a hand-edited time now shows as stale after a route edit. That is the rule in the package (a Trip keeps its revision unless the profile reproduces its times) and matches how a Trip without a recorded source is already judged, but it is a visible change for planners who edit single times by hand; Decision 0014's addendum records it.
 - What could still be wrong: the Pattern change signature includes the whole profile (including `updatedAt`), so re-saving the target profile without changing it between review and commit also rejects the review. That fails safe; the review is rebuilt in one click.
+
+## P08: Trip generation and shift bounds
+
+- Date: 2026-10-22. Sitting 4D. Model: Sonnet (main session). No sub-agents: P08 is S2, so no Opus review (sitting plan).
+- Type: structural. Severity: S2.
+- Commit: PLACEHOLDER-P08.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-011 | 2-001, 1-009 | S2 | A Last Trip request ignored the 500-Trip limit (Decision 0010 item 2). First Trip 0:00, headway 1 minute, Last Trip 23:59 produced 1,440 Trips. 1-009 is the document side: `ui-conventions.md` bounded only Number of Trips. |
+| I-012 | 2-002, 5-011 | S2 | A Shift that moved a Trip before 0:00 produced negative times in the preview with no finding. Formatting one threw while React rendered, and with no error boundary the whole page went blank. Staging −6 minutes on a Trip departing 0:05 reproduced it. |
+| I-013 | 2-003, 1-005 | S2 | Anchored regeneration under a `segmentStart` or blended profile silently chose one of several first departures that give the anchor time (the one nearest the saved departure). |
+| I-064 | 2-010 | S3 | A zero-second Shift was accepted and marked every Trip as manually time-changed. |
+
+User decision implemented: decision 3 (reject and list the candidates).
+
+### What changed
+
+- `src/domain/trips.ts`:
+  - `validateGenerateTripsRequest` counts the departures from First Trip to Last Trip (Last Trip included when it is on the headway sequence) and rejects more than 500 with `tripGeneration.tripCountTooLarge` on field `lastTrip`, with the maximum as a parameter. Generation and the Build preview already call the validation, so they refuse the request.
+  - `validateTrip` rejects a negative time with `trip.timeBeforeServiceDay`.
+  - A segment-start or blended anchor that more than one first departure satisfies raises `trip.anchorAmbiguous` as an `AnchorBandChoiceError` whose choices list each candidate departure and its band, in departure order (Decision 0031 addendum). One candidate is used as before; none is `trip.anchorNoRuntime` as before. Manual band override stays single-band only.
+  - `shiftTrips` with an offset of zero returns the Trips untouched (no `manuallyChangedFields`, no new `updatedAt`).
+- `src/domain/tripShift.ts`: `buildTripShiftPreview` refuses a Shift that would put any time of a selected Trip below 0:00, with one `tripShift.timeBeforeServiceDay` finding per Trip. A Shift that lands exactly on 0:00 is allowed. The error says "A Shift would move a Trip before 0:00. Use a smaller Shift." The application's staged-Shift preview and commit both go through this function, so the commit refuses it too.
+- Documentation: Decision 0031 addendum (segment-start and blend rule); `docs/ui-conventions.md` line 68 (the 500 limit applies to both limits; no other line changed); `architecture_overview.md` (Trip generation model).
+
+### Behavior before and after (what you will see)
+
+- Build Trips with a Last Trip that gives more than 500 Trips: before, 1,440 Trips were stored; now the drawer shows "Enter 500 trips or fewer." and stores nothing.
+- Staging a Shift that would put a Trip before 0:00 (for example −6 minutes on a Trip at 0:05): before, the page went blank until reloaded; now the Shift drawer shows "A Shift would move a Trip before 0:00. Use a smaller Shift.", the table keeps the last valid staged times, and Done stays unavailable until the Shift is valid again. A Shift to exactly 0:00 works.
+- A Recalculate review for a segment-start or blended Trip whose anchor fits two departures: before, one was chosen silently; now the review reports that the anchor is ambiguous. See the hand-off about the dialog below.
+- A zero-minute staged Shift marks nothing (the drawer already discarded a net-zero Shift, so stored data was not affected).
+
+### Hand-offs (not fixed here)
+
+- **U07 (`App.tsx`):** the Recalculate dialog shows a band picker for any `AnchorBandChoiceError`. For a segment-start or blended Trip the picker lists the candidate departures, but choosing one is still refused (`trip.anchorBandChoiceInvalid`, shown as "Review this item."), because Decision 0031 limits manual band override to single-band profiles. The dialog should hide the picker for those methods and offer the switch to first-departure anchoring that Decision 0031 describes. **Decision needed from the user before U07:** should a planner be able to pick one of the listed candidates for a segment-start or blended Trip? User decision 3 says only "reject and list"; choosing would be new behavior.
+- **U07:** the React error boundary (the package text assigns it to U07). With P08, the known way to blank the page from a Shift is closed; any other render error still blanks it.
+- **U07:** user-facing text for `tripShift.timeBeforeServiceDay` and `trip.timeBeforeServiceDay` in `USER_FACING_VALIDATION_MESSAGES`. The Shift drawer shows the error's own message, so nothing is missing from the screen today; the CSV preview cannot reach a negative time because the CSV parser already refuses one.
+
+### Tests added
+
+- `src/domain/trips.test.ts`, "generation and shift bounds (P08)" (9 tests): Last Trip over 500 is rejected in validation, in `generateRequestDepartures`, and in `generateAuthoritativeTrips` (1,440 case); exactly 500 is accepted and 501 rejected, including the inclusive Last Trip and a Last Trip between two departures; Number of Trips over 500, an invalid headway, and a Last Trip before First Trip are reported by their own findings and not by the limit; `validateTrip` rejects a negative time; segment-start and blended anchors with two departures raise `trip.anchorAmbiguous` and list both candidates, whichever departure is nearer the saved one; single-band still raises it and a unique anchor still recalculates (segment-start and blend); a zero-second shift returns the same Trip (no flag, no new `updatedAt`) and a non-zero shift still marks the Trip.
+- `src/domain/tripShift.test.ts`, "staged Trip Shift bounds" (4 tests): a Shift before 0:00 is rejected with `tripShift.timeBeforeServiceDay` naming the Trip and the readable message; a Shift to exactly 0:00 is allowed; with several selected Trips only the ones that would go below 0:00 are named; a zero-second Shift is a no-op.
+- `tests/ui/trip-bounds.spec.ts` (2 tests, real app and IndexedDB; the spec driving the staged Shift is ported from the review's `p5-trip-shift-negative.spec.ts`):
+  - a six-minute Shift on a Trip at 0:05 shows the alert, keeps the page and the staged times, disables Done; five minutes lands on 0:00 and Done stores `[0, 420]`, also after reload;
+  - Build Trips refuses a Last Trip that would create more than 500 Trips with the message and stores no Trip.
+
+### Tests first: what failed on the current code
+
+- Domain: 9 of 13 new tests failed (Last Trip limit 2, negative time 1, anchor ambiguity 2, zero shift 2, Shift bound 2 of 4); the rest are controls.
+- Browser: the Shift spec failed on the current code: after the six-minute Back the drawer never showed an alert, because the page had gone blank (`element(s) not found`).
+
+### Deliberate breaks (applied to the source, run, restored)
+
+| Test | Deliberate break | Result |
+| --- | --- | --- |
+| Last Trip limit tests | the limit condition replaced by `false` | 2 fail |
+| `validateTrip` negative time | the check replaced by `if (false)` | 1 fails |
+| Anchor ambiguity tests | the ambiguity threshold raised to 99 (the old silent choice) | 2 fail (segment-start and blend) |
+| Zero-second Shift tests | the zero shortcut removed | 2 fail (`trips.test.ts` and `tripShift.test.ts`) |
+| Shift bound tests | the bound check disabled | 2 fail |
+| Shift bound, browser | the bound off by one (`<= 0`) | the unit test for exactly 0:00 fails, and the spec fails at the five-minute step (the alert remains). The first test of the spec also fails on the unfixed code, shown above. |
+| Build Trips limit, browser | the Last Trip limit condition replaced by `false` | the spec fails: no alert appears (the request would build 1,440 Trips) |
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 33 files, 420 tests passed (407 before; 13 new: 9 in `trips.test.ts`, 4 in `tripShift.test.ts`). Three runs in a row: all passed.
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 61 passed, 0 failed (2.3 minutes); 59 before P08 plus the 2 new tests. No `test.fail`, `test.skip`, or `test.fixme`. A full run before the second spec test was added also passed (60 of 60).
+- New spec repeated with several workers: the Shift test passed 40 of 40 (`--repeat-each=10` and `--repeat-each=30`, `--workers=8`), and the whole spec (both tests) passed 30 of 30 (`--repeat-each=15 --workers=8`).
+- `pnpm build`: succeeds (existing chunk-size warning only). Bundle `index-VVj0arcS.js` 772.60 kB (771.53 kB before P08, +1.1 kB).
+
+### Residual risks
+
+- A request of 500 Trips or fewer that the Last Trip limit now allows is unchanged; a planner who needs a day of one-minute headway builds it in two requests.
+- The shift bound is checked on the Trips the Shift selects, at preview and at commit. The legacy `previewTripShift` (used only by tests since X01) still calls `shiftTrips` without the bound; it has no caller in the application.
+- What could still be wrong: negative times that already exist in stored data (from the old defect) are not repaired. The app could only reach them by committing a staged Shift, which the old UI could not do (the page crashed first), so none is expected; a hand-made backup could still carry one, and `validateTrip` now reports it only where a caller validates (CSV import).
