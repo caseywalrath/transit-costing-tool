@@ -98,6 +98,9 @@ export interface TripGenerationRepository {
   /** Added by the authoritative trip workflow; optional only for historical test doubles. */
   insertTripsAtomically?(trips: Trip[]): Promise<void>;
   saveTripChangesAtomically?(trips: Trip[], blocks?: Block[]): Promise<void>;
+  saveRegeneratedTripsWithUndo?(beforeTrips: Trip[], afterTrips: Trip[], snapshot: import('../domain/types').TripRegenerationUndo): Promise<void>;
+  getLastTripRegenerationUndo?(): Promise<import('../domain/types').TripRegenerationUndo | undefined>;
+  restoreLastTripRegenerationUndo?(): Promise<Trip[]>;
   /** Atomically removes trips and updates blocks from which their activities were removed. */
   deleteTripsAtomically?(tripIds: string[], blocks?: Block[]): Promise<void>;
   listTripProfiles?(scenarioId: string): Promise<import('../domain/types').TripProfile[]>;
@@ -145,6 +148,10 @@ export interface AuthoritativeTripCommands {
   previewRecalculateTrips(tripIds: string[], anchorByTripId?: Record<string, string>): Promise<RecalculationPreview>;
   applyRecalculationPreview(preview: RecalculationPreview, confirm?: boolean): Promise<RecalculationPreview>;
   recalculateTrips(tripIds: string[], confirm?: boolean): Promise<{ trips: Trip[]; impact: RecalculationPreview['impact'] }>;
+  getLastTripRegenerationUndo(): Promise<import('../domain/types').TripRegenerationUndo | undefined>;
+  undoLastTripRegeneration(): Promise<Trip[]>;
+  previewTripTableImport(context: { scenarioId: string; routeId: string; serviceDayId: string; directionId: string; tripProfileId: string }, rows: import('../domain/types').TripTableImportRow[]): Promise<TripTableImportPreview>;
+  applyTripTableImport(preview: TripTableImportPreview): Promise<TripTableImportPreview>;
   previewTripDeletion(tripIds: string[]): Promise<{ deletedTripIds: string[]; affectedBlockIds: string[] }>;
   deleteTrips(tripIds: string[]): Promise<{ deletedTripIds: string[]; affectedBlockIds: string[] }>;
   listStaleTrips(serviceDayId: string, tripProfileId?: string): Promise<Trip[]>;
@@ -157,6 +164,8 @@ export interface AuthoritativeTripCommands {
   previewStagedTripShift(request: TripShiftRequest): Promise<TripShiftPreview>;
   applyStagedTripShift(preview: TripShiftPreview): Promise<TripShiftPreview>;
 }
+
+export interface TripTableImportPreview { context: { scenarioId: string; routeId: string; serviceDayId: string; directionId: string; tripProfileId: string }; rows: import('../domain/types').TripTableImportRow[]; trips: Trip[]; createdCount: number; updatedCount: number; findings: ValidationFinding[]; sourceSignature: string; }
 
 export interface AuthoritativeTripQueries {
   listScheduleTrips(serviceDayId: string, directionId?: string, tripProfileId?: string): Promise<Trip[]>;

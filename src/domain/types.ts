@@ -77,6 +77,9 @@ export interface TripProvenance {
   calculationSource?: TripCalculationSource;
 }
 export interface Trip extends EntityMetadata { id: EntityId; scenarioId: EntityId; routeId: EntityId; serviceDayId: EntityId; patternId: EntityId; /** Scenario-wide timetable alternative. Legacy records may omit this until normalized. */ tripProfileId?: EntityId; publicLabel?: string; stopTimes: ScheduledPoint[]; provenance: TripProvenance; }
+/** One-step local undo state for the most recently applied trip regeneration. */
+export interface TripRegenerationUndo { id: 'last'; scenarioId: EntityId; tripProfileId: EntityId; createdAt: string; beforeTrips: Trip[]; afterTrips: Trip[]; }
+export interface TripTableImportRow { tripId?: EntityId; patternId: EntityId; publicLabel?: string; stopTimes: Array<{ patternPointId: EntityId; time: ServiceSeconds }>; }
 /** Phase 4 command-boundary Trip shape. Legacy imports may omit the profile until normalized. */
 export type NormalizedTrip = Omit<Trip, 'tripProfileId'> & { tripProfileId: EntityId };
 /** A named, scenario-wide blocking alternative. Its Trip Profile source is immutable after creation. */
@@ -135,4 +138,4 @@ export interface ProjectSnapshot {
   blocks: Block[];
 }
 
-export interface DatabaseRecordMap { projects: Project; scenarios: Scenario; serviceDays: ServiceDayDefinition; routes: Route; nodes: Node; patterns: RoutePattern; directions: RouteDirection; runtimeProfiles: RuntimeProfile; runtimeAssignments: RuntimeAssignment; generationSets: TripGenerationSet; tripProfiles: TripProfile; blockingScenarios: BlockingScenario; trips: Trip; blocks: Block; costingAssumptions: CostingAssumptions; appMetadata: AppMetadata; }
+export interface DatabaseRecordMap { projects: Project; scenarios: Scenario; serviceDays: ServiceDayDefinition; routes: Route; nodes: Node; patterns: RoutePattern; directions: RouteDirection; runtimeProfiles: RuntimeProfile; runtimeAssignments: RuntimeAssignment; generationSets: TripGenerationSet; tripProfiles: TripProfile; blockingScenarios: BlockingScenario; trips: Trip; tripRegenerationUndo: TripRegenerationUndo; blocks: Block; costingAssumptions: CostingAssumptions; appMetadata: AppMetadata; }

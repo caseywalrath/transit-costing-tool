@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
 import { AnchorBandChoiceError } from '../domain/trips';
-import type { Block, GenerateTripsRequest, RoutePattern, RuntimeAssignment, RuntimeProfile, Trip, TripGenerationSet } from '../domain/types';
+import type { Block, GenerateTripsRequest, RoutePattern, RuntimeAssignment, RuntimeProfile, Trip, TripGenerationSet, TripRegenerationUndo } from '../domain/types';
 import { TripGenerationService, TripRecalculationConfirmationError, TripShiftStalePreviewError } from './tripGenerationService';
 import type { TripGenerationRepository } from './ports';
 
@@ -9,6 +9,7 @@ class AuthoritativeFake implements TripGenerationRepository {
   readonly sets = new Map<string, TripGenerationSet>();
   readonly trips = new Map<string, Trip>();
   readonly blocks = new Map<string, Block>();
+  undoSnapshot?: TripRegenerationUndo;
   readonly assignments: RuntimeAssignment[] = [];
   failTripChangeCommit = false;
   readonly patterns: RoutePattern[];
@@ -17,9 +18,9 @@ class AuthoritativeFake implements TripGenerationRepository {
   async getGenerationSet(id: string) { return this.sets.get(id); }
   async listGenerationSets() { return []; }
   async saveGenerationSet(set: TripGenerationSet) { this.sets.set(set.id, set); }
-  async listTrips(serviceDayId: string, generationSetId?: string) { return [...this.trips.values()].filter((trip) => trip.serviceDayId === serviceDayId && (!generationSetId || trip.provenance.generationSetId === generationSetId)); }
+  async listTrips(serviceDayId: string, generationSetIdOrProfileId?: string) { return [...this.trips.values()].filter((trip) => trip.serviceDayId === serviceDayId && (!generationSetIdOrProfileId || trip.provenance.generationSetId === generationSetIdOrProfileId || trip.tripProfileId === generationSetIdOrProfileId)); }
   async getTrip(id: string) { return this.trips.get(id); }
-  async saveTrips(values: Trip[]) { for (const trip of values) this.trips.set(trip.id, trip); }
+  async saveTrips(values: Trip[]) { for (const trip of values) this.trips.set(trip.id, trip); if (this.undoSnapshot && values.some((trip) => this.undoSnapshot!.afterTrips.some((after) => after.id === trip.id))) this.undoSnapshot = undefined; }
   async listBlocks(serviceDayId: string) { return [...this.blocks.values()].filter((block) => block.serviceDayId === serviceDayId); }
   async saveBlocks(values: Block[]) { for (const block of values) this.blocks.set(block.id, block); }
   async replaceGenerationSet() { /* historical surface */ }
@@ -27,7 +28,10 @@ class AuthoritativeFake implements TripGenerationRepository {
   async getPattern(id: string) { return this.patterns.find((pattern) => pattern.id === id); }
   async getRuntimeProfile(id: string) { return this.profiles.find((profile) => profile.id === id); }
   async insertTripsAtomically(values: Trip[]) { for (const trip of values) { if (this.trips.has(trip.id)) throw new Error('duplicate'); this.trips.set(trip.id, trip); } }
-  async saveTripChangesAtomically(values: Trip[], blocks: Block[] = []) { if (this.failTripChangeCommit) throw new Error('forced trip change failure'); for (const trip of values) this.trips.set(trip.id, trip); for (const block of blocks) this.blocks.set(block.id, block); }
+  async saveTripChangesAtomically(values: Trip[], blocks: Block[] = []) { if (this.failTripChangeCommit) throw new Error('forced trip change failure'); for (const trip of values) this.trips.set(trip.id, trip); for (const block of blocks) this.blocks.set(block.id, block); if (this.undoSnapshot && values.some((trip) => this.undoSnapshot!.afterTrips.some((after) => after.id === trip.id))) this.undoSnapshot = undefined; }
+  async saveRegeneratedTripsWithUndo(_before: Trip[], after: Trip[], snapshot: TripRegenerationUndo) { for (const trip of after) this.trips.set(trip.id, trip); this.undoSnapshot = snapshot; }
+  async getLastTripRegenerationUndo() { return this.undoSnapshot; }
+  async restoreLastTripRegenerationUndo() { const snapshot = this.undoSnapshot; if (!snapshot) throw new Error('There is no regeneration to undo.'); for (const trip of snapshot.beforeTrips) this.trips.set(trip.id, trip); this.undoSnapshot = undefined; return snapshot.beforeTrips; }
   async deleteTripsAtomically(ids: string[], blocks: Block[] = []) { for (const id of ids) this.trips.delete(id); for (const block of blocks) this.blocks.set(block.id, block); }
 }
 
@@ -180,6 +184,40 @@ describe('authoritative trip workflow', () => {
     expect(applied.trips[0].stopTimes.at(-1)?.time).toBe(added.trip.stopTimes.at(-1)?.time);
     await repository.saveTrips([{ ...applied.trips[0], updatedAt: '2026-09-14T02:00:00.000Z' }]);
     await expect(service.applyRecalculationPreview(reviewed)).rejects.toThrow('Review regeneration again');
+  });
+
+  it('stores one-step regeneration undo and expires it when an affected Trip is edited', async () => {
+    const p = pattern('p1', 'Southbound 1', 0); const runtime = profile('rp1', 'p1', 10000, 1);
+    const repository = new AuthoritativeFake([p], [runtime]);
+    repository.assignments.push({ ...metadata(), id: 'a1', scenarioId: 'scenario', patternId: 'p1', serviceDayId: 'weekday', runtimeProfileId: 'rp1' });
+    const service = new TripGenerationService(repository, () => '2026-09-14T01:00:00.000Z');
+    const added = await service.addTrip({ scenarioId: 'scenario', routeId: 'route', serviceDayId: 'weekday', patternId: 'p1', directionId: 'southbound', tripProfileId: 'trip-profile', firstTrip: 1200 });
+    runtime.calculationRevision = 2;
+    runtime.bands[0].segmentRuntimeSeconds[0] = 900;
+    await service.recalculateTrips([added.trip.id]);
+    expect((await repository.getTrip(added.trip.id))?.stopTimes.at(-1)?.time).toBe(2100);
+    expect(await service.getLastTripRegenerationUndo()).toMatchObject({ afterTrips: [{ id: added.trip.id }] });
+    await service.undoLastTripRegeneration();
+    expect((await repository.getTrip(added.trip.id))?.stopTimes.at(-1)?.time).toBe(1800);
+    expect(await service.getLastTripRegenerationUndo()).toBeUndefined();
+
+    await service.recalculateTrips([added.trip.id]);
+    await repository.saveTrips([{ ...(await repository.getTrip(added.trip.id))!, updatedAt: '2026-09-14T02:00:00.000Z' }]);
+    expect(await service.getLastTripRegenerationUndo()).toBeUndefined();
+  });
+
+  it('previews and applies Trips table CSV rows while retaining IDs on updates', async () => {
+    const p = pattern('p1', 'Southbound 1', 0); const repository = new AuthoritativeFake([p], [profile('rp1', 'p1')]);
+    const service = new TripGenerationService(repository, () => '2026-09-14T01:00:00.000Z');
+    const context = { scenarioId: 'scenario', routeId: 'route', serviceDayId: 'weekday', directionId: 'southbound', tripProfileId: 'trip-profile' };
+    const first = await service.previewTripTableImport(context, [{ patternId: 'p1', publicLabel: 'Imported', stopTimes: [{ patternPointId: 'p1-a', time: 1200 }, { patternPointId: 'p1-b', time: 1800 }] }]);
+    expect(first).toMatchObject({ createdCount: 1, updatedCount: 0, findings: [] });
+    await service.applyTripTableImport(first);
+    const id = first.trips[0].id;
+    const update = await service.previewTripTableImport(context, [{ tripId: id, patternId: 'p1', publicLabel: 'Updated', stopTimes: [{ patternPointId: 'p1-a', time: 1260 }, { patternPointId: 'p1-b', time: 1860 }] }]);
+    expect(update).toMatchObject({ createdCount: 0, updatedCount: 1, findings: [] });
+    await service.applyTripTableImport(update);
+    expect(await repository.getTrip(id)).toMatchObject({ id, publicLabel: 'Updated', provenance: { manuallyChangedFields: ['times'] }, stopTimes: [{ time: 1260 }, { time: 1860 }] });
   });
 
   it('carries a manual band choice through preview and atomic application', async () => {

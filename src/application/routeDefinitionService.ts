@@ -686,6 +686,7 @@ export class RouteDefinitionService {
   async createDefaultRuntimeProfile(pattern: RoutePattern, name = 'Default'): Promise<RuntimeProfile> {
     const profile: RuntimeProfile = {
       id: newId(), scenarioId: pattern.scenarioId, routeId: pattern.routeId, patternId: pattern.id, name: name.trim(),
+      calculationMethod: 'segmentStart',
       calculationRevision: 0,
       bands: [{ id: newId(), label: 'All service', sequence: 0, startTime: 0, endTime: 30 * 60 * 60, segmentRuntimeSeconds: Array(Math.max(0, pattern.points.length - 1)).fill(0) }],
       ...metadata(this.now()),

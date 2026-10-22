@@ -1,6 +1,9 @@
 import { parseRuntimeDuration } from '../domain/durations';
 import { parseServiceTime } from '../domain/time';
 import type { DurationSeconds, ServiceSeconds } from '../domain/types';
+import { formatServiceTime } from '../domain/time';
+import { formatRuntimeDuration } from '../domain/durations';
+import type { RuntimeProfile } from '../domain/types';
 
 export interface RuntimePasteRow {
   sourceRowNumber: number;
@@ -8,6 +11,15 @@ export interface RuntimePasteRow {
   startTime: ServiceSeconds;
   endTime: ServiceSeconds;
   segmentRuntimeSeconds: DurationSeconds[];
+  calculationMethod?: 'singleBand' | 'blendSegments' | 'segmentStart';
+}
+
+/** Spreadsheet-ready CSV for the currently selected Runtime profile. */
+export function runtimeProfileCsv(profile: RuntimeProfile): string {
+  const headers = ['Band', 'From', 'To', 'Calculation Method', ...profile.bands[0]?.segmentRuntimeSeconds.map((_, index) => `Segment ${index + 1}`) ?? []];
+  const escape = (value: unknown) => { const text = String(value ?? ''); return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text; };
+  const rows = [headers, ...profile.bands.map((band) => [band.label, formatServiceTime(band.startTime, band.startTime % 60 !== 0), formatServiceTime(band.endTime, band.endTime % 60 !== 0), profile.calculationMethod ?? 'singleBand', ...band.segmentRuntimeSeconds.map(formatRuntimeDuration)])];
+  return rows.map((row) => row.map(escape).join(',')).join('\r\n') + '\r\n';
 }
 
 export class RuntimePasteParseError extends Error {
@@ -25,6 +37,7 @@ interface DelimitedRow {
 interface RuntimePasteColumns {
   hasHeader: boolean;
   hasBandLabel: boolean;
+  methodIndex?: number;
   hasTotal: boolean;
   expectedColumnCount: number;
 }
@@ -154,12 +167,14 @@ function detectColumns(rows: DelimitedRow[], segmentCount: number): RuntimePaste
     return { hasHeader: false, hasBandLabel: false, hasTotal: false, expectedColumnCount: segmentCount + 2 };
   }
 
+  const methodHeader = normalized.findIndex((header) => ['method', 'calculationmethod'].includes(header));
+  const methodIndex = methodHeader >= 0 ? methodHeader : undefined;
   const hasTotal = ['total', 'runtimetotal', 'totalruntime'].includes(normalized.at(-1) ?? '');
-  const expectedColumnCount = segmentCount + 2 + (hasBandLabel ? 1 : 0) + (hasTotal ? 1 : 0);
+  const expectedColumnCount = segmentCount + 2 + (hasBandLabel ? 1 : 0) + (methodIndex === undefined ? 0 : 1) + (hasTotal ? 1 : 0);
   if (first.length !== expectedColumnCount) {
     throw new RuntimePasteParseError([`The header has ${first.length} columns; this pattern needs ${expectedColumnCount} columns, including From, To, and ${segmentCount} segment runtime${segmentCount === 1 ? '' : 's'}${hasBandLabel ? ' plus Band' : ''}${hasTotal ? ' plus Total' : ''}.`]);
   }
-  return { hasHeader: true, hasBandLabel, hasTotal, expectedColumnCount };
+  return { hasHeader: true, hasBandLabel, methodIndex, hasTotal, expectedColumnCount };
 }
 
 export function parseRuntimePaste(text: string, segmentCount: number): RuntimePasteRow[] {
@@ -177,7 +192,8 @@ export function parseRuntimePaste(text: string, segmentCount: number): RuntimePa
   const issues: string[] = [];
   const parsed: RuntimePasteRow[] = [];
   const offset = columns.hasBandLabel ? 1 : 0;
-  const runtimeStart = offset + 2;
+  const runtimeStart = offset + 2 + (columns.methodIndex === undefined ? 0 : 1);
+  let importedMethod: RuntimePasteRow['calculationMethod'];
 
   for (const row of dataRows) {
     if (row.cells.length !== columns.expectedColumnCount) {
@@ -187,6 +203,14 @@ export function parseRuntimePaste(text: string, segmentCount: number): RuntimePa
 
     const bandLabel = columns.hasBandLabel ? row.cells[0].trim() : undefined;
     if (columns.hasBandLabel && !bandLabel) issues.push(`Line ${row.lineNumber}, Band: enter a time period name.`);
+    let calculationMethod: RuntimePasteRow['calculationMethod'];
+    if (columns.methodIndex !== undefined) {
+      const value = row.cells[columns.methodIndex].trim();
+      if (value === 'singleBand' || value === 'blendSegments' || value === 'segmentStart') calculationMethod = value;
+      else issues.push(`Line ${row.lineNumber}, Calculation Method: use singleBand, blendSegments, or segmentStart.`);
+      if (calculationMethod && importedMethod && importedMethod !== calculationMethod) issues.push('All imported rows must use the same Calculation Method.');
+      importedMethod ??= calculationMethod;
+    }
 
     let startTime: ServiceSeconds | undefined;
     let endTime: ServiceSeconds | undefined;
@@ -205,7 +229,7 @@ export function parseRuntimePaste(text: string, segmentCount: number): RuntimePa
     }
 
     if (startTime !== undefined && endTime !== undefined && segmentRuntimeSeconds.length === segmentCount && (!columns.hasBandLabel || bandLabel)) {
-      parsed.push({ sourceRowNumber: row.lineNumber, bandLabel, startTime, endTime, segmentRuntimeSeconds });
+      parsed.push({ sourceRowNumber: row.lineNumber, bandLabel, startTime, endTime, segmentRuntimeSeconds, calculationMethod });
     }
   }
 
