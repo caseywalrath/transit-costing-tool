@@ -9,7 +9,7 @@
 These restate plan Sections 8.3 and 9, and `AGENTS.md`.
 
 1. **Type.** A package is structural, UI/UX, test-only, build, or docs. Structural packages may wire an existing UI port (for example, change one call) without changing layout, states, or interaction. A UI package must not add business rules: it consumes application ports.
-2. **Branch.** Each package runs on its own branch from current `main` (plan Section 9). Never two packages at once on overlapping owned files. "Owned files" lists every file the package may change; changing any other file needs a recorded hand-off.
+2. **Branch and ownership.** Packages run one at a time on the sitting branch described in "Stage 4 execution plan" (this replaces the plan's one-branch-per-package rule, because a session has one branch). "Owned files" lists every file the package may change; changing any other file needs a recorded hand-off in the fix log.
 3. **Test first.** Write a failing test from the register evidence before the fix, and commit it with the fix. The review reproductions in `docs/review/golden/` are the source; port the relevant one into `src/**/*.test.ts` or `tests/ui/` (decision C6). Do not change files in `docs/review/`.
 4. **Dexie-backed tests before P06.** Until P06 adds an IndexedDB test environment to Vitest, a persistence test that needs real IndexedDB is a Playwright spec under `tests/ui/` that imports `src/` modules from the Vite dev server, as `docs/review/golden/p3-env.ts` does.
 5. **Verification** (`AGENTS.md`):
@@ -64,6 +64,67 @@ Ordering notes:
 - P06 follows the S0 packages because it changes `dexieRepository.ts` and `inMemoryRepository.ts`, which P01 and P02 own.
 - Every UI package from U02 to U07 changes `src/ui/App.tsx`, so they run one after another in the order shown. U01 goes first because quirks mode changes every layout measurement (I-038).
 - X01 runs right after P05 (decision C7): it is mechanical, removes the latent S0 path `deleteNode` (3-008), and shrinks `App.tsx` before the S2 packages edit it. It follows P01 and P02 because it deletes methods from services they own.
+
+## Stage 4 execution plan (user direction, 2026-10-22)
+
+### Models
+
+The user directed that Claude models carry out Stage 4, with this mapping:
+
+| Class in this plan and `AGENTS.md` | Claude model | Use |
+| --- | --- | --- |
+| Luna-class | Sonnet | Every Luna-class package. The default main session for a sitting. |
+| Sol-class | Opus | U08, and the independent diff review of the S0 and S1 packages (P01–P04). |
+| (none) | Haiku | Only for tightly bounded, long-running mechanical edits with a mechanical check. The session agent verifies every Haiku change before committing it. Candidates: the deletions in X01, the file moves in P13, and the status-line and date edits across decision records in D01 (1-004). |
+
+A sub-agent cannot start its own sub-agents. Only the session's main agent delegates.
+
+### Sittings
+
+Each sitting is one session with a fresh context. A session completes the packages of one sitting, writes the records below, and stops. Sittings are sized to stay well inside one 5-hour usage window. The S0 sittings are the heaviest because they include an Opus review and browser tests on IndexedDB.
+
+| Sitting | Packages | Main session | Sub-agents | Notes |
+| --- | --- | --- | --- | --- |
+| 4A | Setup, P01, P02 | Sonnet | Opus reviewer (P01, P02 diffs) | S0. Setup brings the browser-test harness to `main` (below). |
+| 4B | P03, P04 | Sonnet | Opus reviewer (P03, P04 diffs) | S1. Includes the Dexie version 7 repair. |
+| 4C | P05, X01 | Sonnet | Haiku for X01 deletions | After 4C the full browser suite is green, which every later sitting relies on. |
+| 4D | P06, P07, P08 | Sonnet | — | |
+| 4E | P09, P10, P11 | Sonnet | — | |
+| 4F | P12, P13, P14, B01 | Sonnet | Haiku for P13 file moves | B01 turns on CI. |
+| 4G | U01, U02, U03 | Sonnet | — | User review gate before 4G (structural → UI, Decision 0005). |
+| 4H | U04, U05 | Sonnet | — | |
+| 4I | U06, U07 | Sonnet | — | |
+| 4J | P15, P16 | Sonnet | — | |
+| 4K | U08, D01 | Opus for U08, then Sonnet for D01 (two sessions if needed) | Haiku for D01 decision-record status lines | Closes Stage 4. |
+
+If a sitting runs short of usage, it stops after the current package's gate. The next session continues from the fix log.
+
+### Branches and pull requests
+
+- `docs/review/` stays on the review branch `claude/upbeat-ritchie-51mpy5` (decision C6). Stage 4 sessions read it from there with `git show origin/claude/upbeat-ritchie-51mpy5:<path>` or by checking the files out into the scratchpad. Code reproductions are ported into the product test suite, never copied from `docs/review/golden/` wholesale.
+- Each sitting works on the branch its session designates. That branch starts from current `origin/main`, and each package is one commit (or a short series) on it. The harness gives a session one branch, so this replaces the plan's one-branch-per-package rule. Package boundaries are kept by commits and by the fix log.
+- At the end of a sitting the session pushes the branch. The user opens and merges the pull request, or asks the session to open it. The next sitting starts only after that merge. If the previous sitting's work is not on `main`, the next session stops and asks.
+- **Setup (sitting 4A, before P01):** bring three review-branch changes to `main`, because Stage 4 verification depends on them: `playwright.config.ts` (the `PLAYWRIGHT_CHROMIUM_EXECUTABLE` override, commit `9748db0`), the `codex.md` section "Browser tests in environments with a preinstalled Chromium", and the A-006 correction in `docs/implementation/phase-05-costing.md` (commit `d33ac1c`). Take only those changes, not `docs/review/`.
+
+### Records for the ChatGPT-based workflow
+
+Every fix must be readable later without this session's context. Each package writes:
+
+1. **Fix log entry** in `docs/implementation/review-fixes.md` on `main` (created by sitting 4A). One section per package, in this format:
+   - Package ID and title, date, sitting, model used (and any sub-agents).
+   - Issues fixed: register IDs, finding IDs, severity, and one sentence each on what was wrong.
+   - User decisions implemented.
+   - What changed: files, and the behavior before and after, in plain English.
+   - Tests added (file and test names) and what each protects.
+   - Verification run: the exact commands and their results (counts of passing and failing tests; build result).
+   - Documentation, overview, and decision records updated.
+   - Residual risks and anything deferred, with the reason.
+   - Commit hash.
+2. **Status update** in `codex.md` "Current implementation status" at the end of each sitting: one short paragraph naming the packages completed and pointing to the fix log.
+3. **Architecture and decision records** as rule 7 requires. New decision records use the next free number in `docs/decisions/` and the existing format (Status, Date, Context, Decision, Consequences).
+4. **Next-sitting note** at the top of `docs/implementation/review-fixes.md`: the next sitting, its packages, and anything the next session must know (open questions, known failures).
+
+The fix log does not replace the review register. When Stage 4 ends, D01 adds a final summary to the fix log that maps every register issue to its package and commit.
 
 ---
 
