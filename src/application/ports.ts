@@ -44,6 +44,22 @@ export interface BackupPort {
   importProject(payload: string, mode?: BackupImportMode): Promise<Project>;
 }
 
+/** Why this tab may not write: another tab holds the write lock, or another tab upgraded the database under it. */
+export type SessionReadOnlyReason = 'otherTab' | 'databaseUpgraded';
+
+/** Only one browser tab at a time may write the local database. A read-only tab keeps reading but rejects every write. */
+export interface SessionStatus {
+  mode: 'active' | 'readOnly';
+  reason?: SessionReadOnlyReason;
+  /** Plain-language explanation, present when the tab is read-only. */
+  message?: string;
+}
+
+export interface SessionStatusQueries {
+  getSessionStatus(): SessionStatus;
+  subscribeToSessionStatus(listener: (status: SessionStatus) => void): () => void;
+}
+
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 export interface SaveStatus {

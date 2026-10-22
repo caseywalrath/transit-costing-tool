@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test';
 
 test('Costing workspace displays a partial estimate, supports year selection, and remains usable at a narrow width', async ({ page }, testInfo) => {
   await page.goto('/');
+  // The app creates the database when it starts; wait for it before seeding the stores directly.
+  await expect(page.getByRole('button', { name: 'Project actions', exact: true })).toBeVisible();
   await page.evaluate(async () => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open('transit-costing-tool');

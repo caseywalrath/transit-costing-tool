@@ -1,10 +1,16 @@
 import Dexie, { type Table } from 'dexie';
 import type { DatabaseRecordMap } from '../domain/types';
 import { metadata, newId } from '../domain/ids';
+import type { WriteGuard } from './tabGuard';
 export class TransitDatabase extends Dexie {
   projects!: Table<DatabaseRecordMap['projects'], string>; scenarios!: Table<DatabaseRecordMap['scenarios'], string>; serviceDays!: Table<DatabaseRecordMap['serviceDays'], string>; routes!: Table<DatabaseRecordMap['routes'], string>; nodes!: Table<DatabaseRecordMap['nodes'], string>; patterns!: Table<DatabaseRecordMap['patterns'], string>; directions!: Table<DatabaseRecordMap['directions'], string>; runtimeProfiles!: Table<DatabaseRecordMap['runtimeProfiles'], string>; runtimeAssignments!: Table<DatabaseRecordMap['runtimeAssignments'], string>; generationSets!: Table<DatabaseRecordMap['generationSets'], string>; tripProfiles!: Table<DatabaseRecordMap['tripProfiles'], string>; blockingScenarios!: Table<DatabaseRecordMap['blockingScenarios'], string>; trips!: Table<DatabaseRecordMap['trips'], string>; tripRegenerationUndo!: Table<DatabaseRecordMap['tripRegenerationUndo'], string>; blocks!: Table<DatabaseRecordMap['blocks'], string>; costingAssumptions!: Table<DatabaseRecordMap['costingAssumptions'], string>; /** @deprecated Kept untyped and unused so the upgrade does not discard any data in the preliminary table. */ costPlans!: Table<Record<string, unknown>, string>; appMetadata!: Table<DatabaseRecordMap['appMetadata'], string>;
-  constructor(name = 'transit-costing-tool') {
+  /**
+   * With a `guard`, every write to every table is checked against it, and a database upgrade in another tab closes this
+   * connection and leaves the tab read-only (Decision 0037). Without one, the database behaves as before.
+   */
+  constructor(name = 'transit-costing-tool', guard?: WriteGuard) {
     super(name);
+    if (guard) this.installWriteGuard(guard);
     this.version(1).stores({ projects: 'id,name,updatedAt', scenarios: 'id,projectId,[projectId+name],updatedAt', serviceDays: 'id,scenarioId,[scenarioId+kind],sequence', routes: 'id,scenarioId,[scenarioId+name],updatedAt', nodes: 'id,scenarioId,routeId,[routeId+name]', patterns: 'id,scenarioId,routeId,[routeId+name]', directions: 'id,scenarioId,routeId,[routeId+name]', runtimeProfiles: 'id,scenarioId,routeId,patternId', runtimeAssignments: 'id,scenarioId,patternId,[patternId+serviceDayId]', generationSets: 'id,scenarioId,routeId,serviceDayId,patternId', trips: 'id,scenarioId,routeId,serviceDayId,patternId,provenance.generationSetId,provenance.runtimeProfileId', blocks: 'id,scenarioId,serviceDayId,[serviceDayId+label]', costPlans: 'id,scenarioId,[scenarioId+name]', appMetadata: 'key' });
     // Version 2 adds the lookup required by runtime-profile lifecycle commands.
     // Existing version 1 databases are upgraded automatically by Dexie.
@@ -39,5 +45,35 @@ export class TransitDatabase extends Dexie {
     // Version 6 adds one local, one-step undo record for trip regeneration.
     // It is operational state and is intentionally excluded from project backups.
     this.version(6).stores({ tripRegenerationUndo: 'id,scenarioId,tripProfileId' });
+  }
+
+  private installWriteGuard(guard: WriteGuard): void {
+    this.use({
+      stack: 'dbcore',
+      name: 'tabWriteGuard',
+      create: (down) => ({
+        ...down,
+        table: (tableName) => {
+          const table = down.table(tableName);
+          return {
+            ...table,
+            mutate: (request) => {
+              // A schema upgrade is not a user edit and must run in whichever tab opens the database first.
+              const upgrading = (request.trans as unknown as { mode?: string }).mode === 'versionchange';
+              if (!upgrading) {
+                try { guard.assertWritable(); } catch (error) { return Dexie.Promise.reject(error); }
+              }
+              return table.mutate(request);
+            },
+          };
+        },
+      }),
+    });
+    // A newer version of the app in another tab needs to upgrade the database: close this connection so the upgrade can run.
+    this.on('versionchange', () => {
+      guard.markReadOnly('databaseUpgraded');
+      this.close({ disableAutoOpen: true });
+      return false;
+    });
   }
 }
