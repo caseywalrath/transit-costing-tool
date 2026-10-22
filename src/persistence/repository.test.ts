@@ -28,7 +28,6 @@ describe('route-definition persistence', () => {
   });
 
   it('discards Phase 3 placeholder Blocks during the version 4 migration but keeps Trips and Trip Profiles', async () => {
-    if (typeof indexedDB === 'undefined') return;
     const name = `transit-costing-migration-${Date.now()}`;
     const legacy = new Dexie(name);
     legacy.version(3).stores({ tripProfiles: 'id,scenarioId', trips: 'id,scenarioId,tripProfileId', blocks: 'id,scenarioId,tripProfileId,serviceDayId' });
@@ -36,14 +35,21 @@ describe('route-definition persistence', () => {
     await legacy.table('tripProfiles').put({ id: 'profile', scenarioId: 'scenario', name: 'Default', ...metadata() });
     await legacy.table('trips').put({ id: 'trip', scenarioId: 'scenario', routeId: 'route', serviceDayId: 'day', patternId: 'pattern', tripProfileId: 'profile', stopTimes: [], provenance: { kind: 'manual', manuallyChangedFields: [] }, ...metadata() });
     await legacy.table('blocks').put({ id: 'placeholder', scenarioId: 'scenario', serviceDayId: 'day', tripProfileId: 'profile', label: '1', activities: [], ...metadata() });
+    const blocksBefore = await legacy.table('blocks').count();
     legacy.close();
     const migrated = new TransitDatabase(name);
-    await migrated.open();
-    expect(migrated.verno).toBe(5);
-    expect(await migrated.tripProfiles.get('profile')).toBeDefined();
-    expect(await migrated.trips.get('trip')).toBeDefined();
-    expect(await migrated.blocks.get('placeholder')).toBeUndefined();
-    migrated.close();
+    try {
+      await migrated.open();
+      expect(migrated.verno).toBe(7);
+      expect((await indexedDB.databases()).find((database) => database.name === name)?.version).toBe(70);
+      expect(await migrated.tripProfiles.get('profile')).toBeDefined();
+      expect(await migrated.trips.get('trip')).toBeDefined();
+      expect(await migrated.blocks.get('placeholder')).toBeUndefined();
+      expect(blocksBefore - await migrated.blocks.count()).toBe(1);
+    } finally {
+      migrated.close();
+      await Dexie.delete(name);
+    }
   });
 
   it('round trips runtime profiles and assignments and enforces assignment uniqueness', async () => {

@@ -118,6 +118,15 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui
 
 Verified on 2026-10-22 in a Claude Code cloud session with `@playwright/test` 1.63.0 and Chromium 141. When the variable is unset, Playwright uses its bundled browser and local behavior is unchanged.
 
+## Unit tests that need IndexedDB
+
+`pnpm test` runs in a Node environment with `fake-indexeddb/auto` loaded before every test file (`vitest.config.ts`), so a unit test can open a real Dexie database, run its upgrades, and run `DexieRouteDefinitionRepository`. Verified on 2026-10-22 with `fake-indexeddb` 6.2.6 and Vitest 3.2.7.
+
+- `src/persistence/repositoryContract.test.ts` runs every test against both the in-memory and the Dexie repository. Add each new repository method there. Both repositories return rows in primary-key order, which is random for generated identifiers, so do not assert the order of a repository list that the code did not sort.
+- `src/persistence/database.test.ts` upgrades seeded databases of Dexie versions 1 to 6. Use a unique database name per test and delete it afterwards (`Dexie.delete`).
+- `fake-indexeddb` is slow when it overwrites rows that have several indexes. Do not load the full Federal BRT project into a write test; use the trimmed fixture in the contract file, or a browser spec.
+- Line coverage is not part of the scripts. To measure it, install `@vitest/coverage-v8@3.2.7` temporarily and do not commit the change (sitting 4D measured `dexieRepository.ts` at 86.54% of lines, from 0%).
+
 ## Current implementation status
 
 Phase 3R is implemented and accepted through Package 3R-C. It is recorded in `docs/implementation/phase-03r-closeout.md`. Phase 4 is implemented and user-accepted through Package 4D; see `docs/implementation/phase-04-closeout.md`. Phase 5 planning is approved in `docs/implementation/phase-05-costing.md`. Packages 5A through 5C are implemented, including the consolidated global/module toolbar revision in Decision 0028; automated Costing UI verification passed on 2026-09-23 and user review remains the 5C stop gate. Package 5D integration remains unstarted.

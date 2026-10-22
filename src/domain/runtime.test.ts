@@ -8,12 +8,14 @@ import {
   reverseCopyRuntimeProfile,
   runtimeBandTotalSeconds,
   resolveRuntimeForDeparture,
+  resolveSegmentStartBand,
+  segmentStartTimes,
   selectRuntimeBand,
   validateRuntimeAssignments,
   validateRuntimeProfile,
   withRuntimeCalculationRevision,
 } from './runtime';
-import type { RoutePattern, RuntimeAssignment, RuntimeProfile } from './types';
+import type { RoutePattern, RuntimeAssignment, RuntimeBand, RuntimeProfile } from './types';
 
 const pattern: RoutePattern = {
   ...metadata('2026-01-01T00:00:00.000Z'),
@@ -112,5 +114,58 @@ describe('runtime profiles', () => {
     const base = { ...profile, calculationRevision: 4 };
     expect(withRuntimeCalculationRevision(base, { ...base, name: 'Renamed' }).calculationRevision).toBe(4);
     expect(withRuntimeCalculationRevision(base, { ...base, bands: [{ ...base.bands[0], segmentRuntimeSeconds: [481, 420] }, base.bands[1]] }).calculationRevision).toBe(5);
+  });
+});
+
+// Ported from the review's p2-time-runtime golden test (A-007, I-047): `segmentStart` is the default method for every new
+// Runtime profile, and its boundary behavior had no calculation test. Decisions 0033 and 0035 item 1 govern.
+describe('segmentStart boundary matrix', () => {
+  const abc: RoutePattern = { ...metadata('2026-01-01T00:00:00.000Z'), id: 'p', scenarioId: 's', routeId: 'r', name: 'P', points: [
+    { id: 'a', nodeId: 'A', sequence: 0, cumulativeMiles: 0 },
+    { id: 'b', nodeId: 'B', sequence: 1, cumulativeMiles: 1 },
+    { id: 'c', nodeId: 'C', sequence: 2, cumulativeMiles: 2 },
+  ] };
+  const band = (id: string, startTime: number, endTime: number, segmentRuntimeSeconds: number[], sequence = 0): RuntimeBand => ({ id, label: id.toUpperCase(), sequence, startTime, endTime, segmentRuntimeSeconds });
+  const segmentStartProfile = (bands: RuntimeBand[]): RuntimeProfile => ({ ...metadata('2026-01-01T00:00:00.000Z'), id: 'rp', scenarioId: 's', routeId: 'r', patternId: 'p', name: 'Weekday', bands, calculationMethod: 'segmentStart' });
+  // AM 6:00-9:00, MID 9:00-15:00, gap 15:00-16:00, PM 16:00-20:00. The bands are deliberately listed out of order.
+  const bands = [band('pm', 57600, 72000, [1200, 1200], 2), band('am', 21600, 32400, [600, 900], 0), band('mid', 32400, 54000, [2100, 300], 1)];
+  const profileWithGap = segmentStartProfile(bands);
+  const times = (result: ReturnType<typeof propagatePatternTimes>) => ('finding' in result ? result.finding.ruleId : result.stopTimes.map((point) => point.time));
+
+  it.each<[string, number, number[] | string]>([
+    ['departure at first band start', 21600, [21600, 22200, 23100]],
+    ['segment crossing a band end keeps its start band; next segment uses the new band', 32399, [32399, 32999, 33299]],
+    ['departure exactly at band end belongs to the next band (half-open)', 32400, [32400, 34500, 34800]],
+    ['segment starting inside a gap uses the nearest band (MID, 100 s away)', 52000, [52000, 54100, 54400]],
+    ['segment starting after the last band uses the last band', 71900, [71900, 73100, 74300]],
+    ['departure inside a gap is rejected', 55000, 'runtime.noApplicableBand'],
+    ['departure before the first band is rejected', 21599, 'runtime.noApplicableBand'],
+    ['departure at the last band end is rejected', 72000, 'runtime.noApplicableBand'],
+  ])('%s', (_label, departure, expected) => expect(times(propagatePatternTimes(abc, departure, profileWithGap))).toEqual(expected));
+
+  it('segment contributions name the band used at each segment start', () => {
+    const result = segmentStartTimes(abc, 32399, profileWithGap);
+    if ('finding' in result) throw new Error('unexpected finding');
+    expect(result.segments.map((segment) => segment.contributions.map((part) => part.bandId))).toEqual([['am'], ['mid']]);
+  });
+
+  it('a single-band profile extends beyond its own end for later segments', () => {
+    expect(times(propagatePatternTimes(abc, 32000, segmentStartProfile([band('am', 21600, 32400, [600, 900])])))).toEqual([32000, 32600, 33500]);
+  });
+
+  it('orders unsorted band input by start time before resolution', () => {
+    expect(resolveSegmentStartBand(profileWithGap, 40000)?.id).toBe('mid');
+  });
+
+  it('overlapping bands: the earlier-starting band wins and validation reports runtime.bandOverlap', () => {
+    const overlapping = segmentStartProfile([band('x', 0, 3600, [60, 60]), band('y', 1800, 5400, [120, 120])]);
+    expect(selectRuntimeBand(overlapping, 2000)?.id).toBe('x');
+    expect(validateRuntimeProfile(overlapping, abc).map((finding) => finding.ruleId)).toContain('runtime.bandOverlap');
+  });
+
+  it('a zero-length band is invalid and never contains a departure', () => {
+    const zero = segmentStartProfile([band('z', 3600, 3600, [60, 60])]);
+    expect(selectRuntimeBand(zero, 3600)).toBeUndefined();
+    expect(validateRuntimeProfile(zero, abc).map((finding) => finding.ruleId)).toContain('runtime.bandBoundsInvalid');
   });
 });

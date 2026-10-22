@@ -58,7 +58,7 @@ The expected application stack is:
 - Dexie as the IndexedDB access layer;
 - a headless table library for dense tabular behavior;
 - a runtime schema validator for imported data and migrations;
-- Vitest for domain and persistence tests, with Playwright for browser-rendered layout regression tests;
+- Vitest for domain and persistence tests, run on `fake-indexeddb` so the Dexie repository and database upgrades are tested in `pnpm test` (Decision 0040), with Playwright for browser-rendered layout regression tests;
 - plain CSS or CSS Modules for a compact interface;
 - GitHub Actions for GitHub Pages deployment.
 
@@ -88,7 +88,7 @@ Scheduling, trip generation, blocking validation, summaries, and costing must be
 
 ### Persistence is replaceable
 
-The application layer accesses data through repository interfaces. IndexedDB implements those interfaces. This permits in-memory tests and leaves open a future server-backed implementation.
+The application layer accesses data through repository interfaces. IndexedDB implements those interfaces. This permits in-memory tests and leaves open a future server-backed implementation. The in-memory and Dexie repositories share one contract test suite and the same observable behavior, including primary-key result order, stale-source rejection, and Scenario cascades (Decision 0040).
 
 ### The interface does not own calculations
 

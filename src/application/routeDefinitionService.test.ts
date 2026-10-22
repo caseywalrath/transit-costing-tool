@@ -45,7 +45,8 @@ describe('RouteDefinitionService', () => {
     expect(service.exportCsv(reversed.aggregate, reloaded.records).map((file) => file.suffix)).toEqual([
       'routes', 'nodes', 'patterns', 'pattern-points', 'runtime-bands', 'generation-sets', 'trips', 'scheduled-points', 'blocks', 'block-activities',
     ]);
-    expect(reloaded.aggregate?.patterns.map((pattern) => pattern.name)).toEqual(['Outbound', 'Inbound', 'Outbound Copy']);
+    // Storage returns rows in key order, and the keys are random, so the test does not depend on the order of the list.
+    expect(reloaded.aggregate?.patterns.map((pattern) => pattern.name).sort()).toEqual(['Inbound', 'Outbound', 'Outbound Copy']);
     expect(duplicated.pattern.id).not.toBe(addedPattern.pattern.id);
     expect(duplicated.pattern.points.map((point) => point.id)).not.toEqual(addedPattern.pattern.points.map((point) => point.id));
   });
@@ -81,7 +82,7 @@ describe('RouteDefinitionService', () => {
     const copy = await service.copyRuntimeProfile(saved.id, 'Weekday runtimes Copy');
 
     expect((await service.listRuntimeAssignments(created.records.scenario.id, weekday.id, aggregate.patterns[0].id))[0].runtimeProfileId).toBe(profile.id);
-    expect((await service.listRuntimeProfiles(aggregate.route.id, aggregate.patterns[0].id)).map((item) => item.name)).toEqual(['Weekday runtimes', 'Weekday runtimes Copy']);
+    expect((await service.listRuntimeProfiles(aggregate.route.id, aggregate.patterns[0].id)).map((item) => item.name).sort()).toEqual(['Weekday runtimes', 'Weekday runtimes Copy']);
     expect(copy.bands[0].id).not.toBe(saved.bands[0].id);
   });
 
