@@ -15,6 +15,12 @@ export interface RouteDefinitionRepository {
   saveScenario(scenario: Scenario): Promise<void>;
   getScenarioRecords(scenarioId: string): Promise<ScenarioRecords | undefined>;
   saveScenarioRecords(records: ScenarioRecords): Promise<void>;
+  /**
+   * Reads the stored records of one Scenario inside the write, applies `change` to them, and writes the result.
+   * Callers use this instead of `saveScenarioRecords` when their own copy of the Scenario may be older than storage.
+   * `change` must be synchronous. Returning the records it was given writes nothing. Rejects when the Scenario no longer exists.
+   */
+  updateScenarioRecords(scenarioId: string, change: (current: ScenarioRecords) => ScenarioRecords): Promise<ScenarioRecords>;
   /** Writes a reviewed route edit and all affected runtimes, trips, and blocks atomically. */
   commitRouteEdit(records: ScenarioRecords): Promise<void>;
   getRouteDefinition(routeId: string): Promise<RouteDefinitionAggregate | undefined>;
@@ -36,6 +42,22 @@ export type BackupImportMode = 'replace' | 'copy' | 'reject';
 export interface BackupPort {
   exportProject(projectId: string): Promise<string>;
   importProject(payload: string, mode?: BackupImportMode): Promise<Project>;
+}
+
+/** Why this tab may not write: another tab holds the write lock, or another tab upgraded the database under it. */
+export type SessionReadOnlyReason = 'otherTab' | 'databaseUpgraded';
+
+/** Only one browser tab at a time may write the local database. A read-only tab keeps reading but rejects every write. */
+export interface SessionStatus {
+  mode: 'active' | 'readOnly';
+  reason?: SessionReadOnlyReason;
+  /** Plain-language explanation, present when the tab is read-only. */
+  message?: string;
+}
+
+export interface SessionStatusQueries {
+  getSessionStatus(): SessionStatus;
+  subscribeToSessionStatus(listener: (status: SessionStatus) => void): () => void;
 }
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error';

@@ -128,6 +128,14 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     for (const block of records.blocks) this.blocks.set(block.id, block);
   }
 
+  async updateScenarioRecords(scenarioId: string, change: (current: ScenarioRecords) => ScenarioRecords): Promise<ScenarioRecords> {
+    const current = await this.getScenarioRecords(scenarioId);
+    if (!current) throw new Error('Scenario not found.');
+    const next = change(current);
+    if (next !== current) await this.saveScenarioRecords(next);
+    return next;
+  }
+
   async commitRouteEdit(records: ScenarioRecords): Promise<void> {
     await this.saveScenarioRecords(records);
   }
@@ -324,6 +332,9 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
   async insertTripsAtomically(trips: Trip[]): Promise<void> {
     const previous = new Map(this.trips);
     try {
+      for (const trip of trips) {
+        if (trip.tripProfileId !== undefined && this.tripProfiles.get(trip.tripProfileId)?.scenarioId !== trip.scenarioId) throw new Error('The selected Trip profile is no longer available.');
+      }
       for (const trip of trips) {
         if (this.trips.has(trip.id)) throw new Error(`Trip ${trip.id} already exists`);
         this.trips.set(trip.id, trip);

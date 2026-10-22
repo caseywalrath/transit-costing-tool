@@ -311,10 +311,12 @@ export class RouteDefinitionService {
     return this.saveScenarioRecords(createScenarioRecords(projectId, name, this.now()));
   }
   async renameScenario(records: ScenarioRecords, name: string): Promise<ScenarioRecords> {
-    return this.saveScenarioRecords({ ...records, scenario: withUpdatedAt({ ...records.scenario, name: name.trim() }, this.now()) });
+    return this.updateScenarioRecords(records.scenario.id, (current) => ({ ...current, scenario: withUpdatedAt({ ...current.scenario, name: name.trim() }, this.now()) }));
   }
   async duplicateScenario(records: ScenarioRecords, name: string): Promise<ScenarioRecords> {
-    return this.saveScenarioRecords(duplicateScenario(records, name, this.now()));
+    const stored = await this.repository.getScenarioRecords(records.scenario.id);
+    if (!stored) throw new Error('Scenario not found.');
+    return this.saveScenarioRecords(duplicateScenario(stored, name, this.now()));
   }
   async getScenarioDeletionImpact(scenarioId: string): Promise<ScenarioDeletionImpact> {
     const records = await this.repository.getScenarioRecords(scenarioId);
@@ -364,11 +366,17 @@ export class RouteDefinitionService {
   async addRoute(records: ScenarioRecords): Promise<{ records: ScenarioRecords; route: Route }> {
     const route: Route = { id: newId(), scenarioId: records.scenario.id, name: '', ...metadata(this.now()) };
     const directions = createManagedDirections(records.scenario.id, route.id, this.now());
-    return { records: await this.saveScenarioRecords({ ...records, routes: [...records.routes, route], directions: [...(records.directions ?? []), ...directions] }), route };
+    const saved = await this.updateScenarioRecords(records.scenario.id, (current) => ({ ...current, routes: [...current.routes, route], directions: [...(current.directions ?? []), ...directions] }));
+    return { records: saved, route };
   }
   async duplicateRoute(records: ScenarioRecords, routeId: string, name: string): Promise<{ records: ScenarioRecords; route: Route }> {
-    const duplicate = duplicateRouteRecords(records, routeId, name, this.now());
-    return { ...duplicate, records: await this.saveScenarioRecords(duplicate.records) };
+    let route: Route | undefined;
+    const saved = await this.updateScenarioRecords(records.scenario.id, (current) => {
+      const duplicate = duplicateRouteRecords(current, routeId, name, this.now());
+      route = duplicate.route;
+      return duplicate.records;
+    });
+    return { records: saved, route: route! };
   }
   async getRouteDeletionImpact(routeId: string): Promise<RouteDeletionImpact> {
     const records = await this.recordsForRoute(routeId);
@@ -417,7 +425,12 @@ export class RouteDefinitionService {
     });
   }
   async updateServiceDay(records: ScenarioRecords, id: string, patch: Partial<ServiceDayDefinition>): Promise<ScenarioRecords> {
-    return this.saveScenarioRecords({ ...records, serviceDays: records.serviceDays.map((day) => day.id === id ? withUpdatedAt({ ...day, ...patch }, this.now()) : day) });
+    const stored = await this.repository.getScenarioRecords(records.scenario.id);
+    if (!stored) throw new Error('Scenario not found.');
+    const day = stored.serviceDays.find((candidate) => candidate.id === id);
+    if (!day) throw new Error('Service day not found.');
+    if ((Object.keys(patch) as Array<keyof ServiceDayDefinition>).every((key) => day[key] === patch[key])) return stored;
+    return this.updateScenarioRecords(records.scenario.id, (current) => ({ ...current, serviceDays: current.serviceDays.map((candidate) => candidate.id === id ? withUpdatedAt({ ...candidate, ...patch }, this.now()) : candidate) }));
   }
 
   async updateRoute(aggregate: RouteDefinitionAggregate, patch: Partial<Route>): Promise<RouteDefinitionAggregate> {
@@ -985,6 +998,10 @@ export class RouteDefinitionService {
     };
   }
 
+  /** Applies a change to the stored Scenario records inside the write, so a caller's older copy is never written back. */
+  private async updateScenarioRecords(scenarioId: string, change: (current: ScenarioRecords) => ScenarioRecords): Promise<ScenarioRecords> {
+    return this.save(() => this.repository.updateScenarioRecords(scenarioId, change));
+  }
   private async saveScenarioRecords(records: ScenarioRecords): Promise<ScenarioRecords> {
     await this.save(() => this.repository.saveScenarioRecords(records));
     return records;

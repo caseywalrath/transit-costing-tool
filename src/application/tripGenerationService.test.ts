@@ -3,6 +3,7 @@ import { metadata } from '../domain/ids';
 import type { Block, RoutePattern, RuntimeAssignment, RuntimeProfile, Trip, TripGenerationSet } from '../domain/types';
 import { TripGenerationService } from './tripGenerationService';
 import type { TripGenerationRepository } from './ports';
+import { InMemoryRouteDefinitionRepository } from '../persistence/inMemoryRepository';
 
 class FakeTripRepository implements TripGenerationRepository {
   sets = new Map<string, TripGenerationSet>(); trips = new Map<string, Trip>(); blocks = new Map<string, Block>();
@@ -63,5 +64,42 @@ describe('TripGenerationService', () => {
     expect(revised.trips[0].provenance.generationRevision).toBe(2);
     expect(repository.sets.get(set.id)?.generationRevision).toBe(2);
     expect((await service.listServiceDayTrips('weekday')).map((trip) => trip.id)).toEqual([initial.trips[0].id]);
+  });
+});
+
+describe('Trip generation validates the Trip profile inside the write', () => {
+  const stamp = metadata('2026-09-14T00:00:00.000Z');
+  const storedPattern: RoutePattern = { ...stamp, id: 'p', scenarioId: 's', routeId: 'r', name: 'Outbound', directionId: 'outbound', points: [{ id: 'a', nodeId: 'a', sequence: 0, cumulativeMiles: 0 }, { id: 'b', nodeId: 'b', sequence: 1, cumulativeMiles: 1 }] };
+  const storedProfile: RuntimeProfile = { ...stamp, id: 'profile', scenarioId: 's', routeId: 'r', patternId: 'p', name: 'Runtime', bands: [{ id: 'band', label: 'All', sequence: 0, startTime: 0, endTime: 86400, segmentRuntimeSeconds: [600] }] };
+  async function setup() {
+    const repository = new InMemoryRouteDefinitionRepository();
+    await repository.saveProjectSnapshot({
+      project: { id: 'project', name: 'Project', distanceUnit: 'miles', currencyCode: 'USD', ...stamp },
+      scenarios: [{ id: 's', projectId: 'project', name: 'Scenario', ...stamp }],
+      serviceDays: [{ id: 'weekday', scenarioId: 's', kind: 'weekday', name: 'Weekday', annualServiceDays: 260, sequence: 0, ...stamp }],
+      routes: [{ id: 'r', scenarioId: 's', name: 'Route', ...stamp }], nodes: [], patterns: [storedPattern], runtimeProfiles: [storedProfile],
+      runtimeAssignments: [{ id: 'assignment', scenarioId: 's', patternId: 'p', serviceDayId: 'weekday', runtimeProfileId: 'profile', ...stamp }],
+      tripProfiles: [{ id: 'trip-profile', scenarioId: 's', name: 'Default', ...stamp }], generationSets: [], trips: [], blocks: [],
+    });
+    return { repository, service: new TripGenerationService(repository, () => '2026-09-15T00:00:00.000Z') };
+  }
+  const request = { scenarioId: 's', routeId: 'r', serviceDayId: 'weekday', patternId: 'p', firstTrip: 3 * 3600, headwaySeconds: 600, tripCount: 3 };
+
+  it('rejects Build Trips for a Trip profile that no longer exists and stores no Trip', async () => {
+    const { repository, service } = await setup();
+    await expect(service.generateTrips({ ...request, tripProfileId: 'deleted-profile' })).rejects.toThrow('Trip profile is no longer available');
+    expect(await repository.listTrips('weekday')).toEqual([]);
+  });
+
+  it('rejects Add Trip for a Trip profile that no longer exists', async () => {
+    const { repository, service } = await setup();
+    await expect(service.addTrip({ scenarioId: 's', routeId: 'r', serviceDayId: 'weekday', patternId: 'p', directionId: 'outbound', firstTrip: 3 * 3600, tripProfileId: 'deleted-profile' })).rejects.toThrow('Trip profile is no longer available');
+    expect(await repository.listTrips('weekday')).toEqual([]);
+  });
+
+  it('still stores Trips for an existing Trip profile', async () => {
+    const { repository, service } = await setup();
+    await service.generateTrips({ ...request, tripProfileId: 'trip-profile' });
+    expect(await repository.listTrips('weekday')).toHaveLength(3);
   });
 });

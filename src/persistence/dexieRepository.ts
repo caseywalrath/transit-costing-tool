@@ -89,11 +89,25 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
     return { scenario, serviceDays: sortServiceDays(serviceDays), routes, nodes, patterns, ...(directions.length ? { directions } : {}), runtimeProfiles, runtimeAssignments, ...(tripProfiles.length ? { tripProfiles } : {}), ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions[0] ? { costingAssumptions: costingAssumptions[0] } : {}), generationSets, trips, blocks };
   }
 
+  private scenarioRecordTables() {
+    return [this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.costingAssumptions, this.db.generationSets, this.db.trips, this.db.tripRegenerationUndo, this.db.blocks];
+  }
+
+  async updateScenarioRecords(scenarioId: string, change: (current: ScenarioRecords) => ScenarioRecords): Promise<ScenarioRecords> {
+    return this.db.transaction('rw', this.scenarioRecordTables(), async () => {
+      const current = await this.getScenarioRecords(scenarioId);
+      if (!current) throw new Error('Scenario not found.');
+      const next = change(current);
+      if (next !== current) await this.saveScenarioRecords(next);
+      return next;
+    });
+  }
+
   async saveScenarioRecords(records: ScenarioRecords): Promise<void> {
     assertRuntimeGraph(records.runtimeProfiles, records.runtimeAssignments, records.patterns, records.serviceDays, records.scenario.id);
     assertTripProfileReferences(records.trips, records.blocks);
     if (records.costingAssumptions) assertCostingAssumptions(records.costingAssumptions, records.scenario.id);
-    await this.db.transaction('rw', [this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.costingAssumptions, this.db.generationSets, this.db.trips, this.db.tripRegenerationUndo, this.db.blocks], async () => {
+    await this.db.transaction('rw', this.scenarioRecordTables(), async () => {
       const oldRoutes = await this.db.routes.where('scenarioId').equals(records.scenario.id).toArray();
       const oldRouteIds = new Set(oldRoutes.map((route) => route.id));
       const [oldNodes, oldPatterns] = await Promise.all([
@@ -335,7 +349,7 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
     await this.db.runtimeAssignments.put(assignment);
   }
   async commitRuntimeCopyAtomically(preview: RuntimeCopyPreview): Promise<void> {
-    await this.db.transaction('rw', [this.db.runtimeProfiles, this.db.runtimeAssignments], async () => {
+    await this.db.transaction('rw', [this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.patterns, this.db.serviceDays], async () => {
       const [profiles, assignments] = await Promise.all([this.db.runtimeProfiles.toArray(), this.db.runtimeAssignments.toArray()]);
       const profileIds = new Set(preview.profiles.map((profile) => profile.id));
       const assignmentIds = new Set(preview.assignments.map((assignment) => assignment.id));
@@ -409,7 +423,14 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
   }
   /** Atomically append authoritative trips without replacing any existing trip. */
   async insertTripsAtomically(trips: Trip[]): Promise<void> {
-    await this.db.transaction('rw', [this.db.trips], async () => { await this.db.trips.bulkAdd(trips); });
+    await this.db.transaction('rw', [this.db.trips, this.db.tripProfiles], async () => {
+      for (const trip of trips) {
+        if (trip.tripProfileId === undefined) continue;
+        const profile = await this.db.tripProfiles.get(trip.tripProfileId);
+        if (!profile || profile.scenarioId !== trip.scenarioId) throw new Error('The selected Trip profile is no longer available.');
+      }
+      await this.db.trips.bulkAdd(trips);
+    });
   }
   /** Atomically update authoritative trips and affected block records. */
   async saveTripChangesAtomically(trips: Trip[], blocks: Block[] = []): Promise<void> {
