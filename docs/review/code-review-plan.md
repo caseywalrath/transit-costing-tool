@@ -1,6 +1,7 @@
 # Code Review Master Plan
 
 - Status: Draft for user approval (Stage 1 deliverable)
+- Amended 2026-10-22 after the Wave 1 gate: Waves 2 and 3 use the flat operating model in Section 4.6 (user-approved).
 - Date: 2026-10-22
 - Review baseline: `main` at `baed9f1` (merge of PR #12, Trips interchange and regeneration undo)
 - Plan location: `docs/review/code-review-plan.md` on branch `claude/upbeat-ritchie-51mpy5`
@@ -16,7 +17,7 @@ This plan governs a complete code review of the Transit Costing Tool. The review
 | 3 | Issue identification and review | Consolidated, de-duplicated, severity-ranked issue register and fix packages | Review lead (primary agent) plus an independent verifier |
 | 4 | Issue resolution | Fixed code, tests, and documentation, delivered in gated packages | Package agents under the repository's normal package rules |
 
-Stage 2 is organized into seven phases (A and 1–6). Each phase has its own orchestrating agent. Orchestrators delegate sub-tasks to Sonnet and Haiku as described in Section 4, follow this plan, and report against the exit criteria in their phase.
+Stage 2 is organized into seven phases (A and 1–6). Each phase has its own orchestrating agent. Orchestrators delegate sub-tasks to Sonnet and Haiku as described in Section 4, follow this plan, and report against the exit criteria in their phase. From Wave 2 onward, the review lead orchestrates Phases 4, 5, and 6 directly (Section 4.6).
 
 The review is analytical through Stages 2 and 3. No application source file is modified until Stage 4, except where Phase A explicitly permits test-harness repair (Section 7, Phase A).
 
@@ -75,8 +76,8 @@ The `phase-02r-trip-table-interchange-undo.md` closeout states "Trips browser ch
 
 | Role | Model | Responsibilities | May not |
 | --- | --- | --- | --- |
-| Review lead | Primary agent (Opus-class) | Owns this plan, launches phase orchestrators, runs Stage 3 consolidation, presents gates to the user. | Start Stage 4 without user approval. |
-| Phase orchestrator | Opus-class | Decomposes its phase into sub-tasks, delegates, verifies every delegated claim, writes the phase findings file. | Accept a delegated finding without verification. Edit application source. Expand scope into another phase's files without recording a hand-off. |
+| Review lead | Primary agent (Opus-class) | Owns this plan, launches phase orchestrators, runs Stage 3 consolidation, presents gates to the user. From Wave 2 onward, also acts as the orchestrator of Phases 4, 5, and 6 (Section 4.6). | Start Stage 4 without user approval. |
+| Phase orchestrator | Opus-class | Decomposes its phase into sub-tasks, delegates, verifies every delegated claim, writes the phase findings file. Used in Waves 0 and 1 only. | Accept a delegated finding without verification. Edit application source. Expand scope into another phase's files without recording a hand-off. |
 | Analyst | Sonnet | Reads code deeply, traces data flows, writes and runs throwaway reproduction tests, proposes root causes. | Assign final severity. Report a finding without file:line evidence. |
 | Sweeper | Haiku | Mechanical inventories: grep sweeps, string and label extraction, doc cross-reference tables, import graphs, counting, listing exported symbols, diffing two method lists. | Report findings. Haiku output is raw input to an orchestrator or Sonnet analyst, never a finding by itself. |
 
@@ -114,7 +115,7 @@ Wave 3   Phase 6  Performance, build, and delivery
 Stage 3  Consolidation, verification, triage
 ```
 
-Phase 6 may start with Wave 2 if capacity allows; it depends only on Phase A.
+Phase 6 may start with Wave 2 if capacity allows; it depends only on Phase A. Under Section 4.6, Phase 6 runs as one Sonnet analyst after the Wave 2 analysts finish.
 
 ### 4.5 File ownership in Stage 2
 
@@ -129,6 +130,23 @@ Ownership prevents duplicate analysis. An orchestrator may read any file but rep
 | 4 | `src/application/**`, `src/main.tsx`, layer boundaries across all of `src/` |
 | 5 | `src/ui/*.tsx`, `src/styles.css`, `tests/ui/**` |
 | 6 | `package.json`, `pnpm-lock.yaml`, `vite.config.ts`, `.github/**`, `index.html`, cross-cutting performance |
+
+### 4.6 Operating model for Waves 2 and 3 (amended 2026-10-22)
+
+**Reason for the amendment.** In Wave 1, the three Opus phase orchestrators could not spawn sub-agents. Each did its whole phase alone, at Opus cost: about 1.13 million sub-agent tokens in total. The orchestrator layer added context cost without enabling the Sonnet and Haiku split in Section 4.2. Only the review lead can delegate.
+
+**Structure.**
+
+1. **No phase orchestrators.** The review lead orchestrates Phases 4, 5, and 6 directly. It writes each analyst brief, verifies findings, assigns final severity, and writes `phase-4.md`, `phase-5.md`, and `phase-6.md`. The lead is the only Opus-class agent in Waves 2 and 3.
+2. **Sonnet analysts** do analysis and reproduction work. **Haiku sweepers** do every inventory task: 4.1 import graph, 4.4 symbol-usage sweep, 4.7 port diff, 4.8 `catch`-site list, 5.4 accessibility scan run, 5.7 destructive-action list, and 5.9 error-string extraction. Haiku output is never a finding (Section 4.1).
+3. **One shared reading of `src/ui/App.tsx`.** Up to four Sonnet analysts each own one line range. In one pass, each answers every code-reading question for its range: 4.3 logic in React, 4.4 dead-code confirmation, 4.8 error handling, and the code-reading parts of 5.5 and 5.9. Browser-driven tasks (4.6, 5.1–5.3, 5.5 behavior, 5.6, 5.8) use separate analysts.
+4. **Short shared brief.** Each analyst receives a brief of about one page instead of the full Section 2 reading list. The brief contains: Section 4.3 posture rules verbatim, the Section 5.1 template, the Section 5.2 rubric, write restrictions, relevant `rule-catalogue.md` IDs, relevant Wave 1 findings and leads, and exact file and line targets. Analysts read a governing document only when their task needs it.
+5. **Analyst output.** Analysts write full detail to a report file in the scratchpad and return a summary of at most 500 words. Reproduction tests that back a finding go in `docs/review/golden/` with a `p4-`, `p5-`, or `p6-` prefix. They use the `it.fails` and `test.fail` convention established in Wave 1.
+6. **Concurrency.** At most 6 sub-agents run at once (Section 4.2 rule 4). Wave 2 is planned at about 8 to 10 Sonnet analysts and about 4 Haiku sweeps.
+7. **Phase 6** runs as one Sonnet analyst, supported by Haiku lists, after the Wave 2 analysts finish.
+8. **Scope trims.** Task 5.2 screenshots use 1024 px only. Analysts do not re-test behavior that Wave 1 already settled with an executed verdict: migrations, cascades, the undo lifecycle, and transaction atomicity (Phase 3). They cite those verdicts instead.
+9. **Verification.** The lead re-runs every S0 and S1 reproduction. For other findings, the lead verifies at least one in three, as Section 4.3 requires. For S2 and S3, verification may be a read of the analyst's test and the cited code instead of a re-run. Stage 3 still samples 25% of S2 findings independently (Section 8.1).
+10. **S0 escalation is unchanged.** The lead reports a confirmed S0 to the user immediately.
 
 ## 5. Finding format and severity
 
@@ -324,7 +342,7 @@ Each phase lists: mandate, required reading, tasks with delegation, specific sus
 | ID | Task | Delegate | Method and output |
 | --- | --- | --- | --- |
 | 5.1 | Browser test integrity (L-01, L-16). For each spec, does it assert the documented behavior, or the implementation at the time? Identify tests that pass for the wrong reason or are stale. | Sonnet | Per-test verdict. |
-| 5.2 | Workspace walkthroughs with the golden dataset: Route, Trips, Blocking, Costing. Capture screenshots at 1440, 1024, and 768 px widths. Compare to ui-conventions. | Sonnet (one per workspace) | Screenshot set and deviations. |
+| 5.2 | Workspace walkthroughs with the golden dataset: Route, Trips, Blocking, Costing. Capture screenshots at 1024 px width (amended from 1440, 1024, and 768 px; Section 4.6). Add another width only to confirm a suspected width-specific defect. Compare to ui-conventions. | Sonnet (one per workspace) | Screenshot set and deviations. |
 | 5.3 | Keyboard and focus. Every menu, dialog, drawer, and pill: open with keyboard, Escape closes, focus returns to the invoker (Decision 0025 item 9), focus trap in modal dialogs, no focus loss after list reload. | Sonnet | Interaction matrix. |
 | 5.4 | Accessible names and roles. Run an automated accessibility scan (axe-core via Playwright, scratch only) on each workspace; manually verify table header associations and `aria-invalid` usage. | Haiku runs scan; Sonnet triages | Violation list, de-duplicated. |
 | 5.5 | Discard guards and unsaved state. Route Node/Pattern drafts, Runtime editor draft, staged Shift drawer, Build Trips drawer: switching Project, Scenario, Route, Day, Direction, Profile, or tab with unsaved changes. | Sonnet | Scenario table: guarded, lost silently, or blocked. |
