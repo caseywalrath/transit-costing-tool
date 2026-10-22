@@ -38,15 +38,6 @@ export interface PatternServiceImpact {
   generationSetIds: string[];
 }
 
-export interface PatternEditAnalysis {
-  classification: RouteEditClassification;
-  points: PatternPointChange;
-  impact: PatternServiceImpact;
-  reconciled?: ReconciledDirections;
-  conflict?: DirectionOrderConflict;
-  reason?: string;
-}
-
 function clonePattern(pattern: RoutePattern): RoutePattern {
   return { ...pattern, points: pattern.points.map((point) => ({ ...point })) };
 }

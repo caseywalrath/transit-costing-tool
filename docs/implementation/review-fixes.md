@@ -347,3 +347,58 @@ The following app behaviors were found while making the suite stable. None is in
 5. Not done: a unit test for `calculateTimepointHeadways` (5-003 location). It is in `src/domain/trips.ts`, which P15 owns; the browser test now covers the displayed headways.
 6. Strengthened existing tests (`route-editing`, `costing-workspace`, `blocking-workspace`) were checked against the current app, not given a deliberate break. The Costing width check does not assert that Annual cost is visible without table scroll; that is U06 criterion 3.
 7. What could still be wrong: the browser suite runs against the Vite dev server (`StrictMode` on), not a production build. `settleFrames` waits a fixed number of frames; a very slow machine could in principle read a scroll position before the app's two-frame restore runs, which would make the restore tests pass wrongly, never fail wrongly.
+
+## X01: Dead code removal
+
+- Date: 2026-10-22. Sitting 4C. Model: Sonnet (main session). Sub-agent: Haiku, for the mechanical deletions only (an exact file and line list with line fingerprints, plus typecheck, unit-test, unused-import, and grep checks). The main session rebuilt each file from `HEAD` with only the listed ranges removed and diffed it against Haiku's result before committing. No Opus review (S3).
+- Type: structural (mechanical deletion). Severity: S3.
+- Commit: `@@X01_COMMIT@@`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-069 | 3-008 | S3 | `RouteDefinitionService.deleteNode` was unreachable and, if wired, would have deleted other Routes' Nodes and Patterns and committed in two transactions (S0). Its only caller was a dead App handler. |
+| I-075 | 4-015 | S3 | The legacy generation-set screens, 11 App-level route handlers, unused service methods, and 22 zero-reference exports (user decision 13: delete the dead UI and commands, keep the table and backup parsing). |
+| I-079 | 4-022 | S3 | Nine `ports.ts` interfaces were unused; four no longer matched their services. |
+
+User decision implemented: decision 13.
+
+### What changed
+
+Deleted, each re-verified by grep on the current code (the review's line numbers were stale) before it was removed:
+
+- `src/ui/App.tsx` (265 lines): the legacy generation-set screens `TripScheduleWorkspace`, `RuntimeWorkspace`, and `DirectionSetup`, with their exclusive children `RuntimeProfileEditor`, `RuntimeProfileDialog`, `ServiceTimeField`, `FragmentTripRow`, `GenerationPreviewDialog`, `PatternChangeDialog`, `PatternChangePreviewDialog`, and `type RuntimeDialog`; the 11 App-level handlers (`addNode`, `updateNode`, `deleteNode`, `addPattern`, `updatePattern`, `addPoint`, `updatePoint`, `movePoint`, `removePoint`, `reverseSelectedPattern`, `duplicateSelectedPattern`); `UndoIcon` and `RedoIcon`. Imports that became unused were removed.
+- Service methods (14): `RouteDefinitionService` `deleteDirection`, `updateDirectionColumn`, `getNodeDeletionFindings`, `deleteNode`, `ensureDefaultProfile`, `validateRuntimeAssignments`, `resolveRuntimeBand`; `TripGenerationService` `ensureDefaultTripProfile`, `previewTripGeneration`, `applyTripGeneration`, `applyTripShift`, `validateTrip`; `BlockingApplicationService` `validateBlock`, `getTripBlockingContext`. Their names are gone from the `Pick` aliases (`RouteDefinitionApplication`, `TripGenerationApplication`), and the two Blocking entries from `BlockingQueries`. The aliases themselves remain.
+- `src/application/ports.ts` (100 lines): the nine unused interfaces `RouteDefinitionCommands`, `RouteDefinitionQueries`, `RuntimeCommands`, `RuntimeQueries`, `AuthoritativeTripRepository`, `TripGenerationCommands`, `AuthoritativeTripCommands`, `AuthoritativeTripQueries`, `TripGenerationQueries`. The `TripGenerationRepository` comment no longer says it serves a running pre-2R UI.
+- The 22 zero-reference exports: `normalizeBlock`, `validateBlock` (alias), `deriveBlockSummary`, `deriveBlockingSummary`, `evaluateBlockingInsertion` (`blocking.ts`); `parseDuration`, `formatDuration`, `parseRuntimeDurationSeconds`, `formatRuntimeDurationSeconds` (`durations.ts`, and from the re-export lists in `time.ts` and `runtime.ts`); `patternSegmentMiles`; `PatternEditAnalysis`; `SERVICE_DAY_ORDER`, `orderServiceDays`, `sortServiceDayDefinitions`; `addDuration`; `generateTripsFromRequest`, `previewGenerateAuthoritativeTrips`, `tripLogicalKey`; `NormalizedTrip`, `NormalizedBlock`, `NormalizedBlockingBlock`; `RUNTIME_PROJECT_BACKUP_SCHEMA_VERSION`.
+- Tests of the deleted methods: two `TripGenerationService` generation-set tests, the `applyTripShift` test, and one `deleteDirection` assertion (311 unit tests before, 308 after). The staged-Shift, Trip-list, and runtime-profile tests are untouched.
+- `docs/data-schema.md`: the two stale claims that the generation-set repository methods and a legacy export method serve a "running pre-2R UI" now say what is true (the methods remain for old backups; `RouteDefinitionService.exportCsv` remains but no screen calls it).
+
+Kept, as required: the `generationSets` table, all generation-set backup parsing including the version 3 import path (the version 3 placeholder-Block tests pass), `SessionStatusQueries` in `ports.ts`, `recoverScenarioCopyNodeReferences`, `parseProjectBackupWithReport`, `importProjectWithReport`.
+
+Behavior before and after: none. No screen, menu, or stored value reached any deleted code.
+
+### Deviations from the finding
+
+- **`selectedUnassignedTripIds` was not deleted.** The finding lists it as dead, but on current code `BlockingWorkspace.tsx` reads it twice (the select-all checkbox and each row's selected state) and sets it five times. It is live.
+- **`type PatternPreviewDialog` was deleted although the finding does not list it.** The removed `TripScheduleWorkspace` and `PatternChangePreviewDialog` were its only users.
+- The finding's line numbers had moved; the list was rebuilt from the current code with a reference sweep (identifier counts across `src` and `tests`) and AST line ranges.
+
+### Tests added
+
+None (deletion only). The existing suites are the check: nothing outside tests referenced any deleted symbol.
+
+### Verification run
+
+- `pnpm typecheck`: clean. `tsc --noUnusedLocals` diagnostics fell from 31 to 14, all 14 present before; none is new, and the 17 that disappeared are the dead handlers and components themselves.
+- `pnpm test`: 32 files, 308 tests passed (311 before; 3 test cases of deleted methods removed).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 59 passed, 0 failed, twice in a row (2.5 and 2.4 minutes).
+- `pnpm build`: succeeds (existing chunk-size warning only). **Bundle size:** `index-C3-9F8IV.js` 779.07 kB (214.79 kB gzip) before, `index-TR3LK2Mp.js` 770.23 kB (213.02 kB gzip) after, 8.84 kB smaller (1.1%); the CSS bundle is unchanged at 42.47 kB.
+- Grep for every deleted name across `src` and `tests`: no match, except `validateRuntimeAssignments`, `validateTrip`, and `validateBlock`, which still exist as domain functions (`runtime.ts`, `trips.ts`, `validation.ts`) and in `backup.ts`.
+
+### Residual risks and hand-offs
+
+- Left in place because 4-015 does not list them: the domain functions `previewRegeneration` and `applyRegeneration` (now referenced only by their unit tests, since the generation-set commands are gone), `validateBlock` in `src/domain/validation.ts` (P12 removes it), `RouteDefinitionService.exportCsv` (referenced only by a test), and the generation-set repository and service methods that the kept table and backup parsing still use (`getGenerationSet`, `listGenerationSets`, `saveGenerationSet`, `replaceGenerationSet`, and the CSV generation-sets file). A later cleanup could remove the first three once the user agrees.
+- `docs/implementation/phase-02tp-trip-profiles.md` (line 181) and two Phase 2R closeout documents still describe the deleted methods and the "running pre-2R UI". They are historical records and were not edited.
+- What could still be wrong: the unused-reference sweep is by identifier name, so a symbol reachable only through string lookups or dynamic access would be missed; the typecheck, 308 unit tests, and 59 browser tests would catch a static or tested use, and none exists.

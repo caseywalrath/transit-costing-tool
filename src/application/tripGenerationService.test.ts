@@ -33,17 +33,6 @@ const profile: RuntimeProfile = { ...metadata(), id: 'profile', scenarioId: 's',
 const set: TripGenerationSet = { ...metadata(), id: 'set', scenarioId: 's', routeId: 'r', serviceDayId: 'weekday', patternId: 'p', name: 'Set', firstDeparture: 0, headwaySeconds: 300, limit: { mode: 'tripCount', tripCount: 2 }, generationRevision: 1 };
 
 describe('TripGenerationService', () => {
-  it('previews and applies generation through behavior-only repository ports', async () => {
-    const repository = new FakeTripRepository(pattern, profile); const service = new TripGenerationService(repository, () => '2026-09-11T00:00:00.000Z');
-    const preview = await service.previewTripGeneration(set, profile.id);
-    expect(preview.added).toEqual([0, 1]);
-    const result = await service.applyTripGeneration(preview);
-    expect(result.trips).toHaveLength(2);
-    expect((await service.listServiceDayTrips('weekday')).map((trip) => trip.stopTimes[0].time)).toEqual([0, 300]);
-    expect(repository.sets.get(set.id)).toEqual(set);
-    expect(repository.atomicWrites).toHaveLength(1);
-  });
-
   it('lists generation sets and resolves the assigned runtime profile for the Trips workflow', async () => {
     const repository = new FakeTripRepository(pattern, profile);
     repository.sets.set(set.id, set);
@@ -51,19 +40,6 @@ describe('TripGenerationService', () => {
     const service = new TripGenerationService(repository);
     expect(await service.listGenerationSets('weekday', 'r', 'p')).toEqual([set]);
     expect(await service.resolveRuntimeProfile('s', 'weekday', 'p')).toEqual({ assignment: repository.assignments[0], profile });
-  });
-
-  it('uses the supplied revision and preserves surviving trip IDs during regeneration', async () => {
-    const repository = new FakeTripRepository(pattern, profile);
-    const service = new TripGenerationService(repository, () => '2026-09-11T00:00:00.000Z');
-    const initial = await service.applyTripGeneration(await service.previewTripGeneration(set, profile.id));
-    const revisedSet = { ...set, generationRevision: 2, limit: { mode: 'tripCount' as const, tripCount: 1 } };
-    const revised = await service.applyTripGeneration(await service.previewTripGeneration(revisedSet, profile.id));
-    expect(revised.trips).toHaveLength(1);
-    expect(revised.trips[0].id).toBe(initial.trips[0].id);
-    expect(revised.trips[0].provenance.generationRevision).toBe(2);
-    expect(repository.sets.get(set.id)?.generationRevision).toBe(2);
-    expect((await service.listServiceDayTrips('weekday')).map((trip) => trip.id)).toEqual([initial.trips[0].id]);
   });
 });
 

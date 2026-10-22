@@ -1,6 +1,6 @@
 import type { TripGenerationRepository } from './ports';
-import type { GenerateTripsPreview, PatternChangePreview, RecalculationPreview, RegenerationPreview, RegenerationResult } from '../domain/trips';
-import { adjustBlockReferences, AnchorBandChoiceError, applyPatternChange, applyRegeneration, calculateRecalculationConnections, calculateRecalculationImpact, createAuthoritativeTrip, findExactTripDuplicates, generateAuthoritativeTrips, generateTrips, markTripRecalculated, previewPatternChange, previewRegeneration, recalculateTripWithAnchor, shiftTrips, TripGenerationError, validateGenerateTripsRequest, validateTrip, type RecalculationBandSelection } from '../domain/trips';
+import type { GenerateTripsPreview, PatternChangePreview, RecalculationPreview } from '../domain/trips';
+import { adjustBlockReferences, AnchorBandChoiceError, applyPatternChange, calculateRecalculationConnections, calculateRecalculationImpact, createAuthoritativeTrip, findExactTripDuplicates, generateAuthoritativeTrips, generateTrips, markTripRecalculated, previewPatternChange, recalculateTripWithAnchor, shiftTrips, TripGenerationError, validateGenerateTripsRequest, validateTrip, type RecalculationBandSelection } from '../domain/trips';
 import type { AddTripRequest, Block, GenerateTripsRequest, RuntimeAssignment, RuntimeProfile, RoutePattern, Trip, TripGenerationSet, TripProfile, TripRegenerationUndo, TripTableImportRow, ValidationFinding } from '../domain/types';
 import type { TripTableImportPreview } from './ports';
 import { metadata, newId, withUpdatedAt } from '../domain/ids';
@@ -43,12 +43,6 @@ export class TripGenerationService {
   constructor(private readonly repository: TripGenerationRepository, private readonly now: () => string = () => new Date().toISOString()) {}
 
   async listTripProfiles(scenarioId: string): Promise<TripProfile[]> { return this.repository.listTripProfiles ? this.repository.listTripProfiles(scenarioId) : []; }
-  async ensureDefaultTripProfile(scenarioId: string): Promise<TripProfile> {
-    const profiles = await this.listTripProfiles(scenarioId);
-    if (profiles.length) return profiles[0];
-    const profile: TripProfile = { id: newId(), scenarioId, name: 'Default', ...metadata(this.now()) };
-    if (!this.repository.saveTripProfile) throw new Error('Trip profile persistence is unavailable.'); await this.repository.saveTripProfile(profile); return profile;
-  }
   async renameTripProfile(profileId: string, name: string): Promise<TripProfile> {
     const trimmed = name.trim(); if (!trimmed) throw new Error('Enter a trip profile name.');
     const existing = await this.listTripProfiles((await this.findTripProfile(profileId)).scenarioId);
@@ -83,31 +77,6 @@ export class TripGenerationService {
   }
   private async findTripProfile(profileId: string): Promise<TripProfile> { const profile = this.repository.getTripProfile ? await this.repository.getTripProfile(profileId) : undefined; if (profile) return profile; throw new Error('The selected Trip profile is no longer available.'); }
 
-  async previewTripGeneration(set: TripGenerationSet, profileId: string): Promise<RegenerationPreview> {
-    const [pattern, profile, existingTrips, blocks] = await Promise.all([
-      this.repository.getPattern(set.patternId),
-      this.repository.getRuntimeProfile(profileId),
-      this.repository.listTrips(set.serviceDayId, set.id),
-      this.repository.listBlocks(set.serviceDayId),
-    ]);
-    if (!pattern) throw new Error('The selected pattern is no longer available.');
-    if (!profile) throw new Error('The selected runtime profile is no longer available.');
-    return previewRegeneration(set, pattern, profile, existingTrips, blocks);
-  }
-
-  async applyTripGeneration(preview: RegenerationPreview): Promise<RegenerationResult> {
-    const [existingTrips, blocks] = await Promise.all([
-      this.repository.listTrips(preview.serviceDayId, preview.generationSetId),
-      this.repository.listBlocks(preview.serviceDayId),
-    ]);
-    const result = applyRegeneration(preview, existingTrips, blocks, this.now());
-    // The preview carries the authoritative input, which is essential for an
-    // initial create where no generation-set row exists yet. The repository
-    // operation is atomic across the set, trips, and affected blocks.
-    await this.repository.replaceGenerationSet(preview.generationSet, result.trips, result.blocks);
-    return result;
-  }
-
   async getGenerationSet(id: string): Promise<TripGenerationSet | undefined> { return this.repository.getGenerationSet(id); }
   async listGenerationSets(serviceDayId: string, routeId?: string, patternId?: string): Promise<TripGenerationSet[]> {
     return this.repository.listGenerationSets(serviceDayId, routeId, patternId);
@@ -124,13 +93,6 @@ export class TripGenerationService {
     const trips = await Promise.all(tripIds.map((id) => this.repository.getTrip(id)));
     if (trips.some((trip) => !trip)) throw new Error('One or more selected trips are no longer available.');
     return shiftTrips(trips as Trip[], tripIds, offsetSeconds, this.now());
-  }
-
-  async applyTripShift(tripIds: string[], offsetSeconds: number): Promise<Trip[]> {
-    const shifted = await this.previewTripShift(tripIds, offsetSeconds);
-    if (this.repository.saveTripChangesAtomically) await this.repository.saveTripChangesAtomically(shifted);
-    else await this.repository.saveTrips(shifted);
-    return shifted;
   }
 
   /** Build a scoped, transient Shift preview for the staged Shift drawer. */
@@ -180,14 +142,6 @@ export class TripGenerationService {
   }
 
   async listServiceDayTrips(serviceDayId: string): Promise<Trip[]> { return this.repository.listTrips(serviceDayId); }
-
-  async validateTrip(tripId: string) {
-    const trip = await this.repository.getTrip(tripId);
-    if (!trip) throw new Error('The selected trip is no longer available.');
-    const pattern = await this.repository.getPattern(trip.patternId);
-    if (!pattern) return [];
-    return validateTrip(trip, pattern);
-  }
 
   private async resolveAuthoritativeProfile(request: { scenarioId: string; serviceDayId: string; patternId: string }): Promise<{ pattern: RoutePattern; assignment: RuntimeAssignment; profile: RuntimeProfile }> {
     const pattern = await this.repository.getPattern(request.patternId);
@@ -651,4 +605,4 @@ export class TripShiftStalePreviewError extends Error {
 }
 
 // Keep the historical application surface while exposing the authoritative trip commands.
-export type TripGenerationApplication = Pick<TripGenerationService, 'getGenerationSet' | 'listGenerationSets' | 'previewTripGeneration' | 'applyTripGeneration' | 'previewTripShift' | 'applyTripShift' | 'previewStagedTripShift' | 'applyStagedTripShift' | 'previewPatternChange' | 'applyPatternChange' | 'listServiceDayTrips' | 'validateTrip' | 'resolveRuntimeProfile' | 'previewGenerateTrips' | 'generateTrips' | 'addTrip' | 'previewTripPatternChange' | 'changeTripPattern' | 'previewRecalculateTrips' | 'applyRecalculationPreview' | 'recalculateTrips' | 'getLastTripRegenerationUndo' | 'undoLastTripRegeneration' | 'previewTripTableImport' | 'applyTripTableImport' | 'previewTripDeletion' | 'deleteTrips' | 'listStaleTrips' | 'listScheduleTrips' | 'listTripProfiles' | 'ensureDefaultTripProfile' | 'renameTripProfile' | 'copyTripProfile' | 'previewTripProfileDeletion' | 'deleteTripProfile' | 'previewRuntimeCopy' | 'applyRuntimeCopy' | 'previewTripCopy' | 'applyTripCopy' | 'previewBatchPatternChange' | 'applyBatchPatternChange'>;
+export type TripGenerationApplication = Pick<TripGenerationService, 'getGenerationSet' | 'listGenerationSets' | 'previewTripShift' | 'previewStagedTripShift' | 'applyStagedTripShift' | 'previewPatternChange' | 'applyPatternChange' | 'listServiceDayTrips' | 'resolveRuntimeProfile' | 'previewGenerateTrips' | 'generateTrips' | 'addTrip' | 'previewTripPatternChange' | 'changeTripPattern' | 'previewRecalculateTrips' | 'applyRecalculationPreview' | 'recalculateTrips' | 'getLastTripRegenerationUndo' | 'undoLastTripRegeneration' | 'previewTripTableImport' | 'applyTripTableImport' | 'previewTripDeletion' | 'deleteTrips' | 'listStaleTrips' | 'listScheduleTrips' | 'listTripProfiles' | 'renameTripProfile' | 'copyTripProfile' | 'previewTripProfileDeletion' | 'deleteTripProfile' | 'previewRuntimeCopy' | 'applyRuntimeCopy' | 'previewTripCopy' | 'applyTripCopy' | 'previewBatchPatternChange' | 'applyBatchPatternChange'>;

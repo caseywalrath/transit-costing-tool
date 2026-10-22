@@ -10,13 +10,13 @@ import { type NodeChangePreview, type PatternChangePreview as SafePatternChangeP
 import { TripShiftStalePreviewError, type TripGenerationApplication } from '../application/tripGenerationService';
 import type { BatchPatternChangePreview, RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
 import type { TripShiftPreview } from '../domain/tripShift';
-import { AnchorBandChoiceError, MAX_TRIPS_PER_GENERATION, TripGenerationError, calculateTimepointHeadways, tripRunTimeSeconds, type AnchorBandChoice, type PatternChangePreview, type RecalculationPreview, type RegenerationPreview } from '../domain/trips';
+import { AnchorBandChoiceError, MAX_TRIPS_PER_GENERATION, TripGenerationError, calculateTimepointHeadways, tripRunTimeSeconds, type AnchorBandChoice, type RecalculationPreview } from '../domain/trips';
 import { metadata, newId } from '../domain/ids';
 import { formatRuntimeDuration, parseRuntimeDuration } from '../domain/durations';
 import { blendSegmentTimes, runtimeBandTotalSeconds, segmentStartTimes, selectRuntimeBand } from '../domain/runtime';
 import { sortServiceDays } from '../domain/serviceDays';
 import { formatServiceTime, parseServiceTime } from '../domain/time';
-import type { BlockingBlock, Node, NodeKind, Project, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeProfile, ServiceDayDefinition, Trip, TripGenerationSet, ValidationFinding } from '../domain/types';
+import type { BlockingBlock, Node, NodeKind, Project, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeProfile, ServiceDayDefinition, Trip, ValidationFinding } from '../domain/types';
 import { createBlockingScenarioSourceSignature, type BlockConnection } from '../domain/blocking';
 import { parseRuntimePaste, RuntimePasteParseError, runtimeProfileCsv, type RuntimePasteRow } from './runtimePaste';
 import { parseTripTableCsv, tripTableCsv } from './tripTableCsv';
@@ -253,24 +253,6 @@ export function App({ service, tripService, blockingService, costingService }: P
   }
   async function updateServiceDay(id: string, patch: Partial<ServiceDayDefinition>) { if (!records) return; try { setRecords(await service.updateServiceDay(records, id, patch)); } catch (error) { showError(error, 'Unable to save service day.'); } }
   async function saveRouteField(patch: Partial<Route>) { if (!aggregate) return; try { acceptAggregate(await service.updateRoute(aggregate, patch)); } catch (error) { showError(error, 'Unable to save route.'); } }
-  async function addNode() { if (!aggregate) return; try { acceptAggregate(await service.addNode(aggregate)); } catch (error) { showError(error, 'Unable to add node.'); } }
-  async function updateNode(id: string, patch: Partial<Node>) { if (!aggregate) return; try { acceptAggregate(await service.updateNode(aggregate, id, patch)); } catch (error) { showError(error, 'Unable to save node.'); } }
-  function deleteNode(node: Node) { if (!aggregate) return; void service.getNodeDeletionImpact(aggregate, node.id).then((impact) => { const affected = [impact.patternCount ? `${impact.patternCount} pattern${impact.patternCount === 1 ? '' : 's'} points` : '', impact.removedNonRevenueActivityCount ? `${impact.removedNonRevenueActivityCount} pull-out, pull-in, or deadhead activit${impact.removedNonRevenueActivityCount === 1 ? 'y' : 'ies'}` : ''].filter(Boolean); const blockNote = impact.affectedBlockCount ? ` ${impact.affectedBlockCount} Block${impact.affectedBlockCount === 1 ? '' : 's'} will remain for repair.` : ''; setConfirm({ title: 'Remove node?', text: `Remove “${node.name || 'Untitled node'}”${affected.length ? ` and remove ${affected.join(', ')}?` : '?'}${blockNote}`, action: () => { void service.deleteNode(aggregate, node.id).then(acceptAggregate).catch((error) => showError(error, 'Unable to remove node.')); } }); }).catch((error) => showError(error, 'Unable to review node deletion.')); }
-  async function addPattern() { if (!aggregate) return; try { const next = await service.addPattern(aggregate); acceptAggregate(next.aggregate); setSelectedPatternId(next.pattern.id); } catch (error) { showError(error, 'Unable to add pattern.'); } }
-  async function updatePattern(patch: Partial<RoutePattern>) { if (!aggregate || !selectedPattern) return; try { acceptAggregate(await service.updatePattern(aggregate, selectedPattern.id, patch)); } catch (error) { showError(error, 'Unable to save pattern.'); } }
-  async function addPoint() { if (!selectedPattern || !aggregate) return; try { acceptAggregate(await service.addPatternPoint(aggregate, selectedPattern.id)); } catch (error) { showError(error, 'Unable to add pattern point.'); } }
-  async function updatePoint(index: number, patch: Partial<RoutePattern['points'][number]>) { if (!selectedPattern || !aggregate) return; try { acceptAggregate(await service.updatePatternPoint(aggregate, selectedPattern.id, index, patch)); } catch (error) { showError(error, 'Unable to save pattern point.'); } }
-  async function movePoint(index: number, direction: -1 | 1) { if (!selectedPattern || !aggregate) return; try { acceptAggregate(await service.movePatternPoint(aggregate, selectedPattern.id, index, direction)); } catch (error) { showError(error, 'Unable to reorder pattern point.'); } }
-  function removePoint(index: number) { if (!selectedPattern || !aggregate) return; setConfirm({ title: 'Remove pattern point?', text: 'This occurrence will be removed. Other occurrences of the same node remain.', action: () => { void service.removePatternPoint(aggregate, selectedPattern.id, index).then(acceptAggregate).catch((error) => showError(error, 'Unable to remove pattern point.')); } }); }
-  async function reverseSelectedPattern(name: string) { if (!aggregate || !selectedPattern) return; try { const next = await service.createReversePattern(aggregate, selectedPattern.id, name); acceptAggregate(next.aggregate); setSelectedPatternId(next.pattern.id); } catch (error) { showError(error, 'Unable to create reverse pattern.'); } }
-  async function duplicateSelectedPattern() {
-    if (!aggregate || !selectedPattern) return;
-    try {
-      const next = await service.duplicatePattern(aggregate, selectedPattern.id, `${selectedPattern.name || 'New pattern'} Copy`);
-      acceptAggregate(next.aggregate);
-      setSelectedPatternId(next.pattern.id);
-    } catch (error) { showError(error, 'Unable to duplicate pattern.'); }
-  }
   function deleteSelectedPattern() {
     if (!selectedPattern) return;
     void service.getPatternDeletionImpact(selectedPattern.id).then((impact) => {
@@ -514,211 +496,7 @@ function RouteWorkspace({ service, aggregate, serviceDays, findings, selectedPat
   </div>;
 }
 
-type RuntimeDialog = { mode: 'new' | 'copy' | 'reverse'; initialName: string } | undefined;
-
-function DirectionSetup({ service, aggregate, onDeleteDirection, onAggregate, onError }: { service: RouteDefinitionApplication; aggregate: RouteDefinitionAggregate; onDeleteDirection: (directionId: string) => void; onAggregate: (aggregate: RouteDefinitionAggregate) => void; onError: (error: unknown) => void }) {
-  return null;
-  /* Legacy direction-management UI retired by Decision 0011.
-  const directions = [...(aggregate.directions ?? [])].sort((left, right) => left.sequence - right.sequence);
-  const [selectedId, setSelectedId] = useState(directions[0]?.id ?? '');
-  const selected = directions.find((direction) => direction.id === selectedId);
-  useEffect(() => { if (!directions.some((direction) => direction.id === selectedId)) setSelectedId(directions[0]?.id ?? ''); }, [directions, selectedId]);
-  async function addDirection() { try { const next = await service.addDirection(aggregate); onAggregate(next.aggregate); setSelectedId(next.direction.id); } catch (error) { onError(error); } }
-  async function updateName(name: string) { if (!selected) return; try { onAggregate(await service.updateDirection(aggregate, selected.id, { name })); } catch (error) { onError(error); } }
-  async function addColumn(nodeId: string) { if (!selected || !nodeId) return; try { onAggregate(await service.addDirectionColumn(aggregate, selected.id, nodeId)); } catch (error) { onError(error); } }
-  async function mapPattern(patternId: string, directionId: string) { if (!directionId) return; try { onAggregate(await service.assignPatternDirection(aggregate, patternId, directionId)); } catch (error) { onError(error); } }
-  return <section className="direction-setup"><div className="section-title"><div><h2>Directions and timetable columns</h2><span>Set the columns used for each directional schedule, then assign its patterns.</span></div><button onClick={() => void addDirection()}>Add direction</button></div>{!directions.length ? <p className="table-empty">Add a direction before defining trips.</p> : <div className="direction-setup-grid"><aside>{directions.map((direction) => <button key={direction.id} className={direction.id === selectedId ? 'selected' : ''} onClick={() => setSelectedId(direction.id)}>{direction.name || 'Untitled direction'}</button>)}</aside>{selected && <div><div className="direction-name-row"><label className="direction-name">Direction name<input defaultValue={selected.name} onBlur={(event) => void updateName(event.target.value)} /></label><button className="icon-button icon-button--danger" onClick={() => onDeleteDirection(selected.id)} aria-label={`Delete ${selected.name || 'direction'}`} title="Delete direction"><TrashIcon /></button></div><div className="table-scroll"><table><thead><tr><th>Timepoint column</th></tr></thead><tbody>{[...selected.columns].sort((left, right) => left.sequence - right.sequence).map((column) => <tr key={column.id}><td>{column.labelOverride || aggregate.nodes.find((node) => node.id === column.nodeId)?.shortName || aggregate.nodes.find((node) => node.id === column.nodeId)?.name || 'Unnamed point'}</td></tr>)}{!selected.columns.length && <tr><td className="table-empty">Add timepoint columns in schedule order.</td></tr>}</tbody></table></div><label className="direction-add-column">Add timepoint<select defaultValue="" onChange={(event) => { void addColumn(event.target.value); event.currentTarget.value = ''; }}><option value="">Select node</option>{aggregate.nodes.map((node) => <option key={node.id} value={node.id}>{node.shortName || node.name || 'Unnamed node'}</option>)}</select></label><div className="direction-patterns"><strong>Patterns in this direction</strong>{aggregate.patterns.map((pattern) => <label key={pattern.id}>{pattern.name || 'Untitled pattern'}<select value={pattern.directionId ?? ''} onChange={(event) => void mapPattern(pattern.id, event.target.value)}><option value="">Not assigned</option>{directions.map((direction) => <option key={direction.id} value={direction.id}>{direction.name}</option>)}</select></label>)}</div></div>}</div>}</section>;
-  */
-}
-
-function RuntimeWorkspace({ service, aggregate, serviceDays, scenarioId, onChanged, onError }: { service: RouteDefinitionApplication; aggregate: RouteDefinitionAggregate; serviceDays: ServiceDayDefinition[]; scenarioId: string; onChanged: () => void; onError: (error: unknown) => void }) {
-  const usablePatterns = aggregate.patterns.filter((pattern) => pattern.points.length >= 2);
-  const [serviceDayId, setServiceDayId] = useState(serviceDays[0]?.id ?? '');
-  const [patternId, setPatternId] = useState(usablePatterns[0]?.id ?? '');
-  const [profiles, setProfiles] = useState<RuntimeProfile[]>([]);
-  const [assignmentProfileId, setAssignmentProfileId] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [dialog, setDialog] = useState<RuntimeDialog>();
-  const selectedPattern = usablePatterns.find((pattern) => pattern.id === patternId);
-  const selectedDay = serviceDays.find((day) => day.id === serviceDayId);
-  const selectedProfile = profiles.find((profile) => profile.id === assignmentProfileId);
-
-  async function loadRuntime() {
-    if (!selectedPattern || !serviceDayId) { setProfiles([]); setAssignmentProfileId(''); setLoading(false); return; }
-    setLoading(true);
-    try {
-      const [nextProfiles, assignments] = await Promise.all([
-        service.listRuntimeProfiles(aggregate.route.id, selectedPattern.id),
-        service.listRuntimeAssignments(scenarioId, serviceDayId, selectedPattern.id),
-      ]);
-      setProfiles(nextProfiles);
-      setAssignmentProfileId(assignments[0]?.runtimeProfileId ?? '');
-    } catch (error) { onError(error); } finally { setLoading(false); }
-  }
-  useEffect(() => { if (!serviceDays.some((day) => day.id === serviceDayId)) setServiceDayId(serviceDays[0]?.id ?? ''); }, [serviceDays, serviceDayId]);
-  useEffect(() => { if (!usablePatterns.some((pattern) => pattern.id === patternId)) setPatternId(usablePatterns[0]?.id ?? ''); }, [usablePatterns, patternId]);
-  useEffect(() => { void loadRuntime(); }, [aggregate.route.id, patternId, serviceDayId, scenarioId]);
-
-  async function assign(profileId: string) {
-    if (!selectedPattern || !serviceDayId || !profileId) return;
-    try { await service.assignRuntimeProfile(scenarioId, selectedPattern.id, serviceDayId, profileId); await loadRuntime(); onChanged(); } catch (error) { onError(error); }
-  }
-  async function submitDialog(name: string, targetPatternId?: string) {
-    if (!selectedPattern || !serviceDayId) return;
-    try {
-      if (dialog?.mode === 'new') {
-        const profile = await service.createDefaultRuntimeProfile(selectedPattern, name);
-        await service.assignRuntimeProfile(scenarioId, selectedPattern.id, serviceDayId, profile.id);
-      } else if (dialog?.mode === 'copy' && selectedProfile) {
-        const profile = await service.copyRuntimeProfile(selectedProfile.id, name);
-        await service.assignRuntimeProfile(scenarioId, selectedPattern.id, serviceDayId, profile.id);
-      } else if (dialog?.mode === 'reverse' && selectedProfile && targetPatternId) {
-        const profile = await service.reverseCopyRuntimeProfile(selectedProfile.id, selectedPattern.id, targetPatternId, name);
-        await service.assignRuntimeProfile(scenarioId, targetPatternId, serviceDayId, profile.id);
-        setPatternId(targetPatternId);
-      }
-      setDialog(undefined); onChanged();
-      await loadRuntime();
-    } catch (error) { onError(error); }
-  }
-  const reverseCandidates = selectedPattern ? usablePatterns.filter((candidate) => candidate.id !== selectedPattern.id && candidate.points.length === selectedPattern.points.length && candidate.points.every((point, index) => point.nodeId === selectedPattern.points[selectedPattern.points.length - index - 1].nodeId)) : [];
-
-  if (!usablePatterns.length) return <section className="empty-state"><h1>Trips</h1><p>Add a pattern with at least two points before defining runtimes.</p></section>;
-  return <section className="trips-workspace" aria-labelledby="trips-heading"><div className="trips-heading"><div><h1 id="trips-heading">Trips</h1><p>Set departure-time bands and segment runtimes for the selected service day and pattern.</p></div></div><div className="runtime-context"><label>Service day<select value={serviceDayId} onChange={(event) => setServiceDayId(event.target.value)}>{serviceDays.map((day) => <option key={day.id} value={day.id}>{day.name}</option>)}</select></label><label>Pattern<select value={patternId} onChange={(event) => setPatternId(event.target.value)}>{usablePatterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.directionLabel ? `${pattern.name} — ${pattern.directionLabel}` : pattern.name}</option>)}</select></label><label className="runtime-profile-select">Assigned runtime profile<select value={assignmentProfileId} onChange={(event) => void assign(event.target.value)} disabled={loading}><option value="">No runtime profile assigned</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></label><button className="primary" onClick={() => setDialog({ mode: 'new', initialName: `${selectedPattern?.name ?? 'Pattern'} runtimes` })}>New profile</button></div>
-    {loading ? <p className="runtime-status" aria-live="polite">Loading runtime profile…</p> : selectedProfile && selectedPattern ? <RuntimeProfileEditor key={selectedProfile.id} service={service} profile={selectedProfile} pattern={selectedPattern} nodes={aggregate.nodes} onSaved={async () => { await loadRuntime(); onChanged(); }} onError={onError} onCopy={() => setDialog({ mode: 'copy', initialName: `${selectedProfile.name} Copy` })} onReverseCopy={reverseCandidates.length ? () => setDialog({ mode: 'reverse', initialName: `${selectedProfile.name} Reverse` }) : undefined} /> : <section className="runtime-empty"><h2>No runtime profile is assigned</h2><p>Create a profile for this pattern, or select an existing profile to assign it to {selectedDay?.name ?? 'this service day'}.</p></section>}
-    {dialog && <RuntimeProfileDialog dialog={dialog} candidates={reverseCandidates} onSubmit={submitDialog} onClose={() => setDialog(undefined)} />}
-  </section>;
-}
-
-type PatternPreviewDialog = { preview: PatternChangePreview; targetName: string } | undefined;
-
-function TripScheduleWorkspace({ tripService, aggregate, records, runtimeVersion, onReload, onError }: { tripService: TripGenerationApplication; aggregate: RouteDefinitionAggregate; records: ScenarioRecords; runtimeVersion: number; onReload: () => Promise<void>; onError: (error: unknown) => void }) {
-  const usablePatterns = aggregate.patterns.filter((pattern) => pattern.points.length >= 2);
-  const [serviceDayId, setServiceDayId] = useState(records.serviceDays[0]?.id ?? '');
-  const [selectedSetId, setSelectedSetId] = useState('');
-  const [draft, setDraft] = useState<TripGenerationSet>();
-  const [runtimeProfileName, setRuntimeProfileName] = useState('');
-  const [runtimeProfileId, setRuntimeProfileId] = useState('');
-  const [trips, setTrips] = useState<Trip[]>([]);
-  const [selectedTripIds, setSelectedTripIds] = useState<string[]>([]);
-  const [expandedTripIds, setExpandedTripIds] = useState<string[]>([]);
-  const [shiftMinutes, setShiftMinutes] = useState('');
-  const [generationPreview, setGenerationPreview] = useState<RegenerationPreview>();
-  const [patternDialog, setPatternDialog] = useState<{ trip: Trip; targetPatternId: string }>();
-  const [patternPreview, setPatternPreview] = useState<PatternPreviewDialog>();
-  const [busy, setBusy] = useState(false);
-  const sets = records.generationSets.filter((set) => set.routeId === aggregate.route.id && set.serviceDayId === serviceDayId);
-  const selectedSet = sets.find((set) => set.id === selectedSetId);
-  const selectedPattern = usablePatterns.find((pattern) => pattern.id === draft?.patternId);
-  const selectedDay = records.serviceDays.find((day) => day.id === serviceDayId);
-  const patternName = (patternId: string) => { const pattern = aggregate.patterns.find((item) => item.id === patternId); return pattern?.directionLabel ? `${pattern.name} — ${pattern.directionLabel}` : pattern?.name || 'Unnamed pattern'; };
-  const nodeName = (patternPointId: string) => { const point = aggregate.patterns.flatMap((pattern) => pattern.points).find((item) => item.id === patternPointId); const node = aggregate.nodes.find((item) => item.id === point?.nodeId); return node?.shortName || node?.name || 'Unnamed point'; };
-
-  function newDraft(dayId = serviceDayId, patternId = usablePatterns[0]?.id ?? ''): TripGenerationSet | undefined {
-    if (!dayId || !patternId) return undefined;
-    return { ...metadata(), id: newId(), scenarioId: records.scenario.id, routeId: aggregate.route.id, serviceDayId: dayId, patternId, name: `${patternName(patternId)} service`, firstDeparture: 6 * 3600, headwaySeconds: 7 * 60, limit: { mode: 'endTime', endTime: 22 * 3600 }, generationRevision: 1 };
-  }
-  function selectNewSet() { setSelectedSetId(''); setDraft(newDraft()); }
-  function selectSet(id: string) { const set = sets.find((item) => item.id === id); setSelectedSetId(id); setDraft(set ? { ...set, limit: { ...set.limit }, generationRevision: set.generationRevision + 1 } : newDraft()); }
-  async function loadTrips() {
-    if (!serviceDayId) { setTrips([]); return; }
-    try {
-      const nextTrips = [...await tripService.listServiceDayTrips(serviceDayId)].sort((left, right) => (left.stopTimes[0]?.time ?? 0) - (right.stopTimes[0]?.time ?? 0));
-      setTrips(nextTrips);
-    } catch (error) { onError(error); }
-  }
-  useEffect(() => { if (!records.serviceDays.some((day) => day.id === serviceDayId)) setServiceDayId(records.serviceDays[0]?.id ?? ''); }, [records.serviceDays, serviceDayId]);
-  useEffect(() => { if (!draft && usablePatterns.length) setDraft(newDraft()); }, [aggregate.route.id, serviceDayId, usablePatterns.length]);
-  useEffect(() => { setSelectedSetId(''); setDraft(newDraft(serviceDayId)); setSelectedTripIds([]); }, [serviceDayId]);
-  useEffect(() => { void loadTrips(); }, [serviceDayId]);
-  useEffect(() => {
-    if (!draft?.patternId || !serviceDayId) { setRuntimeProfileId(''); setRuntimeProfileName(''); return; }
-    void tripService.resolveRuntimeProfile(records.scenario.id, serviceDayId, draft.patternId).then((resolved) => { setRuntimeProfileId(resolved?.profile.id ?? ''); setRuntimeProfileName(resolved?.profile.name ?? ''); }).catch(onError);
-  }, [draft?.patternId, serviceDayId, records.scenario.id, runtimeVersion]);
-
-  function updateDraft(patch: Partial<TripGenerationSet>) { setDraft((current) => current ? { ...current, ...patch } : current); }
-  async function previewGeneration() {
-    if (!draft || !runtimeProfileId) return;
-    setBusy(true);
-    try { setGenerationPreview(await tripService.previewTripGeneration(draft, runtimeProfileId)); } catch (error) { onError(error); } finally { setBusy(false); }
-  }
-  async function applyGeneration() {
-    if (!generationPreview) return;
-    setBusy(true);
-    try { await tripService.applyTripGeneration(generationPreview); setSelectedSetId(generationPreview.generationSet.id); setGenerationPreview(undefined); await onReload(); await loadTrips(); } catch (error) { onError(error); } finally { setBusy(false); }
-  }
-  async function applyShift() {
-    const minutes = Number(shiftMinutes);
-    if (!selectedTripIds.length || !Number.isInteger(minutes) || minutes === 0) return;
-    setBusy(true);
-    try { await tripService.applyTripShift(selectedTripIds, minutes * 60); setShiftMinutes(''); setSelectedTripIds([]); await loadTrips(); } catch (error) { onError(error); } finally { setBusy(false); }
-  }
-  async function previewPatternChangeForTrip() {
-    if (!patternDialog) return;
-    try {
-      const resolved = await tripService.resolveRuntimeProfile(records.scenario.id, serviceDayId, patternDialog.targetPatternId);
-      if (!resolved) { onError(new Error('Assign a runtime profile to the selected service day and pattern before recalculating this trip.')); return; }
-      setPatternPreview({ preview: await tripService.previewPatternChange(patternDialog.trip.id, patternDialog.targetPatternId, resolved.profile.id), targetName: patternName(patternDialog.targetPatternId) }); setPatternDialog(undefined);
-    } catch (error) { onError(error); }
-  }
-  async function applyPatternPreview() {
-    if (!patternPreview) return;
-    setBusy(true);
-    try { await tripService.applyPatternChange(patternPreview.preview); setPatternPreview(undefined); await loadTrips(); } catch (error) { onError(error); } finally { setBusy(false); }
-  }
-  function toggleTrip(tripId: string) { setSelectedTripIds((current) => current.includes(tripId) ? current.filter((id) => id !== tripId) : [...current, tripId]); }
-  function toggleTripDetails(tripId: string) { setExpandedTripIds((current) => current.includes(tripId) ? current.filter((id) => id !== tripId) : [...current, tripId]); }
-  function overrideLabel(trip: Trip) {
-    const fields = trip.provenance.manuallyChangedFields;
-    if (!fields.length) return 'Generated';
-    const shift = trip.provenance.manualTimeShiftSeconds;
-    if (fields.includes('patternId') && fields.includes('times')) return `Pattern and time override${shift ? ` (${shift > 0 ? '+' : ''}${shift / 60} min)` : ''}`;
-    if (fields.includes('patternId')) return 'Pattern override';
-    return `Shifted${shift ? ` ${shift > 0 ? '+' : ''}${shift / 60} min` : ''}`;
-  }
-  const blockLabels = new Map(records.blocks.filter((block) => block.serviceDayId === serviceDayId).flatMap((block) => block.activities.filter((activity) => activity.type === 'revenueTrip').map((activity) => [activity.tripId, block.label] as const)));
-
-  if (!usablePatterns.length) return null;
-  return <section className="schedule-workspace" aria-labelledby="schedule-heading">
-    <section className="generation-editor"><div className="generation-editor-header"><div><h2 id="schedule-heading">Trip generation</h2><p>Create or regenerate a set only after reviewing its materialized schedule.</p></div><button onClick={selectNewSet}>New generation set</button></div>
-      <div className="schedule-controls"><label>Generation set<select value={selectedSetId} onChange={(event) => selectSet(event.target.value)}><option value="">New generation set</option>{sets.map((set) => <option key={set.id} value={set.id}>{set.name}</option>)}</select></label><span>{selectedDay?.name ?? 'Selected service day'} · {sets.length} saved set{sets.length === 1 ? '' : 's'}</span></div>
-      {draft && <div className="generation-form"><label>Name<input value={draft.name} onChange={(event) => updateDraft({ name: event.target.value })} /></label><label>Pattern<select value={draft.patternId} onChange={(event) => updateDraft({ patternId: event.target.value })}>{usablePatterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{patternName(pattern.id)}</option>)}</select></label><ServiceTimeField label="First departure" value={draft.firstDeparture} onCommit={(firstDeparture) => updateDraft({ firstDeparture })} /><label>Headway (minutes)<input type="number" min="1" step="1" value={draft.headwaySeconds / 60} onChange={(event) => updateDraft({ headwaySeconds: Math.round(Number(event.target.value) * 60) })} /></label><label>Generate through<select value={draft.limit.mode} onChange={(event) => updateDraft({ limit: event.target.value === 'endTime' ? { mode: 'endTime', endTime: draft.limit.mode === 'endTime' ? draft.limit.endTime : draft.firstDeparture } : { mode: 'tripCount', tripCount: draft.limit.mode === 'tripCount' ? draft.limit.tripCount : 1 } })}><option value="endTime">Inclusive end time</option><option value="tripCount">Trip count</option></select></label>{draft.limit.mode === 'endTime' ? <ServiceTimeField label="Last departure" value={draft.limit.endTime} onCommit={(endTime) => updateDraft({ limit: { mode: 'endTime', endTime } })} /> : <label>Number of trips<input type="number" min="1" step="1" value={draft.limit.tripCount} onChange={(event) => updateDraft({ limit: { mode: 'tripCount', tripCount: Number(event.target.value) } })} /></label>}<div className="generation-actions"><button className="primary" disabled={busy || !runtimeProfileId} onClick={() => void previewGeneration()}>{busy ? 'Preparing…' : selectedSet ? 'Preview regeneration' : 'Preview trips'}</button></div><p className={`generation-profile-note ${runtimeProfileId ? '' : 'warning'}`}>{runtimeProfileId ? `Runtime profile: ${runtimeProfileName}` : 'Assign a runtime profile for this service day and pattern before generating trips.'}</p></div>}
-    </section>
-    <section className="schedule-editor"><div className="schedule-editor-header"><div><h2>Materialized schedule</h2><p>All patterns for {selectedDay?.name ?? 'the selected service day'} appear in departure order. Timepoints expand below each trip.</p></div></div><div className="schedule-controls"><label>Service day<select value={serviceDayId} onChange={(event) => setServiceDayId(event.target.value)}>{records.serviceDays.map((day) => <option key={day.id} value={day.id}>{day.name}</option>)}</select></label><div className="shift-form"><label>Shift selected (min)<input type="number" step="1" value={shiftMinutes} placeholder="e.g. -3" onChange={(event) => setShiftMinutes(event.target.value)} /></label><button disabled={busy || !selectedTripIds.length || !Number.isInteger(Number(shiftMinutes)) || Number(shiftMinutes) === 0} onClick={() => void applyShift()}>Shift {selectedTripIds.length || ''} trip{selectedTripIds.length === 1 ? '' : 's'}</button></div></div><div className="table-scroll schedule-table"><table><thead><tr><th><span className="visually-hidden">Select</span></th><th>Pattern</th><th>Departure</th><th>Arrival</th><th>Duration</th><th>Generation set</th><th>Status</th><th>Block</th><th>Actions</th></tr></thead><tbody>{trips.map((trip) => { const departure = trip.stopTimes[0]?.time; const arrival = trip.stopTimes.at(-1)?.time; const hasWarning = trip.provenance.manuallyChangedFields.length > 0; return <FragmentTripRow key={trip.id} trip={trip} selected={selectedTripIds.includes(trip.id)} expanded={expandedTripIds.includes(trip.id)} warning={hasWarning} patternName={patternName(trip.patternId)} departure={departure} arrival={arrival} generationSetName={sets.find((set) => set.id === trip.provenance.generationSetId)?.name ?? '—'} blockLabel={blockLabels.get(trip.id) ?? 'Unassigned'} nodeName={nodeName} onToggle={() => toggleTrip(trip.id)} onToggleDetails={() => toggleTripDetails(trip.id)} onPatternChange={() => setPatternDialog({ trip, targetPatternId: usablePatterns.find((pattern) => pattern.id !== trip.patternId)?.id ?? trip.patternId })} canChangePattern={usablePatterns.some((pattern) => pattern.id !== trip.patternId)} overrideLabel={overrideLabel(trip)} />; })}{!trips.length && <tr><td colSpan={9} className="table-empty">No trips have been generated for this service day.</td></tr>}</tbody></table></div></section>
-    {generationPreview && <GenerationPreviewDialog preview={generationPreview} patternName={patternName} onCancel={() => setGenerationPreview(undefined)} onConfirm={() => void applyGeneration()} busy={busy} />}
-    {patternDialog && <PatternChangeDialog dialog={patternDialog} patterns={usablePatterns} patternName={patternName} onChange={(targetPatternId) => setPatternDialog((current) => current ? { ...current, targetPatternId } : current)} onCancel={() => setPatternDialog(undefined)} onPreview={() => void previewPatternChangeForTrip()} />}
-    {patternPreview && <PatternChangePreviewDialog dialog={patternPreview} nodeName={nodeName} onCancel={() => setPatternPreview(undefined)} onConfirm={() => void applyPatternPreview()} busy={busy} />}
-  </section>;
-}
-
-function ServiceTimeField({ label, value, onCommit }: { label: string; value: number; onCommit: (value: number) => void }) {
-  const [draft, setDraft] = useState(formatServiceTime(value, value % 60 !== 0)); const [error, setError] = useState('');
-  useEffect(() => { setDraft(formatServiceTime(value, value % 60 !== 0)); }, [value]);
-  function commit() { try { const next = parseServiceTime(draft); setError(''); onCommit(next); setDraft(formatServiceTime(next, next % 60 !== 0)); } catch { setError('Use a time such as 6:30 or 25:00.'); } }
-  return <label>{label}<input className="time-input" value={draft} aria-invalid={Boolean(error)} onChange={(event) => { setDraft(event.target.value); setError(''); }} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setDraft(formatServiceTime(value, value % 60 !== 0)); setError(''); event.currentTarget.blur(); } }} />{error && <small className="field-error" role="alert">{error}</small>}</label>;
-}
-
 function blockPillClass(label: string) { let hash = 0; for (const character of label) hash = (hash * 31 + character.charCodeAt(0)) >>> 0; return `block-pill block-pill-${hash % 6}`; }
-
-function FragmentTripRow({ trip, selected, expanded, warning, patternName, departure, arrival, generationSetName, blockLabel, nodeName, onToggle, onToggleDetails, onPatternChange, canChangePattern, overrideLabel }: { trip: Trip; selected: boolean; expanded: boolean; warning: boolean; patternName: string; departure?: number; arrival?: number; generationSetName: string; blockLabel: string; nodeName: (id: string) => string; onToggle: () => void; onToggleDetails: () => void; onPatternChange: () => void; canChangePattern: boolean; overrideLabel: string }) {
-  return <><tr className={`${selected ? 'trip-row-selected ' : ''}${warning ? 'trip-row-warning' : ''}`}><td><input className="trip-select" type="checkbox" checked={selected} onChange={onToggle} aria-label={`Select ${patternName} departing ${departure === undefined ? 'unknown time' : formatServiceTime(departure)}`} /></td><td>{patternName}</td><td>{departure === undefined ? '—' : formatServiceTime(departure)}</td><td>{arrival === undefined ? '—' : formatServiceTime(arrival)}</td><td>{departure === undefined || arrival === undefined ? '—' : formatServiceTime(arrival - departure)}</td><td>{generationSetName}</td><td>{trip.provenance.manuallyChangedFields.length ? <span className="trip-status" title={overrideLabel}>{overrideLabel}</span> : 'Generated'}</td><td>{blockLabel === 'Unassigned' ? <span className="trip-block-unassigned">Unassigned</span> : <span className={blockPillClass(blockLabel)}>{blockLabel}</span>}</td><td><div className="row-actions"><button onClick={onToggleDetails} aria-expanded={expanded}>{expanded ? 'Hide times' : `${trip.stopTimes.length} times`}</button><button onClick={onPatternChange} disabled={!canChangePattern}>Change pattern</button></div></td></tr>{expanded && <tr><td colSpan={9}><div className="timepoint-list">{trip.stopTimes.map((point) => <span key={point.patternPointId}><strong>{nodeName(point.patternPointId)}</strong> {formatServiceTime(point.time)}</span>)}</div></td></tr>}</>;
-}
-
-function GenerationPreviewDialog({ preview, patternName, onCancel, onConfirm, busy }: { preview: RegenerationPreview; patternName: (id: string) => string; onCancel: () => void; onConfirm: () => void; busy: boolean }) {
-  const isNew = preview.added.length === preview.generatedTrips.length && !preview.removed.length && !preview.changed.length;
-  return <div className="modal-backdrop" role="presentation"><section className="confirm-dialog preview-dialog" role="dialog" aria-modal="true" aria-labelledby="generation-preview-title" tabIndex={-1} onKeyDown={(event) => { if (event.key === 'Escape' && !busy) onCancel(); }}><h2 id="generation-preview-title">{isNew ? 'Preview generated trips' : 'Review regeneration impact'}</h2><p>{isNew ? `This will create ${preview.generatedTrips.length} trips for ${patternName(preview.generationSet.patternId)}.` : 'Confirmation replaces the materialized trips in this generation set with the preview below.'}</p><dl className="preview-summary"><div><dt>Generated</dt><dd>{preview.generatedTrips.length}</dd></div><div><dt>Added</dt><dd>{preview.added.length}</dd></div><div><dt>Changed</dt><dd>{preview.changed.length}</dd></div><div><dt>Removed</dt><dd>{preview.removed.length}</dd></div></dl>{!isNew && <ul className="impact-list">{preview.manualTimeShiftsOverwritten.length > 0 && <li>{preview.manualTimeShiftsOverwritten.length} manual time shift{preview.manualTimeShiftsOverwritten.length === 1 ? '' : 's'} will be overwritten.</li>}{preview.manualPatternChangesOverwritten.length > 0 && <li>{preview.manualPatternChangesOverwritten.length} manual pattern change{preview.manualPatternChangesOverwritten.length === 1 ? '' : 's'} will be overwritten.</li>}{preview.affectedBlockIds.length > 0 && <li>{preview.affectedBlockIds.length} future block reference{preview.affectedBlockIds.length === 1 ? '' : 's'} will lose removed trips.</li>}{!preview.manualTimeShiftsOverwritten.length && !preview.manualPatternChangesOverwritten.length && !preview.affectedBlockIds.length && <li>No manual overrides or future block references are affected.</li>}</ul>}<div className="preview-times"><table><thead><tr><th>#</th><th>Departure</th><th>Arrival</th><th>Duration</th></tr></thead><tbody>{preview.generatedTrips.slice(0, 50).map((trip) => { const first = trip.stopTimes[0]?.time; const last = trip.stopTimes.at(-1)?.time; return <tr key={trip.provenance.generationSequence}><td>{(trip.provenance.generationSequence ?? 0) + 1}</td><td>{first === undefined ? '—' : formatServiceTime(first)}</td><td>{last === undefined ? '—' : formatServiceTime(last)}</td><td>{first === undefined || last === undefined ? '—' : formatServiceTime(last - first)}</td></tr>; })}</tbody></table></div>{preview.generatedTrips.length > 50 && <p>Showing the first 50 of {preview.generatedTrips.length} trips.</p>}<div className="dialog-actions"><button onClick={onCancel} disabled={busy}>Cancel</button><button className="primary" onClick={onConfirm} disabled={busy}>{busy ? 'Saving…' : isNew ? 'Create trips' : 'Confirm regeneration'}</button></div></section></div>;
-}
-
-function PatternChangeDialog({ dialog, patterns, patternName, onChange, onCancel, onPreview }: { dialog: { trip: Trip; targetPatternId: string }; patterns: RoutePattern[]; patternName: (id: string) => string; onChange: (id: string) => void; onCancel: () => void; onPreview: () => void }) {
-  const targets = patterns.filter((pattern) => pattern.id !== dialog.trip.patternId);
-  return <div className="modal-backdrop" role="presentation"><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="pattern-change-title" tabIndex={-1} onKeyDown={(event) => { if (event.key === 'Escape') onCancel(); }}><h2 id="pattern-change-title">Change trip pattern</h2><p>Recalculate this trip from its current departure time using the selected pattern's assigned runtime profile.</p>{targets.length ? <label className="dialog-field">New pattern<select value={dialog.targetPatternId} onChange={(event) => onChange(event.target.value)}>{targets.map((pattern) => <option key={pattern.id} value={pattern.id}>{patternName(pattern.id)}</option>)}</select></label> : <p className="field-error">Create another usable pattern before changing this trip.</p>}<div className="dialog-actions"><button onClick={onCancel}>Cancel</button><button className="primary" onClick={onPreview} disabled={!targets.length}>Preview recalculation</button></div></section></div>;
-}
-
-function PatternChangePreviewDialog({ dialog, nodeName, onCancel, onConfirm, busy }: { dialog: Exclude<PatternPreviewDialog, undefined>; nodeName: (id: string) => string; onCancel: () => void; onConfirm: () => void; busy: boolean }) {
-  const preview = dialog.preview;
-  const previewTimes = preview.newStopTimes;
-  return <div className="modal-backdrop" role="presentation"><section className="confirm-dialog preview-dialog" role="dialog" aria-modal="true" aria-labelledby="pattern-preview-title" tabIndex={-1} onKeyDown={(event) => { if (event.key === 'Escape' && !busy) onCancel(); }}><h2 id="pattern-preview-title">Review pattern recalculation</h2>{preview.finding || !previewTimes ? <p className="field-error">No run time is defined for this time period. Assign a suitable runtime profile before changing this trip.</p> : <><p>This will replace the trip's pattern and scheduled timepoints with {dialog.targetName}.</p><div className="preview-times"><table><thead><tr><th>Current timepoint</th><th>Current time</th><th>New timepoint</th><th>New time</th></tr></thead><tbody>{Array.from({ length: Math.max(preview.oldStopTimes.length, previewTimes.length) }, (_, index) => <tr key={index}><td>{preview.oldStopTimes[index] ? nodeName(preview.oldStopTimes[index].patternPointId) : '—'}</td><td>{preview.oldStopTimes[index] ? formatServiceTime(preview.oldStopTimes[index].time) : '—'}</td><td>{previewTimes[index] ? nodeName(previewTimes[index].patternPointId) : '—'}</td><td>{previewTimes[index] ? formatServiceTime(previewTimes[index].time) : '—'}</td></tr>)}</tbody></table></div></>}<div className="dialog-actions"><button onClick={onCancel} disabled={busy}>Cancel</button>{!preview.finding && previewTimes && <button className="primary" onClick={onConfirm} disabled={busy}>{busy ? 'Saving…' : 'Confirm pattern change'}</button>}</div></section></div>;
-}
 
 type NewRuntimeDialog = { mode: 'new' | 'copy' | 'reverse' | 'rename'; initialName: string } | undefined;
 
@@ -1688,27 +1466,6 @@ function BatchPatternChangeDialog({ tripService, tripIds, patterns, trips, onDon
   return <div className="modal-backdrop" role="presentation"><section className="confirm-dialog preview-dialog" role="dialog" aria-modal="true" aria-labelledby="batch-pattern-title" tabIndex={-1} onKeyDown={(event) => { if (event.key === 'Escape' && !busy) onClose(); }}><h2 id="batch-pattern-title">Change selected Patterns</h2><label className="dialog-field">Target Pattern<select autoFocus value={targetPatternId} disabled={busy} onChange={(event) => { setTargetPatternId(event.target.value); setPreview(undefined); setError(''); }}>{patterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label>{preview && <><CopyImpact items={[["Eligible", preview.eligibleTripIds.length], ['Cannot change', preview.ineligibleTripIds.length], ['Affected blocks', preview.affectedBlockIds.length]]} /><ul className="impact-list batch-pattern-results">{preview.changes.map((change) => <li key={change.tripId}>{tripName(change.tripId)}: {change.finding ? userMessage(change.finding) : 'Ready'}</li>)}</ul></>}{error && <p className="field-error" role="alert">{error}</p>}<div className="dialog-actions"><button onClick={onClose} disabled={busy}>Cancel</button><button onClick={() => void review()} disabled={!targetPatternId || busy}>{busy ? 'Reviewing…' : 'Review change'}</button>{preview && <button className="primary" onClick={() => void apply()} disabled={Boolean(preview.ineligibleTripIds.length) || busy}>{busy ? 'Saving…' : 'Change Patterns'}</button>}</div></section></div>;
 }
 
-function RuntimeProfileEditor({ service, profile, pattern, nodes, onSaved, onError, onCopy, onReverseCopy }: { service: RouteDefinitionApplication; profile: RuntimeProfile; pattern: RoutePattern; nodes: Node[]; onSaved: () => Promise<void>; onError: (error: unknown) => void; onCopy: () => void; onReverseCopy?: () => void }) {
-  const [draft, setDraft] = useState(profile);
-  const [findings, setFindings] = useState<ValidationFinding[]>([]);
-  const [saving, setSaving] = useState(false);
-  useEffect(() => { setDraft(profile); setFindings([]); }, [profile]);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(profile);
-  const nodeName = (id: string) => { const node = nodes.find((item) => item.id === id); return node?.shortName || node?.name || 'Unnamed point'; };
-  function updateBand(index: number, patch: Partial<RuntimeProfile['bands'][number]>) { setDraft((current) => ({ ...current, bands: current.bands.map((band, bandIndex) => bandIndex === index ? { ...band, ...patch } : band) })); }
-  function addBand() { setDraft((current) => ({ ...current, bands: [...current.bands, { id: newId(), label: 'New band', sequence: current.bands.length, startTime: 0, endTime: 0, segmentRuntimeSeconds: Array(Math.max(0, pattern.points.length - 1)).fill(0) }] })); }
-  function removeBand(index: number) { setDraft((current) => ({ ...current, bands: current.bands.filter((_, bandIndex) => bandIndex !== index).map((band, sequence) => ({ ...band, sequence })) })); }
-  async function saveProfile() {
-    const nextFindings = await service.validateRuntimeProfile(draft, pattern);
-    setFindings(nextFindings);
-    if (nextFindings.some((finding) => finding.severity === 'error')) return;
-    setSaving(true);
-    try { await service.saveRuntimeProfile(draft); await onSaved(); } catch (error) { onError(error); } finally { setSaving(false); }
-  }
-  const hasFinding = (bandId: string) => findings.some((finding) => finding.parameters?.bandId === bandId || finding.parameters?.previousBandId === bandId || finding.field === 'bands');
-  return <section className="runtime-editor"><div className="runtime-editor-header"><div><label>Runtime profile name<input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label><p>Each departure uses the band that contains its first scheduled time. A band may begin after 24:00.</p></div><div className="runtime-actions"><button onClick={onCopy}>Copy profile</button>{onReverseCopy && <button onClick={onReverseCopy}>Reverse copy</button>}<button className="primary" onClick={() => void saveProfile()} disabled={!dirty || saving}>{saving ? 'Saving…' : 'Save runtimes'}</button></div></div><div className="table-scroll runtime-table"><table><thead><tr><th>Band</th><th>From</th><th>To</th>{pattern.points.slice(1).map((point, index) => <th key={point.id}><span className="segment-header">{nodeName(pattern.points[index].nodeId)} → {nodeName(point.nodeId)}</span></th>)}<th><span className="visually-hidden">Remove band</span></th></tr></thead><tbody>{draft.bands.map((band, bandIndex) => <tr key={band.id} className={hasFinding(band.id) ? 'runtime-row-error' : undefined}><td><input aria-label={`Runtime band ${bandIndex + 1} name`} value={band.label} onChange={(event) => updateBand(bandIndex, { label: event.target.value })} /></td><td><RuntimeTimeInput label={`${band.label || 'Runtime band'} start time`} value={band.startTime} onCommit={(startTime) => updateBand(bandIndex, { startTime })} /></td><td><RuntimeTimeInput label={`${band.label || 'Runtime band'} end time`} value={band.endTime} onCommit={(endTime) => updateBand(bandIndex, { endTime })} /></td>{band.segmentRuntimeSeconds.map((duration, segmentIndex) => <td key={`${band.id}-${segmentIndex}`}><RuntimeTimeInput label={`${band.label || 'Runtime band'} segment ${segmentIndex + 1} runtime`} value={duration} duration onCommit={(value) => updateBand(bandIndex, { segmentRuntimeSeconds: band.segmentRuntimeSeconds.map((item, index) => index === segmentIndex ? value : item) })} /></td>)}<td><button className="icon-button icon-button--danger" onClick={() => removeBand(bandIndex)} aria-label={`Remove ${band.label || 'runtime band'}`} title="Remove runtime band"><TrashIcon /></button></td></tr>)}{draft.bands.length === 0 && <tr><td colSpan={Math.max(4, pattern.points.length + 2)} className="table-empty">Add a time band to enter runtimes for this pattern.</td></tr>}</tbody></table></div><div className="table-actions"><button onClick={addBand}>Add time band</button><button onClick={() => { setDraft(profile); setFindings([]); }} disabled={!dirty || saving}>Discard Changes</button></div>{findings.length > 0 && <div className="runtime-findings" role="alert"><strong>Review before saving</strong><ul>{[...new Set(findings.map(userMessage))].map((message) => <li key={message}>{message}</li>)}</ul></div>}</section>;
-}
-
 function RuntimeTimeInput({ label, value, duration = false, onCommit }: { label: string; value: number; duration?: boolean; onCommit: (value: number) => void }) {
   const display = (next: number) => duration ? formatRuntimeDuration(next) : formatServiceTime(next, next % 60 !== 0);
   const [draft, setDraft] = useState(() => display(value));
@@ -1716,16 +1473,6 @@ function RuntimeTimeInput({ label, value, duration = false, onCommit }: { label:
   useEffect(() => { setDraft(display(value)); }, [value, duration]);
   function commit() { if (!draft.trim()) { setError(duration ? 'Enter a runtime. Zero is valid.' : 'Enter a time.'); return; } try { const next = duration ? parseRuntimeDuration(draft) : parseServiceTime(draft); if (next === undefined) throw new Error(); setError(''); onCommit(next); setDraft(display(next)); } catch { setError(duration ? 'Use minutes such as 7, :07, or 7:30.' : 'Use a time such as 6:30 or 25:00.'); } }
   return <><input className="time-input" aria-label={label} aria-invalid={Boolean(error)} value={draft} onChange={(event) => { setDraft(event.target.value); setError(''); }} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setDraft(display(value)); setError(''); event.currentTarget.blur(); } }} />{error && <small className="field-error" role="alert">{error}</small>}</>;
-}
-
-function RuntimeProfileDialog({ dialog, candidates, onSubmit, onClose }: { dialog: Exclude<RuntimeDialog, undefined>; candidates: RoutePattern[]; onSubmit: (name: string, targetPatternId?: string) => Promise<void>; onClose: () => void }) {
-  const [name, setName] = useState(dialog.initialName);
-  const [targetPatternId, setTargetPatternId] = useState(candidates[0]?.id ?? '');
-  const [error, setError] = useState('');
-  const isReverse = dialog.mode === 'reverse';
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!name.trim()) { setError('A name is required.'); return; } if (isReverse && !targetPatternId) { setError('Select a reverse-compatible pattern.'); return; } await onSubmit(name.trim(), isReverse ? targetPatternId : undefined); }
-  const titles = { new: 'New runtime profile', copy: 'Copy runtime profile', reverse: 'Reverse-copy runtime profile' };
-  return <div className="modal-backdrop" role="presentation"><form className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="runtime-dialog-title" onSubmit={(event) => void submit(event)} onKeyDown={(event) => { if (event.key === 'Escape') onClose(); }}><h2 id="runtime-dialog-title">{titles[dialog.mode]}</h2><label className="dialog-field" htmlFor="runtime-profile-name"><span>Runtime profile name</span><input id="runtime-profile-name" autoFocus value={name} onChange={(event) => { setName(event.target.value); setError(''); }} aria-invalid={Boolean(error)} /></label>{isReverse && <label className="dialog-field" htmlFor="reverse-pattern"><span>Reverse pattern</span><select id="reverse-pattern" value={targetPatternId} onChange={(event) => setTargetPatternId(event.target.value)}>{candidates.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.directionLabel ? `${pattern.name} — ${pattern.directionLabel}` : pattern.name}</option>)}</select></label>}<p>{isReverse ? 'The copied profile will use reversed segment runtimes and be assigned to this service day.' : dialog.mode === 'copy' ? 'This creates an independent profile and assigns it to this service day.' : 'The new profile begins with one all-service band.'}</p>{error && <p className="field-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">{dialog.mode === 'new' ? 'Create profile' : 'Copy profile'}</button></div></form></div>;
 }
 
 function PatternEditor({ pattern, directions, nodes, segmentMiles, errors, conflict, isNew, dirty, canDuplicate, onPattern, onAddPoint, onUpdatePoint, onMovePoint, onRemovePoint, onReverse, onDuplicate, onDelete, onSave, onDiscard }: { pattern: RoutePattern; directions: RouteDirection[]; nodes: Node[]; segmentMiles: (pattern: RoutePattern, index: number) => number; errors: string[]; conflict?: string; isNew: boolean; dirty: boolean; canDuplicate: boolean; onPattern: (patch: Partial<RoutePattern>) => void; onAddPoint: () => void; onUpdatePoint: (index: number, patch: Partial<RoutePattern['points'][number]>) => void; onMovePoint: (index: number, direction: -1 | 1) => void; onRemovePoint: (index: number) => void; onReverse: () => void; onDuplicate: () => void; onDelete: () => void; onSave: () => void; onDiscard: () => void }) {
@@ -1759,14 +1506,6 @@ function TrashIcon() {
 
 function CopyIcon() {
   return <svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15" focusable="false"><path fill="currentColor" d="M8 7V3h12v14h-4v4H4V7h4Zm2 0h6v8h2V5h-8v2Zm4 12v-2H8V9H6v10h8Z" /></svg>;
-}
-
-function UndoIcon() {
-  return <svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15" focusable="false"><path fill="currentColor" d="M8 7V3L1 10l7 7v-4c5.8 0 10.2 1.6 13 6-1.2-7.2-5.6-11.9-13-12Z" /></svg>;
-}
-
-function RedoIcon() {
-  return <svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15" focusable="false"><path fill="currentColor" d="M16 7V3l7 7-7 7v-4c-5.8 0-10.2 1.6-13 6 1.2-7.2 5.6-11.9 13-12Z" /></svg>;
 }
 
 function Field({ label, required, errors = [], wide, children }: { label: string; required?: boolean; errors?: string[]; wide?: boolean; children: ReactNode }) { return <label className={wide ? 'wide' : ''}><span>{label}{required && <b aria-hidden="true"> *</b>}</span>{children}{errors.map((error) => <small className="field-error" key={error}>{error}</small>)}</label>; }

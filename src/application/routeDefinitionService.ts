@@ -5,8 +5,8 @@ import { duplicatePattern, getSegmentMiles, normalizePattern, reversePattern, va
 import { createDirectionColumn, createManagedDirections, createRouteDirection, ensureManagedDirections, mapPatternPointsToDirection, normalizeDirections, oppositeDirectionGroup } from '../domain/directions';
 import { classifyPatternEdit, describePatternPointChange, getPatternServiceImpact, rebalanceRuntimeProfile, rebalanceTripForPattern, reconcileRouteTimetables, resetPatternService, type DirectionOrderConflict, type PatternServiceImpact, type RouteEditClassification, type RouteEditMode } from '../domain/safeRouteEditing';
 import { sortServiceDays } from '../domain/serviceDays';
-import { copyRuntimeProfile, normalizeRuntimeProfile, resolveRuntimeForDeparture, reverseCopyRuntimeProfile, validateRuntimeAssignments, validateRuntimeProfile, withRuntimeCalculationRevision, RuntimeProfileDeletionError } from '../domain/runtime';
-import type { Block, BlockActivity, DirectionTimepointColumn, Node, Project, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, ValidationFinding } from '../domain/types';
+import { copyRuntimeProfile, normalizeRuntimeProfile, reverseCopyRuntimeProfile, validateRuntimeProfile, withRuntimeCalculationRevision, RuntimeProfileDeletionError } from '../domain/runtime';
+import type { Block, BlockActivity, Node, Project, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, ValidationFinding } from '../domain/types';
 import { validateNodeDeletion, validateRouteDefinition } from '../domain/validation';
 import { adjustBlockReferences } from '../domain/trips';
 import { authoritativeTripsCsv, blockActivitiesCsv, blocksCsv, directionColumnsCsv, directionsCsv, generationSetsCsv, nodesCsv, patternPointsCsv, patternsCsv, routeCsv, runtimeBandsCsv, scheduledPointsCsv, tripsCsv } from '../persistence/csv';
@@ -453,27 +453,12 @@ export class RouteDefinitionService {
     const records = await this.repository.getScenarioRecords(aggregate.route.scenarioId);
     return { directionId, patternIds: (records?.patterns ?? aggregate.patterns).filter((pattern) => pattern.directionId === directionId).map((pattern) => pattern.id) };
   }
-  async deleteDirection(aggregate: RouteDefinitionAggregate, directionId: string): Promise<RouteDefinitionAggregate> {
-    const direction = (aggregate.directions ?? []).find((candidate) => candidate.id === directionId);
-    if (direction?.group) throw new Error('Inbound and Outbound are managed automatically for every route.');
-    const impact = await this.getDirectionDeletionImpact(aggregate, directionId);
-    if (impact.patternIds.length) throw new DirectionDeletionError(impact);
-    return this.saveAggregate({ ...aggregate, directions: normalizeDirections((aggregate.directions ?? []).filter((direction) => direction.id !== directionId)) });
-  }
   async addDirectionColumn(aggregate: RouteDefinitionAggregate, directionId: string, nodeId: string, labelOverride?: string): Promise<RouteDefinitionAggregate> {
     const direction = (aggregate.directions ?? []).find((item) => item.id === directionId);
     if (!direction) throw new Error('Direction not found.');
     if (!aggregate.nodes.some((node) => node.id === nodeId)) throw new Error('Node not found.');
     const column = createDirectionColumn(nodeId, direction.columns.length, labelOverride);
     const directions = (aggregate.directions ?? []).map((item) => item.id === directionId ? withUpdatedAt({ ...item, columns: [...item.columns, column] }, this.now()) : item);
-    return this.saveAggregate({ ...aggregate, directions: normalizeDirections(directions) });
-  }
-  async updateDirectionColumn(aggregate: RouteDefinitionAggregate, directionId: string, columnId: string, patch: Partial<Pick<DirectionTimepointColumn, 'nodeId' | 'sequence' | 'labelOverride'>>): Promise<RouteDefinitionAggregate> {
-    const direction = (aggregate.directions ?? []).find((item) => item.id === directionId);
-    if (!direction) throw new Error('Direction not found.');
-    if (!direction.columns.some((column) => column.id === columnId)) throw new Error('Direction column not found.');
-    if (patch.nodeId && !aggregate.nodes.some((node) => node.id === patch.nodeId)) throw new Error('Node not found.');
-    const directions = (aggregate.directions ?? []).map((item) => item.id === directionId ? withUpdatedAt({ ...item, columns: item.columns.map((column) => column.id === columnId ? { ...column, ...patch } : column) }, this.now()) : item);
     return this.saveAggregate({ ...aggregate, directions: normalizeDirections(directions) });
   }
   async assignPatternDirection(aggregate: RouteDefinitionAggregate, patternId: string, directionId: string): Promise<RouteDefinitionAggregate> {
@@ -494,9 +479,6 @@ export class RouteDefinitionService {
   async updateNode(aggregate: RouteDefinitionAggregate, id: string, patch: Partial<Node>): Promise<RouteDefinitionAggregate> {
     return this.saveAggregate({ ...aggregate, nodes: aggregate.nodes.map((node) => node.id === id ? withUpdatedAt({ ...node, ...patch }, this.now()) : node) });
   }
-  getNodeDeletionFindings(aggregate: RouteDefinitionAggregate, nodeId: string): ValidationFinding[] {
-    return validateNodeDeletion(nodeId, aggregate.patterns);
-  }
   async getNodeDeletionImpact(aggregate: RouteDefinitionAggregate, nodeId: string): Promise<NodeDeletionImpact> {
     const records = await this.repository.getScenarioRecords(aggregate.route.scenarioId);
     const nonRevenueAdjusted = records ? removeNonRevenueActivitiesForNodes(records.blocks, new Set([nodeId])) : { blocks: [], affectedBlockCount: 0, removedActivityCount: 0 };
@@ -506,22 +488,6 @@ export class RouteDefinitionService {
       affectedBlockCount: nonRevenueAdjusted.affectedBlockCount,
       removedNonRevenueActivityCount: nonRevenueAdjusted.removedActivityCount,
     };
-  }
-  async deleteNode(aggregate: RouteDefinitionAggregate, nodeId: string): Promise<RouteDefinitionAggregate> {
-    const nodes = aggregate.nodes.filter((node) => node.id !== nodeId);
-    const directions = (aggregate.directions ?? []).map((direction) => withUpdatedAt({ ...direction, columns: direction.columns.filter((column) => column.nodeId !== nodeId).map((column, sequence) => ({ ...column, sequence })) }, this.now()));
-    const patterns = aggregate.patterns.map((pattern) => {
-      const filtered = normalizePattern({ ...pattern, points: pattern.points.filter((point) => point.nodeId !== nodeId) });
-      const direction = directions.find((item) => item.id === filtered.directionId);
-      return direction ? mapPatternPointsToDirection(filtered, direction, this.now()).pattern : filtered;
-    });
-    const nextAggregate = await this.saveAggregate({ ...aggregate, nodes, patterns, ...(aggregate.directions ? { directions: normalizeDirections(directions) } : {}) });
-    const records = await this.repository.getScenarioRecords(aggregate.route.scenarioId);
-    if (records) {
-      const blocks = removeNonRevenueActivitiesForNodes(records.blocks, new Set([nodeId])).blocks;
-      await this.repository.saveScenarioRecords({ ...records, nodes, patterns, directions: aggregate.directions ? normalizeDirections(directions) : records.directions, blocks });
-    }
-    return nextAggregate;
   }
 
   async addPattern(aggregate: RouteDefinitionAggregate): Promise<{ aggregate: RouteDefinitionAggregate; pattern: RoutePattern }> {
@@ -755,9 +721,6 @@ export class RouteDefinitionService {
     }
     return { profile, assignments };
   }
-  async ensureDefaultProfile(pattern: RoutePattern): Promise<{ profile: RuntimeProfile; assignments: RuntimeAssignment[] }> {
-    return this.ensureDefaultRuntimeProfile(pattern);
-  }
 
   async deleteRuntimeProfile(profileId: string, replacementProfileId?: string): Promise<void> {
     const profile = await this.repository.getRuntimeProfile(profileId);
@@ -800,14 +763,6 @@ export class RouteDefinitionService {
   }
   async validateRuntimeProfile(profile: RuntimeProfile, pattern: RoutePattern): Promise<ValidationFinding[]> {
     return validateRuntimeProfile(profile, pattern);
-  }
-  async validateRuntimeAssignments(scenarioId: string): Promise<ValidationFinding[]> {
-    return validateRuntimeAssignments(await this.repository.listRuntimeAssignments(scenarioId));
-  }
-  async resolveRuntimeBand(profileId: string, pattern: RoutePattern, departure: number) {
-    const profile = await this.repository.getRuntimeProfile(profileId);
-    if (!profile) throw new Error('The selected runtime profile is no longer available.');
-    return resolveRuntimeForDeparture(profile, pattern, departure);
   }
 
   private async recordsForRoute(routeId: string): Promise<ScenarioRecords> {
@@ -1055,9 +1010,7 @@ export type RouteDefinitionApplication = Pick<RouteDefinitionService,
   | 'reversePatternDraft'
   | 'addNode'
   | 'updateNode'
-  | 'getNodeDeletionFindings'
   | 'getNodeDeletionImpact'
-  | 'deleteNode'
   | 'addPattern'
   | 'updatePattern'
   | 'addPatternPoint'
@@ -1080,7 +1033,6 @@ export type RouteDefinitionApplication = Pick<RouteDefinitionService,
   | 'createDefaultRuntimeProfile'
   | 'renameRuntimeProfile'
   | 'ensureDefaultRuntimeProfile'
-  | 'ensureDefaultProfile'
   | 'saveRuntimeProfile'
   | 'assignRuntimeProfile'
   | 'copyRuntimeProfile'
@@ -1088,8 +1040,6 @@ export type RouteDefinitionApplication = Pick<RouteDefinitionService,
   | 'deleteRuntimeProfile'
   | 'getRuntimeProfileDeletionImpact'
   | 'validateRuntimeProfile'
-  | 'validateRuntimeAssignments'
-  | 'resolveRuntimeBand'
 >;
 
 export type { ScenarioRecords } from '../domain/project';
