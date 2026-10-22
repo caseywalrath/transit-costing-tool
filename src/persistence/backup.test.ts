@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
-import { exportProjectJson, importProjectJson, cloneProjectSnapshot } from './backup';
+import { duplicateScenario, projectSnapshotWithScenario, snapshotForScenario } from '../domain/project';
+import type { Block, BlockActivity, ProjectSnapshot } from '../domain/types';
+import { goldenJson } from '../testSupport/goldenBackup';
+import { exportProjectJson, importProjectJson, cloneProjectSnapshot, parseProjectBackupWithReport } from './backup';
 
 describe('backup', () => {
   it('round trips the complete Phase 1 project graph', () => {
@@ -174,5 +177,69 @@ describe('backup', () => {
     payload.costingAssumptions[0].currencyCode = 'USD';
     payload.costingAssumptions[0].scenarioId = 'missing-scenario';
     expect(() => importProjectJson(JSON.stringify(payload))).toThrow(/references a missing Scenario/);
+  });
+});
+
+describe('backup import repairs Scenario copies made before duplication remapped Node references (P03, decision 4)', () => {
+  const nodeIdsOf = (blocks: Block[]) => blocks.flatMap((block) => block.activities.flatMap((activity: BlockActivity) => (activity.type === 'revenueTrip' ? [] : [activity.fromNodeId, activity.toNodeId].filter((id): id is string => Boolean(id)))));
+
+  /** A backup of the golden project with a Scenario copy as the older code made it: the copy's pull-out and pull-in name the source's Nodes. */
+  function backupWithLeakyCopy(options: { removeSource?: boolean } = {}) {
+    const snapshot = importProjectJson(goldenJson());
+    const source = snapshotForScenario(snapshot, snapshot.scenarios[0].id)!;
+    const copy = duplicateScenario(source, 'Copy');
+    const toSource = new Map(copy.nodes.map((node, index) => [node.id, source.nodes[index].id]));
+    const leakyCopy = { ...copy, blocks: copy.blocks.map((block) => ({ ...block, activities: block.activities.map((activity) => (activity.type === 'revenueTrip' ? activity : { ...activity, ...(activity.fromNodeId ? { fromNodeId: toSource.get(activity.fromNodeId) } : {}), ...(activity.toNodeId ? { toNodeId: toSource.get(activity.toNodeId) } : {}) })) })) };
+    const combined: ProjectSnapshot = projectSnapshotWithScenario(snapshot, leakyCopy);
+    combined.scenarios = options.removeSource ? [leakyCopy.scenario] : [snapshot.scenarios[0], leakyCopy.scenario];
+    if (options.removeSource) {
+      const copyScenarioId = leakyCopy.scenario.id;
+      const owned = <T extends { scenarioId: string }>(rows: T[]) => rows.filter((row) => row.scenarioId === copyScenarioId);
+      Object.assign(combined, { serviceDays: owned(combined.serviceDays), routes: owned(combined.routes), nodes: owned(combined.nodes), patterns: owned(combined.patterns), directions: owned(combined.directions ?? []), runtimeProfiles: owned(combined.runtimeProfiles), runtimeAssignments: owned(combined.runtimeAssignments), tripProfiles: owned(combined.tripProfiles ?? []), blockingScenarios: owned(combined.blockingScenarios ?? []), trips: owned(combined.trips), blocks: owned(combined.blocks) });
+    }
+    return { text: exportProjectJson(combined), source, copy, leakyCopy };
+  }
+
+  it('repoints the 138 leaking references to the copy Nodes and leaves every other record as exported', () => {
+    const { text, source, copy, leakyCopy } = backupWithLeakyCopy();
+    const sourceNodeIds = new Set(source.nodes.map((node) => node.id));
+    expect(nodeIdsOf(leakyCopy.blocks).filter((id) => sourceNodeIds.has(id))).toHaveLength(138);
+
+    const { snapshot, report } = parseProjectBackupWithReport(text);
+
+    expect(report.recoveredNodeReferences).toBe(138);
+    expect(report.recoveryFindings).toEqual([]);
+    const copyBlocks = snapshot.blocks.filter((block) => block.scenarioId === copy.scenario.id);
+    expect(nodeIdsOf(copyBlocks).filter((id) => sourceNodeIds.has(id))).toHaveLength(0);
+    expect(copyBlocks).toEqual(copy.blocks);
+    // Everything outside the copy's Blocks is exactly what the file held.
+    const exported = JSON.parse(text);
+    for (const key of ['project', 'scenarios', 'serviceDays', 'routes', 'nodes', 'patterns', 'directions', 'runtimeProfiles', 'runtimeAssignments', 'tripProfiles', 'blockingScenarios', 'trips']) {
+      expect(JSON.parse(JSON.stringify((snapshot as any)[key])), key).toEqual(exported[key]);
+    }
+    expect(snapshot.blocks.filter((block) => block.scenarioId === source.scenario.id)).toEqual(exported.blocks.filter((block: Block) => block.scenarioId === source.scenario.id));
+  });
+
+  it('round trips the recovered backup without further changes', () => {
+    const { text } = backupWithLeakyCopy();
+    const first = parseProjectBackupWithReport(text).snapshot;
+    const second = parseProjectBackupWithReport(exportProjectJson(first));
+    expect(second.report.recoveredNodeReferences).toBe(0);
+    expect(second.snapshot).toEqual(first);
+  });
+
+  it('imports the same file through import-as-copy with no reference to the source Scenario', () => {
+    const { text, source } = backupWithLeakyCopy();
+    const sourceNodeIds = new Set(source.nodes.map((node) => node.id));
+    const copied = importProjectJson(exportProjectJson(cloneProjectSnapshot(importProjectJson(text))));
+    expect(nodeIdsOf(copied.blocks).filter((id) => sourceNodeIds.has(id))).toHaveLength(0);
+  });
+
+  it('infers the Nodes of a copy whose source Scenario is not in the file (decision C8)', () => {
+    const { text, copy } = backupWithLeakyCopy({ removeSource: true });
+    const { snapshot, report } = parseProjectBackupWithReport(text);
+    expect(report.recoveredNodeReferences).toBe(138);
+    expect(report.recoveryFindings).toEqual([]);
+    expect(snapshot.blocks).toEqual(copy.blocks);
   });
 });

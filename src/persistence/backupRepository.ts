@@ -1,5 +1,5 @@
 import type { Project, ProjectSnapshot } from '../domain/types';
-import { cloneProjectSnapshot, exportProjectJson, importProjectJson } from './backup';
+import { cloneProjectSnapshot, exportProjectJson, importProjectJson, parseProjectBackupWithReport, type BackupImportReport } from './backup';
 import type { BackupImportMode, BackupPort } from '../application/ports';
 
 export class ProjectBackupService implements BackupPort {
@@ -15,8 +15,13 @@ export class ProjectBackupService implements BackupPort {
   }
 
   async importProject(payload: string, mode: BackupImportMode = 'reject'): Promise<Project> {
+    return (await this.importProjectWithReport(payload, mode)).project;
+  }
+
+  /** Imports a backup and says what parsing repaired, could not repair, or left out. Presenting the report is the data-safety package (U02). */
+  async importProjectWithReport(payload: string, mode: BackupImportMode = 'reject'): Promise<{ project: Project; report: BackupImportReport }> {
     // Parsing and validation complete before any repository write is attempted.
-    const source = importProjectJson(payload);
+    const { snapshot: source, report } = parseProjectBackupWithReport(payload);
     const existing = await this.getSnapshot(source.project.id);
     if (existing && mode === 'reject') throw new Error('Project already exists; choose replace or copy');
     // Re-parse copied snapshots before writing so cloned references receive the same
@@ -25,6 +30,6 @@ export class ProjectBackupService implements BackupPort {
       ? importProjectJson(exportProjectJson(cloneProjectSnapshot(source)))
       : source;
     await this.saveSnapshot(snapshot);
-    return snapshot.project;
+    return { project: snapshot.project, report };
   }
 }

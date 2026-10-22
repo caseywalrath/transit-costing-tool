@@ -219,7 +219,26 @@ export function duplicateScenario(source: ScenarioRecords, targetName: string, n
   const generationSets = source.generationSets.map((set) => ({ ...set, id: generationSetIds.get(set.id)!, scenarioId: scenario.id, routeId: routeIds.get(set.routeId) ?? set.routeId, serviceDayId: serviceDayIds.get(set.serviceDayId) ?? set.serviceDayId, patternId: patternIds.get(set.patternId) ?? set.patternId, ...metadata(now) }));
   const defaultProfileId = tripProfiles[0]?.id;
   const trips = source.trips.map((trip) => ({ ...trip, id: tripIds.get(trip.id)!, scenarioId: scenario.id, routeId: routeIds.get(trip.routeId) ?? trip.routeId, serviceDayId: serviceDayIds.get(trip.serviceDayId) ?? trip.serviceDayId, patternId: patternIds.get(trip.patternId) ?? trip.patternId, tripProfileId: trip.tripProfileId ? tripProfileIds.get(trip.tripProfileId) ?? defaultProfileId : defaultProfileId, provenance: { ...trip.provenance, generationSetId: trip.provenance.generationSetId ? generationSetIds.get(trip.provenance.generationSetId) : undefined, runtimeProfileId: trip.provenance.runtimeProfileId ? profileIds.get(trip.provenance.runtimeProfileId) : undefined, calculationSource: trip.provenance.calculationSource ? { ...trip.provenance.calculationSource, runtimeProfileId: profileIds.get(trip.provenance.calculationSource.runtimeProfileId) ?? trip.provenance.calculationSource.runtimeProfileId } : undefined }, stopTimes: trip.stopTimes.map((point) => ({ ...point, patternPointId: pointIds.get(point.patternPointId) ?? point.patternPointId })), ...metadata(now) }));
-  const blocks = source.blocks.map((block) => ({ ...block, id: blockIds.get(block.id)!, scenarioId: scenario.id, serviceDayId: serviceDayIds.get(block.serviceDayId) ?? block.serviceDayId, tripProfileId: block.tripProfileId ? tripProfileIds.get(block.tripProfileId) ?? defaultProfileId : defaultProfileId, activities: block.activities.map((activity) => activity.type === 'revenueTrip' ? { ...activity, id: newId(), tripId: tripIds.get(activity.tripId) ?? activity.tripId } : { ...activity, id: newId() }), ...metadata(now) }));
+  // A normalized Block (one with a Blocking Scenario) takes its Trip Profile from that Blocking Scenario and stores none of its own
+  // (Decision 0019 item 9). Only a legacy Block keeps a Trip Profile, remapped to the copy's.
+  const remapNode = (nodeId: string) => nodeIds.get(nodeId) ?? nodeId;
+  const blocks = source.blocks.map(({ tripProfileId: sourceTripProfileId, ...block }) => ({
+    ...block,
+    id: blockIds.get(block.id)!,
+    scenarioId: scenario.id,
+    serviceDayId: serviceDayIds.get(block.serviceDayId) ?? block.serviceDayId,
+    ...(block.blockingScenarioId ? {} : { tripProfileId: sourceTripProfileId ? tripProfileIds.get(sourceTripProfileId) ?? defaultProfileId : defaultProfileId }),
+    activities: block.activities.map((activity) => {
+      if (activity.type === 'revenueTrip') return { ...activity, id: newId(), tripId: tripIds.get(activity.tripId) ?? activity.tripId };
+      return {
+        ...activity,
+        id: newId(),
+        ...(activity.fromNodeId ? { fromNodeId: remapNode(activity.fromNodeId) } : {}),
+        ...(activity.toNodeId ? { toNodeId: remapNode(activity.toNodeId) } : {}),
+      };
+    }),
+    ...metadata(now),
+  }));
   const blockingScenarioIds = new Map((source.blockingScenarios ?? []).map((blockingScenario) => [blockingScenario.id, newId()]));
   const blockingScenarios = (source.blockingScenarios ?? []).map((blockingScenario) => ({ ...blockingScenario, id: blockingScenarioIds.get(blockingScenario.id)!, scenarioId: scenario.id, tripProfileId: tripProfileIds.get(blockingScenario.tripProfileId) ?? defaultProfileId!, ...metadata(now) }));
   const normalizedBlocks = blocks.map((block) => ({ ...block, ...(block.blockingScenarioId ? { blockingScenarioId: blockingScenarioIds.get(block.blockingScenarioId) } : {}) }));

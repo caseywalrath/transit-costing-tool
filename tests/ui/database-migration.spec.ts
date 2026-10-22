@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('database version 6 preserves a version 4 project and adds operational stores', async ({ page }) => {
+test('database version 7 preserves a version 4 project and adds operational stores', async ({ page }) => {
   await page.goto('/src/styles.css');
   await page.evaluate(async () => {
     await new Promise<void>((resolve, reject) => {
@@ -54,7 +54,7 @@ test('database version 6 preserves a version 4 project and adds operational stor
     request.onerror = () => reject(request.error);
   }));
 
-  expect(migrated.version).toBe(60);
+  expect(migrated.version).toBe(70);
   expect(migrated.stores).toContain('costingAssumptions');
   expect(migrated.stores).toContain('costPlans');
   expect(migrated.stores).toContain('tripRegenerationUndo');
