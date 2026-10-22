@@ -108,6 +108,16 @@ Before closing an implementation package:
 
 Do not start the next package until the user requests it.
 
+## Browser tests in environments with a preinstalled Chromium
+
+`pnpm test:ui` launches the Chromium build bundled with the installed `@playwright/test` version. Some hosted environments, including Claude Code cloud sessions, provide a different preinstalled Chromium and block browser downloads. In those environments, point Playwright at the provided executable with `PLAYWRIGHT_CHROMIUM_EXECUTABLE`:
+
+```bash
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui
+```
+
+Verified on 2026-10-22 in a Claude Code cloud session with `@playwright/test` 1.63.0 and Chromium 141. When the variable is unset, Playwright uses its bundled browser and local behavior is unchanged.
+
 ## Current implementation status
 
 Phase 3R is implemented and accepted through Package 3R-C. It is recorded in `docs/implementation/phase-03r-closeout.md`. Phase 4 is implemented and user-accepted through Package 4D; see `docs/implementation/phase-04-closeout.md`. Phase 5 planning is approved in `docs/implementation/phase-05-costing.md`. Packages 5A through 5C are implemented, including the consolidated global/module toolbar revision in Decision 0028; automated Costing UI verification passed on 2026-09-23 and user review remains the 5C stop gate. Package 5D integration remains unstarted.
