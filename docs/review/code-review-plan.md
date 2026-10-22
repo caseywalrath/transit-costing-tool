@@ -2,6 +2,7 @@
 
 - Status: Draft for user approval (Stage 1 deliverable)
 - Amended 2026-10-22 after the Wave 1 gate: Waves 2 and 3 use the flat operating model in Section 4.6 (user-approved).
+- Amended 2026-10-22 after the Wave 3 gate: Stage 3 runs in two sittings (user-approved). Stage 3A covers Section 8.1 steps 1–5 and produces `issue-register.md`; Stage 3B covers steps 6–7. See `docs/review/stage-3a-handoff.md`.
 - Date: 2026-10-22
 - Review baseline: `main` at `baed9f1` (merge of PR #12, Trips interchange and regeneration undo)
 - Plan location: `docs/review/code-review-plan.md` on branch `claude/upbeat-ritchie-51mpy5`
