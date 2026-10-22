@@ -182,8 +182,6 @@ describe('backup', () => {
 
 describe('backup import repairs Scenario copies made before duplication remapped Node references (P03, decision 4)', () => {
   const nodeIdsOf = (blocks: Block[]) => blocks.flatMap((block) => block.activities.flatMap((activity: BlockActivity) => (activity.type === 'revenueTrip' ? [] : [activity.fromNodeId, activity.toNodeId].filter((id): id is string => Boolean(id)))));
-  // Import still stamps normalized Blocks with a Trip Profile until Package P04, so compare without it.
-  const withoutProfile = (blocks: Block[]) => blocks.map(({ tripProfileId: _profile, ...block }) => block);
 
   /** A backup of the golden project with a Scenario copy as the older code made it: the copy's pull-out and pull-in name the source's Nodes. */
   function backupWithLeakyCopy(options: { removeSource?: boolean } = {}) {
@@ -213,13 +211,13 @@ describe('backup import repairs Scenario copies made before duplication remapped
     expect(report.recoveryFindings).toEqual([]);
     const copyBlocks = snapshot.blocks.filter((block) => block.scenarioId === copy.scenario.id);
     expect(nodeIdsOf(copyBlocks).filter((id) => sourceNodeIds.has(id))).toHaveLength(0);
-    expect(withoutProfile(copyBlocks)).toEqual(withoutProfile(copy.blocks));
+    expect(copyBlocks).toEqual(copy.blocks);
     // Everything outside the copy's Blocks is exactly what the file held.
     const exported = JSON.parse(text);
     for (const key of ['project', 'scenarios', 'serviceDays', 'routes', 'nodes', 'patterns', 'directions', 'runtimeProfiles', 'runtimeAssignments', 'tripProfiles', 'blockingScenarios', 'trips']) {
       expect(JSON.parse(JSON.stringify((snapshot as any)[key])), key).toEqual(exported[key]);
     }
-    expect(withoutProfile(snapshot.blocks.filter((block) => block.scenarioId === source.scenario.id))).toEqual(withoutProfile(exported.blocks.filter((block: Block) => block.scenarioId === source.scenario.id)));
+    expect(snapshot.blocks.filter((block) => block.scenarioId === source.scenario.id)).toEqual(exported.blocks.filter((block: Block) => block.scenarioId === source.scenario.id));
   });
 
   it('round trips the recovered backup without further changes', () => {
@@ -242,6 +240,6 @@ describe('backup import repairs Scenario copies made before duplication remapped
     const { snapshot, report } = parseProjectBackupWithReport(text);
     expect(report.recoveredNodeReferences).toBe(138);
     expect(report.recoveryFindings).toEqual([]);
-    expect(withoutProfile(snapshot.blocks)).toEqual(withoutProfile(copy.blocks));
+    expect(snapshot.blocks).toEqual(copy.blocks);
   });
 });

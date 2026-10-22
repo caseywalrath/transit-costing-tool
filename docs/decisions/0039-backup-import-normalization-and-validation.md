@@ -1,0 +1,29 @@
+# Decision 0039: Backup Import Keeps Block Ownership, Discards Placeholder Blocks, and Validates Before Writing
+
+- Status: Accepted and implemented
+- Date: 2026-10-22
+
+## Context
+
+The code review (issues I-003, I-010, I-017; findings 3-001, 1-010, 3-005) found three defects in backup import.
+
+1. Parsing stamped every Block that lacked a `tripProfileId`, including normalized Blocks, with the last Trip Profile of its Scenario. With two or more Trip Profiles, a Block of a non-last profile then failed the ownership check, so a backup that the application exported could not be restored through the application (import is always import-as-copy, which parses a second time). With one profile, `export(import(file))` added a `tripProfileId` to every Block.
+2. Version 3 and 4 backups imported their placeholder Blocks, which have no Blocking Scenario, although Decision 0019 item 13 says they are discarded. The Blocks were invisible in Blocking and Costing but inflated deletion counts and persisted into later backups.
+3. Validation accepted dangling, cross-Scenario, duplicate, and negative Block and Trip data, and two inputs reached the planner as raw runtime errors.
+
+## Decision
+
+1. Import adds no `tripProfileId` to a normalized Block. Its Trip Profile follows from its Blocking Scenario (Decision 0019 item 9). A `tripProfileId` stamped by an older export is dropped when it equals the Blocking Scenario's Trip Profile and rejects the file when it differs.
+2. A Block without a Blocking Scenario is a placeholder and is discarded on import, in any file version, and counted. The count is part of the import report, which `parseProjectBackupWithReport` and `ProjectBackupService.importProjectWithReport` return. Placeholders in version 5 and 6 files come from earlier imports of version 3 and 4 files; discarding them removes invisible records and does not change anything the planner could see.
+3. Validation runs entirely before any write. It adds these checks to the existing ones: a Trip needs a `provenance` object and a Route, Pattern, and service day of its own Scenario, and may not visit a Pattern point twice; a Block's service day must belong to its Scenario; Block labels are unique within a Blocking Scenario and service day; activities need a unique `id`, a supported `type`, a whole `sequence`, numeric time fields, and Node references that belong to the Block's Scenario; each Block passes the structural rules of `validateBlockingBlock`, and each Trip is assigned once per Blocking Scenario (`validateBlockingAssignments`). Scenario copies are repaired first (Decision 0038), so an old backup of a copy is not rejected for its leaked Node references. Gaps in activity `sequence` numbers are not an error; the next edit renumbers them.
+4. A generation set needs a `limit` object. Any `TypeError` or `RangeError` that remains from an unnamed field of the wrong type is replaced by "Invalid project backup: the file contains data in an unexpected form".
+5. Unknown extra fields are still kept, and a service-day total above 365 still imports (Costing reports it), as before.
+
+## Consequences
+
+- A backup with Blocking Scenarios on several Trip Profiles restores, with every Block's ownership as exported. `export(import(file))` equals the file for Blocks.
+- Importing a version 3 or 4 file reports how many placeholder Blocks were left out. Presenting the report is for the data-safety package (U02); the application port still returns only the Project.
+- Databases that already hold placeholder Blocks from earlier imports keep them until something removes them; a backup exported from such a database imports without them.
+- Block label uniqueness (data schema rule DS-20) is enforced here but the application does not enforce it when a Block is created or renamed, so a database can hold two Blocks with the same label. A backup of such a database is refused with a message that names the Blocking Scenario and the label; renaming one Block fixes it. A write-time rule belongs to a later package.
+- A copy whose unrepairable required Node reference remains after recovery (decision C8, no adjacent Trip) is refused with a message that names the Block.
+- A Trip without a Trip Profile in a version 4 to 6 file still receives its Scenario's last Trip Profile; version 1 to 3 files have one profile per Scenario. Making that default stricter was outside this package.

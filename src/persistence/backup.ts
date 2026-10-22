@@ -15,6 +15,7 @@ import type {
   Block,
   TripProfile,
   BlockingScenario,
+  BlockingBlock,
   CostingAssumptions,
   ValidationFinding,
 } from '../domain/types';
@@ -23,6 +24,7 @@ import { validatePattern } from '../domain/patterns';
 import { validateDirection, validatePatternDirection } from '../domain/directions';
 import { assertRuntimeGraph } from './runtimePersistence';
 import { assertTripProfileReferences } from '../domain/trips';
+import { validateBlockingAssignments, validateBlockingBlock } from '../domain/blocking';
 import { MAX_COSTING_FUTURE_YEARS, MAX_COSTING_YEAR, MIN_COSTING_YEAR, validatePersistedCostingAssumptions } from '../domain/costing';
 import { recoverScenarioCopyNodeReferences } from '../domain/scenarioCopyRecovery';
 
@@ -111,6 +113,8 @@ export interface BackupImportReport {
   recoveredNodeReferences: number;
   /** One finding per Node reference of a Scenario copy that could not be repaired, naming the Block. */
   recoveryFindings: ValidationFinding[];
+  /** Pre-Phase-4 placeholder Blocks (no Blocking Scenario) that were left out of the import (Decision 0019 item 13). */
+  discardedPlaceholderBlocks: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -344,6 +348,7 @@ function validateGenerationSets(values: unknown[], scenarioIds: Set<string>, rou
     const set = value as unknown as TripGenerationSet;
     requiredString(set.id, `generationSets[${index}].id`); if (ids.has(set.id)) throw new Error(`Invalid project backup: duplicate generation set id ${set.id}`); ids.add(set.id);
     if (!scenarioIds.has(set.scenarioId) || !routes.has(set.routeId) || !patternIds.has(set.patternId) || !dayIds.has(set.serviceDayId)) throw new Error(`Invalid project backup: generationSets[${index}] references a missing record`);
+    if (!isRecord(set.limit)) throw new Error(`Invalid project backup: generationSets[${index}].limit must be an object`);
     requiredString(set.name, `generationSets[${index}].name`); if (!Number.isInteger(set.firstDeparture) || set.firstDeparture < 0 || !Number.isInteger(set.headwaySeconds) || set.headwaySeconds <= 0) throw new Error(`Invalid project backup: generationSets[${index}] has invalid timing`);
     if (set.limit.mode === 'endTime') { if (!Number.isInteger(set.limit.endTime) || set.limit.endTime < set.firstDeparture) throw new Error(`Invalid project backup: generationSets[${index}].limit`); }
     else if (set.limit.mode !== 'tripCount' || !Number.isInteger(set.limit.tripCount) || set.limit.tripCount <= 0) throw new Error(`Invalid project backup: generationSets[${index}].limit`);
@@ -354,10 +359,13 @@ function validateGenerationSets(values: unknown[], scenarioIds: Set<string>, rou
 
 function validateTrips(values: unknown[], scenarioIds: Set<string>, routes: Map<string, Route>, patterns: RoutePattern[], serviceDays: ServiceDayDefinition[], generationSets: TripGenerationSet[], runtimeProfiles: RuntimeProfile[]): Trip[] {
   const ids = new Set<string>(); const patternById = new Map(patterns.map((pattern) => [pattern.id, pattern])); const setIds = new Set(generationSets.map((set) => set.id)); const profileIds = new Set(runtimeProfiles.map((profile) => profile.id)); const dayIds = new Set(serviceDays.map((day) => day.id));
+  const dayScenario = new Map(serviceDays.map((day) => [day.id, day.scenarioId]));
   return values.map((value, index) => {
     if (!isRecord(value)) throw new Error(`Invalid project backup: trips[${index}] must be an object`);
     const trip = value as unknown as Trip; requiredString(trip.id, `trips[${index}].id`); if (ids.has(trip.id)) throw new Error(`Invalid project backup: duplicate trip id ${trip.id}`); ids.add(trip.id);
     const pattern = patternById.get(trip.patternId); if (!scenarioIds.has(trip.scenarioId) || !routes.has(trip.routeId) || !pattern || !dayIds.has(trip.serviceDayId)) throw new Error(`Invalid project backup: trips[${index}] references a missing record`);
+    if (routes.get(trip.routeId)!.scenarioId !== trip.scenarioId || pattern.scenarioId !== trip.scenarioId || pattern.routeId !== trip.routeId || dayScenario.get(trip.serviceDayId) !== trip.scenarioId) throw new Error(`Invalid project backup: trips[${index}] references a Route, Pattern, or service day from another Scenario`);
+    if (!isRecord(trip.provenance)) throw new Error(`Invalid project backup: trips[${index}].provenance must be an object`);
     if (trip.provenance?.generationSetId && !setIds.has(trip.provenance.generationSetId)) throw new Error(`Invalid project backup: trips[${index}] references a missing generation set`);
     const source = trip.provenance?.calculationSource;
     const sourceProfileId = source?.runtimeProfileId ?? trip.provenance?.runtimeProfileId;
@@ -369,32 +377,127 @@ function validateTrips(values: unknown[], scenarioIds: Set<string>, routes: Map<
     if (!Array.isArray(trip.stopTimes) || trip.stopTimes.length !== pattern.points.length) throw new Error(`Invalid project backup: trips[${index}].stopTimes`);
     const pointIds = new Set(pattern.points.map((point) => point.id));
     for (const point of trip.stopTimes) { requiredString(point.patternPointId, `trips[${index}].stopTimes.patternPointId`); if (!pointIds.has(point.patternPointId) || !Number.isInteger(point.sequence) || !Number.isInteger(point.time) || point.time < 0) throw new Error(`Invalid project backup: trips[${index}].stopTimes`); }
+    if (new Set(trip.stopTimes.map((point) => point.patternPointId)).size !== trip.stopTimes.length) throw new Error(`Invalid project backup: trips[${index}].stopTimes repeats a Pattern point`);
     assertMetadata(value, `trips[${index}]`); return trip;
+  });
+}
+
+const ACTIVITY_TYPES = ['pullOut', 'revenueTrip', 'deadhead', 'pullIn'];
+const ACTIVITY_NUMBER_FIELDS = ['startTime', 'endTime', 'minutesBeforeFirstTrip', 'minutesAfterLastTrip', 'minutesAfterPreviousTrip', 'miles'];
+
+/** A Block without a Blocking Scenario is a pre-Phase-4 placeholder; Decision 0019 item 13 discards it on import. */
+function isPlaceholderBlock(value: unknown): boolean {
+  return isRecord(value) && !(typeof value.blockingScenarioId === 'string' && value.blockingScenarioId.length > 0);
+}
+
+/** Checks the shape of one Block's activities, so the later checks can rely on it. */
+function validateActivityShapes(block: Block, index: number): void {
+  const ids = new Set<string>();
+  block.activities.forEach((value, position) => {
+    const where = `blocks[${index}].activities[${position}]`;
+    if (!isRecord(value)) throw new Error(`Invalid project backup: ${where} must be an object`);
+    const id = requiredString(value.id, `${where}.id`);
+    if (ids.has(id)) throw new Error(`Invalid project backup: block "${block.label}" repeats activity id ${id}`);
+    ids.add(id);
+    if (typeof value.type !== 'string' || !ACTIVITY_TYPES.includes(value.type)) throw new Error(`Invalid project backup: ${where}.type is not a supported activity type`);
+    if (!Number.isInteger(value.sequence) || (value.sequence as number) < 0) throw new Error(`Invalid project backup: ${where}.sequence must be a whole number`);
+    if (value.type === 'revenueTrip') { requiredString(value.tripId, `${where}.tripId`); return; }
+    const required = value.type === 'deadhead' ? ['fromNodeId', 'toNodeId'] : value.type === 'pullOut' ? ['toNodeId'] : ['fromNodeId'];
+    for (const field of required) requiredString(value[field], `${where}.${field}`);
+    for (const field of ['fromNodeId', 'toNodeId']) if (value[field] !== undefined && typeof value[field] !== 'string') throw new Error(`Invalid project backup: ${where}.${field} must be text`);
+    for (const field of ACTIVITY_NUMBER_FIELDS) if (value[field] !== undefined && (typeof value[field] !== 'number' || !Number.isFinite(value[field]))) throw new Error(`Invalid project backup: ${where}.${field} must be a number`);
   });
 }
 
 function validateBlocks(values: unknown[], scenarioIds: Set<string>, serviceDays: ServiceDayDefinition[], trips: Trip[], blockingScenarios: BlockingScenario[] = []): Block[] {
   const ids = new Set<string>(); const tripIds = new Set(trips.map((trip) => trip.id)); const dayIds = new Set(serviceDays.map((day) => day.id));
+  const dayScenario = new Map(serviceDays.map((day) => [day.id, day.scenarioId]));
+  const labels = new Set<string>();
   const blockingScenarioById = new Map(blockingScenarios.map((scenario) => [scenario.id, scenario]));
   return values.map((value, index) => {
     if (!isRecord(value)) throw new Error(`Invalid project backup: blocks[${index}] must be an object`);
     const block = value as unknown as Block; requiredString(block.id, `blocks[${index}].id`); if (ids.has(block.id)) throw new Error(`Invalid project backup: duplicate block id ${block.id}`); ids.add(block.id);
     if (!scenarioIds.has(block.scenarioId) || !dayIds.has(block.serviceDayId)) throw new Error(`Invalid project backup: blocks[${index}] references a missing record`); requiredString(block.label, `blocks[${index}].label`); if (!Array.isArray(block.activities)) throw new Error(`Invalid project backup: blocks[${index}].activities`);
-    if (block.blockingScenarioId) {
-      const owner = blockingScenarioById.get(block.blockingScenarioId);
-      if (!owner || owner.scenarioId !== block.scenarioId) throw new Error(`Invalid project backup: block ${block.id} references an invalid Blocking Scenario`);
-      if (block.tripProfileId && block.tripProfileId !== owner.tripProfileId) throw new Error(`Invalid project backup: normalized block ${block.id} duplicates mismatched Trip Profile ownership`);
-    }
+    if (dayScenario.get(block.serviceDayId) !== block.scenarioId) throw new Error(`Invalid project backup: blocks[${index}] references a service day from another Scenario`);
+    const owner = blockingScenarioById.get(block.blockingScenarioId as string);
+    if (!owner || owner.scenarioId !== block.scenarioId) throw new Error(`Invalid project backup: block ${block.id} references an invalid Blocking Scenario`);
+    // A normalized Block stores no Trip Profile of its own (Decision 0019 item 9). An older export may carry the one its Blocking Scenario has.
+    if (block.tripProfileId && block.tripProfileId !== owner.tripProfileId) throw new Error(`Invalid project backup: normalized block ${block.id} duplicates mismatched Trip Profile ownership`);
+    const labelKey = `${owner.id}\u0000${block.serviceDayId}\u0000${block.label.trim()}`;
+    if (labels.has(labelKey)) throw new Error(`Invalid project backup: Blocking Scenario "${owner.name}" has more than one Block labeled "${block.label}" on the same service day`);
+    labels.add(labelKey);
+    validateActivityShapes(block, index);
     for (const activity of block.activities) { if (activity.type === 'revenueTrip' && !tripIds.has(activity.tripId)) throw new Error(`Invalid project backup: block ${block.id} references a missing trip`); }
     assertMetadata(value, `blocks[${index}]`); return block;
   });
+}
+
+const BLOCK_PROBLEMS: Record<string, string> = {
+  'block.missingTrip': 'it references a Trip that is not in the file',
+  'block.tripContextMismatch': 'it contains a Trip from another Scenario or service day',
+  'block.tripProfileMismatch': 'it contains a Trip from a different Trip Profile than its Blocking Scenario',
+  'block.missingPattern': 'a Trip in it has a Pattern that is not in the file',
+  'block.multiplePullOut': 'it has more than one pull-out',
+  'block.multiplePullIn': 'it has more than one pull-in',
+  'block.pullOutMustBeFirst': 'its pull-out is not the first activity',
+  'block.pullInMustBeLast': 'its pull-in is not the last activity',
+  'block.multipleDeadheads': 'it has more than one deadhead between two Trips',
+  'block.deadheadPlacement': 'a deadhead is not between two Trips',
+  'block.invalidActivityTime': 'a deadhead has an invalid time',
+  'block.invalidBoundaryTiming': 'a pull-out or pull-in has an invalid time',
+  'block.invalidMiles': 'an activity has invalid miles',
+  'block.deadheadNodesRequired': 'a deadhead is missing a Node',
+  'block.pullOutNodeRequired': 'its pull-out is missing a Node',
+  'block.pullInNodeRequired': 'its pull-in is missing a Node',
+};
+
+/** Checks that need the recovered Node references and the normalized Trips: Node ownership, Trip ownership, and the Blocking rules. */
+function validateBlockContents(blocks: Block[], trips: Trip[], patterns: RoutePattern[], nodes: Node[], blockingScenarios: BlockingScenario[]): void {
+  const nodeScenario = new Map(nodes.map((node) => [node.id, node.scenarioId]));
+  const tripById = new Map(trips.map((trip) => [trip.id, trip]));
+  const patternById = new Map(patterns.map((pattern) => [pattern.id, pattern]));
+  const ownerById = new Map(blockingScenarios.map((scenario) => [scenario.id, scenario]));
+  for (const block of blocks) {
+    for (const activity of block.activities) {
+      if (activity.type === 'revenueTrip') continue;
+      for (const end of ['fromNodeId', 'toNodeId'] as const) {
+        const nodeId = (activity as { fromNodeId?: string; toNodeId?: string })[end];
+        if (nodeId && nodeScenario.get(nodeId) !== block.scenarioId) throw new Error(`Invalid project backup: block "${block.label}" has a ${activity.type === 'pullOut' ? 'pull-out' : activity.type === 'pullIn' ? 'pull-in' : 'deadhead'} that references a Node that is not in its Scenario`);
+      }
+    }
+  }
+  for (const owner of blockingScenarios) {
+    const assignments = validateBlockingAssignments(owner, blocks as BlockingBlock[], tripById).find((found) => found.severity === 'error');
+    if (assignments) {
+      const block = blocks.find((candidate) => candidate.id === assignments.entityId);
+      throw new Error(`Invalid project backup: block "${block?.label ?? assignments.entityId}" assigns a Trip that is already assigned in Blocking Scenario "${owner.name}"`);
+    }
+  }
+  for (const block of blocks) {
+    const owner = ownerById.get(block.blockingScenarioId as string);
+    // The sequence numbers of activities are renumbered by the next edit, so an older export that left gaps still imports.
+    const problem = validateBlockingBlock(block as BlockingBlock, { scenario: { id: block.scenarioId }, blockingScenario: owner, trips: tripById, patterns: patternById })
+      .find((found) => found.category === 'structural' && found.ruleId !== 'block.sequence');
+    if (problem) throw new Error(`Invalid project backup: block "${block.label}" is not valid because ${BLOCK_PROBLEMS[problem.messageKey] ?? problem.messageKey}`);
+  }
 }
 
 export function parseProjectBackup(payload: string): ProjectSnapshot {
   return parseProjectBackupWithReport(payload).snapshot;
 }
 
+/** Parses and validates a backup. Whatever is wrong with the file, the error is one a planner can read; no write has happened yet. */
 export function parseProjectBackupWithReport(payload: string): { snapshot: ProjectSnapshot; report: BackupImportReport } {
+  try {
+    return parseValidatedBackup(payload);
+  } catch (error) {
+    // A field of the wrong type that no check above names would otherwise surface as a raw runtime error.
+    if (error instanceof TypeError || error instanceof RangeError) throw new Error('Invalid project backup: the file contains data in an unexpected form');
+    throw error;
+  }
+}
+
+function parseValidatedBackup(payload: string): { snapshot: ProjectSnapshot; report: BackupImportReport } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(payload);
@@ -441,7 +544,10 @@ export function parseProjectBackupWithReport(payload: string): { snapshot: Proje
   const costingAssumptions = parsed.exportSchemaVersion === PROJECT_BACKUP_SCHEMA_VERSION
     ? validateCostingAssumptions(requiredArray(parsed.costingAssumptions, 'costingAssumptions'), scenarioIds)
     : [];
-  const validatedBlocks = [3, 4, 5, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateBlocks(requiredArray(parsed.blocks, 'blocks'), scenarioIds, serviceDays, trips, blockingScenarios) : [];
+  // Blocks without a Blocking Scenario are pre-Phase-4 placeholders (version 3 and 4 files hold only those). They are discarded and counted.
+  const blockValues = [3, 4, 5, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? requiredArray(parsed.blocks, 'blocks') : [];
+  const keptBlockValues = blockValues.filter((value) => !isPlaceholderBlock(value));
+  const validatedBlocks = validateBlocks(keptBlockValues, scenarioIds, serviceDays, trips, blockingScenarios);
   // Files exported after a Scenario was duplicated by the older code name the source Scenario's Nodes in the copy's Blocks (Decision 0038).
   const recovery = recoverScenarioCopyNodeReferences({ scenarios, routes, nodes, patterns, trips, blocks: validatedBlocks });
   const blocks = recovery.blocks;
@@ -462,10 +568,12 @@ export function parseProjectBackupWithReport(payload: string): { snapshot: Proje
     }
   }
   const normalizedTrips = trips.map((trip) => ({ ...trip, tripProfileId: trip.tripProfileId ?? defaultProfileByScenario.get(trip.scenarioId) }));
-  const normalizedBlocks = blocks.map((block) => ({ ...block, tripProfileId: block.tripProfileId ?? defaultProfileByScenario.get(block.scenarioId) }));
+  validateBlockContents(blocks, normalizedTrips, patterns, nodes, blockingScenarios);
+  // A normalized Block stores no Trip Profile of its own; it follows from its Blocking Scenario (Decision 0019 item 9).
+  const normalizedBlocks = blocks.map(({ tripProfileId: _derivedFromBlockingScenario, ...block }) => block);
   return {
     snapshot: { project, scenarios, serviceDays, routes, nodes, patterns, ...(directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions.length ? { costingAssumptions } : {}), generationSets, trips: normalizedTrips, blocks: normalizedBlocks },
-    report: { recoveredNodeReferences: recovery.recoveredReferences, recoveryFindings: recovery.findings },
+    report: { recoveredNodeReferences: recovery.recoveredReferences, recoveryFindings: recovery.findings, discardedPlaceholderBlocks: blockValues.length - keptBlockValues.length },
   };
 }
 
