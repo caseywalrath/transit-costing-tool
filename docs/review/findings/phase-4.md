@@ -22,7 +22,7 @@
 
 | Task | Verdict |
 | --- | --- |
-| 4.1 Import graph | 39 non-test modules, 0 file-level cycles. H1 found none, and A2 confirmed with its own depth-first search. There are no domain → outer-layer imports and no application → UI imports. There are 3 UI → persistence edges, which violate OV-TECH-03 (4-013). There are 30 UI → domain import statements covering 85 symbols (see 4.2). External packages imported: `react`, `react-dom`, `dexie`. `zod`, `@tanstack/react-table` and `jszip` are declared but never imported; this is handed to Phase 6. |
+| 4.1 Import graph | 39 non-test modules, 0 file-level cycles. H1 found none, and A2 confirmed with its own depth-first search. There are no domain → outer-layer imports and no application → UI imports. There are 3 UI → persistence edges, which violate OV-TECH-03 (4-013). There are 30 UI → domain import statements covering 85 symbols (see 4.2). External packages imported: `react`, `react-dom`, `dexie`. `zod` and `@tanstack/react-table` are declared but never imported; this is handed to Phase 6. (Corrected in Stage 3A: an earlier version also named `jszip`, which is not declared, not locked and not imported; see `phase-6.md` Section 5.) |
 | 4.2 UI → domain classification | Permitted: formatting and parsing helpers (`formatServiceTime`, `parseServiceTime`, `formatRuntimeDuration`, `roundCostingDisplay`, `sortServiceDays`) and error classes. Boundary violations: `validateCostingAssumptions` (CostingWorkspace:76), `createBlockingScenarioSourceSignature` (App.tsx:909; BlockingWorkspace:146, 316), render-time runtime calculation (`selectRuntimeBand`, `segmentStartTimes`, `blendSegmentTimes`, `calculateTimepointHeadways` in ScheduleTable), `MAX_TRIPS_PER_GENERATION` validation duplicate, and `newId` in UI band/activity creation. Recorded as 4-014. |
 | 4.3 Business logic in React | The inventory is complete across all five ranges and is recorded as 4-014. The analysts found no input where the live UI computes a different number than the domain. There are two exceptions where UI-only logic is defective: 4-007 (bulk deadhead apply) and 4-018 (a blank minutes field becomes 0). The L-12 time arithmetic and the `stopTimes[0]` sort are in dead code only (R2). |
 | 4.4 Dead code | Confirmed: the legacy generation-set UI (`TripScheduleWorkspace`, `RuntimeWorkspace`, `DirectionSetup`) and its exclusive children; 11 App-level route handlers; `UndoIcon`/`RedoIcon`; 22 zero-reference exports; 11 dead service methods, including `deleteNode` (3-008). None is reachable from a menu or stored state. Recorded as 4-015 (S3). |
@@ -418,7 +418,7 @@
 | Lead | Owner |
 | --- | --- |
 | 4-008 compatibility fan-out and `getBlockSummary` per-Block reads: measure at capacity | Phase 6 (6.2) |
-| `zod`, `@tanstack/react-table`, `jszip` declared but never imported | Phase 6 (6.4) |
+| `zod` and `@tanstack/react-table` declared but never imported (corrected in Stage 3A: `jszip` is not declared; see `phase-6.md` Section 5) | Phase 6 (6.4) |
 | `data-schema.md:488,542` "running pre-2R UI" claim is stale | Stage 3 docs package (Phase 1 class) |
 | An empty file `/pw-golden.config.ts` exists at the container filesystem root (created by analyst B1; its delete was blocked by the session's safety check). Outside the repository; no effect on the review. | Review lead, reported to the user |
 
