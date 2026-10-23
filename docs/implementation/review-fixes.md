@@ -4,14 +4,14 @@
 
 **Sitting 4I and 4J combined (U06, U07, P15, then P17) is in progress on the branch `claude/stage-4i-4j-review-fixes`, from `origin/main` after the merge of PR #21 (U01 to U05, P16). If a later session reads this note, the sitting stopped early: continue from the first package under "Not started", on Sonnet, on this branch. Standing rules 1 to 10 below apply unchanged.** The user did not ask for a pull request.
 
-- Done on this branch: U06 (`U06HASH`).
+- Done on this branch: U06 (`88a40a6`).
 - Packages left: **U07** (Runtime and Trips presentation, with the added acceptance criteria below), **P15** (Trips and Runtime rules out of `App.tsx`; the one display change is "incomplete" instead of "0.0 miles" for a Pattern with no distance), then **P17** (below) only if the first three are committed and pushed. Not started: U07, P15, P17, U08, D01, P18.
 - This sitting's rules (user, 2026-10-23): Sonnet main session, no sub-agents, no Opus review; the Decision 0005 gate is waived and each package is pushed after its commit and fix log entry; a design or UX decision that no package text, added criterion, or decision below settles is recorded in the fix log as "blocked: decision needed" with the exact question and options, and the next independent package goes on; branch protection and CI are the user's to watch, and the workflows are not edited.
 - Blocked: none so far.
 - Known failures: none. If the intermittent `unified-action-layer.spec.ts:139` failure returns, diagnose it as a package failure and fix the code.
 - State after U06: unit tests 48 files, 700 tests; browser suite 132 tests, all passing; bundle `index-sdD2Whrb.js` 805.01 kB. The user must still read the first CI run.
 - Carried forward for U06 and U07 from this sitting (details in the U01 to U05 entries):
-  - **U06 (done, `U06HASH`):** the Annual Cost column fits at 768, 1024, and 1440 px; an invalid estimate lists its findings; the persistence answer of `getLocalDataProtection()` is still not shown (no criterion asks for it), and the assumptions alert keeps its single sentence.
+  - **U06 (done, `88a40a6`):** the Annual Cost column fits at 768, 1024, and 1440 px; an invalid estimate lists its findings; the persistence answer of `getLocalDataProtection()` is still not shown (no criterion asks for it), and the assumptions alert keeps its single sentence.
   - **U07:** Runtime totals show ":61"/":65" (U01 screenshots); the Shift drawer covers the Runtime Save button at some widths; the Runtime profile single-flight load, Runtime reload after save, and the Recalculate band picker (added criteria below); the React error boundary; user-facing text for `tripShift.timeBeforeServiceDay` and `inspectStaleTrips` findings; the shared-profile line should call `listRuntimeProfileServiceDays` (I-041).
   - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead; the Add-trip row drafts are not kept across a scope change; 24 dialogs were converted (the finding counted 28, four were removed by X01).
   - **P15:** the Trips and Pattern screens still show 0.0 miles for a Pattern with no distance (only Blocking treats a 0 total as incomplete); `calculateTimepointHeadways` has no unit test; display rounding in the Trips table. A CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
@@ -1704,7 +1704,7 @@ User decisions implemented: none new (finding 2-007 was marked "either rule acce
 
 - Date: 2026-10-23. Sitting 4I/4J (combined). Model: Sonnet (main session). No sub-agents.
 - Type: UI. Severity: S2.
-- Commit: `COMMIT`.
+- Commit: `88a40a6`.
 
 ### Issues fixed
 
