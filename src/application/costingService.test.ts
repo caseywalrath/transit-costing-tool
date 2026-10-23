@@ -89,8 +89,8 @@ describe('CostingApplicationService', () => {
 
     it('validates assumptions as the domain does', () => {
       expect(service.validateAssumptions(valid)).toEqual([]);
-      expect(service.validateAssumptions({ ...valid, rateYear: 2030 }).map((finding) => finding.code)).toEqual(['costing.rateYearAfterBaseServiceYear']);
-      expect(service.validateAssumptions({ ...valid, enteredRate: -1, futureYearCount: 11 }).map((finding) => finding.code)).toEqual(['costing.rateInvalid', 'costing.futureYearCountInvalid']);
+      expect(service.validateAssumptions({ ...valid, rateYear: 2030 }).map((finding) => finding.ruleId)).toEqual(['costing.rateYearAfterBaseServiceYear']);
+      expect(service.validateAssumptions({ ...valid, enteredRate: -1, futureYearCount: 11 }).map((finding) => finding.ruleId)).toEqual(['costing.rateInvalid', 'costing.futureYearCountInvalid']);
       expect(service.validateAssumptions({ ...valid, enteredRate: undefined })).toEqual([]);
     });
 

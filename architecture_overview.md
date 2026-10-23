@@ -56,15 +56,16 @@ The expected application stack is:
 - React and TypeScript for the application;
 - Vite for development and static builds;
 - Dexie as the IndexedDB access layer;
-- a headless table library for dense tabular behavior;
-- a runtime schema validator for imported data and migrations;
+- hand-written table components for dense tabular behavior, with no table library (decision 18 of the code review);
+- hand-written validation of imported data and migrations, with no schema library (decision 18);
 - Vitest for domain and persistence tests, run on `fake-indexeddb` so the Dexie repository and database upgrades are tested in `pnpm test` (Decision 0040), with Playwright for browser-rendered layout regression tests;
 - plain CSS or CSS Modules for a compact interface;
-- GitHub Actions for GitHub Pages deployment.
+- GitHub Actions: a CI workflow (`.github/workflows/ci.yml`) runs on every pull request and every push to `main`: typecheck (which covers `src`, `tests`, and the tool configs), unit tests, the production build, and the Playwright browser suite. The Pages deployment (`deploy-pages.yml`) starts only after the CI run for a push to `main` has succeeded and builds the commit that CI checked;
+- Node 22 LTS, pinned in `.nvmrc`, `engines`, and CI, and pnpm 10, pinned by the `packageManager` field.
 
 Exact dependencies and versions must be selected during scaffolding and recorded in the Phase 1 implementation result.
 
-Phase 1A selected dependencies: React 19, TypeScript 5.9, Vite 7, Dexie 4, Zod 4 (reserved for import/migration validation), TanStack Table 8 (headless table capability), and Vitest 3. The package manifest is authoritative for exact ranges. Vite is configured with a relative (`./`) base for GitHub Pages project hosting.
+Phase 1A selected dependencies: React 19, TypeScript 5.9, Vite 7, Dexie 4, and Vitest 3. Zod and TanStack Table were selected at scaffolding and removed in the code review (Package B01) because nothing imported them. The package manifest is authoritative for exact ranges. A major upgrade of Vitest (the remaining `pnpm audit` findings are all in its chain) is follow-up work, not done. Vite is configured with a relative (`./`) base for GitHub Pages project hosting.
 
 The implemented file boundaries are:
 
@@ -250,9 +251,13 @@ The first blocking release supports manual trip assignment and unassignment, man
 - negative layover;
 - location discontinuity without deadhead;
 - deadhead that does not fit in the available gap;
+- a deadhead with explicit clock times (a legacy or imported shape) that lies outside the gap between its two Trips, which is reported as misplaced and leaves that connection's layover uncounted;
+- an explicit pull-out that ends after the first Trip starts, or an explicit pull-in that starts before the last Trip ends (boundary overlap);
 - missing pull-out or pull-in data required for platform hours.
 
 Structural ownership, reference, duplicate-assignment, and malformed-time violations reject writes. Structurally valid but operationally infeasible Blocks remain saved with visible findings. Selected-day subtotals include valid Blocks; Block-level status and findings identify incomplete or infeasible work.
+
+The Blocking rules sit in `src/domain/blocking.ts` and are reached through `BlockingApplicationService`; `BlockingWorkspace.tsx` presents their results. The service lists the unassigned Trips of the Route and service day, adds an activity in its place (pull-out first, pull-in last, deadhead after its Trip), moves a Trip with its deadhead, applies a deadhead to every matching connection, reads typed minutes and miles (a blank minutes field or a blank minimum-layover amount is refused, never read as 0), proposes the first free "Block <n>", and previews the impact of deleting a Block or a Blocking Scenario (the preview's `sourceSignature` is the review token the deletion takes). Block summaries carry Layover %. A Block label must be unique within its Blocking Scenario and service day (Decision 0039).
 
 The initial Blocking UI filters candidate Trips by one selected Route and does not intentionally create multi-route Blocks. The data model remains scenario-wide. Existing or imported multi-route Blocks remain fully visible, and Route filtering never truncates their activities.
 
@@ -265,14 +270,16 @@ Initial service quantities are:
 - running time: sum of scheduled revenue-trip durations, excluding layover;
 - revenue hours: running time plus usable layover time between revenue Trips;
 - platform hours: resolved block pull-in time minus resolved block pull-out time;
-- revenue miles: sum of pattern miles for revenue trips when distances are complete;
+- revenue miles: sum of pattern miles for revenue trips when distances are complete. A Pattern whose total distance is 0 has no distance entered, so its miles are incomplete and are never counted as 0;
 - annual quantities: daily quantities multiplied by annual service-day counts.
 
 Phase 5 uses one Scenario-owned set of Costing assumptions, not multiple named Costing scenarios. A selected Blocking Scenario supplies eligible Revenue and Platform Hours; the initial cost multiplier is manually entered USD operating cost per Revenue Hour. Platform Hours are displayed but are not separately multiplied or added. The source rate year is adjusted automatically to the service year using an editable annual escalation assumption, defaulting to 3%. The horizon is the base year plus up to ten future years. Annual quantities use stored service-day counts. A count is a whole number of 0 or more, and the counts of all service days must total at most 365: an edit that would raise the total above 365 is refused with a field finding, not clamped, and a total above 365 saved earlier makes the estimate invalid until it is corrected (Decision 0041). The UI shows one Blocking Scenario at a time through a selector, without a cross-scenario comparison table. Detailed eligibility, lifecycle, and export rules are in `docs/implementation/phase-05-costing.md`.
 
 ## Validation
 
-Validation returns structured findings rather than formatted strings. Each finding includes a rule identifier, severity, entity reference, message parameters, and optional acknowledgment information.
+Validation returns structured findings rather than formatted strings. Every module reports the one `ValidationFinding` shape: a rule identifier (`ruleId`), severity, an optional category (`structural` or `operational`), an entity type and id, an optional field, a message key, and message parameters. Route, Pattern, Blocking, and Costing findings all use it. A Costing finding names the Scenario, the assumptions, the Service day, the Trip, or the Block that it is about; a finding about assumptions names the field. A Blocking operation that a structural rule refuses (for example an invalid Block, a Trip outside the Blocking Scenario's service context, or a taken Blocking Scenario name) throws a `BlockingValidationError` whose `findings` carry the rule and entity, and whose `message` is the text screens show.
+
+Acknowledgment of a warning is still planned and is not part of the finding: no code reads or stores an acknowledgment, and no table has a field for one. When acknowledgments are built, they will be stored separately and keyed by `ruleId` and entity, so a finding stays a derived value (`docs/data-schema.md`, "Validation result").
 
 Errors prevent an operation when the resulting data would be unusable. Warnings allow confirmation or later correction. Acknowledging a warning does not remove the underlying condition.
 
@@ -289,6 +296,12 @@ The first usable application must include:
 - visible local-save status.
 
 CSV is not a complete backup format because it cannot reliably preserve every relationship and setting.
+
+CSV rules (`src/persistence/csv.ts`, one set for every writer):
+
+- A field with a comma, a double quote, LF, CR, or CRLF is quoted; header cells follow the same rule, so a Pattern or Node name with a comma or a quote cannot break the Trips CSV. The Runtime profile CSV uses the same escaper.
+- A free-text cell (a name, label, or note) that begins with `=`, `+`, `-`, or `@` is written with an apostrophe in front, so a spreadsheet shows text instead of running a formula. The Trips CSV import and the Runtime paste import remove that apostrophe, and a value that already begins with apostrophes before such a character gets one more, so every value round trips exactly. Identifiers, times, and numbers are never changed. Each serializer names its free-text columns, and a test exercises every serializer to confirm that only those columns are protected (decision 5).
+- The Trips CSV (`src/application/tripTableCsv.ts`) and the ZIP writer (`src/application/csvDownload.ts`) live in the application layer. `src/ui` imports nothing from `src/persistence`; the interface reads the escaping rules through `src/application/csvText.ts`, and a test fails on any import of `src/persistence` from `src/ui` (decision 12; OV-TECH-03 is unchanged).
 
 The visible save status covers every write: the Route, Trips, Blocking, and Costing services publish saving, saved, and failed through one `SaveStatusPublisher`. A write that fails because the browser store is full is reported as "Browser storage is full. Export a backup, then free space." After the first successful save the application asks the browser once to keep the store (`navigator.storage.persist()`) and records the answer, and it records the time of the last JSON backup export. Both are device-local facts kept beside the selection preferences, never in a backup, and available to the screen through the `LocalDataProtectionQueries` port. GitHub Pages shares one origin, and therefore one browser store, among every site of the account (Decision 0001, amendment of 2026-10-23).
 

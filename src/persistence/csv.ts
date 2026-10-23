@@ -2,17 +2,32 @@ import type { Block, BlockingBlock, BlockingScenario, DirectionTimepointColumn, 
 import type { BlockSummary, BlockingSummary } from '../domain/blocking';
 import { roundCostingDisplay, type CostingAssumptionsInput, type CostingCalculationResult } from '../domain/costing';
 import { formatServiceTime } from '../domain/time';
-export function csvEscape(value: unknown): string { const s = String(value ?? ''); return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s; }
-export function toCsv(headers: string[], rows: Array<object>): string { return [headers, ...rows.map(r => { const record = r as Record<string, unknown>; return headers.map(h => csvEscape(record[h])); })] .map(row => row.join(',')).join('\r\n') + '\r\n'; }
-export const routeCsv = (route: Route) => toCsv(['id', 'scenarioId', 'name', 'shortName', 'description'], [route]);
-export const nodesCsv = (nodes: Node[]) => toCsv(['id', 'scenarioId', 'routeId', 'name', 'shortName', 'kind', 'notes'], nodes);
-export const patternsCsv = (patterns: RoutePattern[]) => toCsv(['id', 'scenarioId', 'routeId', 'name', 'directionId', 'sequence', 'directionLabel', 'notes'], patterns);
+/** Quotes a field that contains a comma, a double quote, or a line break (LF, CR, or CRLF). Every CSV writer in the application uses this rule. */
+export function csvEscape(value: unknown): string { const s = String(value ?? ''); return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s; }
+
+/**
+ * Spreadsheets run a cell that begins with `=`, `+`, `-`, or `@` as a formula. A free-text value that begins that way, or that
+ * already begins with apostrophes before one of those characters, gets one more apostrophe in front (decision 5). `restoreFormulaText`
+ * removes it again on import, so a value round-trips exactly. Identifiers, times, and numbers are never passed through this.
+ */
+export function neutralizeFormulaText(text: string): string { return /^'*[=+\-@]/.test(text) ? `'${text}` : text; }
+export function restoreFormulaText(text: string): string { return /^'+[=+\-@]/.test(text) ? text.slice(1) : text; }
+
+/** `freeText` names the columns that hold user-entered text (names, labels, notes); only those are protected against formulas. Header cells are escaped like any other cell. */
+export function toCsv(headers: string[], rows: Array<object>, freeText: readonly string[] = []): string {
+  const protectedColumns = new Set(freeText);
+  const cell = (header: string, value: unknown) => csvEscape(protectedColumns.has(header) && typeof value === 'string' ? neutralizeFormulaText(value) : value);
+  return [headers.map((header) => csvEscape(header)), ...rows.map((row) => { const record = row as Record<string, unknown>; return headers.map((header) => cell(header, record[header])); })].map((row) => row.join(',')).join('\r\n') + '\r\n';
+}
+export const routeCsv = (route: Route) => toCsv(['id', 'scenarioId', 'name', 'shortName', 'description'], [route], ['name', 'shortName', 'description']);
+export const nodesCsv = (nodes: Node[]) => toCsv(['id', 'scenarioId', 'routeId', 'name', 'shortName', 'kind', 'notes'], nodes, ['name', 'shortName', 'notes']);
+export const patternsCsv = (patterns: RoutePattern[]) => toCsv(['id', 'scenarioId', 'routeId', 'name', 'directionId', 'sequence', 'directionLabel', 'notes'], patterns, ['name', 'directionLabel', 'notes']);
 export const patternPointsCsv = (patterns: RoutePattern[]) => toCsv(['patternId', 'pointId', 'nodeId', 'sequence', 'cumulativeMiles', 'directionColumnId'], patterns.flatMap(p => p.points.map(point => ({ patternId: p.id, pointId: point.id, nodeId: point.nodeId, sequence: point.sequence, cumulativeMiles: point.cumulativeMiles, directionColumnId: point.directionColumnId }))));
-export const directionsCsv = (directions: RouteDirection[]) => toCsv(['id', 'scenarioId', 'routeId', 'name', 'sequence'], directions);
-export const directionColumnsCsv = (directions: RouteDirection[]) => toCsv(['directionId', 'columnId', 'nodeId', 'sequence', 'labelOverride'], directions.flatMap((direction) => direction.columns.map((column: DirectionTimepointColumn) => ({ directionId: direction.id, columnId: column.id, nodeId: column.nodeId, sequence: column.sequence, labelOverride: column.labelOverride }))));
-export const runtimeBandsCsv = (profiles: RuntimeProfile[]) => toCsv(['profileId', 'patternId', 'profileName', 'calculationRevision', 'bandId', 'label', 'sequence', 'startTime', 'endTime', 'segmentRuntimeSeconds'], profiles.flatMap(profile => profile.bands.map(band => ({ profileId: profile.id, patternId: profile.patternId, profileName: profile.name, calculationRevision: profile.calculationRevision ?? 0, bandId: band.id, label: band.label, sequence: band.sequence, startTime: formatServiceTime(band.startTime), endTime: formatServiceTime(band.endTime), segmentRuntimeSeconds: band.segmentRuntimeSeconds.join('|') }))));
+export const directionsCsv = (directions: RouteDirection[]) => toCsv(['id', 'scenarioId', 'routeId', 'name', 'sequence'], directions, ['name']);
+export const directionColumnsCsv = (directions: RouteDirection[]) => toCsv(['directionId', 'columnId', 'nodeId', 'sequence', 'labelOverride'], directions.flatMap((direction) => direction.columns.map((column: DirectionTimepointColumn) => ({ directionId: direction.id, columnId: column.id, nodeId: column.nodeId, sequence: column.sequence, labelOverride: column.labelOverride }))), ['labelOverride']);
+export const runtimeBandsCsv = (profiles: RuntimeProfile[]) => toCsv(['profileId', 'patternId', 'profileName', 'calculationRevision', 'bandId', 'label', 'sequence', 'startTime', 'endTime', 'segmentRuntimeSeconds'], profiles.flatMap(profile => profile.bands.map(band => ({ profileId: profile.id, patternId: profile.patternId, profileName: profile.name, calculationRevision: profile.calculationRevision ?? 0, bandId: band.id, label: band.label, sequence: band.sequence, startTime: formatServiceTime(band.startTime), endTime: formatServiceTime(band.endTime), segmentRuntimeSeconds: band.segmentRuntimeSeconds.join('|') }))), ['profileName', 'label']);
 /** @deprecated Historical pre-2R export retained for the old UI only. */
-export const generationSetsCsv = (sets: TripGenerationSet[]) => toCsv(['id', 'scenarioId', 'routeId', 'serviceDayId', 'patternId', 'name', 'firstDeparture', 'headwaySeconds', 'limitMode', 'limitValue', 'generationRevision'], sets.map(set => ({ id: set.id, scenarioId: set.scenarioId, routeId: set.routeId, serviceDayId: set.serviceDayId, patternId: set.patternId, name: set.name, firstDeparture: formatServiceTime(set.firstDeparture), headwaySeconds: set.headwaySeconds, limitMode: set.limit.mode, limitValue: set.limit.mode === 'endTime' ? formatServiceTime(set.limit.endTime) : set.limit.tripCount, generationRevision: set.generationRevision })));
+export const generationSetsCsv = (sets: TripGenerationSet[]) => toCsv(['id', 'scenarioId', 'routeId', 'serviceDayId', 'patternId', 'name', 'firstDeparture', 'headwaySeconds', 'limitMode', 'limitValue', 'generationRevision'], sets.map(set => ({ id: set.id, scenarioId: set.scenarioId, routeId: set.routeId, serviceDayId: set.serviceDayId, patternId: set.patternId, name: set.name, firstDeparture: formatServiceTime(set.firstDeparture), headwaySeconds: set.headwaySeconds, limitMode: set.limit.mode, limitValue: set.limit.mode === 'endTime' ? formatServiceTime(set.limit.endTime) : set.limit.tripCount, generationRevision: set.generationRevision })), ['name']);
 export const tripsCsv = (trips: Trip[], tripProfiles: TripProfile[] = []) => {
   const names = new Map(tripProfiles.map((profile) => [profile.id, profile.name]));
   return toCsv(
@@ -24,6 +39,7 @@ export const tripsCsv = (trips: Trip[], tripProfiles: TripProfile[] = []) => {
       publicLabel: trip.publicLabel, manualTimeShiftSeconds: trip.provenance.manualTimeShiftSeconds,
       manuallyChangedFields: trip.provenance.manuallyChangedFields.join('|'),
     })),
+    ['tripProfileName', 'publicLabel'],
   );
 };
 /** Authoritative trip report. It intentionally has no generation-set columns. */
@@ -41,6 +57,7 @@ export const authoritativeTripsCsv = (trips: Trip[], tripProfiles: TripProfile[]
       publicLabel: trip.publicLabel, manualTimeShiftSeconds: trip.provenance.manualTimeShiftSeconds,
       manuallyChangedFields: trip.provenance.manuallyChangedFields.join('|'),
     })),
+    ['tripProfileName', 'publicLabel'],
   );
 };
 export const scheduledPointsCsv = (trips: Trip[]) => toCsv(['tripId', 'patternPointId', 'sequence', 'time'], trips.flatMap(trip => trip.stopTimes.map(point => ({ tripId: trip.id, patternPointId: point.patternPointId, sequence: point.sequence, time: formatServiceTime(point.time) }))));
@@ -49,6 +66,7 @@ export const blocksCsv = (blocks: Block[], tripProfiles: TripProfile[] = []) => 
   return toCsv(
     ['id', 'scenarioId', 'tripProfileId', 'tripProfileName', 'serviceDayId', 'label', 'notes'],
     blocks.map((block) => ({ ...block, tripProfileName: block.tripProfileId ? names.get(block.tripProfileId) : undefined })),
+    ['tripProfileName', 'label', 'notes'],
   );
 };
 export const blockActivitiesCsv = (blocks: Block[]) => toCsv(
@@ -73,7 +91,7 @@ export const blockActivitiesCsv = (blocks: Block[]) => toCsv(
 /** Phase 4 Blocking Scenario export. These serializers are report-only; CSV import is intentionally deferred. */
 export const blockingScenariosCsv = (scenarios: BlockingScenario[], tripProfiles: TripProfile[] = []) => {
   const names = new Map(tripProfiles.map((profile) => [profile.id, profile.name]));
-  return toCsv(['id', 'scenarioId', 'tripProfileId', 'tripProfileName', 'name', 'description'], scenarios.map((scenario) => ({ id: scenario.id, scenarioId: scenario.scenarioId, tripProfileId: scenario.tripProfileId, tripProfileName: names.get(scenario.tripProfileId), name: scenario.name, description: scenario.description })));
+  return toCsv(['id', 'scenarioId', 'tripProfileId', 'tripProfileName', 'name', 'description'], scenarios.map((scenario) => ({ id: scenario.id, scenarioId: scenario.scenarioId, tripProfileId: scenario.tripProfileId, tripProfileName: names.get(scenario.tripProfileId), name: scenario.name, description: scenario.description })), ['tripProfileName', 'name', 'description']);
 };
 
 export type CostingCsvFileSuffix = 'costing-assumptions' | 'costing-results' | 'costing-exclusions';
@@ -116,6 +134,7 @@ export function costingCsvFiles(
       annualEscalationFraction: assumptions.annualEscalation,
       roundingNote: 'USD amounts and applied rates are independently rounded to 2 and 4 decimals; hours to 4 decimals.',
     }],
+    ['scenarioName', 'blockingScenarioName', 'tripProfileName', 'sourceNote'],
   );
 
   const resultHeaders = [
@@ -173,11 +192,12 @@ export function costingCsvFiles(
       ...day.blocks.map((block) => ({ ...context, serviceDayId: day.serviceDayId, serviceDayName: day.serviceDayName, exclusionType: 'block', blockId: block.blockId, blockLabel: block.blockLabel, reasonCodes: block.reasonCodes.join('|') })),
       ...(day.unassignedTripCount > 0 ? [{ ...context, serviceDayId: day.serviceDayId, serviceDayName: day.serviceDayName, exclusionType: 'unassignedTrips', unassignedTripCount: day.unassignedTripCount }] : []),
     ]),
+    ['scenarioName', 'blockingScenarioName', 'tripProfileName', 'serviceDayName', 'blockLabel'],
   );
 
   return [
     { suffix: 'costing-assumptions', contents: assumptionsContents },
-    { suffix: 'costing-results', contents: toCsv(resultHeaders, resultRows) },
+    { suffix: 'costing-results', contents: toCsv(resultHeaders, resultRows, ['scenarioName', 'blockingScenarioName', 'tripProfileName', 'serviceDayName']) },
     { suffix: 'costing-exclusions', contents: exclusionsContents },
   ];
 }
@@ -231,7 +251,7 @@ export function createCsvArchive(files: CsvArchiveFile[]) {
   return new Blob([localDirectory, centralDirectory, end], { type: 'application/zip' });
 }
 
-export const blockingBlocksCsv = (blocks: BlockingBlock[]) => toCsv(['id', 'scenarioId', 'blockingScenarioId', 'serviceDayId', 'label', 'notes'], [...blocks].sort((a, b) => a.serviceDayId.localeCompare(b.serviceDayId) || a.label.localeCompare(b.label) || a.id.localeCompare(b.id)));
+export const blockingBlocksCsv = (blocks: BlockingBlock[]) => toCsv(['id', 'scenarioId', 'blockingScenarioId', 'serviceDayId', 'label', 'notes'], [...blocks].sort((a, b) => a.serviceDayId.localeCompare(b.serviceDayId) || a.label.localeCompare(b.label) || a.id.localeCompare(b.id)), ['label', 'notes']);
 
 export const blockingActivitiesCsv = (blocks: BlockingBlock[]) => toCsv(
   ['blockingScenarioId', 'blockId', 'activityId', 'type', 'sequence', 'tripId', 'startTime', 'endTime', 'minutesBeforeFirstTrip', 'minutesAfterPreviousTrip', 'minutesAfterLastTrip', 'fromNodeId', 'toNodeId', 'miles'],

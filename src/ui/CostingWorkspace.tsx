@@ -3,7 +3,7 @@ import type { CostingCommands, CostingQueries } from '../application/ports';
 import type { CostingAssumptionsInput, CostingBlockExclusionReason, CostingCalculationResult } from '../domain/costing';
 import { DEFAULT_COSTING_ESCALATION, roundCostingDisplay } from '../domain/costing';
 import type { BlockingScenario, CostingAssumptions, Scenario, ServiceDayDefinition, TripProfile } from '../domain/types';
-import { createCsvArchive } from './csvDownload';
+import { createCsvArchive } from '../application/csvDownload';
 import { MenuButton, type MenuGroup } from './MenuButton';
 
 type Props = {

@@ -52,7 +52,7 @@ export function capacityBackup(o: CapacityOpts = {}): any {
       const firstPat = pats.find((p) => p.id === bt[0].patternId)!; const lastPat = pats.find((p) => p.id === bt[bt.length - 1].patternId)!;
       acts.push({ id: `p6-po-${d.id.slice(0, 4)}-${b}`, type: 'pullOut', sequence: seq++, minutesBeforeFirstTrip: 30, toNodeId: firstPat.points[0].nodeId });
       for (const t of bt) acts.push({ id: `p6-ra-${t.id}`, type: 'revenueTrip', sequence: seq++, tripId: t.id });
-      acts.push({ id: `p6-pi-${d.id.slice(0, 4)}-${b}`, type: 'pullIn', sequence: seq++, minutesAfterLastTrip: 15, fromNodeId: lastPat.points.at(-1).nodeId });
+      acts.push({ id: `p6-pi-${d.id.slice(0, 4)}-${b}`, type: 'pullIn', sequence: seq++, minutesAfterLastTrip: 15, fromNodeId: lastPat.points.at(-1)!.nodeId });
       out.blocks.push({ id: `p6-block-${d.id.slice(0, 4)}-${b}`, scenarioId, blockingScenarioId, serviceDayId: d.id, label: String(b + 1), activities: acts, ...meta });
     });
     void tripDur; void cycle; void perBlockMax;

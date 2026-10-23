@@ -176,6 +176,8 @@ Pattern validation requires:
 - non-decreasing cumulative distance;
 - repeated node IDs are allowed.
 
+A Pattern whose last cumulative distance is 0 has no distance entered. It is a valid Pattern, but Blocking treats its miles as incomplete and never as 0 miles.
+
 Reverse-pattern creation reverses point order, creates new pattern-point IDs, and reconstructs cumulative miles from reversed segment distances.
 
 ## Runtime entities
@@ -408,14 +410,16 @@ Repository and backup validation require one record at most per Scenario, USD cu
 
 ## Validation result
 
-Current validation findings are calculated. Warning acknowledgments may be persisted separately when that behavior is implemented.
+Current validation findings are calculated and never stored. Route, Pattern, Blocking, and Costing all report this one shape. Warning acknowledgments are planned but not implemented; the shape has no acknowledgment field. When they are built, they will be persisted separately, keyed by `ruleId` and entity.
 
 ```typescript
 type ValidationSeverity = "error" | "warning";
+type ValidationCategory = "structural" | "operational";
 
 interface ValidationFinding {
   ruleId: string;
   severity: ValidationSeverity;
+  category?: ValidationCategory;
   entityType: string;
   entityId: EntityId;
   field?: string;
@@ -423,6 +427,8 @@ interface ValidationFinding {
   parameters?: Record<string, string | number>;
 }
 ```
+
+`category` is set by Blocking (a structural finding rejects a write; an operational finding stays visible). Costing findings omit it. `CostingFinding` is an alias of `ValidationFinding`: its `ruleId` is the former `code`, an assumption finding sets `field`, and the Service day of a Trip or Block finding is the `serviceDayId` parameter.
 
 ## IndexedDB tables and indexes
 

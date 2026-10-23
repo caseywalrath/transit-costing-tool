@@ -4,6 +4,7 @@ import type { DurationSeconds, ServiceSeconds } from '../domain/types';
 import { formatServiceTime } from '../domain/time';
 import { formatRuntimeDuration } from '../domain/durations';
 import type { RuntimeProfile } from '../domain/types';
+import { csvEscape, neutralizeFormulaText, restoreFormulaText } from '../application/csvText';
 
 export interface RuntimePasteRow {
   sourceRowNumber: number;
@@ -17,9 +18,8 @@ export interface RuntimePasteRow {
 /** Spreadsheet-ready CSV for the currently selected Runtime profile. */
 export function runtimeProfileCsv(profile: RuntimeProfile): string {
   const headers = ['Band', 'From', 'To', 'Calculation Method', ...profile.bands[0]?.segmentRuntimeSeconds.map((_, index) => `Segment ${index + 1}`) ?? []];
-  const escape = (value: unknown) => { const text = String(value ?? ''); return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text; };
-  const rows = [headers, ...profile.bands.map((band) => [band.label, formatServiceTime(band.startTime, band.startTime % 60 !== 0), formatServiceTime(band.endTime, band.endTime % 60 !== 0), profile.calculationMethod ?? 'singleBand', ...band.segmentRuntimeSeconds.map(formatRuntimeDuration)])];
-  return rows.map((row) => row.map(escape).join(',')).join('\r\n') + '\r\n';
+  const rows = [headers, ...profile.bands.map((band) => [neutralizeFormulaText(band.label), formatServiceTime(band.startTime, band.startTime % 60 !== 0), formatServiceTime(band.endTime, band.endTime % 60 !== 0), profile.calculationMethod ?? 'singleBand', ...band.segmentRuntimeSeconds.map(formatRuntimeDuration)])];
+  return rows.map((row) => row.map(csvEscape).join(',')).join('\r\n') + '\r\n';
 }
 
 export class RuntimePasteParseError extends Error {
@@ -201,7 +201,7 @@ export function parseRuntimePaste(text: string, segmentCount: number): RuntimePa
       continue;
     }
 
-    const bandLabel = columns.hasBandLabel ? row.cells[0].trim() : undefined;
+    const bandLabel = columns.hasBandLabel ? restoreFormulaText(row.cells[0].trim()) : undefined;
     if (columns.hasBandLabel && !bandLabel) issues.push(`Line ${row.lineNumber}, Band: enter a time period name.`);
     let calculationMethod: RuntimePasteRow['calculationMethod'];
     if (columns.methodIndex !== undefined) {

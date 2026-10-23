@@ -2,22 +2,31 @@
 
 ## Next sitting
 
-**Sitting 4F: P12 (Blocking calculation rules and finding shape), P13 (CSV serializers), P14 (Blocking rules into `blockingService`), B01 (CI, typecheck scope, and dependencies).** Main session: Sonnet. Sub-agents: Haiku for the P13 file moves only (sitting table). None of these packages is S0 or S1, so there is no Opus review. Run them in this order: P12, P13, P14, B01. B01 turns on CI.
+**Sitting 4G: U01 (Standards-mode `index.html`), U02 (Data-safety and error presentation), U03 (Drafts, inputs, and preferences).** Main session: Sonnet. No sub-agents. None of these packages is S0 or S1, so there is no Opus review. Run them in this order. These are the first UI packages: `fix-packages.md` places a user-verification gate between the structural packages (4A to 4F) and the UI packages (Decision 0005), so the user reviews and merges the sitting 4F pull request, and confirms they want to start the UI packages, before 4G.
 
-- Work branch: the user names it in the prompt (suggested `claude/stage-4f-review-fixes`), created from current `origin/main`.
-- Prerequisite: the sitting 4E pull request (branch `claude/stage-4e-review-fixes`: P09 `fd1e65b`, P10 `2eb3439`, P11 `82bd08a`, and the closing commit that records the hashes) must be merged into `main`. If it is not, stop and ask the user. Start 4F from current `origin/main`.
-- State after 4E: the full browser suite is green and stays green. 77 tests, 77 passed; no `test.fail`, `test.skip`, or `test.fixme` (about 2.8 minutes). Every later package must keep 0 failures (`PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`). Unit tests: 36 files, 502 tests, about 9 s. Bundle after P11: `index-Xh7-lYti.js` 782.90 kB.
-- New in 4E that 4F relies on:
-  - **Findings (P12).** `ServiceDayValidationError` in `routeDefinitionService.ts` is a typed error that carries `ValidationFinding[]`; the Blocking error P12 adds can follow it. `CostingQueries.validateAssumptions` (P11) returns `CostingFinding[]`; when P12 gives `CostingFinding` the `ValidationFinding` shape, update that return type in `ports.ts` and `costingService.ts` (neither is on P12's owned list: make the minimum change and record the hand-off). `CostingWorkspace.tsx` only reads `validation.length`.
-  - **Save status (P14).** Each service names the repository methods it publishes: `ROUTE_DEFINITION_WRITE_METHODS`, `TRIP_GENERATION_WRITE_METHODS`, `BLOCKING_WRITE_METHODS`, `COSTING_WRITE_METHODS`. A guard test in `src/application/saveStatus.test.ts` fails for a repository method whose name starts with `save`, `delete`, `insert`, `replace`, `commit`, `update`, `restore`, or `copy` and is in no list. A new Blocking repository write must be listed in `BLOCKING_WRITE_METHODS`.
-  - **Deletion reviews (P14).** `src/application/reviewToken.ts` (`fingerprint`, `assertReviewCurrent`) and Decision 0041. The six deletions of P09 take a review token. P14's `previewDeleteBlock` and `previewDeleteBlockingScenario` return counts; if the deletion the planner confirms is meant to match that review, use the same helper.
-  - **Blocking (P14).** `BlockingQueries.classifyInsertions` (P11) is the one call `BlockingWorkspace.tsx` makes to review the unassigned Trips; keep it.
-  - **Costing (P12, P14).** The context builder is `src/application/costingContext.ts`. The Costing screen reads its rules from `CostingQueries` (`validateAssumptions`, `summarizeServiceDays`, `listServiceYears`, `normalizeFutureYearCount`).
-  - **B01 (typecheck scope).** The new specs and `tests/ui/support/capacityFixture.ts` (which uses explicit `any`) will be type-checked when B01 widens `pnpm typecheck` to `tests/ui`; fix any error there as B01's minimum change. In this environment the browser suite needs `PLAYWRIGHT_CHROMIUM_EXECUTABLE`; a GitHub runner does not (`codex.md`).
-  - Tests: `tests/ui/capacity-read-paths.spec.ts` asserts Trip-read counts and loose time limits on the development server; the 1 s and 2 s targets are met in the production build only (P11 entry, "Deviation from the criterion").
-- Open questions for the user (none blocks 4F). Both are in the P09 entry, "Residual risks":
-  1. `deletePattern` has no review token, though it deletes Runtime profiles, assignments, and Trips and changes Blocks. Suggested: add it to P14 or a small later package.
+- Work branch: the user names it in the prompt (suggested `claude/stage-4g-review-fixes`), created from current `origin/main`.
+- Prerequisite: the sitting 4F pull request (branch `claude/stage-4f-review-fixes`: P12 `ce5852d`, P13 `2463328`, P14 `3df50b6`, B01 `e6bf12e`, and the closing commit that records the hashes) must be merged into `main`. If it is not, stop and ask the user. Start 4G from current `origin/main`.
+- Before 4G starts, the user should open the 4F pull request and read its first CI run. The workflows added by B01 have not run (B01 entry, "What could not be verified"). If CI fails on the runner for a reason that is not a test defect, fix the workflow first; do not start U01 on a red CI.
+- State after 4F: the full browser suite has 80 tests, 80 passed on the last full run; no `test.fail`, `test.skip`, or `test.fixme` (about 2.6 minutes). Unit tests: 41 files, 637 tests, about 10 s. Bundle after B01: `index-BdF3r0BO.js` 790.12 kB, no chunk warning. `pnpm typecheck` now covers `tests` and `playwright.config.ts`.
+- **Known intermittent failure (open):** `tests/ui/unified-action-layer.spec.ts:139` failed at the same setup step (`tests/ui/support/tripsWorkspace.ts:95`, the Trip actions menu has no items after `ArrowDown`) in 2 of 6 full runs on the 4F branch and in 0 of 3 on `main`; it passes alone and on re-run. See the P14 entry, "Intermittent browser failure". A package that sees it should re-run the full suite once, say so in its report, and not change the spec to hide it. U04's keyboard work or U07's removal of the Runtime reload helper are the natural places to find the cause.
+- New in 4F that 4G relies on:
+  - **U01.** `index.html` is untouched. B01 widened `pnpm typecheck` to `tests`; U01's layout baselines are in `tests/ui/` and are type-checked now.
+  - **U02.** `showError` shows `error.message` unless it matches a technical pattern, so the typed `BlockingValidationError` messages (P12, P14) show as written. `blockingError` in `BlockingWorkspace.tsx` still inserts a space before each capital letter in a message that is not in `blockingMessages` (U02 criterion 4 removes it). Thrown by the Blocking service now: "Another Block on this service day already uses that label.", "No consecutive Trips use the selected From and To Nodes.", "Select a preceding Trip for the deadhead.".
+  - **U02/U05 wording.** `block.deadheadOutsideGap` and `block.boundaryOverlap` (P12) have no sentence; the screen shows "Deadhead outside gap" and "Boundary overlap" (fallback). `block.minutesRequired` and `block.minutesInvalid` (P14) use "Enter a non-negative whole-minute duration.".
+  - **U03.** The Blocking workspace now loads the unassigned Trips with the Blocks (`listUnassignedTrips`), not from the Trips tab's list; the New Block dialog value comes from `proposeBlockLabel`.
+  - **U05 (I-035).** `previewDeleteBlock` and `previewDeleteBlockingScenario` exist and nothing calls them. Their `sourceSignature` is the review token that `deleteBlock` and `deleteBlockingScenario` take. The Delete Block and Delete Blocking Scenario dialogs should show the counts and pass the preview's signature.
+  - **Costing (U06).** A `CostingFinding` is a `ValidationFinding` (`ruleId`, `entityType`, `entityId`, `field`); an assumption finding names the field, so the screen can show it beside its input. `CostingWorkspace.tsx` still reads only `validation.length` and severity.
+  - **CSV.** The Trips CSV and ZIP writer live in `src/application`. A free-text cell that begins with `=`, `+`, `-`, or `@` is written with a leading apostrophe; the Trips CSV import and Runtime paste remove it (`restoreFormulaText`). A new CSV importer must do the same for the same columns.
+- Open questions for the user (none blocks 4G). The first two are in the P09 entry, "Residual risks"; nothing in P12 to P14 required changing either, so both are unchanged:
+  1. `deletePattern` has no review token, though it deletes Runtime profiles, assignments, and Trips and changes Blocks. Suggested: add it to a small later package.
   2. The legacy per-field route mutators (`updatePattern`, `addNode`, and the others listed there) still bypass the preview and the Pattern validation (the second half of finding 4-020); only unit tests use them. Suggested: delete them and move those fixtures to preview and commit, or keep them as test helpers.
+  3. Repeated Block labels already stored (saved before the P14 rule): a backup of such a database is refused on import, and a Block with a repeated label can still be edited. No package owns clean-up. Suggested: say so in U02's import message, or add a repair on load.
+  4. Branch protection: require the `verify` and `browser` CI checks on `main`. This is a GitHub setting only the user can change.
+- Hand-offs from 4F for later sittings (details in the P12 to B01 entries):
+  - **P15/P16:** the Trips and Pattern screens still show 0.0 miles for a Pattern with no distance entered (only Blocking treats a 0 total as incomplete); showing incomplete mileage there is a presentation question.
+  - **P16:** a CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
+  - **Vitest major upgrade:** 5 `pnpm audit` advisories remain, all in the `vitest` chain (decision C4: a separate package, not scheduled). Decide with the user whether it joins 4K or a later maintenance sitting.
+  - **Persistence (no owner yet), unchanged:** a compound index on Scenario and Trip Profile for `listProfileTrips`.
 - Hand-offs from 4E for later sittings (details in the P09 to P11 entries):
   - **U02:** show `getLocalDataProtection()` ("Last backup: <date and time>" or "No backup exported yet"; the persistence answer if wanted); add `QuotaExceededError`, `VersionError`, and `UnknownError` to the `showError` filter; present the read-only status before the header's "Local save failed" that a rejected write now also sets.
   - **U05:** the Node editor's impact dialog does not list `nonRevenueImpact`; the Trip profile confirmation does not mention `blockingScenarioCount`; the Runtime profile and Trips delete dialogs stay open with the old review after a refusal.
@@ -31,7 +40,7 @@
   - P16: the golden "DEFECT 2-007" test (gap-midpoint tie between `segmentStart` and blend) was not ported with the `segmentStart` matrix.
   - Not covered by the contract suite: the legacy generation-set methods and `saveBlocks`.
 - Status of the 4C decision (two app behaviors, "Residual risks, hand-offs, and findings" in the P05 entry): the service part of the Runtime first-visit race is fixed (P09, below); its single-flight load in `App.tsx` is U07's. After a Runtime profile is saved, the Trips table keeps the profiles it loaded earlier, so Show runtime bands shades nothing until a reload: U07's or P15's.
-- Still carried forward from 4B, unchanged: enforce Block label uniqueness when a Block is created or renamed (Decision 0039), as an added acceptance criterion of Package P14 (this sitting), with a proposed default label of the first free "Block <n>"; clean-up of placeholder Blocks already stored in databases that imported version 3 and 4 files (no owner yet); presenting the import report and recovery findings (U02).
+- Still carried forward from 4B, unchanged: clean-up of placeholder Blocks already stored in databases that imported version 3 and 4 files (no owner yet); presenting the import report and recovery findings (U02).
 - Tests deferred to later packages (all recorded in the P05 entry): focus trap, Escape, and focus return (U04's `keyboard.spec.ts`); a unit test for `calculateTimepointHeadways` (P15); Annual cost visible without table scroll at 1024 px (U06).
 - Unit-test and browser-test conventions are in "Standing rules" below and in `codex.md`. Browser-test helpers (all in `tests/ui/support/`): `dexieEnv.ts` (`runInPage`, `seedSnapshot`), `goldenFixture.ts` (the Federal BRT project), `tripsWorkspace.ts` (`createRouteWithPattern`, `createShiftReadySchedule`, `openGoldenTrips`, `settleFrames`), and from 4E `capacityFixture.ts` (400 Blocks, 2,000 Trips).
 - Review documents: read them from the review branch with `git show origin/claude/upbeat-ritchie-51mpy5:docs/review/<file>`. Never copy `docs/review/` into the work branch.
@@ -41,7 +50,7 @@
 Items that the user assigned to later packages. They are added to those packages' acceptance criteria and stay here, unchanged, until the owning package lands. The bullets above that describe them are carried forward verbatim.
 
 - **P09 (sitting 4E), the service part of the Runtime first-visit race. DONE in P09 (commit `fd1e65b`).** `ensureDefaultRuntimeProfile` is a check-then-write that is not atomic, and two overlapping calls can store duplicate Runtime assignments. Make it idempotent: one check-and-write in a single transaction, so two calls at once leave one Default profile and one assignment per standard Service day, and "Duplicate runtime assignment" cannot appear. Add a test that runs two calls at the same time against both repositories. P09 does not change `App.tsx`. Do not remove the up-front Default Runtime profile step or the reload after the Runtime save in `tests/ui/support/tripsWorkspace.ts`; U07 removes them.
-- **P14 (sitting 4F):** enforce Block label uniqueness when a Block is created or renamed (Decision 0039), with a proposed default label of the first free "Block <n>".
+- **P14 (sitting 4F), DONE in P14 (commit `3df50b6`):** enforce Block label uniqueness when a Block is created or renamed (Decision 0039), with a proposed default label of the first free "Block <n>".
 - **U07 (sitting 4I):**
   - the single-flight Runtime load in `App.tsx` (the other half of the race above), then remove the two test-helper steps named above;
   - the Trips table must reload Runtime profiles after a Runtime profile is saved, so Show runtime bands shades without a page reload (the second behavior in the 4C decision bullet);
@@ -1009,3 +1018,325 @@ Criterion 1 says Assign is enabled within 1 s. The built application meets it (0
 - The 1 s and 2 s targets are asserted only as read counts and loose limits in the browser spec; the production numbers are a manual measurement.
 - `classifyInsertions` takes the Block and the Trips as stored at the time of the call; like `classifyInsertion`, it does not re-check them when the answer is used. The Blocking write path still refuses a stale source (the source signature).
 - Real capacity for the Dexie reads is bounded by `listProfileTrips`, which loads every Trip of the Scenario and filters by Trip Profile in memory. At 2,000 Trips that is one read; at much larger sizes it would read more than it needs. A compound index on Scenario and Trip Profile would avoid it and is not part of this package.
+
+## P12: Blocking calculation rules and finding shape
+
+- Date: 2026-10-23. Sitting 4F. Model: Sonnet (main session). No sub-agents: P12 is S2, so no Opus review (sitting plan).
+- Type: structural. Severity: S2.
+- Commit: `ce5852d`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-015 | 2-006 | S2 | A deadhead with explicit clock times (legacy or imported) was never checked against the gap between its two Trips, so a deadhead at 9:00 between Trips ending 7:00 and starting 7:30 counted as valid with 20 minutes of layover. A pull-out that ended after the first Trip started, or a pull-in that started before the last Trip ended, understated Platform hours and raised no finding. |
+| I-060 | 1-016, 2-015 | S3 | `CostingFinding` was `{ code, severity, entityId?, serviceDayId? }`, not the `ValidationFinding` shape that OV-VAL-01 and DS-25 describe. Blocking structural rejections were plain `Error`s with joined message keys. `validation.ts` held an exported, unused `validateBlock` with the same name as the Blocking validator. |
+| I-066 | 2-012 | S3 | A Pattern whose points are all at 0 miles was reported as complete mileage (0 revenue miles). |
+
+User decisions implemented: C2 (option (a): report a finding, leave stored data unchanged) and decision 8 (a 0-mile total is incomplete; no schema change).
+
+### What changed
+
+- `src/domain/blocking.ts`
+  - New rule `block.deadheadOutsideGap`: an explicit-time deadhead that starts before the previous Trip ends or ends after the next Trip starts. The connection becomes a `conflict`, the Block `invalid`, and that connection's layover is not counted (its deadhead hours still are). A deadhead placed by minutes after the previous Trip is never reported, because it is inside the gap by construction. `classifyBlockingInsertion` reports the same rule for the deadhead next to the insertion, so a misplaced deadhead no longer reads as `compatible`.
+  - New rule `block.boundaryOverlap`: a pull-out that ends after the first Trip starts, or a pull-in that starts before the last Trip ends. The Block becomes `invalid`.
+  - Both rule ids join the set of operational rules that make a Block invalid (`INVALIDATING_RULES`, with the three that were already there).
+  - `revenueDistance` requires a total above 0. A Block with a 0-mile Pattern now has no revenue miles and no platform miles, reports `block.revenueMilesIncomplete` and `block.platformMilesIncomplete`, and is `incomplete`.
+  - New `BlockingValidationError` (carries `findings`; `message` is the text screens show). Every `throw new Error` in the file is now one: invalid Block (`assertStructurallyValidBlock`), Blocking Scenario name (`renameBlockingScenario`, `duplicateBlockingScenario`), a stale Blocking Scenario source, an unavailable Block, a missing boundary Node, changed Trip endpoints, and the five `applyTripAssignment` refusals. Messages are unchanged. New rule ids: `block.tripExists`, `block.tripContext`, `block.destinationUnavailable`, `block.tripAlreadyAssigned`, `block.assignmentRoute`, `block.unavailable`, `block.boundaryNode`, `block.endpointsChanged`, `blockingScenario.sourceChanged`, `blocking.fieldRequired`.
+- `src/domain/costing.ts`: `CostingFinding` is an alias of `ValidationFinding`. `ruleId` is the former `code`; every finding has an entity type and id (assumption findings name the Scenario and the field; Service day, Trip, Block, Blocking Scenario, and Trip Profile findings name their own id); the Service day of a Trip or Block finding is the `serviceDayId` parameter. `validateCostingAssumptions` takes an optional Scenario id (default `costing-assumptions`, for assumptions not yet saved).
+- `src/domain/validation.ts`: the unused legacy `validateBlock` is removed.
+- Because `CostingFinding` is an alias, `ports.ts` and `costingService.ts` needed no change (the 4E note expected an edit to the return type).
+- Documentation: `architecture_overview.md` (Validation, Blocking findings list, Summary and Cost Model) and `docs/data-schema.md` (Validation result, Pattern rules). Whether acknowledgment remains planned: yes, planned and not implemented; the finding shape has no field for it, and when it is built it will be stored separately, keyed by `ruleId` and entity (OV-VAL-01 and DS-25 both record this).
+
+### Behavior before and after (what you will see)
+
+- A Block with a legacy deadhead outside its gap, or a legacy pull-out or pull-in that overlaps its Trips, is now shown as invalid with a finding, excluded from the day subtotals and from the Costing estimate, instead of valid with wrong hours. Blocks built in the app (relative times) are never affected.
+- A Block whose Trip uses a Pattern with no distances entered shows incomplete miles instead of 0.0 miles.
+- The two new findings have no wording of their own yet. The Blocking screen's fallback turns `block.deadheadOutsideGap` into "Deadhead outside gap" and `block.boundaryOverlap` into "Boundary overlap". Proper sentences are U05's (presentation).
+- Federal BRT project: no change (the golden reconciliation and 13 of the 16 shapes below pass unchanged).
+
+### Tests added
+
+- `src/domain/blockingRules.test.ts` (19 tests): the deadhead inside the gap stays valid with its layover; four misplaced explicit deadheads (after the next Trip starts, before the previous Trip ends, and the two straddling cases) give the finding, a `conflict` connection, no layover, and an `invalid` Block; a relative deadhead is not reported as misplaced and a too-long one gets only `deadheadDoesNotFit`; insertion next to a misplaced deadhead is a `conflict`; pull-out and pull-in overlap, and touching or relative boundaries are accepted; a 0-mile Pattern gives undefined revenue and platform miles and an incomplete Block (alone and mixed with a Pattern that has miles); a Pattern with miles still counts; the typed errors carry the right rule, entity, and field with the unchanged message, for an invalid Block, a Trip outside the context, a duplicate assignment, an unavailable Block, a second Route, Blocking Scenario names, and bulk boundary requests; `validation.ts` exports no `validateBlock`.
+- `src/domain/costing.test.ts` (2 new tests; the 2 existing `finding.code` reads became `finding.ruleId`): the full shape of an assumption finding, an entity-less finding (`rateMissing`, `noEligibleBlocks`, the 365-day total), the Service day findings, and the parameters of a Trip and a Block source mismatch.
+- `src/application/costingService.test.ts`: two assertions read `ruleId`.
+
+### Tests first: what failed on the current code
+
+17 of the 21 new tests failed on the unfixed code. The other 4 are controls that must keep passing (deadhead inside the gap; relative deadheads; touching and relative boundaries; a Pattern with miles). The 3 existing tests that read `code` failed until they were changed to `ruleId`.
+
+### Deliberate breaks (each applied, run, and restored from a saved copy)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| 0-mile Pattern | `end > 0` changed back to `end >= 0` | 2 fail |
+| Deadhead placement | `explicitDeadheadOutsideGap` always returns false | 5 fail |
+| Boundary overlap | `block.boundaryOverlap` removed from `INVALIDATING_RULES` | 2 fail |
+| Typed errors | the Trip-context refusal throws a plain `Error` | 1 fails |
+| Costing finding shape | `entityId` written as an empty string | 2 fail |
+
+### Review reproductions
+
+The review's golden file (`p2-blocking.golden.test.ts`, copied temporarily into `src/` and deleted afterwards) was run against the fix. S1 to S13 pass unchanged. S14, S15, and S16 are "DEFECT" tests that assert the old behavior, and they now fail in exactly the intended way (S14: the connection is not `valid`; S15: revenue miles are undefined, not 0; S16: a finding exists). The Federal BRT reconciliation, the rounding golden, and 10 of the 12 tests in the costing golden file pass unchanged; the other 2 read `finding.code`, which is now `ruleId`.
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 37 files, 523 tests passed (502 before; 21 new).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 77 passed, 0 failed (2.5 minutes). No `test.fail`, `test.skip`, or `test.fixme`.
+- `pnpm build`: succeeds (existing chunk-size warning only).
+
+### Hand-offs
+
+- `src/persistence/costingPersistence.ts` (not owned): one word, `finding.code` to `finding.ruleId`, in the error text of an invalid assumptions record.
+- U05 (Blocking presentation): sentences for `block.deadheadOutsideGap` and `block.boundaryOverlap` in `blockingMessages` (`BlockingWorkspace.tsx`) and, if the old Block table still uses it, the map in `App.tsx`.
+- `blockingService.ts` throws plain `Error`s of its own (about 30 sites, for example "Select a Block first"). They are application checks, not domain rules, and `blockingService.ts` is P14's. P14 may adopt `BlockingValidationError` where a rule has a finding.
+
+### Residual risks
+
+- Other code that treats a Pattern's 0 total as a valid distance is untouched: the Trips and Pattern screens still show 0.0 miles for such a Pattern. Only Blocking's mileage is incomplete now.
+- `block.deadheadOutsideGap` and `block.boundaryOverlap` invalidate the Block, which excludes it from subtotals and from the Costing estimate. That matches how the other timing contradictions (`connectionOverlap`, `deadheadDoesNotFit`) are treated; a planner who disagrees would change `INVALIDATING_RULES`.
+- An explicit pull-out or pull-in with no Trips in the Block is not checked (nothing to overlap).
+
+## P13: CSV serializers
+
+- Date: 2026-10-23. Sitting 4F. Model: Sonnet (main session). The sitting plan allows Haiku for the file moves; the moves were four `git mv` commands plus six one-line import edits, so the main session did them and no sub-agent was used. No Opus review: P13 is S2.
+- Type: structural. Severity: S2.
+- Commit: `2463328`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-019 | 3-012 | S2 | `toCsv` did not escape header cells. The Trips CSV puts the Pattern name and Node name in its time-column headers, so a name with a comma or a double quote made an export that the Trips CSV import rejected. |
+| I-070 | 3-010 | S3 | `csvEscape` did not quote a field with a bare CR, and the Runtime profile CSV had its own, different escaper. |
+| I-071 | 3-011 | S3 | A name, label, or note beginning with `=`, `+`, `-`, or `@` was exported as written, so a spreadsheet ran it as a formula. |
+| I-073 | 4-013 | S3 | `src/ui/tripTableCsv.ts` and `src/ui/csvDownload.ts` imported the serializers from `src/persistence`. |
+
+User decisions implemented: decision 5 (prefix `'` on free-text cells, strip it on import, free-text columns only) and decision 12 (move the two files to `src/application`; OV-TECH-03 not amended).
+
+### What changed
+
+- `src/persistence/csv.ts`
+  - `csvEscape` quotes CR as well as comma, double quote, and LF.
+  - `toCsv` escapes header cells with `csvEscape`, and takes an optional list of free-text column names.
+  - New `neutralizeFormulaText` and `restoreFormulaText`. A value that begins with a trigger character, or with apostrophes before one, gets one more apostrophe; import removes one apostrophe in front of a trigger character. The pair is exact for every string, including `'=x` (becomes `''=x`) and ordinary text with an apostrophe (`'Til midnight` is unchanged).
+  - Each serializer lists its free-text columns: Route (name, short name, description); Nodes (name, short name, notes); Patterns (name, direction label, notes); Directions (name); direction columns (label override); Runtime bands (profile name, band label); generation sets (name); Trips and authoritative Trips (Trip profile name, public label); Blocks (Trip profile name, label, notes); Blocking Scenarios (Trip profile name, name, description); Blocking Blocks (label, notes); the three Costing files (Scenario, Blocking Scenario, Trip profile, and Service day names, the source note, and the Block label). Identifiers, times, numbers, and fixed words are not changed.
+- Moved (history kept with `git mv`): `src/ui/tripTableCsv.ts`, `src/ui/csvDownload.ts`, and their tests to `src/application/`.
+- `src/application/tripTableCsv.ts`: the Trips CSV protects the public label and the importer restores it.
+- New `src/application/csvText.ts`: re-exports `csvEscape`, `neutralizeFormulaText`, and `restoreFormulaText`, the one route by which `src/ui` reaches them.
+- `src/ui/runtimePaste.ts`: its private escaper is gone; the Runtime profile CSV uses `csvEscape` and protects the band label, and the paste importer restores it.
+- `src/ui/App.tsx`: import paths only.
+- Documentation: `architecture_overview.md` ("Persistence, Backup, and Export": the CSV rules).
+
+### Behavior before and after (what you will see)
+
+- A Pattern or Node name with a comma or a double quote no longer breaks the Trips CSV: export and re-import work.
+- A name, label, or note such as `-5 stops` or `=Peak` opens in a spreadsheet as text with a leading apostrophe (`'-5 stops`). Importing the Trips CSV or a Runtime CSV gives back the original text. Spreadsheet programs that show the apostrophe in the cell will show it; Excel hides a leading apostrophe in the cell view and keeps it in the file.
+- No screen changes.
+
+### Tests added
+
+- `src/persistence/csvText.test.ts` (42 tests): the escaping rule for comma, quote, LF, CR, and CRLF; a Block note with a bare CR stays in one row; header cells; the pair `neutralizeFormulaText`/`restoreFormulaText` for the four trigger characters, strings that must not change, and strings that already start with apostrophes; one test per serializer (20) that fills every string field with `=1+1` and checks that exactly its free-text columns come out as `'=1+1` and no other column changes; numbers, times, negative miles, and identifiers beginning with `-` are never prefixed.
+- `src/application/tripTableCsv.test.ts` (13 new tests beside the 1 moved): Pattern and Node names with a comma, a double quote, a line break, a colon round-trip through export and import; labels `=1+1`, `+1+1`, `-2+3`, `@SUM(1,1)`, `'=1+1`, and `-5 stops` are written protected and read back unchanged; identifiers and ordinary labels are untouched.
+- `src/ui/runtimePaste.test.ts` (7 new tests beside the 1 existing): the same label round trip for the Runtime profile CSV; an ordinary label with an apostrophe is untouched; a label with a bare CR is quoted.
+- `src/ui/importGraph.test.ts` (2 tests): no file in `src/ui` imports from `src/persistence` (static, re-export, dynamic, and bare import forms), with a self-check of the pattern. Vite's `import.meta.glob` reads the files, because Node types are not in the project yet (B01 adds them).
+
+### Tests first: what failed on the current code
+
+- `csvText.test.ts`: on the unfixed `csv.ts`, 37 of 42 tests failed (the CR, header, and helper tests, and all 20 serializer tests); the 5 that passed are controls (strings that must not change).
+- Importer tests, run against the unfixed `tripTableCsv.ts` and `runtimePaste.ts` (with the fixed `csv.ts`): 12 of the 22 tests in the two files failed (the label protection and restore tests).
+- Import graph: it listed `csvDownload.ts` and `tripTableCsv.ts` before the move, and a probe file with an import from `../persistence/csv` makes it fail after the move.
+
+### Deliberate breaks (each applied, run, and restored from a saved copy)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| Formula round trip | `restoreFormulaText` returns its input | 20 fail |
+| Header escaping | header cells not escaped | 6 fail |
+| CR rule | `csvEscape` ignores CR | 4 fail |
+| Serializer coverage | `nodesCsv` does not protect `notes` | 1 fails (the Nodes serializer test) |
+| Trips CSV | label not protected on export | 6 fail |
+| Runtime CSV | band label not protected on export | 5 fail |
+| Runtime CSV | band label not restored on import | 5 fail |
+| Import graph | a file in `src/ui` imports `../persistence/csv` | 1 fails |
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 39 files, 587 tests passed (523 before; 64 new).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 77 passed, 0 failed (2.3 minutes) on the second full run. The first full run had 76 passed and 1 failed: `unified-action-layer.spec.ts:139` failed inside the shared setup helper `createShiftReadySchedule` (`tests/ui/support/tripsWorkspace.ts:95`): the Trip actions menu did not appear within 5 s after `ArrowDown`, with 0 menu items. That step runs no CSV code. The same test then passed 16 of 16 (`--repeat-each=16 --workers=8`) and the second full run passed. The cause is not proven; the likely candidate is the Runtime section's overlapping reloads after the page reload, which the P05 hand-offs describe and which U07 removes. No `test.fail`, `test.skip`, or `test.fixme`.
+- `pnpm build`: succeeds (existing chunk-size warning only). Bundle `index-VpKnYSaf.js` 785.31 kB (782.90 kB after P11; P12 and P13 add 2.4 kB).
+- Round trip: the Trips CSV and Runtime CSV round trips are the tests above (no schema version changes; CSV carries none).
+
+### Hand-offs
+
+- `src/ui/CostingWorkspace.tsx` and `src/ui/BlockingWorkspace.tsx` (not owned): one import path each (`./csvDownload` to `../application/csvDownload`).
+- `src/persistence/csv.ts` serializers that have no importer (Route, Nodes, Patterns, Blocks, Costing, and the rest) are report output only. Their protection is one-way; if a CSV import is ever built for one, it must call `restoreFormulaText` on the same columns. The per-serializer test lists those columns.
+
+### Residual risks
+
+- A spreadsheet program that does not hide the leading apostrophe will show it. This is the cost of decision 5.
+- A tab or carriage return at the start of a cell can also be read as a formula by some spreadsheet programs (a known OWASP addition). Decision 5 names only `=`, `+`, `-`, and `@`, so only those are protected.
+- A label with a bare CR is quoted on export, but the Trips CSV importer reads a CR inside quotes as LF, so such a label does not round-trip byte for byte. Out of scope (the Trips CSV reader is unchanged).
+
+## P14: Blocking rules into `blockingService`
+
+- Date: 2026-10-23. Sitting 4F. Model: Sonnet (main session). No sub-agents: P14 is S2, so no Opus review.
+- Type: structural. Severity: S2.
+- Commit: `3df50b6`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-024 | 4-007 | S2 | "Apply to all similar Trips" in the deadhead dialog skipped every second matching connection: the loop computed Trip positions once and then inserted deadheads, so later positions pointed one activity early. 5 matching Trips gave 2 deadheads instead of 4 (reproduced in the browser on the unfixed code). |
+| I-074a | 4-014 (Blocking items) | S3 | `BlockingWorkspace.tsx` grouped Trips for reordering, inserted new activities, filtered the unassigned Trips by Route and assignment, and computed Layover % twice. |
+| I-077 | 4-018 | S3 | A blank minutes field saved a 0-minute deadhead in the single path and was refused in the bulk path; a blank minimum-layover amount became a 0-minute rule. |
+
+Also found while testing, and fixed with the insertion move: adding a pull-out, pull-in, or deadhead gave the new activity the same `sequence` as the activity it displaced, and `normalizeBlockActivities` breaks ties by random activity id, so the order could come out wrong (the unfixed browser run showed "A deadhead must be placed between two revenue Trips" after a blank-minutes deadhead). The service now numbers every activity again.
+
+Added acceptance criterion from the 4B note, done here: Block label uniqueness when a Block is created or renamed (Decision 0039), with the first free "Block <n>" as the proposed label. Marked done in "Added acceptance criteria" below.
+
+### What changed
+
+- `src/domain/blocking.ts`: `layoverPercent` (also a field of `BlockSummary` and `BlockingSummary`); `parseActivityInput` and `parseMinimumLayoverRule` (blank is refused; new rules `block.minutesRequired`, `block.minutesInvalid`, `block.minimumLayoverAmountRequired`, `block.minimumLayoverAmountInvalid`); `insertBlockActivity`; `moveRevenueTripGroup`; `applyDeadheadToMatchingConnections`; `unassignedRouteTrips`; `validateBlockLabel`, `assertBlockLabelAvailable`, `proposeBlockLabel`; `calculateBlockDeletionImpact`; request types.
+- `src/application/ports.ts` and `blockingService.ts`. Commands: `addActivity`, `applyDeadheadToMatchingConnections`, `moveTripGroup`. Queries: `listUnassignedTrips`, `proposeBlockLabel`, `previewDeleteBlock`, `previewDeleteBlockingScenario`, and the synchronous `parseActivityInput` and `parseMinimumLayover`. `createBlock` and a renaming `updateBlock` check the label. No repository method was added, so `BLOCKING_WRITE_METHODS` is unchanged.
+- `src/ui/BlockingWorkspace.tsx` (no layout or interaction change): the dialog save, the bulk pull-out review, the Trip order arrows, the Unassigned Trips list (loaded with the Blocks, and reloaded when the Route changes), the Layover % cells, the New Block dialog default, and the Minimum layover dialog now call the service. Two message entries were added to its message table (`block.minutesRequired`, `block.minutesInvalid`: "Enter a non-negative whole-minute duration."). The unused `useMemo` import was removed.
+- Deletion previews: `previewDeleteBlock` returns the label, service day, activity, Trip, and deadhead counts; `previewDeleteBlockingScenario` returns the existing `BlockingScenarioDeletionImpact`. Both return `sourceSignature`, which is the review token of the existing deletions (`deleteBlock` and `deleteBlockingScenario` already refuse a different signature). No new fingerprint was needed. Nothing calls the previews yet; U05 shows them.
+- Documentation: `architecture_overview.md` (Blocking Model), `docs/decisions/0039-backup-import-normalization-and-validation.md` (label rule implemented).
+
+### Behavior before and after (what you will see)
+
+- Apply to all similar Trips adds a deadhead to every matching connection.
+- A blank minutes field is refused with "Enter a non-negative whole-minute duration." in both the single and bulk paths; a blank minimum-layover amount disables Apply and shows the existing alert.
+- Creating or renaming a Block to a label that another Block of the same service day uses is refused with "Another Block on this service day already uses that label." The New Block dialog opens with the first free "Block <n>" (after deleting Block 2 of three, "Block 2" instead of "Block 3").
+- Adding a pull-out, pull-in, or deadhead always lands in its place.
+- Nothing else changes on screen. Layover % values are the same numbers (same formula).
+
+### Tests added
+
+- `src/domain/blockingEditing.test.ts` (34 tests): Layover %; activity and minimum-layover input; bulk deadhead (5 Trips give 4 deadheads, replaced deadheads keep their id, non-matching connections are skipped, no match is refused); insertion order independent of ids; Trip-group moves; the unassigned filter; label rule and proposal.
+- `src/application/blockingRules.test.ts` (16 tests): the same rules through the service against the in-memory repository, including stale-source refusal, atomic label checks, a legacy repeated label staying editable, previews, and that previews write nothing.
+- `tests/ui/blocking-rules.spec.ts` (3 browser tests): 5 Trips give 4 deadheads through the dialog; blank minutes refused for a deadhead, a bulk pull-out, and the minimum layover; label uniqueness, the proposed label after a deletion, and a refused rename.
+
+### Tests first: what failed on the current code
+
+- The browser spec was run in a clean worktree of the P13 commit: all 3 failed (2 deadheads instead of 4; a blank minutes field accepted, then "A deadhead must be placed between two revenue Trips."; no label rule).
+- The unit tests failed because the functions did not exist (the first run of the domain file failed to import them). What each one guards is shown by the breaks.
+
+### Deliberate breaks (each applied, run, and restored from a saved copy)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| Bulk deadhead | every second insertion skipped (the original defect) | 2 fail |
+| Activity input | blank minutes read as 0 | 5 fail |
+| Minimum layover | blank amount read as 0 | 3 fail |
+| Insertion | new activity keeps `sequence: index` | 3 fail |
+| Labels | create does not check | 1 fails |
+| Labels | rename does not check | 1 fails |
+| Labels | proposal is count plus 1 | 2 fail |
+| Previews | activity count off by one | 1 fails |
+| Layover % | divided by running hours only | 2 fail |
+| Unassigned | Route ignored | 2 fail |
+| Trip-group move | deadhead not kept with its Trip | 2 fail |
+
+(The first attempt at these runs was cut off by a restart of the session's worker; one source file was left in its broken state, found by comparing it with the saved copy, and restored before the runs were repeated in full.)
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 41 files, 637 tests passed (587 before; 50 new).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 80 passed, 0 failed on the last full run. No `test.fail`, `test.skip`, or `test.fixme`. The first full run had 79 passed and 1 failed: `unified-action-layer.spec.ts:139`, the same step as in the P13 entry (`tests/ui/support/tripsWorkspace.ts:95`, the Trip actions menu has no items after `ArrowDown`). See "Intermittent browser failure" below.
+- New spec stress run, `--repeat-each=10 --workers=8`: 30 of 30.
+- `pnpm build`: succeeds (existing chunk-size warning only). Bundle `index-BdF3r0BO.js` 790.12 kB (785.31 kB after P13).
+
+### Intermittent browser failure (open, not fixed)
+
+`unified-action-layer.spec.ts:139` failed at the same setup step in 2 of the 6 full runs on this branch (P13, first run; P14, first run) and in 0 of 3 full runs on `origin/main` (the 4E report, and two runs for this sitting). It passed in every isolated run: 16 of 16 and 40 of 40 on this branch, 40 of 40 on `origin/main`, and in each re-run of the full suite. The failing step runs no code that P12 to P14 changed. The cause is not found; the P05 hand-off about overlapping Runtime reloads that close an open menu is the candidate. The samples are too small to say whether this branch makes it more likely.
+
+### Hand-offs
+
+- U05: wording for `block.deadheadOutsideGap` and `block.boundaryOverlap` (P12); show `previewDeleteBlock` and `previewDeleteBlockingScenario` before deleting and pass the preview's `sourceSignature` to the deletion (I-035); the Block-label message uses the thrown text.
+- `BlockingWorkspace.tsx` keeps its in-component rule for "Delete similar deadheads" (selects deadheads by From and To Node in the Block) and `boundaryNode`. They are not on the 4-014 Blocking list for P14.
+- Clean-up of repeated Block labels already stored (no owner yet).
+
+### Residual risks
+
+- `listUnassignedTrips` adds one read of the Trips when the Blocking tab opens (the capacity spec still passes: its limit is 16 reads).
+- The Unassigned Trips list is refreshed with the Blocks and on a Route change. Trips edited on the Trips tab reach it when the Blocking tab is opened again, as before.
+- The bulk deadhead now considers every Route's Trips in the Block (it used the selected Route's Patterns only). For a single-Route Block the result is the same.
+
+## B01: CI, typecheck scope, and dependencies
+
+- Date: 2026-10-23. Sitting 4F. Model: Sonnet (main session). No sub-agents.
+- Type: build. Severity: S2.
+- Commit: `e6bf12e`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-046 | 6-004 | S2 | The deploy workflow published every push to `main` after only `pnpm build`, and no workflow ran on pull requests. |
+| I-097 | 6-006, A-008 | S3 | `pnpm typecheck` left out `tests/ui` and `playwright.config.ts`, and `@types/node` was absent. |
+| I-098 | 6-007 | S3 | Node and pnpm were not pinned, and CI used Node 20, which is past end of life. |
+| I-099 | 6-009 | S3 | `zod` and `@tanstack/react-table` were declared and never imported. |
+| I-100 | 6-010 | S3 | `pnpm audit` reported 11 advisories (2 critical, 2 high). |
+| I-101 | 6-011 | S3 | Every build warned that the one chunk was over 500 kB. |
+
+User decisions implemented: 17 (Node 22 LTS in CI, `engines`, `packageManager`, `.nvmrc`), 18 (remove both libraries and amend OV-TECH-01 and OV-TECH-02), C4 (update `vite` within its range, raise `chunkSizeWarningLimit` with a recorded reason, leave the `vitest` major upgrade as follow-up).
+
+### What changed
+
+- New `.github/workflows/ci.yml`: on pull requests and pushes to `main`. Job `verify`: install with the frozen lockfile, typecheck, unit tests, build. Job `browser` (required, because P05 made the suite green): install Chromium with its system packages, run `pnpm test:ui`, keep `test-results` as an artifact on failure. Node from `.nvmrc`, pnpm from `packageManager`. Concurrent runs for one ref cancel the older one.
+- `.github/workflows/deploy-pages.yml`: now triggered by `workflow_run` of `CI` on `main`. It builds and deploys only when that run succeeded for a push, and it checks out the commit CI checked. The manual `workflow_dispatch` trigger is removed, because it was a way to publish without CI; a deployment is repeated by re-running the workflow run. Node 22, pnpm from `packageManager`.
+- `package.json`: `packageManager` `pnpm@10.28.0`; `engines.node` `>=22.12.0 <23`; `zod` and `@tanstack/react-table` removed; `@types/node` `^22.20.5` added; `vite` range raised to `^7.3.7` (resolves to 7.3.7 from 7.3.6). `pnpm-lock.yaml` updated; `source-map-js` refreshed to the patched 1.2.x inside `postcss`'s own range.
+- `tsconfig.json`: `include` now has `tests` and `playwright.config.ts`.
+- `tests/ui/support/capacityFixture.ts`: one non-null assertion (`lastPat.points.at(-1)!`), the only type error that the wider scope exposed (the minimum change the 4E note expected).
+- `.nvmrc`: `22`.
+- `vite.config.ts`: `build.chunkSizeWarningLimit` 900 with a comment that gives the reason (about 790 kB, 218 kB gzip, works offline once loaded; split the chunk if it grows well beyond).
+- Documentation: `architecture_overview.md` (OV-TECH-01 and OV-TECH-02 list: hand-written tables and validation, CI, Node and pnpm pins; the dependency sentence), `codex.md` ("Checks and CI", the verified commands).
+
+### Behavior before and after
+
+- Pull requests and pushes to `main` now run typecheck, unit tests, build, and the browser suite. A push to `main` is published only if they pass.
+- No change in the application. The built bundle is byte-identical in name (`index-BdF3r0BO.js`, 790.12 kB), because the two removed packages were never imported. The 500 kB warning is gone.
+
+### `pnpm audit`
+
+| | Before | After |
+| --- | --- | --- |
+| Total | 11 (1 low, 6 moderate, 2 high, 2 critical) | 5 (3 moderate, 2 critical) |
+| `vite` advisories | 5 | 0 |
+| `source-map-js` (through `vite > postcss`) | 1 high | 0 |
+| `vitest`, `@vitest/mocker`, `tinypool` | 5 | 5 (need the Vitest major upgrade) |
+
+The remaining 5 are dev-toolchain packages only; none is in the shipped bundle. Follow-up (not done, by decision C4): upgrade `vitest` to the 4.1 or 5 line in a separate package, with its own regression run. Other majors behind (Vite 8, `@vitejs/plugin-react` 6, TypeScript 7) are not part of this package.
+
+### Tests
+
+B01 adds no test file; its checks are the commands themselves. One deliberate break: a type error added to a Playwright spec and, separately, to `playwright.config.ts`, each made `pnpm typecheck` fail (before B01 neither was checked); both removed.
+
+### Verification run
+
+- `pnpm install --frozen-lockfile`: up to date. `pnpm typecheck`: clean (now over `src`, `tests`, and the three config files). `pnpm test`: 41 files, 637 tests passed. `pnpm build`: succeeds with no chunk-size warning.
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 80 passed, 0 failed (2.6 minutes).
+- Workflow files: both parse as YAML and every step has a `uses` or `run`. `actionlint` is not installed here.
+- `pnpm audit` before and after: table above (saved outputs in the session scratchpad only).
+
+### What could not be verified
+
+The acceptance criteria ask for a CI run on the package branch. No pull request was opened (the user did not authorize one), and the new `ci.yml` runs only on a pull request or a push to `main`, so no run exists. Not verified:
+
+- that GitHub accepts the workflow syntax and the `workflow_run` link between `CI` and `Deploy to GitHub Pages` (the deploy workflow only starts once it is on the default branch);
+- that `pnpm/action-setup@v4` with no `version` takes pnpm from `packageManager`, and that `actions/setup-node@v4` accepts `node-version-file: .nvmrc` with the pnpm cache;
+- that `playwright install --with-deps chromium` works on the runner, and that the browser suite passes there (it passes here on a different Chromium build, 141, and on this machine's load);
+- the one intermittent failure in `unified-action-layer.spec.ts:139` (see the P14 entry) could fail a CI run. A re-run clears it; the cause is open.
+
+Before the first deployment, open the pull request and read the CI run; then merge, and read the first Deploy run.
+
+### Hand-offs and residual risks
+
+- The first deployment after merge is the first real use of the `workflow_run` trigger. If the Deploy workflow does not start, the fallback is to restore `on: push` and make the build job `needs` a call to `ci.yml` through `workflow_call`.
+- The repository's branch protection (requiring the `verify` and `browser` checks) is a GitHub setting for the user; this package cannot set it.
+- The `engines` range is `>=22.12.0 <23`; pnpm warns, but does not fail, outside it unless `engine-strict` is set.

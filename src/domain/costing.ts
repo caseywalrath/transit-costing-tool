@@ -1,6 +1,6 @@
 import type { BlockSummary } from './blocking';
 import { sortServiceDays } from './serviceDays';
-import type { BlockingBlock, BlockingScenario, CostingAssumptions, Scenario, ServiceDayDefinition, Trip, TripProfile } from './types';
+import type { BlockingBlock, BlockingScenario, CostingAssumptions, Scenario, ServiceDayDefinition, Trip, TripProfile, ValidationFinding } from './types';
 
 export const MAX_ANNUAL_SERVICE_DAYS = 365;
 export const MAX_COSTING_FUTURE_YEARS = 10;
@@ -37,11 +37,26 @@ export interface CostingCalculationInput extends CostingCalculationContext {
 }
 
 export type CostingFindingSeverity = 'error' | 'warning';
-export interface CostingFinding {
-  code: string;
-  severity: CostingFindingSeverity;
-  entityId?: string;
-  serviceDayId?: string;
+/**
+ * Costing reports the shared `ValidationFinding` shape (OV-VAL-01, DS-25). `ruleId` is the former `code`; `entityType` and `entityId`
+ * name what the finding is about, and `field` names an assumption field. A Service day that a Trip or Block belongs to is the
+ * `serviceDayId` parameter.
+ */
+export type CostingFinding = ValidationFinding;
+
+/** Entity id for assumptions that are checked before they have been saved or tied to a Scenario. */
+const UNSAVED_ASSUMPTIONS_ID = 'costing-assumptions';
+const UNKNOWN_SERVICE_DAYS_ID = 'annual-service-days';
+
+function costingFinding(
+  ruleId: string,
+  severity: CostingFindingSeverity,
+  entityType: string,
+  entityId: string,
+  field?: string,
+  parameters?: ValidationFinding['parameters'],
+): CostingFinding {
+  return { ruleId, severity, entityType, entityId, ...(field ? { field } : {}), messageKey: ruleId, ...(parameters ? { parameters } : {}) };
 }
 
 export type CostingBlockExclusionReason =
@@ -137,31 +152,32 @@ export function selectCostingBlockingScenario(
   return matches.length === 1 ? matches[0] : undefined;
 }
 
-export function validateCostingAssumptions(assumptions: CostingAssumptionsInput): CostingFinding[] {
+export function validateCostingAssumptions(assumptions: CostingAssumptionsInput, scenarioId: string = UNSAVED_ASSUMPTIONS_ID): CostingFinding[] {
   const findings: CostingFinding[] = [];
+  const assumptionFinding = (ruleId: string, field: string) => costingFinding(ruleId, 'error', 'costingAssumptions', scenarioId, field);
   if (assumptions.enteredRate !== undefined && (!Number.isFinite(assumptions.enteredRate) || assumptions.enteredRate < 0)) {
-    findings.push({ code: 'costing.rateInvalid', severity: 'error' });
+    findings.push(assumptionFinding('costing.rateInvalid', 'enteredRate'));
   }
-  if (!isCostingYear(assumptions.rateYear)) findings.push({ code: 'costing.rateYearInvalid', severity: 'error' });
-  if (!isCostingYear(assumptions.baseServiceYear)) findings.push({ code: 'costing.baseServiceYearInvalid', severity: 'error' });
+  if (!isCostingYear(assumptions.rateYear)) findings.push(assumptionFinding('costing.rateYearInvalid', 'rateYear'));
+  if (!isCostingYear(assumptions.baseServiceYear)) findings.push(assumptionFinding('costing.baseServiceYearInvalid', 'baseServiceYear'));
   if (isCostingYear(assumptions.rateYear) && isCostingYear(assumptions.baseServiceYear) && assumptions.rateYear > assumptions.baseServiceYear) {
-    findings.push({ code: 'costing.rateYearAfterBaseServiceYear', severity: 'error' });
+    findings.push(assumptionFinding('costing.rateYearAfterBaseServiceYear', 'rateYear'));
   }
   if (!Number.isInteger(assumptions.futureYearCount) || assumptions.futureYearCount < 0 || assumptions.futureYearCount > MAX_COSTING_FUTURE_YEARS) {
-    findings.push({ code: 'costing.futureYearCountInvalid', severity: 'error' });
+    findings.push(assumptionFinding('costing.futureYearCountInvalid', 'futureYearCount'));
   }
   if (isCostingYear(assumptions.baseServiceYear) && Number.isInteger(assumptions.futureYearCount)
     && assumptions.futureYearCount >= 0 && assumptions.baseServiceYear + assumptions.futureYearCount > MAX_COSTING_YEAR) {
-    findings.push({ code: 'costing.projectionYearOutOfRange', severity: 'error' });
+    findings.push(assumptionFinding('costing.projectionYearOutOfRange', 'futureYearCount'));
   }
   if (!Number.isFinite(assumptions.annualEscalation) || assumptions.annualEscalation <= -1) {
-    findings.push({ code: 'costing.annualEscalationInvalid', severity: 'error' });
+    findings.push(assumptionFinding('costing.annualEscalationInvalid', 'annualEscalation'));
   }
   if (assumptions.sourceType !== 'user' && assumptions.sourceType !== 'ntd') {
-    findings.push({ code: 'costing.sourceTypeInvalid', severity: 'error' });
+    findings.push(assumptionFinding('costing.sourceTypeInvalid', 'sourceType'));
   }
   if (assumptions.sourceNote !== undefined && typeof assumptions.sourceNote !== 'string') {
-    findings.push({ code: 'costing.sourceNoteInvalid', severity: 'error' });
+    findings.push(assumptionFinding('costing.sourceNoteInvalid', 'sourceNote'));
   }
   return findings;
 }
@@ -170,16 +186,18 @@ export function validatePersistedCostingAssumptions(
   assumptions: CostingAssumptions,
   expectedScenarioId?: string,
 ): CostingFinding[] {
-  const findings = validateCostingAssumptions(assumptions);
-  if (typeof assumptions.id !== 'string' || !assumptions.id.trim()) findings.push({ code: 'costing.assumptionsIdInvalid', severity: 'error' });
+  const entityId = typeof assumptions.id === 'string' && assumptions.id.trim() ? assumptions.id : expectedScenarioId ?? UNSAVED_ASSUMPTIONS_ID;
+  const findings = validateCostingAssumptions(assumptions, entityId);
+  const recordFinding = (ruleId: string, field: string) => costingFinding(ruleId, 'error', 'costingAssumptions', entityId, field);
+  if (typeof assumptions.id !== 'string' || !assumptions.id.trim()) findings.push(recordFinding('costing.assumptionsIdInvalid', 'id'));
   if (typeof assumptions.scenarioId !== 'string' || !assumptions.scenarioId.trim()
     || (expectedScenarioId !== undefined && assumptions.scenarioId !== expectedScenarioId)) {
-    findings.push({ code: 'costing.assumptionsScenarioInvalid', severity: 'error' });
+    findings.push(recordFinding('costing.assumptionsScenarioInvalid', 'scenarioId'));
   }
-  if (assumptions.currencyCode !== 'USD') findings.push({ code: 'costing.currencyInvalid', severity: 'error' });
+  if (assumptions.currencyCode !== 'USD') findings.push(recordFinding('costing.currencyInvalid', 'currencyCode'));
   if (typeof assumptions.createdAt !== 'string' || !assumptions.createdAt.trim()
     || typeof assumptions.updatedAt !== 'string' || !assumptions.updatedAt.trim()) {
-    findings.push({ code: 'costing.assumptionsMetadataInvalid', severity: 'error' });
+    findings.push(recordFinding('costing.assumptionsMetadataInvalid', 'updatedAt'));
   }
   return findings;
 }
@@ -189,18 +207,18 @@ export function validateAnnualServiceDays(serviceDays: ServiceDayDefinition[], s
   const ids = new Set<string>();
   let total = 0;
   for (const day of serviceDays) {
-    if (ids.has(day.id)) findings.push({ code: 'costing.duplicateServiceDay', severity: 'error', entityId: day.id });
+    if (ids.has(day.id)) findings.push(costingFinding('costing.duplicateServiceDay', 'error', 'serviceDay', day.id, 'id'));
     ids.add(day.id);
     if (scenarioId !== undefined && day.scenarioId !== scenarioId) {
-      findings.push({ code: 'costing.serviceDayScenarioMismatch', severity: 'error', entityId: day.id, serviceDayId: day.id });
+      findings.push(costingFinding('costing.serviceDayScenarioMismatch', 'error', 'serviceDay', day.id, 'scenarioId'));
     }
     if (!Number.isInteger(day.annualServiceDays) || day.annualServiceDays < 0) {
-      findings.push({ code: 'costing.annualServiceDaysInvalid', severity: 'error', entityId: day.id, serviceDayId: day.id });
+      findings.push(costingFinding('costing.annualServiceDaysInvalid', 'error', 'serviceDay', day.id, 'annualServiceDays'));
       continue;
     }
     total += day.annualServiceDays;
   }
-  if (total > MAX_ANNUAL_SERVICE_DAYS) findings.push({ code: 'costing.annualServiceDaysExceed365', severity: 'error' });
+  if (total > MAX_ANNUAL_SERVICE_DAYS) findings.push(costingFinding('costing.annualServiceDaysExceed365', 'error', 'scenario', scenarioId ?? UNKNOWN_SERVICE_DAYS_ID));
   return findings;
 }
 
@@ -261,30 +279,30 @@ export function evaluateBlockEligibility(
 export function calculateCosting(input: CostingCalculationInput): CostingCalculationResult {
   const { scenario, blockingScenario, tripProfile, serviceDays, blocks, trips, blockSummaries, assumptions } = input;
   const findings = [
-    ...validateCostingAssumptions(assumptions),
+    ...validateCostingAssumptions(assumptions, scenario.id),
     ...validateAnnualServiceDays(serviceDays, scenario.id),
   ];
-  if (blockingScenario.scenarioId !== scenario.id) findings.push({ code: 'costing.blockingScenarioMismatch', severity: 'error', entityId: blockingScenario.id });
+  if (blockingScenario.scenarioId !== scenario.id) findings.push(costingFinding('costing.blockingScenarioMismatch', 'error', 'blockingScenario', blockingScenario.id, 'scenarioId'));
   if (tripProfile.scenarioId !== scenario.id || tripProfile.id !== blockingScenario.tripProfileId) {
-    findings.push({ code: 'costing.tripProfileMismatch', severity: 'error', entityId: tripProfile.id });
+    findings.push(costingFinding('costing.tripProfileMismatch', 'error', 'tripProfile', tripProfile.id));
   }
 
   const serviceDayIds = new Set(serviceDays.map((day) => day.id));
   const tripIds = new Set<string>();
   for (const trip of trips) {
-    if (tripIds.has(trip.id)) findings.push({ code: 'costing.duplicateTrip', severity: 'error', entityId: trip.id });
+    if (tripIds.has(trip.id)) findings.push(costingFinding('costing.duplicateTrip', 'error', 'trip', trip.id));
     tripIds.add(trip.id);
     if (trip.scenarioId !== scenario.id || trip.tripProfileId !== tripProfile.id || !serviceDayIds.has(trip.serviceDayId)) {
-      findings.push({ code: 'costing.tripSourceMismatch', severity: 'error', entityId: trip.id, serviceDayId: trip.serviceDayId });
+      findings.push(costingFinding('costing.tripSourceMismatch', 'error', 'trip', trip.id, undefined, { serviceDayId: trip.serviceDayId }));
     }
   }
 
   const seenBlockIds = new Set<string>();
   for (const block of blocks) {
-    if (seenBlockIds.has(block.id)) findings.push({ code: 'costing.duplicateBlock', severity: 'error', entityId: block.id });
+    if (seenBlockIds.has(block.id)) findings.push(costingFinding('costing.duplicateBlock', 'error', 'block', block.id));
     seenBlockIds.add(block.id);
     if (block.scenarioId !== scenario.id || block.blockingScenarioId !== blockingScenario.id || !serviceDayIds.has(block.serviceDayId)) {
-      findings.push({ code: 'costing.blockSourceMismatch', severity: 'error', entityId: block.id, serviceDayId: block.serviceDayId });
+      findings.push(costingFinding('costing.blockSourceMismatch', 'error', 'block', block.id, undefined, { serviceDayId: block.serviceDayId }));
     }
   }
 
@@ -295,7 +313,7 @@ export function calculateCosting(input: CostingCalculationInput): CostingCalcula
 
   const eligibleBlockCount = coverage.eligibleBlockCount;
   if (eligibleBlockCount === 0) {
-    findings.push({ code: 'costing.noEligibleBlocks', severity: 'warning' });
+    findings.push(costingFinding('costing.noEligibleBlocks', 'warning', 'blockingScenario', blockingScenario.id));
     return makeResult(input, 'noEstimate', findings, coverage, [], [], 'noEligibleBlocks');
   }
 
@@ -320,7 +338,7 @@ export function calculateCosting(input: CostingCalculationInput): CostingCalcula
   });
 
   if (assumptions.enteredRate === undefined) {
-    findings.push({ code: 'costing.rateMissing', severity: 'warning' });
+    findings.push(costingFinding('costing.rateMissing', 'warning', 'costingAssumptions', scenario.id, 'enteredRate'));
     return makeResult(input, 'noEstimate', findings, coverage, dailyQuantities, [], 'rateMissing');
   }
 
@@ -330,7 +348,7 @@ export function calculateCosting(input: CostingCalculationInput): CostingCalcula
     rate: assumptions.enteredRate! * Math.pow(1 + assumptions.annualEscalation, serviceYear - assumptions.rateYear),
   }));
   if (appliedRates.some(({ rate }) => !Number.isFinite(rate) || rate < 0)) {
-    findings.push({ code: 'costing.adjustedRateInvalid', severity: 'error' });
+    findings.push(costingFinding('costing.adjustedRateInvalid', 'error', 'costingAssumptions', scenario.id, 'annualEscalation'));
     return makeResult(input, 'invalid', findings, coverage, [], []);
   }
 
@@ -350,7 +368,7 @@ export function calculateCosting(input: CostingCalculationInput): CostingCalcula
   });
   if (dayCosts.some((row) => ![row.revenueHoursPerDay, row.platformHoursPerDay, row.annualRevenueHours, row.annualPlatformHours, ...row.yearCosts.flatMap((cost) => [cost.costPerDayUsd, cost.annualCostUsd])].every(Number.isFinite))
     || yearRows.some((row) => ![row.annualRevenueHours, row.annualPlatformHours, row.annualCostUsd].every(Number.isFinite))) {
-    findings.push({ code: 'costing.calculationOverflow', severity: 'error' });
+    findings.push(costingFinding('costing.calculationOverflow', 'error', 'scenario', scenario.id));
     return makeResult(input, 'invalid', findings, coverage, [], []);
   }
 
