@@ -3,15 +3,16 @@
 // export is kept on the device. The quota failure is simulated as in the review's p6-quota.spec.ts: IDBObjectStore.put and .add throw
 // the DOMException that a full store raises, after the app has loaded.
 //
-// The Costing step needs a long timeout. Opening or changing Costing starts an estimate that reads every Trip and Pattern once per Block
-// (review issue I-044, fixed by Package P11), and the read-write transaction of the save waits behind those reads: on the golden project
-// the save finishes in seconds, and with eight browsers sharing one machine it takes longer than the default five seconds.
+// The Costing steps get a longer allowance than the default five seconds. Before Package P11 they needed 90 seconds: opening or changing
+// Costing started an estimate that read every Trip and Pattern once per Block (review issue I-044), and the read-write transaction of the
+// save waited behind those reads. The estimate now reads once, so the save takes well under a second on the golden project; the allowance
+// only covers eight browsers sharing one machine.
 import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 
 test.setTimeout(240_000);
-const SLOW = 90_000;
+const SLOW = 30_000;
 
 const FULL = 'Browser storage is full. Export a backup, then free space.';
 const PROTECTION_KEY = 'transit-costing-tool.local-data-protection.v1';

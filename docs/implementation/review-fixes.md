@@ -911,3 +911,90 @@ A Costing save is slow when the Costing estimate is working. On the unchanged `o
 - The `error` status stays until the next successful write, as before for Route saves. A planner who sees "Local save failed" and then does not save again keeps seeing it. The error banner carries the specific message.
 - The single timeout in the 49-of-50 stress run (an unrelated `selectOption` at the Trips step) was not reproduced in the roughly 70 runs of the same spec that followed (50 with traces, 10 of the indicator test alone, and the full-suite run). Its cause is unknown; I treat it as load on the shared machine, with that uncertainty recorded.
 - What could still be wrong: a repository write added later under a name that does not begin with one of the eight prefixes the classification test looks for would not be caught by it.
+
+## P11: Blocking and Costing read paths
+
+- Date: 2026-10-23. Sitting 4E. Model: Sonnet (main session). No sub-agents: P11 is S2, so no Opus review (sitting plan).
+- Type: structural. Severity: S2.
+- Commit: `PENDING-P11`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-043 | 6-001, 4-008 | S2 | The Blocking screen checked every unassigned Trip against the selected Block with one `classifyInsertion` call each, and each call re-read every Trip and Pattern of the Scenario. At capacity (400 Blocks, 2,000 Trips, 300 unassigned) that was 302 reads of the Trips and about 23 seconds before "Assign" was ready. |
+| I-044 | 6-002 (structural part) | S2 | The Costing context in `main.tsx` summarized each Block on its own, and each summary re-read every Trip and Pattern. At capacity that was 401 reads of the Trips and about 30 seconds before the estimate appeared. The same reads queued ahead of a Costing save (see the P10 entry, "Costing save and I-044"). |
+| I-074b | 4-014 (Costing items) | S3 | `CostingWorkspace.tsx` validated the assumptions, summed the annual service days, checked the 365-day limit, built the list of service years, and clamped the future years itself. |
+| I-080 | 4-023 | S3 | The Costing context builder lived in `main.tsx` (the composition root), where it could not be tested without the browser. |
+
+### What changed
+
+- `src/application/blockingService.ts` and `ports.ts`: `classifyInsertions(blockingScenarioId, blockId, tripIds, insertAt?, minimumLayover?)` returns a map from Trip id to compatibility. It reads the Blocking Scenario and the Block, then the Trips and the Patterns once, and classifies every Trip from that read. A Trip that is not in the Scenario's Trip Profile is looked up on its own, as `classifyInsertion` does, and a Trip that cannot be found is `incomplete`. When the Blocking Scenario or the Block is gone, every Trip is `incomplete` and nothing else is read. `classifyInsertion` (one Trip) is unchanged.
+- New `src/application/costingContext.ts`: `buildCostingCalculationContext(sources, scenarioId, blockingScenarioId)` and `createCostingContextQueries(sources)`. The Trips and the Patterns are read once per build and every Block is summarized from that read with `summarizeBlockingScenario`. A Blocking Scenario of another Scenario, a missing Scenario, and a missing Trip Profile each give `undefined`. `main.tsx` now only supplies the sources (`CostingContextSources` in `ports.ts`).
+- `src/application/costingService.ts` and `ports.ts` (`CostingQueries`): `validateAssumptions`, `summarizeServiceDays` (total, maximum 365, whether the total is above it), `listServiceYears`, and `normalizeFutureYearCount` (a whole number from 0 to 10; not-a-number gives 0). They use the domain constants and `validateCostingAssumptions`.
+- `src/ui/BlockingWorkspace.tsx`: the compatibility effect makes one `classifyInsertions` call instead of one `classifyInsertion` call per Trip (4 lines).
+- `src/ui/CostingWorkspace.tsx`: the five rules above are read from `costingService` (14 lines). The Total cell reads `annualDays.total`. Nothing else in the file changed.
+- `src/main.tsx`: the context builder moved out; `listProfileTrips` and `listScenarioPatterns` are the two shared reads for the Blocking and Costing sources.
+- Documentation: `architecture_overview.md` (Costing data flow).
+
+### Behavior before and after (what you will see)
+
+- Blocking, with a Block selected and many unassigned Trips: "Assign" is ready sooner. At capacity: 23.1 s before, 1.4 to 6.3 s after on the development server with eight browsers sharing the machine, and 0.57 to 0.70 s in the production build on an idle machine.
+- Costing at capacity: the estimate appears in 0.4 to 1.3 s (development server, eight browsers) instead of 30 s. A Costing save no longer waits behind the estimate.
+- Nothing else changes on screen. The Costing values are pinned by the new browser spec, which passes against both the old and the new `CostingWorkspace.tsx`.
+
+### Deviation from the criterion
+
+Criterion 1 says Assign is enabled within 1 s. The built application meets it (0.57 to 0.70 s, idle machine). The browser spec runs on the Vite development server, where React `StrictMode` runs every effect twice and the code is not minified: 1.2 to 1.4 s on an idle machine, and up to 6.3 s with eight browsers. A 1 s limit there would fail for the machine's load, not for a defect, so the committed spec asserts what the defect is (the number of Trip reads) with a loose time limit of 15 s (Blocking) and 10 s (Costing), a third of the old times. The production numbers above are the evidence for the 1 s and 2 s targets. They were measured once, by hand, and are not asserted by any test.
+
+### Tests added
+
+- Unit, `src/application/blockingService.test.ts` (4 tests, "Batch insertion classification"): the result for every listed Trip equals the result of `classifyInsertion` for it, from one read of the Trips and the Patterns; the Trips are read once however many Trips are classified, and a duplicate id is classified once (read counts, not time); a Trip it cannot find is `incomplete` after a single lookup for it; a missing Blocking Scenario or Block gives `incomplete` for every Trip without reading the Trips.
+- Unit, `src/application/costingContext.test.ts` (7 tests, two Scenarios and two Trip Profiles, four Blocking Scenarios): the context holds only the selected Blocking Scenario, its Trip Profile, its Trips and Blocks, and its Scenario; each of the four Blocking Scenarios gets its own data; each Block's summary equals the Blocking service's summary for that Block; the Trips and the Patterns are read once per build however many Blocks there are; a Blocking Scenario of another Scenario, an unknown one, or one whose Scenario or Trip Profile is gone gives `undefined`; a Blocking Scenario of another Scenario is ignored even when a source returns it; the queries list the Blocking Scenarios of one Scenario only.
+- Unit, `src/application/costingService.test.ts` (4 tests, "assumption and service-day rules the screen reads from the service"): `validateAssumptions` returns what the domain returns; `summarizeServiceDays` totals the days against the 365-day limit; `listServiceYears` starts at the first year of service and has one more year than the number of future years; `normalizeFutureYearCount` gives a whole number from 0 to 10.
+- Browser, `tests/ui/capacity-read-paths.spec.ts` (2 tests, the golden specs `p6-capacity-latency.spec.ts` and `p6-costing-timing.spec.ts` ported) with the new support file `tests/ui/support/capacityFixture.ts` (four Service days of 100 Blocks and 500 Trips each, so 400 Blocks and 2,000 Trips; with 2 Trips per Block 300 Trips per day stay unassigned; Trips in a Block are 90 minutes apart so every Block is valid): reads of the Trips store while the tab opens (at most 16 for Blocking, at most 8 for Costing; measured 3 and 1) and a loose time limit; every unassigned Trip is reviewed.
+- Browser, `tests/ui/costing-rules-from-service.spec.ts` (4 tests, golden project): the day counts and the total "365 / 365" in the valid style; a saved total above 365 marked invalid; the year list starts at the first year of service and Future Years clamps to 0 to 10; a rate year after the first year of service blocks Save and shows the explanation.
+
+### Tests first: what failed on the current code
+
+- Unit: all 15 new tests fail on the unfixed code, because the new module and methods do not exist there. That shows only that they are new; what each one guards is shown by the deliberate breaks below, and the old behavior (one read per Trip, one per Block) is shown by the capacity spec on the unfixed source.
+- Capacity spec on the unfixed source (`origin/main` plus P09 and P10), one worker: both tests failed on the read count: Blocking 302 reads and 23,140 ms; Costing 401 reads and 30,315 ms.
+- Costing display spec on the unfixed source: passes. It is a characterization of values that must not change; it passes against the old and the new `CostingWorkspace.tsx`, and fails when the service rules are broken (below).
+
+### Deliberate breaks (each applied, run, and restored from a saved copy)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| Batch classification | reads the Trips once per Trip | 3 fail |
+| Batch classification | no single-Trip fallback for a Trip outside the Trip Profile | 1 fails |
+| Costing context | reads the Trips once per Block | 1 fails |
+| Costing context | accepts a Blocking Scenario of another Scenario | 1 fails |
+| Costing context | reads the Trips of every Trip Profile | 2 fail |
+| Costing rules | `validateAssumptions` returns no findings | 1 fails |
+| Costing rules | the day total never exceeds the limit | 1 fails |
+| Costing rules | the year list omits the first year's future years (`+ 1` removed) | 1 fails |
+| Costing rules | Future Years not clamped | 1 fails |
+| Costing display spec | `>` changed to `>=` in the 365 check | the 365 / 365 test fails |
+| Costing display spec | `+ 1` removed from the year list | the year-list test fails |
+| Costing display spec | the Future Years clamp removed | the clamp test fails |
+| Capacity spec | the unfixed source (per-Trip classification and per-Block summaries) | both fail (302 and 401 reads) |
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 36 files, 502 tests passed (487 before; 15 new: 4 + 7 + 4). Three runs in a row.
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 77 passed, 0 failed (2.8 minutes); 71 before plus the 6 new tests. No `test.fail`, `test.skip`, or `test.fixme`.
+- New spec stress runs, `--repeat-each=10 --workers=8`: `costing-rules-from-service.spec.ts` 40 of 40; `capacity-read-paths.spec.ts` 20 of 20 (Blocking 1.4 to 6.3 s with 3 reads of the Trips; Costing 0.4 to 1.3 s with 1 read).
+- P10 spec after P11: `local-data-protection.spec.ts` 50 of 50 with the unchanged 90 s allowance, then 50 of 50 after the allowance was cut to 30 s (the Costing save is no longer slow) and its comment was brought up to date. The P10 timeout that was never explained did not return in these 100 runs.
+- `pnpm build`: succeeds (existing chunk-size warning only). Bundle `index-Xh7-lYti.js` 782.90 kB (781.75 kB after P10, +1.15 kB).
+
+### Hand-offs
+
+- `tests/ui/local-data-protection.spec.ts` (P10's file): the Costing allowance went from 90 s to 30 s and its comment was updated, as the P10 entry said P11 should allow.
+- Costing screen wording: the alert "Review the rate, years, horizon, and escalation…" and the "Total n / 365" display keep their text. The values come from the service; the wording was not touched.
+
+### Residual risks
+
+- The 1 s and 2 s targets are asserted only as read counts and loose limits in the browser spec; the production numbers are a manual measurement.
+- `classifyInsertions` takes the Block and the Trips as stored at the time of the call; like `classifyInsertion`, it does not re-check them when the answer is used. The Blocking write path still refuses a stale source (the source signature).
+- Real capacity for the Dexie reads is bounded by `listProfileTrips`, which loads every Trip of the Scenario and filters by Trip Profile in memory. At 2,000 Trips that is one read; at much larger sizes it would read more than it needs. A compound index on Scenario and Trip Profile would avoid it and is not part of this package.

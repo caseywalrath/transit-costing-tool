@@ -1,8 +1,8 @@
-import type { Block, BlockingBlock, BlockingScenario, CostingAssumptions, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, Trip, TripGenerationSet, ValidationFinding } from '../domain/types';
+import type { Block, BlockingBlock, BlockingScenario, CostingAssumptions, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, Trip, TripGenerationSet, TripProfile, ValidationFinding } from '../domain/types';
 import type { RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
 import type { ScenarioRecords } from '../domain/project';
 import type { BlockSummary, BlockingAssignmentRequest, BlockingCompatibility, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingActivityEditRequest, BlockingTripsAssignmentRequest } from '../domain/blocking';
-import type { CostingAssumptionsInput, CostingCalculationContext, CostingCalculationResult } from '../domain/costing';
+import type { CostingAssumptionsInput, CostingCalculationContext, CostingCalculationResult, CostingFinding } from '../domain/costing';
 
 export interface RouteDefinitionRepository {
   listProjects(): Promise<Project[]>;
@@ -175,7 +175,24 @@ export interface BlockingQueries {
   getBlockSummary(blockingScenarioId: string, blockId: string): Promise<BlockSummary | undefined>;
   getScenarioSummary(blockingScenarioId: string, serviceDayId?: string): Promise<import('../domain/blocking').BlockingSummary | undefined>;
   classifyInsertion(blockingScenarioId: string, blockId: string, tripId: string, insertAt?: number, minimumLayover?: import('../domain/blocking').MinimumLayoverRule): Promise<BlockingCompatibility>;
+  /** The compatibility of every listed Trip with one Block, from one read of the Trips and Patterns. Keyed by Trip id. */
+  classifyInsertions(blockingScenarioId: string, blockId: string, tripIds: string[], insertAt?: number, minimumLayover?: import('../domain/blocking').MinimumLayoverRule): Promise<Map<string, BlockingCompatibility>>;
   exportBlockingScenarioCsv(blockingScenarioId: string): Promise<Array<{ suffix: 'blocking-scenarios' | 'blocking-blocks' | 'blocking-activities' | 'blocking-summaries'; contents: string }>>;
+}
+
+/**
+ * Where the Costing calculation context is read from, one source per kind of record. `listTrips` and `listPatterns` are called once per
+ * build, however many Blocks there are, so a build costs a fixed number of reads (review issue I-044).
+ */
+export interface CostingContextSources {
+  getScenario(scenarioId: string): Promise<Scenario | undefined>;
+  listServiceDays(scenarioId: string): Promise<ServiceDayDefinition[]>;
+  listBlockingScenarios(scenarioId: string): Promise<BlockingScenario[]>;
+  getTripProfile(tripProfileId: string): Promise<TripProfile | undefined>;
+  /** Every saved Trip of the Scenario that belongs to the Trip Profile. */
+  listTrips(scenarioId: string, tripProfileId: string): Promise<Trip[]>;
+  listPatterns(scenarioId: string): Promise<RoutePattern[]>;
+  listBlockingBlocks(blockingScenarioId: string): Promise<BlockingBlock[]>;
 }
 
 /** Read source contract needed to assemble a calculation without persisting derived costs. */
@@ -199,6 +216,14 @@ export interface CostingCommands {
 /** Application query surface for the selected Blocking Scenario's derived cost estimate. */
 export interface CostingQueries {
   listBlockingScenarios(scenarioId: string): Promise<BlockingScenario[]>;
+  /** The findings that make a set of assumptions unusable. Empty when they are valid. */
+  validateAssumptions(assumptions: CostingAssumptionsInput): CostingFinding[];
+  /** The total of the annual service-day counts and the limit it must stay within (Phase 5 plan, PL05-07). */
+  summarizeServiceDays(serviceDays: ServiceDayDefinition[]): { total: number; maximum: number; exceedsMaximum: boolean };
+  /** The service years the estimate covers: the first year of service and one more for each future year. */
+  listServiceYears(assumptions: Pick<CostingAssumptionsInput, 'baseServiceYear' | 'futureYearCount'>): number[];
+  /** A number of future years as the estimate accepts it: a whole number from 0 to the maximum. */
+  normalizeFutureYearCount(value: number): number;
   calculateEstimate(request: {
     scenarioId: string;
     blockingScenarioId: string;

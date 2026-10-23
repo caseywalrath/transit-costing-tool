@@ -1,5 +1,6 @@
-import { calculateCosting, selectCostingBlockingScenario, type CostingCalculationResult } from '../domain/costing';
+import { calculateCosting, MAX_ANNUAL_SERVICE_DAYS, MAX_COSTING_FUTURE_YEARS, selectCostingBlockingScenario, validateCostingAssumptions, type CostingCalculationResult, type CostingFinding } from '../domain/costing';
 import type { CostingAssumptionsInput } from '../domain/costing';
+import type { ServiceDayDefinition } from '../domain/types';
 import type { CostingAssumptionsRepository, CostingCalculationContextQueries, CostingCommands, CostingQueries } from './ports';
 import { costingCsvFiles } from '../persistence/csv';
 import { metadata, newId } from '../domain/ids';
@@ -45,6 +46,23 @@ export class CostingApplicationService implements CostingQueries, CostingCommand
 
   listBlockingScenarios(scenarioId: string) {
     return this.contextQueries.listBlockingScenarios(scenarioId);
+  }
+
+  validateAssumptions(assumptions: CostingAssumptionsInput): CostingFinding[] {
+    return validateCostingAssumptions(assumptions);
+  }
+
+  summarizeServiceDays(serviceDays: ServiceDayDefinition[]) {
+    const total = serviceDays.reduce((sum, day) => sum + day.annualServiceDays, 0);
+    return { total, maximum: MAX_ANNUAL_SERVICE_DAYS, exceedsMaximum: total > MAX_ANNUAL_SERVICE_DAYS };
+  }
+
+  listServiceYears(assumptions: Pick<CostingAssumptionsInput, 'baseServiceYear' | 'futureYearCount'>): number[] {
+    return Array.from({ length: Math.max(0, assumptions.futureYearCount) + 1 }, (_, index) => assumptions.baseServiceYear + index);
+  }
+
+  normalizeFutureYearCount(value: number): number {
+    return Number.isFinite(value) ? Math.min(MAX_COSTING_FUTURE_YEARS, Math.max(0, Math.trunc(value))) : 0;
   }
 
   async calculateEstimate(request: CostingEstimateRequest): Promise<CostingCalculationResult | undefined> {
