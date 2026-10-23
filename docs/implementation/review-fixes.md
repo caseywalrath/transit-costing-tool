@@ -29,7 +29,7 @@
 
 Items that the user assigned to later packages. They are added to those packages' acceptance criteria and stay here, unchanged, until the owning package lands. The bullets above that describe them are carried forward verbatim.
 
-- **P09 (sitting 4E), the service part of the Runtime first-visit race.** `ensureDefaultRuntimeProfile` is a check-then-write that is not atomic, and two overlapping calls can store duplicate Runtime assignments. Make it idempotent: one check-and-write in a single transaction, so two calls at once leave one Default profile and one assignment per standard Service day, and "Duplicate runtime assignment" cannot appear. Add a test that runs two calls at the same time against both repositories. P09 does not change `App.tsx`. Do not remove the up-front Default Runtime profile step or the reload after the Runtime save in `tests/ui/support/tripsWorkspace.ts`; U07 removes them.
+- **P09 (sitting 4E), the service part of the Runtime first-visit race. DONE in P09 (commit `PENDING-P09`).** `ensureDefaultRuntimeProfile` is a check-then-write that is not atomic, and two overlapping calls can store duplicate Runtime assignments. Make it idempotent: one check-and-write in a single transaction, so two calls at once leave one Default profile and one assignment per standard Service day, and "Duplicate runtime assignment" cannot appear. Add a test that runs two calls at the same time against both repositories. P09 does not change `App.tsx`. Do not remove the up-front Default Runtime profile step or the reload after the Runtime save in `tests/ui/support/tripsWorkspace.ts`; U07 removes them.
 - **P14 (sitting 4F):** enforce Block label uniqueness when a Block is created or renamed (Decision 0039), with a proposed default label of the first free "Block <n>".
 - **U07 (sitting 4I):**
   - the single-flight Runtime load in `App.tsx` (the other half of the race above), then remove the two test-helper steps named above;
@@ -687,3 +687,122 @@ User decision implemented: decision 3 (reject and list the candidates).
 - A request of 500 Trips or fewer that the Last Trip limit now allows is unchanged; a planner who needs a day of one-minute headway builds it in two requests.
 - The shift bound is checked on the Trips the Shift selects, at preview and at commit. The legacy `previewTripShift` (used only by tests since X01) still calls `shiftTrips` without the bound; it has no caller in the application.
 - What could still be wrong: negative times that already exist in stored data (from the old defect) are not repaired. The app could only reach them by committing a staged Shift, which the old UI could not do (the page crashed first), so none is expected; a hand-made backup could still carry one, and `validateTrip` now reports it only where a caller validates (CSV import).
+
+## P09: Application validation and deletion reviews
+
+- Date: 2026-10-23. Sitting 4E. Model: Sonnet (main session). No sub-agents: P09 is S2, so no Opus review (sitting plan).
+- Type: structural. Severity: S2.
+- Commit: `PENDING-P09`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-009 | A-005, 4-005 | S2 | `updateServiceDay` saved a count above 365 (as a total), negative, fractional, or `NaN`, and a blank or untrimmed name. The Costing estimate then turned invalid with no edit-time message. |
+| I-018 | 3-007 | S2 | Deleting a Node in the Node editor left pull-out, pull-in, and deadhead activities pointing at the deleted Node (138 for a garage Node in the golden project), and the review did not report them. |
+| I-027 | 4-011, 4-012 | S2 | Deletion reviews were incomplete. The Trip profile token was optional and ignored Blocking Scenarios, so an empty Blocking Scenario created after the review was deleted silently. `deleteTrips` removed Block activities its review had not shown. Route, Scenario, Runtime profile, and Project deletions had no token. |
+| I-052 | 1-006 | S3 | The overview said annual counts are "capped at 365"; the code treats a total above 365 as an error. |
+| I-078 | 4-020 | S3 | `renameScenario` accepted a blank name. (The second half of the finding, the legacy per-field mutators, is not in the package's acceptance criteria; see the residual risks.) |
+
+Also done, as assigned:
+
+- **Added acceptance criterion from the 4C decision (the service half of the Runtime first-visit race).** `ensureDefaultRuntimeProfile` is one check-and-write in a single transaction. Marked done below.
+- **Criterion 5:** a query that returns every Service day that shares a Runtime profile, for U07 (I-041, 02R-AC18).
+
+No user decision applied beyond the assignment of the race to this package (4C decision bullet).
+
+### What changed
+
+- `src/application/routeDefinitionService.ts`:
+  - `updateServiceDay` accepts only `name` and `annualServiceDays` (the only two fields any caller patches; other fields are ignored). A blank name, a count that is not a whole number of 0 or more, and a total above 365 are refused with `ServiceDayValidationError`, whose `findings` use the existing finding shape (`ruleId`, `entityType: 'serviceDay'`, `entityId`, `field`, `parameters`) and whose message is plain language ("Annual service days cannot total more than 365. This change would make the total 504."). A name is trimmed. A refused edit writes nothing and publishes no save status. A total that is already above 365 (saved before this check) may be reduced in steps but not raised, so a planner can correct it. An unchanged patch still writes nothing.
+  - `renameScenario` rejects a blank name ("Scenario name is required", the message `createScenario` uses) and trims.
+  - Node deletion: `applyNodeChanges` removes the pull-out, pull-in, and deadhead activities that name a deleted Node (the Blocks stay and their remaining activities are renumbered). `NodeChangePreview.nonRevenueImpact` reports `{ blockIds, removedActivityCount }`. The route-edit signature also covers Blocks that name a Node of the Route, so a Block that changed after the review makes the commit refuse.
+  - Deletion reviews: `getProjectDeletionImpact`, `getScenarioDeletionImpact`, `getRouteDeletionImpact`, and `getRuntimeProfileDeletionImpact` return a `reviewToken`; `deleteProject(projectId, reviewToken)`, `deleteScenario(scenarioId, reviewToken)`, `deleteRoute(routeId, reviewToken)`, and `deleteRuntimeProfile(profileId, replacementProfileId, reviewToken)` require it. What each token covers is in Decision 0041. Route deletion and its review now come from one private plan (`planRouteDeletion`), so the review cannot disagree with the deletion; the review's numbers are unchanged.
+  - `ensureDefaultRuntimeProfile` computes what is missing from the stored Scenario and, only when something is missing, applies the same computation inside `updateScenarioRecords` (which re-reads the stored records in the write transaction). A call that finds everything in place writes nothing and publishes no save status.
+  - `listRuntimeProfileServiceDays(profileId)`: every Service day assigned the profile, in the canonical order. Added to `RouteDefinitionApplication`.
+- `src/application/tripGenerationService.ts`: `previewTripProfileDeletion` reads the Scenario's Blocking Scenarios, reports `blockingScenarioCount`, and signs the profile, the other profiles, its Trips, its Blocks, its Blocking Scenarios, and its stale Trips. `deleteTripProfile(profileId, previewToken)` requires the token (it was optional). `previewTripDeletion` returns a `reviewToken` over the Trips and every Block that would lose an activity; `deleteTrips(tripIds, reviewToken)` requires it.
+- New `src/application/reviewToken.ts`: `fingerprint` (a stable 53-bit hash of record sets ordered by id; 17 ms for the 984 Trips and 69 Blocks of the golden project), `assertReviewCurrent`, and `DeletionReviewStaleError` ("The <thing> deletion review is out of date. Review the impact again.").
+- `src/ui/App.tsx` (wiring only; no layout, state, or interaction changed): the six deletion callers pass the token from the preview they already hold (Project, Scenario, Route, Runtime profile, Trips; the Trip profile caller already did). The two pieces of state that keep a review (`profileDeletionImpact`, `tripDeletion`) carry the token.
+- `ports.ts` needed no change: tokens live in the services.
+- Documentation: Decision 0041 (new); `architecture_overview.md` (the 365 rule, deletion reviews and Node deletion, atomic default provisioning).
+
+### Behavior before and after (what you will see)
+
+- Service days table: typing a count that would push the total above 365 (or a negative or fractional count) is refused and the error banner says why; before, it saved and Costing turned invalid. A blank service day name is refused and a name is trimmed. The table does not yet show the message beside the field (U06).
+- Rename scenario with a blank name is refused.
+- Saving the Node editor after deleting a Node that pull-outs, pull-ins, or deadheads name now removes those activities; before, they stayed and pointed at a Node that no longer existed. The impact dialog does not list them yet (hand-off below).
+- Every deletion is checked against its review. If the data changed after the planner opened the confirmation, the app shows "The route deletion review is out of date. Review the impact again." (or scenario, project, runtime profile, Trip, Trip profile) and deletes nothing. After such a refusal the Runtime profile and Trips delete dialogs stay open with the old review; Cancel and open them again.
+- Opening Trips for the first time no longer risks eight stored assignments, a second Default profile, or the "Duplicate runtime assignment" banner.
+
+### Tests added
+
+- `src/application/routeDefinitionService.test.ts` (32 new test runs):
+  - "Service day and Scenario validation" (9): total above 365 refused with a field finding and no save status; a total of exactly 365 and a lower total accepted; `-5`, `1.5`, `NaN`, and `Infinity` refused; blank name refused, name trimmed, both fields reported at once; a total already above 365 comes down in steps but cannot be raised; `renameScenario` blank and trim.
+  - "Node deletion removes the non-revenue activities that name the Node", on the in-memory and the Dexie repository (4 × 2): the review lists Blocks and the activity count and writes nothing; commit removes them, keeps the Blocks, renumbers, leaves no reference; a Block that changed after the review makes the commit refuse; deadhead and pull-in activities of a Node that a Pattern also uses are counted.
+  - "Deletion reviews carry a required token" (5): Project, Scenario (not invalidated by a change in another Scenario), Route (a late Trip; a Block it would change), and Runtime profile (profile rename; assignment change) are refused when stale and accepted with a fresh review; every deletion refuses a missing, empty, or foreign token.
+  - "Default Runtime profile provisioning under overlapping calls", on both repositories (4 × 2): 2 and 5 calls at once leave one Default profile and four assignments, one per standard Service day, and every call returns the same ids; a later call changes nothing and publishes no save status; an existing profile is kept and resized to a longer Pattern.
+  - "Service days that share a Runtime profile" (2): the canonical order, a second profile on Saturday only, an unused profile, and an unknown profile.
+- `src/application/tripGenerationService.test.ts`, "Trip deletions carry a required review token" (7): an empty Blocking Scenario created after the review keeps the profile and the Blocking Scenario (A1-07); `blockingScenarioCount` and the full branch deleted with a current token; a Block of the Blocking Scenario changed after the review; a missing or empty token refused; Trips refused when a Block that uses one is saved after the review (A1-06); refused when a Trip changed, accepted with a fresh review that lists the Block; a token from another selection refused.
+- `src/persistence/repositoryContract.test.ts` (1 test, 2 runs): overlapping `updateScenarioRecords` calls each see the other's write.
+- `tests/ui/deletion-reviews.spec.ts` (5 tests, real app on IndexedDB): Delete route (with 3 Trips) after the review; Delete route refused after a Trip was added, then accepted with a fresh review; Delete scenario refused after a Service day of it changed, then accepted; Delete selected Trips refused after a Block that uses one was saved, then accepted with the Block shown; Delete runtime profile refused after the profile changed, then accepted with a replacement.
+
+### Tests first: what failed on the current code
+
+- Unit, the final tests run against the original source of the four changed files (and without `reviewToken.ts`): 36 of the 157 tests in the five affected test files failed. They are 35 of the 41 new runs and the one existing test that now expects a review token (`deletes selected trips and removes their revenue activities`). The 6 new runs that passed are controls: a total of exactly 365 and a lower total are accepted; a later `ensureDefaultRuntimeProfile` changes nothing and an existing profile is kept and resized (each on both repositories); the Dexie run of the overlapping-update contract test. The overlapping-call tests failed with "Duplicate runtime assignment for <pattern>:<service day>", the banner of the 4C finding, on the in-memory and on the Dexie repository (2 and 5 calls). All 7 Trip deletion tests failed (an optional token let `deleteTripProfile('tp2', undefined)` delete the profile).
+- The contract test failed on the old in-memory repository (`expected ['+c'] to equal ['+a', '+b', '+c']`: two of three overlapping updates were lost) and passed on Dexie. The in-memory `updateScenarioRecords` yielded between its read and its write.
+- Found by self-review and covered by a test that failed first: a Block that names a Node of the Route and changed after a Node review was not in the route-edit signature, so the commit removed activities the review had not shown.
+
+### Deliberate breaks (each applied to the source, the tests run, and the source restored)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| Service day validation | the validation before the write and the re-check inside the write both removed | 7 fail |
+| Service day validation | only the validation before the write removed (the re-check inside the write still refuses) | 1 fails: a refused edit must not start a save |
+| Service day count format | the whole-number-of-0-or-more check removed | 5 fail |
+| Service day total rule | the `> 365` condition replaced by false | 2 fail |
+| Blank service day name | the name check removed | 1 fails |
+| Blank scenario name | the check removed | 1 fails |
+| Node deletion commit | blocks left unchanged in `applyNodeChanges` | 1 fails (per repository, so 2 runs) |
+| Node deletion review | `nonRevenueImpact` empty | 2 fail |
+| Deletion token check | `assertReviewCurrent` does nothing | 5 fail |
+| Route token | changed Blocks left out of the fingerprint | 1 fails |
+| Scenario token | Blocks left out | 1 fails |
+| Trip profile token | Blocking Scenarios left out | 1 fails |
+| Trips token | Blocks left out | 1 fails |
+| Race tests | the write ignores the second computation (`() => unchanged.records`) | 4 fail |
+| Runtime query | assignments of other profiles included | 1 fails |
+| Contract: overlapping updates | in-memory `updateScenarioRecords` awaits the read again | 1 fails |
+| Browser spec | `assertReviewCurrent` does nothing | the 4 refusal tests fail (Delete route plain passes) |
+| Browser spec | `App.tsx` passes the token `'wrong'` for Route, Scenario, Trips, and Runtime profile | all 5 fail |
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 33 files, 461 tests passed (420 before; 41 new runs: 32 in `routeDefinitionService.test.ts`, 7 in `tripGenerationService.test.ts`, 2 contract runs; the existing tests that now take a token are not new). Three runs in a row, 8.5 s each.
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 66 passed, 0 failed (2.5 minutes); 61 before plus the 5 new tests. No `test.fail`, `test.skip`, or `test.fixme`. One earlier run failed 2 tests in `single-tab.spec.ts`; see the fixture change below.
+- New spec stress run: `--repeat-each=10 --workers=8`, 50 of 50 passed (1.7 minutes).
+- `pnpm build`: succeeds (existing chunk-size warning only). Bundle `index-DQ_m5s4t.js` 777.85 kB (772.60 kB before P09, +5.25 kB; the review-token module, the validation, the single plan for Route deletion, and the provisioning plan).
+
+### Fixture change forced by the intended behavior (assertion kept)
+
+`tests/ui/single-tab.spec.ts` (two tests) typed the value `256` into the Weekday annual count to produce an edit that only the read-only guard should refuse. The golden project's counts total exactly 365 (255 + 52 + 52 + 6), so 256 makes 366 and the new validation refuses it first, with a different message. The value is now `254` (total 364) and the second assertion reads `not.toBe(254)`. Every assertion about the read-only rejection is unchanged.
+
+### Hand-offs (files outside the package's owned list; minimum change each)
+
+- `src/persistence/inMemoryRepository.ts`: `updateScenarioRecords` now reads, changes, and writes without yielding (the read and the write were already synchronous inside `async` methods; the extra `await` between them is gone). Without it the in-memory repository loses an update under overlapping calls, which Dexie's transaction already prevents. `getScenarioRecords` and `saveScenarioRecords` are now thin wrappers over private synchronous methods. No behavior of the other methods changed. The new contract test is in `src/persistence/repositoryContract.test.ts`.
+- `src/persistence/repositoryContract.test.ts`: `deleteScenario` takes a token (one call). `src/application/tripProfile.test.ts` and `src/application/authoritativeTripService.test.ts` (tests of `TripGenerationService`): the calls that delete now take the token of a review taken first; assertions unchanged except that the expected review now includes `reviewToken: expect.any(String)`.
+- New `src/application/reviewToken.ts` (not on the owned list): the helper is shared by the two services.
+- New `tests/ui/deletion-reviews.spec.ts`: the package lists no browser spec; the six `App.tsx` callers it wires needed one.
+- UI packages (not done here, by design):
+  - **U05 (destructive actions):** the Node editor's impact dialog does not list `nonRevenueImpact` (Blocks and activities removed); the Trip profile confirmation does not mention `blockingScenarioCount`; the Runtime profile and Trips delete dialogs stay open with the old review after a refusal (close them, or refresh the review). The other confirmations close on confirm.
+  - **U06:** the Service days table shows the message in the error banner. Showing each `ServiceDayValidationError` finding beside its field is U06's (acceptance criterion 1).
+  - **U07:** the shared-profile line should call `listRuntimeProfileServiceDays` (I-041).
+
+### Residual risks
+
+- Pattern deletion (`deletePattern`) has no review token. It is the same defect class (it deletes Runtime profiles, assignments, Trips, and changes Blocks). Package P09's list names six deletions and Pattern is not among them, so it is not changed. Suggested owner: the user's choice (a small addition to P09's pattern, or P14).
+- The legacy per-field route mutators (`updatePattern`, `addNode`, `updateNode`, `addPattern`, `addPatternPoint`, `updatePatternPoint`, `movePatternPoint`, `removePatternPoint`, `createReversePattern`, `duplicatePattern`, and the Direction ones) still bypass the preview and the Pattern validation (the second half of finding 4-020). The application does not call them; only unit tests use them to build fixtures, and `addPatternPoint` itself builds a Pattern up through `updatePattern`, so a two-point minimum cannot be added there without rewriting those fixtures. Left for a decision: delete them and move the fixtures to preview/commit, or leave them as test helpers.
+- `ensureDefaultRuntimeProfile` now writes through `saveScenarioRecords`, which validates every Runtime profile of the Scenario and rewrites the Scenario's rows once, only when something is missing (first visit to a Pattern, or a resize). The application cannot store an invalid profile (`saveRuntimeProfile` refuses it), so no Scenario is expected to hold one; if one did, creating a Default profile for another Pattern would fail until it is corrected. Like every Scenario-wide write (Decision 0036), it reads and writes the whole Scenario.
+- A review token is a fingerprint of the stored records, so any change to a record it covers, even a harmless one, refuses the deletion and asks for a new review. That is the intended fail-safe.
+- The single-flight load in `App.tsx` (the other half of the race) and the two steps in `tests/ui/support/tripsWorkspace.ts` remain for U07, as the added criterion requires. With the service fixed, the app's own first-visit creation path is now correct, but the browser helper still creates the defaults first.
+- The P07 hand-off about `rebalanceDependentService` does not apply: P09 did not change that call.

@@ -1,8 +1,9 @@
 import type { TripGenerationRepository } from './ports';
 import type { GenerateTripsPreview, PatternChangePreview, RecalculationPreview } from '../domain/trips';
 import { adjustBlockReferences, AnchorBandChoiceError, applyPatternChange, calculateRecalculationConnections, calculateRecalculationImpact, createAuthoritativeTrip, findExactTripDuplicates, generateAuthoritativeTrips, generateTrips, markTripRecalculated, previewPatternChange, recalculateTripWithAnchor, shiftTrips, TripGenerationError, validateGenerateTripsRequest, validateTrip, type RecalculationBandSelection } from '../domain/trips';
-import type { AddTripRequest, Block, GenerateTripsRequest, RuntimeAssignment, RuntimeProfile, RoutePattern, Trip, TripGenerationSet, TripProfile, TripRegenerationUndo, TripTableImportRow, ValidationFinding } from '../domain/types';
+import type { AddTripRequest, Block, BlockingScenario, GenerateTripsRequest, RuntimeAssignment, RuntimeProfile, RoutePattern, Trip, TripGenerationSet, TripProfile, TripRegenerationUndo, TripTableImportRow, ValidationFinding } from '../domain/types';
 import type { TripTableImportPreview } from './ports';
+import { assertReviewCurrent, fingerprint } from './reviewToken';
 import { metadata, newId, withUpdatedAt } from '../domain/ids';
 import { buildBatchPatternChangePreview, buildRuntimeCopyPreview, buildTripCopyPreview, type BatchPatternChangePreview, type BatchPatternChangeRequest, type RuntimeCopyPreview, type RuntimeCopyRequest, type TripCopyPreview, type TripCopyRequest } from '../domain/serviceDayCopy';
 import { buildTripShiftPreview, type TripShiftPreview, type TripShiftRequest, TripShiftValidationError } from '../domain/tripShift';
@@ -14,18 +15,16 @@ export interface TripProfileDeletionPreview {
   staleTripCount: number;
   blockCount: number;
   blockActivityCount: number;
+  /** Blocking Scenarios built on the profile. They are deleted with it, together with their Blocks. */
+  blockingScenarioCount: number;
   isLastProfile: boolean;
+  /** Fingerprint of everything this review covers; `deleteTripProfile` requires it. */
   previewToken: string;
 }
 
-function tripProfileDeletionToken(profile: TripProfile, profiles: TripProfile[], trips: Trip[], blocks: Block[], staleTripCount: number): string {
-  return JSON.stringify({
-    profile: [profile.id, profile.updatedAt],
-    profiles: profiles.map((item) => [item.id, item.updatedAt]).sort((left, right) => left[0].localeCompare(right[0])),
-    trips: trips.map((trip) => [trip.id, trip.updatedAt]).sort((left, right) => left[0].localeCompare(right[0])),
-    blocks: blocks.map((block) => [block.id, block.updatedAt]).sort((left, right) => left[0].localeCompare(right[0])),
-    staleTripCount,
-  });
+/** The review covers the profile, the other profiles (whether it is the last), and every Trip, Block, and Blocking Scenario that the deletion removes. */
+function tripProfileDeletionToken(profile: TripProfile, profiles: TripProfile[], trips: Trip[], blocks: Block[], blockingScenarios: BlockingScenario[], staleTripIds: string[]): string {
+  return fingerprint({ profile: [profile], profiles, trips, blocks, blockingScenarios, staleTrips: staleTripIds.map((id) => ({ id })) });
 }
 
 function hasSameScheduledPoints(trip: Trip, recalculated: Trip): boolean {
@@ -86,11 +85,14 @@ export class TripGenerationService {
       for (const staleTrip of await this.listStaleTrips(serviceDayId, profileId)) staleTripIds.add(staleTrip.id);
     }
     const staleTripCount = staleTripIds.size;
-    const preview = { profileId, tripCount: trips.length, manuallyAdjustedTripCount: trips.filter((trip) => trip.provenance.manuallyChangedFields.length > 0).length, staleTripCount, blockCount: blocks.length, blockActivityCount: blocks.reduce((sum, block) => sum + block.activities.length, 0), isLastProfile: profiles.length <= 1 };
-    return { ...preview, previewToken: tripProfileDeletionToken(profile, profiles, trips, blocks, staleTripCount) };
+    const records = this.repository.getScenarioRecords ? await this.repository.getScenarioRecords(profile.scenarioId) : undefined;
+    const blockingScenarios = (records?.blockingScenarios ?? []).filter((blockingScenario) => blockingScenario.tripProfileId === profileId);
+    const preview = { profileId, tripCount: trips.length, manuallyAdjustedTripCount: trips.filter((trip) => trip.provenance.manuallyChangedFields.length > 0).length, staleTripCount, blockCount: blocks.length, blockActivityCount: blocks.reduce((sum, block) => sum + block.activities.length, 0), blockingScenarioCount: blockingScenarios.length, isLastProfile: profiles.length <= 1 };
+    return { ...preview, previewToken: tripProfileDeletionToken(profile, profiles, trips, blocks, blockingScenarios, [...staleTripIds]) };
   }
-  async deleteTripProfile(profileId: string, previewToken?: string): Promise<void> {
-    const preview = await this.previewTripProfileDeletion(profileId); if (previewToken && preview.previewToken !== previewToken) throw new Error('The Trip profile deletion review is out of date. Review the impact again.'); if (preview.isLastProfile) throw new Error('Create another Trip profile before deleting the only profile.'); if (!this.repository.deleteTripProfile) throw new Error('Trip profile persistence is unavailable.'); await this.repository.deleteTripProfile(profileId);
+  /** Deletes the profile only if the stored data still matches the review (`previewTripProfileDeletion`) that `previewToken` came from. */
+  async deleteTripProfile(profileId: string, previewToken: string): Promise<void> {
+    const preview = await this.previewTripProfileDeletion(profileId); assertReviewCurrent('Trip profile', previewToken, preview.previewToken); if (preview.isLastProfile) throw new Error('Create another Trip profile before deleting the only profile.'); if (!this.repository.deleteTripProfile) throw new Error('Trip profile persistence is unavailable.'); await this.repository.deleteTripProfile(profileId);
   }
   private async findTripProfile(profileId: string): Promise<TripProfile> { const profile = this.repository.getTripProfile ? await this.repository.getTripProfile(profileId) : undefined; if (profile) return profile; throw new Error('The selected Trip profile is no longer available.'); }
 
@@ -398,22 +400,24 @@ export class TripGenerationService {
     return preview;
   }
 
-  /** Report trip and block impact before the user confirms deletion. */
-  async previewTripDeletion(tripIds: string[]): Promise<{ deletedTripIds: string[]; affectedBlockIds: string[] }> {
+  /** Report trip and block impact before the user confirms deletion. `reviewToken` covers the Trips and every Block that would change. */
+  async previewTripDeletion(tripIds: string[]): Promise<{ deletedTripIds: string[]; affectedBlockIds: string[]; reviewToken: string }> {
     const uniqueIds = [...new Set(tripIds)];
-    if (!uniqueIds.length) return { deletedTripIds: [], affectedBlockIds: [] };
+    if (!uniqueIds.length) return { deletedTripIds: [], affectedBlockIds: [], reviewToken: fingerprint({}) };
     const trips = await Promise.all(uniqueIds.map((id) => this.repository.getTrip(id)));
     if (trips.some((trip) => !trip)) throw new Error('One or more selected trips are no longer available.');
     const serviceDayIds = new Set((trips as Trip[]).map((trip) => trip.serviceDayId));
     if (serviceDayIds.size !== 1) throw new Error('Trips from different service days must be deleted separately.');
     const blocks = await this.repository.listBlocks((trips[0] as Trip).serviceDayId);
     const adjusted = adjustBlockReferences(blocks, uniqueIds);
-    return { deletedTripIds: uniqueIds, affectedBlockIds: adjusted.adjustments.map((adjustment) => adjustment.blockId) };
+    const affectedBlockIds = adjusted.adjustments.map((adjustment) => adjustment.blockId);
+    return { deletedTripIds: uniqueIds, affectedBlockIds, reviewToken: fingerprint({ trips: trips as Trip[], blocks: blocks.filter((block) => affectedBlockIds.includes(block.id)) }) };
   }
 
-  /** Delete one or more saved trips and remove their revenue activities from affected blocks. */
-  async deleteTrips(tripIds: string[]): Promise<{ deletedTripIds: string[]; affectedBlockIds: string[] }> {
+  /** Delete one or more saved trips and remove their revenue activities from affected blocks, only if the stored data still matches the review that `reviewToken` came from. */
+  async deleteTrips(tripIds: string[], reviewToken: string): Promise<{ deletedTripIds: string[]; affectedBlockIds: string[]; reviewToken: string }> {
     const preview = await this.previewTripDeletion(tripIds);
+    assertReviewCurrent('Trip', reviewToken, preview.reviewToken);
     if (!preview.deletedTripIds.length) return preview;
     const trips = await Promise.all(preview.deletedTripIds.map((id) => this.repository.getTrip(id)));
     const blocks = await this.repository.listBlocks((trips[0] as Trip).serviceDayId);

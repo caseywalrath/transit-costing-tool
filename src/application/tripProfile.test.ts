@@ -80,10 +80,10 @@ describe('Trip profile lifecycle', () => {
     const impact = await service.previewTripProfileDeletion(copied.id);
     expect(impact.tripCount).toBe(2);
     expect(impact.blockCount).toBe(1);
-    await service.deleteTripProfile(copied.id);
+    await service.deleteTripProfile(copied.id, impact.previewToken);
     expect(await repository.getTripProfile(copied.id)).toBeUndefined();
     expect(await repository.listBlocksForProfile(copied.id)).toEqual([]);
-    await expect(service.deleteTripProfile(sourceProfile.id)).rejects.toThrow(/only profile/);
+    await expect(service.deleteTripProfile(sourceProfile.id, (await service.previewTripProfileDeletion(sourceProfile.id)).previewToken)).rejects.toThrow(/only profile/);
     expect(await repository.getTripProfile(sourceProfile.id)).toEqual(sourceProfile);
   });
 

@@ -241,3 +241,105 @@ describe('stale-source checks on Pattern changes and Trips CSV imports, and the 
     });
   });
 });
+
+// P09 (review issues I-027, 4-011, 4-012): deletions take the token of the review the planner saw and cover every record they delete.
+describe('Trip deletions carry a required review token', () => {
+  const stamp = metadata('2026-09-14T00:00:00.000Z');
+  const outbound: RoutePattern = { ...stamp, id: 'outbound', scenarioId: 's', routeId: 'r', name: 'Outbound', directionId: 'outbound', points: [0, 1].map((index) => ({ id: `outbound-${index}`, nodeId: `n${index}`, sequence: index, cumulativeMiles: index })) };
+  const makeTrip = (id: string, tripProfileId: string, firstTime: number): Trip => ({
+    ...stamp, id, scenarioId: 's', routeId: 'r', serviceDayId: 'weekday', patternId: outbound.id, tripProfileId,
+    stopTimes: outbound.points.map((point, index) => ({ patternPointId: point.id, sequence: index, time: firstTime + 600 * index })),
+    provenance: { kind: 'manual', creationMethod: 'manual', manuallyChangedFields: [] },
+  });
+  const blockFor = (id: string, tripId: string, extra: Partial<Block> = {}): Block => ({ ...stamp, id, scenarioId: 's', serviceDayId: 'weekday', label: id, activities: [{ id: `${id}-activity`, type: 'revenueTrip', sequence: 0, tripId }], ...extra });
+  async function setup() {
+    const repository = new InMemoryRouteDefinitionRepository();
+    await repository.saveProjectSnapshot({
+      project: { id: 'project', name: 'Project', distanceUnit: 'miles', currencyCode: 'USD', ...stamp },
+      scenarios: [{ id: 's', projectId: 'project', name: 'Scenario', ...stamp }],
+      serviceDays: [{ id: 'weekday', scenarioId: 's', kind: 'weekday', name: 'Weekday', annualServiceDays: 260, sequence: 0, ...stamp }],
+      routes: [{ id: 'r', scenarioId: 's', name: 'Route', ...stamp }], nodes: [], patterns: [outbound], runtimeProfiles: [], runtimeAssignments: [],
+      tripProfiles: [{ id: 'tp1', scenarioId: 's', name: 'Default', ...stamp }, { id: 'tp2', scenarioId: 's', name: 'Alternative', ...stamp }],
+      generationSets: [], trips: [makeTrip('t1', 'tp1', 1000), makeTrip('t2', 'tp2', 2000)], blocks: [],
+    });
+    return { repository, service: new TripGenerationService(repository, () => '2026-09-15T00:00:00.000Z') };
+  }
+  const stale = /out of date/;
+
+  describe('Trip profile', () => {
+    it('refuses a review that an empty Blocking Scenario created after it would have been deleted under, and keeps that Blocking Scenario', async () => {
+      const { repository, service } = await setup();
+      const review = await service.previewTripProfileDeletion('tp2');
+      expect(review.blockingScenarioCount).toBe(0);
+      repository.blockingScenarios.set('bs', { ...stamp, id: 'bs', scenarioId: 's', tripProfileId: 'tp2', name: 'Created after the review' } as never);
+      await expect(service.deleteTripProfile('tp2', review.previewToken)).rejects.toThrow('The Trip profile deletion review is out of date. Review the impact again.');
+      expect(repository.blockingScenarios.has('bs')).toBe(true);
+      expect(await repository.getTripProfile('tp2')).toBeDefined();
+      expect(repository.trips.has('t2')).toBe(true);
+    });
+
+    it('counts the Blocking Scenarios in the review and deletes them with a current token', async () => {
+      const { repository, service } = await setup();
+      repository.blockingScenarios.set('bs', { ...stamp, id: 'bs', scenarioId: 's', tripProfileId: 'tp2', name: 'Plan B' } as never);
+      repository.blocks.set('nb', blockFor('nb', 't2', { blockingScenarioId: 'bs' }));
+      const review = await service.previewTripProfileDeletion('tp2');
+      expect(review).toMatchObject({ tripCount: 1, blockCount: 1, blockActivityCount: 1, blockingScenarioCount: 1 });
+      await service.deleteTripProfile('tp2', review.previewToken);
+      expect(repository.blockingScenarios.has('bs')).toBe(false);
+      expect(repository.blocks.has('nb')).toBe(false);
+      expect(repository.trips.has('t2')).toBe(false);
+      expect(repository.trips.has('t1')).toBe(true);
+    });
+
+    it('refuses when a Block of the Blocking Scenario changed after the review', async () => {
+      const { repository, service } = await setup();
+      repository.blockingScenarios.set('bs', { ...stamp, id: 'bs', scenarioId: 's', tripProfileId: 'tp2', name: 'Plan B' } as never);
+      repository.blocks.set('nb', blockFor('nb', 't2', { blockingScenarioId: 'bs' }));
+      const review = await service.previewTripProfileDeletion('tp2');
+      repository.blocks.set('nb', { ...repository.blocks.get('nb')!, activities: [] });
+      await expect(service.deleteTripProfile('tp2', review.previewToken)).rejects.toThrow(stale);
+      expect(repository.blocks.has('nb')).toBe(true);
+    });
+
+    it('requires a token', async () => {
+      const { repository, service } = await setup();
+      await expect(service.deleteTripProfile('tp2', undefined as unknown as string)).rejects.toThrow(stale);
+      await expect(service.deleteTripProfile('tp2', '')).rejects.toThrow(stale);
+      expect(await repository.getTripProfile('tp2')).toBeDefined();
+    });
+  });
+
+  describe('Trips', () => {
+    it('refuses to delete Trips when a Block that uses one was saved after the review', async () => {
+      const { repository, service } = await setup();
+      const review = await service.previewTripDeletion(['t1']);
+      expect(review).toMatchObject({ deletedTripIds: ['t1'], affectedBlockIds: [] });
+      expect(review.reviewToken).toEqual(expect.any(String));
+      repository.blocks.set('late', blockFor('late', 't1'));
+      await expect(service.deleteTrips(['t1'], review.reviewToken)).rejects.toThrow('The Trip deletion review is out of date. Review the impact again.');
+      expect(repository.trips.has('t1')).toBe(true);
+      expect(repository.blocks.get('late')!.activities).toHaveLength(1);
+    });
+
+    it('refuses when a Trip changed after the review, and deletes with a fresh review', async () => {
+      const { repository, service } = await setup();
+      repository.blocks.set('shown', blockFor('shown', 't1'));
+      const review = await service.previewTripDeletion(['t1']);
+      expect(review.affectedBlockIds).toEqual(['shown']);
+      repository.trips.set('t1', { ...makeTrip('t1', 'tp1', 1060), updatedAt: '2026-09-15T00:00:00.000Z' });
+      await expect(service.deleteTrips(['t1'], review.reviewToken)).rejects.toThrow(stale);
+      const fresh = await service.previewTripDeletion(['t1']);
+      await expect(service.deleteTrips(['t1'], fresh.reviewToken)).resolves.toMatchObject({ deletedTripIds: ['t1'], affectedBlockIds: ['shown'] });
+      expect(repository.trips.has('t1')).toBe(false);
+      expect(repository.blocks.get('shown')!.activities).toEqual([]);
+    });
+
+    it('requires a token and does not accept one from another selection', async () => {
+      const { repository, service } = await setup();
+      await expect(service.deleteTrips(['t1'], undefined as unknown as string)).rejects.toThrow(stale);
+      const other = await service.previewTripDeletion(['t2']);
+      await expect(service.deleteTrips(['t1'], other.reviewToken)).rejects.toThrow(stale);
+      expect(repository.trips.has('t1')).toBe(true);
+    });
+  });
+});

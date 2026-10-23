@@ -1,4 +1,5 @@
 import { makePatternPoint } from '../domain/commands';
+import { MAX_ANNUAL_SERVICE_DAYS } from '../domain/costing';
 import { metadata, newId, withUpdatedAt } from '../domain/ids';
 import { createProject, createScenarioRecords, duplicateRouteRecords, duplicateScenario, renameProject as renameProjectRecord, type ScenarioRecords } from '../domain/project';
 import { duplicatePattern, getSegmentMiles, normalizePattern, reversePattern, validatePattern } from '../domain/patterns';
@@ -6,11 +7,12 @@ import { createDirectionColumn, createManagedDirections, createRouteDirection, e
 import { classifyPatternEdit, describePatternPointChange, getPatternServiceImpact, rebalanceRuntimeProfile, rebalanceTripForPattern, reconcileRouteTimetables, resetPatternService, type DirectionOrderConflict, type PatternServiceImpact, type RouteEditClassification, type RouteEditMode } from '../domain/safeRouteEditing';
 import { sortServiceDays } from '../domain/serviceDays';
 import { copyRuntimeProfile, normalizeRuntimeProfile, reverseCopyRuntimeProfile, validateRuntimeProfile, withRuntimeCalculationRevision, RuntimeProfileDeletionError } from '../domain/runtime';
-import type { Block, BlockActivity, Node, Project, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, ValidationFinding } from '../domain/types';
+import type { Block, BlockActivity, Node, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, ValidationFinding } from '../domain/types';
 import { validateNodeDeletion, validateRouteDefinition } from '../domain/validation';
 import { adjustBlockReferences } from '../domain/trips';
 import { authoritativeTripsCsv, blockActivitiesCsv, blocksCsv, directionColumnsCsv, directionsCsv, generationSetsCsv, nodesCsv, patternPointsCsv, patternsCsv, routeCsv, runtimeBandsCsv, scheduledPointsCsv, tripsCsv } from '../persistence/csv';
 import type { BackupPort, RouteDefinitionRepository, SaveStatus } from './ports';
+import { assertReviewCurrent, fingerprint } from './reviewToken';
 
 export interface RouteWorkspaceSelection {
   projects: Project[];
@@ -42,11 +44,15 @@ export interface RuntimeProfileDeletionImpact {
   profileId: string;
   assignmentCount: number;
   tripCount: number;
+  /** Fingerprint of the records this review covers; `deleteRuntimeProfile` requires it. */
+  reviewToken: string;
 }
 
 /** Records removed with one Route and the block activities that must be detached. */
 export interface RouteDeletionImpact {
   routeId: string;
+  /** Fingerprint of the records this review covers; `deleteRoute` requires it. */
+  reviewToken: string;
   nodeCount: number;
   directionCount: number;
   patternCount: number;
@@ -69,6 +75,8 @@ export interface NodeDeletionImpact {
 /** A Scenario owns all listed records; blocks themselves are deleted with it. */
 export interface ScenarioDeletionImpact {
   scenarioId: string;
+  /** Fingerprint of the records this review covers; `deleteScenario` requires it. */
+  reviewToken: string;
   remainingScenarioCount: number;
   routeCount: number;
   nodeCount: number;
@@ -84,6 +92,8 @@ export interface ScenarioDeletionImpact {
 
 export interface ProjectDeletionImpact {
   projectId: string;
+  /** Fingerprint of the records this review covers; `deleteProject` requires it. */
+  reviewToken: string;
   scenarioCount: number;
   routeCount: number;
   patternCount: number;
@@ -95,18 +105,74 @@ function nonRevenueActivityReferencesAnyNode(activity: BlockActivity, nodeIds: S
   return activity.type !== 'revenueTrip' && ((activity.fromNodeId !== undefined && nodeIds.has(activity.fromNodeId)) || (activity.toNodeId !== undefined && nodeIds.has(activity.toNodeId)));
 }
 
-function removeNonRevenueActivitiesForNodes(blocks: Block[], nodeIds: Set<string>): { blocks: Block[]; affectedBlockCount: number; removedActivityCount: number } {
-  let affectedBlockCount = 0;
+function removeNonRevenueActivitiesForNodes(blocks: Block[], nodeIds: Set<string>): { blocks: Block[]; affectedBlockIds: string[]; affectedBlockCount: number; removedActivityCount: number } {
+  const affectedBlockIds: string[] = [];
   let removedActivityCount = 0;
   const updated = blocks.map((block) => {
     const activities = block.activities.filter((activity) => !nonRevenueActivityReferencesAnyNode(activity, nodeIds));
     const removed = block.activities.length - activities.length;
     if (!removed) return block;
-    affectedBlockCount += 1;
+    affectedBlockIds.push(block.id);
     removedActivityCount += removed;
     return { ...block, activities: activities.map((activity, sequence) => ({ ...activity, sequence })) };
   });
-  return { blocks: updated, affectedBlockCount, removedActivityCount };
+  return { blocks: updated, affectedBlockIds, affectedBlockCount: affectedBlockIds.length, removedActivityCount };
+}
+
+const SERVICE_DAY_MESSAGES: Record<string, (finding: ValidationFinding) => string> = {
+  'serviceDay.nameRequired': () => 'Enter a service day name.',
+  'serviceDay.annualServiceDaysInvalid': () => 'Annual service days must be a whole number of 0 or more.',
+  'serviceDay.annualServiceDaysExceed365': (finding) => `Annual service days cannot total more than ${finding.parameters?.maximum ?? MAX_ANNUAL_SERVICE_DAYS}. This change would make the total ${finding.parameters?.total}.`,
+};
+
+/** A Service day edit was refused. `findings` name the Service day and the field, so a screen can show each message beside its field. */
+export class ServiceDayValidationError extends Error {
+  constructor(readonly findings: ValidationFinding[]) {
+    super(findings.map((finding) => SERVICE_DAY_MESSAGES[finding.messageKey]?.(finding) ?? 'Review this service day.').join(' '));
+    this.name = 'ServiceDayValidationError';
+  }
+}
+
+/**
+ * Findings for one Service day edit against the Service days of its Scenario. A name must not be blank. A count must be a whole number
+ * of 0 or more, and the counts of all Service days must not total more than 365 (Phase 5 plan, PL05-07). A total that is already
+ * above 365 (saved before this check) may be reduced in steps but not raised, so a planner can always correct it.
+ */
+type ServiceDayEdit = Partial<Pick<ServiceDayDefinition, 'name' | 'annualServiceDays'>>;
+
+function serviceDayFindings(days: ServiceDayDefinition[], id: string, patch: ServiceDayEdit): ValidationFinding[] {
+  const finding = (messageKey: string, field: string, parameters?: Record<string, string | number>): ValidationFinding => ({ ruleId: messageKey, severity: 'error', entityType: 'serviceDay', entityId: id, field, messageKey, ...(parameters ? { parameters } : {}) });
+  const findings: ValidationFinding[] = [];
+  if (patch.name !== undefined && !patch.name.trim()) findings.push(finding('serviceDay.nameRequired', 'name'));
+  if (patch.annualServiceDays !== undefined) {
+    const count = patch.annualServiceDays;
+    if (!Number.isInteger(count) || count < 0) findings.push(finding('serviceDay.annualServiceDaysInvalid', 'annualServiceDays'));
+    else {
+      const stored = days.reduce((sum, day) => sum + day.annualServiceDays, 0);
+      const total = days.reduce((sum, day) => sum + (day.id === id ? count : day.annualServiceDays), 0);
+      if (total > MAX_ANNUAL_SERVICE_DAYS && total > stored) findings.push(finding('serviceDay.annualServiceDaysExceed365', 'annualServiceDays', { total, maximum: MAX_ANNUAL_SERVICE_DAYS }));
+    }
+  }
+  return findings;
+}
+
+/** Everything a Scenario deletion removes, as one fingerprint. */
+function scenarioDeletionToken(records: ScenarioRecords): string {
+  return fingerprint({
+    scenario: records.scenario, serviceDays: records.serviceDays, routes: records.routes, nodes: records.nodes, directions: records.directions,
+    patterns: records.patterns, runtimeProfiles: records.runtimeProfiles, runtimeAssignments: records.runtimeAssignments, tripProfiles: records.tripProfiles,
+    blockingScenarios: records.blockingScenarios, costingAssumptions: records.costingAssumptions ? [records.costingAssumptions] : [],
+    generationSets: records.generationSets, trips: records.trips, blocks: records.blocks,
+  });
+}
+
+/** Everything a Project deletion removes, as one fingerprint. */
+function projectDeletionToken(snapshot: ProjectSnapshot): string {
+  return fingerprint({
+    project: snapshot.project, scenarios: snapshot.scenarios, serviceDays: snapshot.serviceDays, routes: snapshot.routes, nodes: snapshot.nodes, directions: snapshot.directions,
+    patterns: snapshot.patterns, runtimeProfiles: snapshot.runtimeProfiles, runtimeAssignments: snapshot.runtimeAssignments, tripProfiles: snapshot.tripProfiles,
+    blockingScenarios: snapshot.blockingScenarios, costingAssumptions: snapshot.costingAssumptions, generationSets: snapshot.generationSets, trips: snapshot.trips, blocks: snapshot.blocks,
+  });
 }
 
 export interface RouteEditCommitResult {
@@ -138,6 +204,8 @@ export interface NodeChangePreview {
   affectedPatternIds: string[];
   patternsBelowMinimum: string[];
   impact: PatternServiceImpact;
+  /** Pull-out, pull-in, and deadhead activities that name a deleted Node. Committing the edit removes them; the Blocks stay. */
+  nonRevenueImpact: { blockIds: string[]; removedActivityCount: number };
   requiresReset: boolean;
   conflict?: DirectionOrderConflict;
   findings: ValidationFinding[];
@@ -299,11 +367,14 @@ export class RouteDefinitionService {
   async getProjectDeletionImpact(projectId: string): Promise<ProjectDeletionImpact> {
     const snapshot = await this.repository.getProjectSnapshot(projectId);
     if (!snapshot) throw new Error('Project not found.');
-    return { projectId, scenarioCount: snapshot.scenarios.length, routeCount: snapshot.routes.length, patternCount: snapshot.patterns.length, tripCount: snapshot.trips.length, blockCount: snapshot.blocks.length };
+    return { projectId, reviewToken: projectDeletionToken(snapshot), scenarioCount: snapshot.scenarios.length, routeCount: snapshot.routes.length, patternCount: snapshot.patterns.length, tripCount: snapshot.trips.length, blockCount: snapshot.blocks.length };
   }
 
-  async deleteProject(projectId: string): Promise<void> {
-    if (!await this.repository.getProject(projectId)) throw new Error('Project not found.');
+  /** Deletes the Project only if the stored data still matches the review (`getProjectDeletionImpact`) that `reviewToken` came from. */
+  async deleteProject(projectId: string, reviewToken: string): Promise<void> {
+    const snapshot = await this.repository.getProjectSnapshot(projectId);
+    if (!snapshot) throw new Error('Project not found.');
+    assertReviewCurrent('project', reviewToken, projectDeletionToken(snapshot));
     await this.save(() => this.repository.deleteProject(projectId));
   }
 
@@ -311,6 +382,7 @@ export class RouteDefinitionService {
     return this.saveScenarioRecords(createScenarioRecords(projectId, name, this.now()));
   }
   async renameScenario(records: ScenarioRecords, name: string): Promise<ScenarioRecords> {
+    if (!name.trim()) throw new Error('Scenario name is required');
     return this.updateScenarioRecords(records.scenario.id, (current) => ({ ...current, scenario: withUpdatedAt({ ...current.scenario, name: name.trim() }, this.now()) }));
   }
   async duplicateScenario(records: ScenarioRecords, name: string): Promise<ScenarioRecords> {
@@ -324,6 +396,7 @@ export class RouteDefinitionService {
     const scenarios = await this.repository.listScenarios(records.scenario.projectId);
     return {
       scenarioId,
+      reviewToken: scenarioDeletionToken(records),
       remainingScenarioCount: Math.max(0, scenarios.length - 1),
       routeCount: records.routes.length,
       nodeCount: records.nodes.length,
@@ -337,9 +410,11 @@ export class RouteDefinitionService {
       blockCount: records.blocks.length,
     };
   }
-  async deleteScenario(scenarioId: string): Promise<void> {
+  /** Deletes the Scenario only if the stored data still matches the review (`getScenarioDeletionImpact`) that `reviewToken` came from. */
+  async deleteScenario(scenarioId: string, reviewToken: string): Promise<void> {
     const records = await this.repository.getScenarioRecords(scenarioId);
     if (!records) throw new Error('Scenario not found.');
+    assertReviewCurrent('scenario', reviewToken, scenarioDeletionToken(records));
     const scenarios = await this.repository.listScenarios(records.scenario.projectId);
     if (scenarios.length <= 1) throw new Error('Create another scenario before deleting the only scenario in this project.');
     const snapshot = await this.repository.getProjectSnapshot(records.scenario.projectId);
@@ -379,58 +454,31 @@ export class RouteDefinitionService {
     return { records: saved, route: route! };
   }
   async getRouteDeletionImpact(routeId: string): Promise<RouteDeletionImpact> {
-    const records = await this.recordsForRoute(routeId);
-    const patternIds = new Set(records.patterns.filter((pattern) => pattern.routeId === routeId).map((pattern) => pattern.id));
-    const profileIds = new Set(records.runtimeProfiles.filter((profile) => profile.routeId === routeId).map((profile) => profile.id));
-    const tripIds = records.trips.filter((trip) => trip.routeId === routeId).map((trip) => trip.id);
-    const nodeIds = new Set(records.nodes.filter((node) => node.routeId === routeId).map((node) => node.id));
-    const revenueAdjusted = adjustBlockReferences(records.blocks, tripIds);
-    const nonRevenueAdjusted = removeNonRevenueActivitiesForNodes(revenueAdjusted.blocks, nodeIds);
-    const removedConnectionActivityCount = records.blocks.reduce((count, block, index) => count + block.activities.filter((activity) => activity.type !== 'revenueTrip').length - revenueAdjusted.blocks[index].activities.filter((activity) => activity.type !== 'revenueTrip').length, 0);
-    const revenueAffectedBlockIds = new Set(revenueAdjusted.adjustments.map((adjustment) => adjustment.blockId));
-    const affectedBlockCount = new Set([...revenueAffectedBlockIds, ...nonRevenueAdjusted.blocks.filter((block, index) => block !== revenueAdjusted.blocks[index]).map((block) => block.id)]).size;
-    return {
-      routeId,
-      nodeCount: nodeIds.size,
-      directionCount: (records.directions ?? []).filter((direction) => direction.routeId === routeId).length,
-      patternCount: patternIds.size,
-      runtimeProfileCount: profileIds.size,
-      runtimeAssignmentCount: records.runtimeAssignments.filter((assignment) => patternIds.has(assignment.patternId) || profileIds.has(assignment.runtimeProfileId)).length,
-      generationSetCount: records.generationSets.filter((set) => set.routeId === routeId).length,
-      tripCount: tripIds.length,
-      affectedBlockCount,
-      removedBlockActivityCount: revenueAdjusted.adjustments.reduce((count, adjustment) => count + adjustment.removedTripIds.length, 0),
-      removedNonRevenueActivityCount: removedConnectionActivityCount + nonRevenueAdjusted.removedActivityCount,
-    };
+    return this.planRouteDeletion(await this.recordsForRoute(routeId), routeId).impact;
   }
-  async deleteRoute(routeId: string): Promise<ScenarioRecords> {
-    const records = await this.recordsForRoute(routeId);
-    const patternIds = new Set(records.patterns.filter((pattern) => pattern.routeId === routeId).map((pattern) => pattern.id));
-    const profileIds = new Set(records.runtimeProfiles.filter((profile) => profile.routeId === routeId).map((profile) => profile.id));
-    const removedTripIds = records.trips.filter((trip) => trip.routeId === routeId).map((trip) => trip.id);
-    const nodeIds = new Set(records.nodes.filter((node) => node.routeId === routeId).map((node) => node.id));
-    const revenueAdjusted = adjustBlockReferences(records.blocks, removedTripIds);
-    const adjustedBlocks = removeNonRevenueActivitiesForNodes(revenueAdjusted.blocks, nodeIds);
-    return this.saveScenarioRecords({
-      ...records,
-      routes: records.routes.filter((route) => route.id !== routeId),
-      nodes: records.nodes.filter((node) => node.routeId !== routeId),
-      patterns: records.patterns.filter((pattern) => pattern.routeId !== routeId),
-      directions: (records.directions ?? []).filter((direction) => direction.routeId !== routeId),
-      runtimeProfiles: records.runtimeProfiles.filter((profile) => profile.routeId !== routeId),
-      runtimeAssignments: records.runtimeAssignments.filter((assignment) => !patternIds.has(assignment.patternId) && !profileIds.has(assignment.runtimeProfileId)),
-      generationSets: records.generationSets.filter((set) => set.routeId !== routeId),
-      trips: records.trips.filter((trip) => trip.routeId !== routeId),
-      blocks: adjustedBlocks.blocks,
-    });
+  /** Deletes the Route only if the stored data still matches the review (`getRouteDeletionImpact`) that `reviewToken` came from. */
+  async deleteRoute(routeId: string, reviewToken: string): Promise<ScenarioRecords> {
+    const plan = this.planRouteDeletion(await this.recordsForRoute(routeId), routeId);
+    assertReviewCurrent('route', reviewToken, plan.impact.reviewToken);
+    return this.saveScenarioRecords(plan.next);
   }
-  async updateServiceDay(records: ScenarioRecords, id: string, patch: Partial<ServiceDayDefinition>): Promise<ScenarioRecords> {
+  /** Edits the name or the annual count of one Service day. Other fields of the Service day are not editable here and are ignored. */
+  async updateServiceDay(records: ScenarioRecords, id: string, patch: ServiceDayEdit): Promise<ScenarioRecords> {
     const stored = await this.repository.getScenarioRecords(records.scenario.id);
     if (!stored) throw new Error('Scenario not found.');
     const day = stored.serviceDays.find((candidate) => candidate.id === id);
     if (!day) throw new Error('Service day not found.');
-    if ((Object.keys(patch) as Array<keyof ServiceDayDefinition>).every((key) => day[key] === patch[key])) return stored;
-    return this.updateScenarioRecords(records.scenario.id, (current) => ({ ...current, serviceDays: current.serviceDays.map((candidate) => candidate.id === id ? withUpdatedAt({ ...candidate, ...patch }, this.now()) : candidate) }));
+    const change: ServiceDayEdit = {};
+    if (patch.name !== undefined) change.name = patch.name.trim();
+    if (patch.annualServiceDays !== undefined) change.annualServiceDays = patch.annualServiceDays;
+    if ((Object.keys(change) as Array<keyof ServiceDayEdit>).every((key) => day[key] === change[key])) return stored;
+    const findings = serviceDayFindings(stored.serviceDays, id, change);
+    if (findings.length) throw new ServiceDayValidationError(findings);
+    return this.updateScenarioRecords(records.scenario.id, (current) => {
+      const recheck = serviceDayFindings(current.serviceDays, id, change);
+      if (recheck.length) throw new ServiceDayValidationError(recheck);
+      return { ...current, serviceDays: current.serviceDays.map((candidate) => candidate.id === id ? withUpdatedAt({ ...candidate, ...change }, this.now()) : candidate) };
+    });
   }
 
   async updateRoute(aggregate: RouteDefinitionAggregate, patch: Partial<Route>): Promise<RouteDefinitionAggregate> {
@@ -701,55 +749,99 @@ export class RouteDefinitionService {
     return this.save(async () => { await this.repository.saveRuntimeProfile(copy); return copy; });
   }
 
-  /** Provision an initial Default profile only when no profile exists for the pattern. */
+  /**
+   * Provision an initial Default profile only when no profile exists for the pattern, and one assignment for each standard Service day
+   * that has none. The check and the writes happen in one repository transaction, so two calls at once (the Trips tab loads twice on
+   * its first visit) cannot both create a profile or an assignment. A call that finds everything in place writes nothing and
+   * publishes no save status.
+   */
   async ensureDefaultRuntimeProfile(pattern: RoutePattern): Promise<{ profile: RuntimeProfile; assignments: RuntimeAssignment[] }> {
-    const records = await this.repository.getScenarioRecords(pattern.scenarioId);
-    if (!records) throw new Error('The selected scenario is no longer available.');
-    const profiles = await this.repository.listRuntimeProfiles(pattern.routeId, pattern.id);
-    let profile = profiles.find((candidate) => candidate.name.trim().toLowerCase() === 'default') ?? profiles[0];
-    if (!profile) {
-      profile = await this.createDefaultRuntimeProfile(pattern, 'Default');
-    } else if (profile.bands.some((band) => band.segmentRuntimeSeconds.length !== Math.max(0, pattern.points.length - 1))) {
-      const expected = Math.max(0, pattern.points.length - 1);
-      profile = await this.saveRuntimeProfile({ ...profile, bands: profile.bands.map((band) => ({ ...band, segmentRuntimeSeconds: [...band.segmentRuntimeSeconds.slice(0, expected), ...Array(Math.max(0, expected - band.segmentRuntimeSeconds.length)).fill(0)] })) });
-    }
-    const assignments: RuntimeAssignment[] = [];
-    const standardDays = sortServiceDays(records.serviceDays).filter((day) => day.kind === 'weekday' || day.kind === 'saturday' || day.kind === 'sunday' || day.kind === 'holiday');
-    for (const day of standardDays) {
-      const existing = (await this.repository.listRuntimeAssignments(pattern.scenarioId, day.id, pattern.id))[0];
-      assignments.push(existing ?? await this.assignRuntimeProfile(pattern.scenarioId, pattern.id, day.id, profile.id));
-    }
-    return { profile, assignments };
+    const stored = await this.repository.getScenarioRecords(pattern.scenarioId);
+    if (!stored) throw new Error('The selected scenario is no longer available.');
+    const unchanged = this.provisionDefaultRuntime(stored, pattern);
+    if (unchanged.records === stored) return { profile: unchanged.profile, assignments: unchanged.assignments };
+    let provisioned = unchanged;
+    await this.updateScenarioRecords(pattern.scenarioId, (current) => { provisioned = this.provisionDefaultRuntime(current, pattern); return provisioned.records; });
+    return { profile: provisioned.profile, assignments: provisioned.assignments };
   }
 
-  async deleteRuntimeProfile(profileId: string, replacementProfileId?: string): Promise<void> {
-    const profile = await this.repository.getRuntimeProfile(profileId);
-    if (!profile) throw new Error('The selected runtime profile is no longer available.');
-    const assignments = await this.repository.listRuntimeAssignments(profile.scenarioId, undefined, profile.patternId);
-    const assigned = assignments.filter((assignment) => assignment.runtimeProfileId === profileId);
-    const records = await this.repository.getScenarioRecords(profile.scenarioId);
-    const referencingTrips = (records?.trips ?? []).filter((trip) => trip.provenance.runtimeProfileId === profileId || trip.provenance.calculationSource?.runtimeProfileId === profileId);
-    if (referencingTrips.length) throw new RuntimeProfileTripReferenceError(profileId, referencingTrips.map((trip) => trip.id));
-    if (assigned.length && !replacementProfileId) throw new RuntimeProfileDeletionError(profileId, assigned.map((assignment) => assignment.id), assigned.map((assignment) => assignment.serviceDayId));
+  /** The records after the Default profile and standard-day assignments of one Pattern are in place; the same object when they already are. */
+  private provisionDefaultRuntime(records: ScenarioRecords, pattern: RoutePattern): { records: ScenarioRecords; profile: RuntimeProfile; assignments: RuntimeAssignment[] } {
+    const now = this.now();
+    const expected = Math.max(0, pattern.points.length - 1);
+    const profiles = records.runtimeProfiles.filter((candidate) => candidate.routeId === pattern.routeId && candidate.patternId === pattern.id);
+    let profile = profiles.find((candidate) => candidate.name.trim().toLowerCase() === 'default') ?? profiles[0];
+    let runtimeProfiles = records.runtimeProfiles;
+    if (!profile) {
+      profile = {
+        id: newId(), scenarioId: pattern.scenarioId, routeId: pattern.routeId, patternId: pattern.id, name: 'Default',
+        calculationMethod: 'segmentStart',
+        calculationRevision: 0,
+        bands: [{ id: newId(), label: 'All service', sequence: 0, startTime: 0, endTime: 30 * 60 * 60, segmentRuntimeSeconds: Array(expected).fill(0) }],
+        ...metadata(now),
+      };
+      runtimeProfiles = [...runtimeProfiles, profile];
+    } else if (profile.bands.some((band) => band.segmentRuntimeSeconds.length !== expected)) {
+      const storedPattern = records.patterns.find((candidate) => candidate.id === pattern.id);
+      if (!storedPattern) throw new Error('The selected pattern is no longer available.');
+      const resized = withRuntimeCalculationRevision(profile, withUpdatedAt(normalizeRuntimeProfile({ ...profile, bands: profile.bands.map((band) => ({ ...band, segmentRuntimeSeconds: [...band.segmentRuntimeSeconds.slice(0, expected), ...Array(Math.max(0, expected - band.segmentRuntimeSeconds.length)).fill(0)] })) }), now));
+      if (validateRuntimeProfile(resized, storedPattern).some((finding) => finding.severity === 'error')) throw new Error('Review the runtime profile before saving it.');
+      const resizedId = profile.id;
+      profile = resized;
+      runtimeProfiles = runtimeProfiles.map((candidate) => candidate.id === resizedId ? resized : candidate);
+    }
+    const assignments: RuntimeAssignment[] = [];
+    const created: RuntimeAssignment[] = [];
+    for (const day of sortServiceDays(records.serviceDays).filter((candidate) => candidate.kind === 'weekday' || candidate.kind === 'saturday' || candidate.kind === 'sunday' || candidate.kind === 'holiday')) {
+      const existing = records.runtimeAssignments.find((assignment) => assignment.patternId === pattern.id && assignment.serviceDayId === day.id);
+      if (existing) { assignments.push(existing); continue; }
+      const assignment: RuntimeAssignment = { id: newId(), scenarioId: pattern.scenarioId, patternId: pattern.id, serviceDayId: day.id, runtimeProfileId: profile.id, ...metadata(now) };
+      assignments.push(assignment);
+      created.push(assignment);
+    }
+    if (runtimeProfiles === records.runtimeProfiles && !created.length) return { records, profile, assignments };
+    return { records: { ...records, runtimeProfiles, runtimeAssignments: [...records.runtimeAssignments, ...created] }, profile, assignments };
+  }
+
+  /** Deletes the profile only if the stored data still matches the review (`getRuntimeProfileDeletionImpact`) that `reviewToken` came from. */
+  async deleteRuntimeProfile(profileId: string, replacementProfileId: string | undefined, reviewToken: string): Promise<void> {
+    const review = await this.runtimeProfileDeletionReview(profileId);
+    assertReviewCurrent('runtime profile', reviewToken, review.reviewToken);
+    if (review.referencingTrips.length) throw new RuntimeProfileTripReferenceError(profileId, review.referencingTrips.map((trip) => trip.id));
+    if (review.assigned.length && !replacementProfileId) throw new RuntimeProfileDeletionError(profileId, review.assigned.map((assignment) => assignment.id), review.assigned.map((assignment) => assignment.serviceDayId));
     if (replacementProfileId) {
       if (replacementProfileId === profileId) throw new Error('Choose a different replacement runtime profile.');
       const replacement = await this.repository.getRuntimeProfile(replacementProfileId);
-      if (!replacement || replacement.scenarioId !== profile.scenarioId || replacement.routeId !== profile.routeId || replacement.patternId !== profile.patternId) throw new Error('Replacement runtime profile must belong to the same pattern.');
+      if (!replacement || replacement.scenarioId !== review.profile.scenarioId || replacement.routeId !== review.profile.routeId || replacement.patternId !== review.profile.patternId) throw new Error('Replacement runtime profile must belong to the same pattern.');
     }
     await this.save(() => this.repository.deleteRuntimeProfile(profileId, replacementProfileId));
   }
   async getRuntimeProfileDeletionImpact(profileId: string): Promise<RuntimeProfileDeletionImpact> {
+    const review = await this.runtimeProfileDeletionReview(profileId);
+    return { profileId, assignmentCount: review.assigned.length, tripCount: review.referencingTrips.length, reviewToken: review.reviewToken };
+  }
+  /** The profile, the assignments that name it, and the Trips that record it as their source: what a deletion of the profile touches. */
+  private async runtimeProfileDeletionReview(profileId: string) {
     const profile = await this.repository.getRuntimeProfile(profileId);
     if (!profile) throw new Error('The selected runtime profile is no longer available.');
     const [assignments, records] = await Promise.all([
       this.repository.listRuntimeAssignments(profile.scenarioId, undefined, profile.patternId),
       this.repository.getScenarioRecords(profile.scenarioId),
     ]);
-    return {
-      profileId,
-      assignmentCount: assignments.filter((assignment) => assignment.runtimeProfileId === profileId).length,
-      tripCount: (records?.trips ?? []).filter((trip) => trip.provenance.runtimeProfileId === profileId || trip.provenance.calculationSource?.runtimeProfileId === profileId).length,
-    };
+    const assigned = assignments.filter((assignment) => assignment.runtimeProfileId === profileId);
+    const referencingTrips = (records?.trips ?? []).filter((trip) => trip.provenance.runtimeProfileId === profileId || trip.provenance.calculationSource?.runtimeProfileId === profileId);
+    return { profile, assigned, referencingTrips, reviewToken: fingerprint({ profile: [profile], assignments: assigned, trips: referencingTrips }) };
+  }
+  /** Every Service day that uses the profile, in the canonical Weekday, Saturday, Sunday, Holiday order (02R-AC18). */
+  async listRuntimeProfileServiceDays(profileId: string): Promise<ServiceDayDefinition[]> {
+    const profile = await this.repository.getRuntimeProfile(profileId);
+    if (!profile) throw new Error('The selected runtime profile is no longer available.');
+    const [assignments, records] = await Promise.all([
+      this.repository.listRuntimeAssignments(profile.scenarioId, undefined, profile.patternId),
+      this.repository.getScenarioRecords(profile.scenarioId),
+    ]);
+    const dayIds = new Set(assignments.filter((assignment) => assignment.runtimeProfileId === profileId).map((assignment) => assignment.serviceDayId));
+    return sortServiceDays((records?.serviceDays ?? []).filter((day) => dayIds.has(day.id)));
   }
   async reverseCopyRuntimeProfile(profileId: string, sourcePatternId: string, targetPatternId: string, name: string): Promise<RuntimeProfile> {
     const source = await this.repository.getRuntimeProfile(profileId);
@@ -763,6 +855,60 @@ export class RouteDefinitionService {
   }
   async validateRuntimeProfile(profile: RuntimeProfile, pattern: RoutePattern): Promise<ValidationFinding[]> {
     return validateRuntimeProfile(profile, pattern);
+  }
+
+  /**
+   * What deleting a Route removes and changes, computed once for the review and for the deletion so the two cannot disagree.
+   * The Route's Trips leave the Blocks that used them, and the Route's Nodes leave the pull-out, pull-in, and deadhead activities
+   * that name them; the Blocks stay. The review token covers the Route's own records and every Block that changes.
+   */
+  private planRouteDeletion(records: ScenarioRecords, routeId: string): { impact: RouteDeletionImpact; next: ScenarioRecords } {
+    const patternIds = new Set(records.patterns.filter((pattern) => pattern.routeId === routeId).map((pattern) => pattern.id));
+    const profileIds = new Set(records.runtimeProfiles.filter((profile) => profile.routeId === routeId).map((profile) => profile.id));
+    const removedTrips = records.trips.filter((trip) => trip.routeId === routeId);
+    const nodeIds = new Set(records.nodes.filter((node) => node.routeId === routeId).map((node) => node.id));
+    const revenueAdjusted = adjustBlockReferences(records.blocks, removedTrips.map((trip) => trip.id));
+    const nonRevenueAdjusted = removeNonRevenueActivitiesForNodes(revenueAdjusted.blocks, nodeIds);
+    const removedConnectionActivityCount = records.blocks.reduce((count, block, index) => count + block.activities.filter((activity) => activity.type !== 'revenueTrip').length - revenueAdjusted.blocks[index].activities.filter((activity) => activity.type !== 'revenueTrip').length, 0);
+    const changedBlockIds = new Set([...revenueAdjusted.adjustments.map((adjustment) => adjustment.blockId), ...nonRevenueAdjusted.affectedBlockIds]);
+    const removed = {
+      route: records.routes.filter((route) => route.id === routeId),
+      nodes: records.nodes.filter((node) => node.routeId === routeId),
+      directions: (records.directions ?? []).filter((direction) => direction.routeId === routeId),
+      patterns: records.patterns.filter((pattern) => pattern.routeId === routeId),
+      runtimeProfiles: records.runtimeProfiles.filter((profile) => profile.routeId === routeId),
+      runtimeAssignments: records.runtimeAssignments.filter((assignment) => patternIds.has(assignment.patternId) || profileIds.has(assignment.runtimeProfileId)),
+      generationSets: records.generationSets.filter((set) => set.routeId === routeId),
+      trips: removedTrips,
+      changedBlocks: records.blocks.filter((block) => changedBlockIds.has(block.id)),
+    };
+    const impact: RouteDeletionImpact = {
+      routeId,
+      reviewToken: fingerprint(removed),
+      nodeCount: nodeIds.size,
+      directionCount: removed.directions.length,
+      patternCount: patternIds.size,
+      runtimeProfileCount: profileIds.size,
+      runtimeAssignmentCount: removed.runtimeAssignments.length,
+      generationSetCount: removed.generationSets.length,
+      tripCount: removedTrips.length,
+      affectedBlockCount: changedBlockIds.size,
+      removedBlockActivityCount: revenueAdjusted.adjustments.reduce((count, adjustment) => count + adjustment.removedTripIds.length, 0),
+      removedNonRevenueActivityCount: removedConnectionActivityCount + nonRevenueAdjusted.removedActivityCount,
+    };
+    const next: ScenarioRecords = {
+      ...records,
+      routes: records.routes.filter((route) => route.id !== routeId),
+      nodes: records.nodes.filter((node) => node.routeId !== routeId),
+      patterns: records.patterns.filter((pattern) => pattern.routeId !== routeId),
+      directions: (records.directions ?? []).filter((direction) => direction.routeId !== routeId),
+      runtimeProfiles: records.runtimeProfiles.filter((profile) => profile.routeId !== routeId),
+      runtimeAssignments: records.runtimeAssignments.filter((assignment) => !patternIds.has(assignment.patternId) && !profileIds.has(assignment.runtimeProfileId)),
+      generationSets: records.generationSets.filter((set) => set.routeId !== routeId),
+      trips: records.trips.filter((trip) => trip.routeId !== routeId),
+      blocks: nonRevenueAdjusted.blocks,
+    };
+    return { impact, next };
   }
 
   private async recordsForRoute(routeId: string): Promise<ScenarioRecords> {
@@ -789,12 +935,15 @@ export class RouteDefinitionService {
     const aggregate = this.aggregateFromRecords(records, routeId);
     const profileIds = new Set(records.runtimeProfiles.filter((profile) => profile.routeId === routeId).map((profile) => profile.id));
     const tripIds = new Set(records.trips.filter((trip) => trip.routeId === routeId).map((trip) => trip.id));
+    const nodeIds = new Set(aggregate.nodes.map((node) => node.id));
+    const namesRouteNode = (activity: BlockActivity) => activity.type !== 'revenueTrip' && ((activity.fromNodeId !== undefined && nodeIds.has(activity.fromNodeId)) || (activity.toNodeId !== undefined && nodeIds.has(activity.toNodeId)));
     return JSON.stringify({
       aggregate,
       profiles: records.runtimeProfiles.filter((profile) => profileIds.has(profile.id)),
       assignments: records.runtimeAssignments.filter((assignment) => profileIds.has(assignment.runtimeProfileId) || aggregate.patterns.some((pattern) => pattern.id === assignment.patternId)),
       trips: records.trips.filter((trip) => tripIds.has(trip.id)),
-      blocks: records.blocks.filter((block) => block.activities.some((activity) => activity.type === 'revenueTrip' && tripIds.has(activity.tripId))),
+      // Blocks that a Node edit can change: those with this Route's Trips and those with a pull-out, pull-in, or deadhead at this Route's Nodes.
+      blocks: records.blocks.filter((block) => block.activities.some((activity) => (activity.type === 'revenueTrip' && tripIds.has(activity.tripId)) || namesRouteNode(activity))),
       generationSets: records.generationSets.filter((set) => set.routeId === routeId),
     });
   }
@@ -877,6 +1026,7 @@ export class RouteDefinitionService {
     ];
     const reconciled = reconcileRouteTimetables({ ...aggregate, nodes: normalizedNodes }, candidatePatterns, this.now());
     const impacts = affected.map((pattern) => getPatternServiceImpact(pattern.id, records.runtimeProfiles, records.runtimeAssignments, records.trips, records.blocks, records.generationSets));
+    const nonRevenue = removeNonRevenueActivitiesForNodes(records.blocks, new Set(deletedNodeIds));
     return {
       kind: 'nodes',
       classification: findings.some((finding) => finding.severity === 'error') || reconciled.conflict ? 'invalid' : deletedNodeIds.length ? 'deterministic' : 'metadata',
@@ -885,6 +1035,7 @@ export class RouteDefinitionService {
       affectedPatternIds: affected.map((pattern) => pattern.id),
       patternsBelowMinimum,
       impact: this.mergeImpacts(impacts),
+      nonRevenueImpact: { blockIds: nonRevenue.affectedBlockIds, removedActivityCount: nonRevenue.removedActivityCount },
       requiresReset: false,
       ...(reconciled.conflict ? { conflict: reconciled.conflict } : {}),
       findings,
@@ -944,8 +1095,11 @@ export class RouteDefinitionService {
     const nextById = new Map(reconciled.patterns.filter((pattern) => savedById.has(pattern.id)).map((pattern) => [pattern.id, pattern]));
     const nextPatterns = records.patterns.map((pattern) => pattern.routeId === routeId ? reconciled.patterns.find((candidate) => candidate.id === pattern.id) ?? pattern : pattern);
     const rebalanced = this.rebalanceDependentService(records, savedById, nextById);
+    // A pull-out, pull-in, or deadhead that names a deleted Node cannot stay; its Block does.
+    const blocks = removeNonRevenueActivitiesForNodes(records.blocks, deleted).blocks;
     return {
       ...records,
+      blocks,
       nodes: [...records.nodes.filter((node) => node.routeId !== routeId), ...nodes],
       patterns: nextPatterns,
       directions: [...(records.directions ?? []).filter((direction) => direction.routeId !== routeId), ...reconciled.directions],
@@ -1039,6 +1193,7 @@ export type RouteDefinitionApplication = Pick<RouteDefinitionService,
   | 'reverseCopyRuntimeProfile'
   | 'deleteRuntimeProfile'
   | 'getRuntimeProfileDeletionImpact'
+  | 'listRuntimeProfileServiceDays'
   | 'validateRuntimeProfile'
 >;
 

@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import Dexie from 'dexie';
+import { afterEach, describe, expect, it } from 'vitest';
 import { ProjectBackupService } from '../persistence/backupRepository';
+import { TransitDatabase } from '../persistence/database';
+import { DexieRouteDefinitionRepository } from '../persistence/dexieRepository';
 import { InMemoryRouteDefinitionRepository } from '../persistence/inMemoryRepository';
-import { RouteDefinitionService } from './routeDefinitionService';
+import { RouteDefinitionService, ServiceDayValidationError } from './routeDefinitionService';
+import type { RouteDefinitionRepository, TripGenerationRepository } from './ports';
 import { metadata } from '../domain/ids';
-import type { ProjectSnapshot, Trip } from '../domain/types';
+import type { Block, ProjectSnapshot, Trip } from '../domain/types';
 
 function createService(repository = new InMemoryRouteDefinitionRepository()) {
   const backup = new ProjectBackupService(
@@ -131,8 +135,9 @@ describe('RouteDefinitionService', () => {
     const pattern = aggregate.patterns[0];
     const defaultProfile = await service.ensureDefaultRuntimeProfile(pattern);
     const replacement = await service.createDefaultRuntimeProfile(pattern, 'Alternative');
-    await expect(service.deleteRuntimeProfile(defaultProfile.profile.id)).rejects.toThrow(/replacement/);
-    await service.deleteRuntimeProfile(defaultProfile.profile.id, replacement.id);
+    const review = await service.getRuntimeProfileDeletionImpact(defaultProfile.profile.id);
+    await expect(service.deleteRuntimeProfile(defaultProfile.profile.id, undefined, review.reviewToken)).rejects.toThrow(/replacement/);
+    await service.deleteRuntimeProfile(defaultProfile.profile.id, replacement.id, review.reviewToken);
     expect((await service.listRuntimeProfiles(aggregate.route.id, pattern.id)).map((item) => item.name)).toEqual(['Alternative']);
   });
 
@@ -176,8 +181,9 @@ describe('RouteDefinitionService', () => {
     const block = { id: 'shared-block', scenarioId: created.records.scenario.id, serviceDayId: created.records.serviceDays[0].id, label: '1', activities: [{ id: 'route-activity', type: 'revenueTrip' as const, sequence: 0, tripId: trip.id }, { id: 'route-deadhead', type: 'deadhead' as const, sequence: 1, startTime: 100, endTime: 200, fromNodeId: aggregate.nodes[0].id, toNodeId: aggregate.nodes[1].id }], ...metadata() };
     repository.trips.set(trip.id, trip); repository.blocks.set(block.id, block);
 
-    await expect(service.getRouteDeletionImpact(aggregate.route.id)).resolves.toMatchObject({ nodeCount: 2, patternCount: 1, runtimeProfileCount: 1, tripCount: 1, affectedBlockCount: 1, removedBlockActivityCount: 1, removedNonRevenueActivityCount: 1 });
-    await service.deleteRoute(aggregate.route.id);
+    const review = await service.getRouteDeletionImpact(aggregate.route.id);
+    expect(review).toMatchObject({ nodeCount: 2, patternCount: 1, runtimeProfileCount: 1, tripCount: 1, affectedBlockCount: 1, removedBlockActivityCount: 1, removedNonRevenueActivityCount: 1 });
+    await service.deleteRoute(aggregate.route.id, review.reviewToken);
 
     expect(await repository.getRouteDefinition(aggregate.route.id)).toBeUndefined();
     expect(await repository.listRuntimeProfiles(aggregate.route.id)).toEqual([]);
@@ -191,11 +197,13 @@ describe('RouteDefinitionService', () => {
     const created = await service.createProject('Scenario deletion');
     const alternate = await service.createScenario(created.project.id, 'Alternative');
 
-    await expect(service.getScenarioDeletionImpact(created.records.scenario.id)).resolves.toMatchObject({ remainingScenarioCount: 1, routeCount: 0, tripProfileCount: 1, blockCount: 0 });
-    await service.deleteScenario(created.records.scenario.id);
+    const review = await service.getScenarioDeletionImpact(created.records.scenario.id);
+    expect(review).toMatchObject({ remainingScenarioCount: 1, routeCount: 0, tripProfileCount: 1, blockCount: 0 });
+    await service.deleteScenario(created.records.scenario.id, review.reviewToken);
 
     expect((await repository.listScenarios(created.project.id)).map((scenario) => scenario.id)).toEqual([alternate.scenario.id]);
-    await expect(service.deleteScenario(alternate.scenario.id)).rejects.toThrow('Create another scenario before deleting the only scenario');
+    const last = await service.getScenarioDeletionImpact(alternate.scenario.id);
+    await expect(service.deleteScenario(alternate.scenario.id, last.reviewToken)).rejects.toThrow('Create another scenario before deleting the only scenario');
   });
 
   it('copies Scenario-owned costing assumptions and removes them with the Scenario', async () => {
@@ -214,7 +222,7 @@ describe('RouteDefinitionService', () => {
     expect(copy.costingAssumptions?.id).not.toBe('cost-source');
     expect(await repository.getCostingAssumptions(created.records.scenario.id)).toEqual(sourceRecords?.costingAssumptions);
 
-    await service.deleteScenario(created.records.scenario.id);
+    await service.deleteScenario(created.records.scenario.id, (await service.getScenarioDeletionImpact(created.records.scenario.id)).reviewToken);
     expect(await repository.getCostingAssumptions(created.records.scenario.id)).toBeUndefined();
     expect(await repository.getCostingAssumptions(copy.scenario.id)).toEqual(copy.costingAssumptions);
   });
@@ -356,5 +364,355 @@ describe('Scenario-wide writes re-read stored records', () => {
     await repository.deleteProject(project.id);
     await expect(service.updateServiceDay(stale, weekday.id, { name: 'x' })).rejects.toThrow(/Scenario/);
     expect(await repository.getScenarioRecords(scenario.id)).toBeUndefined();
+  });
+});
+
+// P09 (review issues I-009, I-018, I-052, I-078): validation of Service day and Scenario edits, Node deletion, and the Runtime query.
+describe('Service day and Scenario validation', () => {
+  async function setup() {
+    const { service } = createService();
+    const created = await service.createProject('Service days');
+    const [weekday, saturday] = created.records.serviceDays;
+    return { service, records: created.records, weekday, saturday };
+  }
+  async function findingsOf(promise: Promise<unknown>) {
+    const error = await promise.then(() => undefined, (rejected: unknown) => rejected);
+    expect(error).toBeInstanceOf(ServiceDayValidationError);
+    return (error as ServiceDayValidationError).findings;
+  }
+
+  it('rejects a total above 365 with a field finding and stores nothing', async () => {
+    const { service, records, weekday } = await setup();
+    const states: string[] = [];
+    service.subscribeToSaveStatus((status) => states.push(status.state));
+    const findings = await findingsOf(service.updateServiceDay(records, weekday.id, { annualServiceDays: 400 }));
+    expect(findings).toMatchObject([{ ruleId: 'serviceDay.annualServiceDaysExceed365', severity: 'error', entityType: 'serviceDay', entityId: weekday.id, field: 'annualServiceDays', parameters: { total: 504, maximum: 365 } }]);
+    expect((await service.loadWorkspace(records.scenario.projectId, records.scenario.id)).records!.serviceDays.find((day) => day.id === weekday.id)!.annualServiceDays).toBe(260);
+    // A refused edit is not a failed save: no write starts and no error status appears.
+    expect(states).not.toContain('saving');
+    expect(states).not.toContain('error');
+  });
+
+  it('accepts a total of exactly 365 and a lower total', async () => {
+    const { service, records, weekday } = await setup();
+    const full = await service.updateServiceDay(records, weekday.id, { annualServiceDays: 261 });
+    expect(full.serviceDays.reduce((sum, day) => sum + day.annualServiceDays, 0)).toBe(365);
+    const lower = await service.updateServiceDay(full, weekday.id, { annualServiceDays: 100 });
+    expect(lower.serviceDays.find((day) => day.id === weekday.id)!.annualServiceDays).toBe(100);
+  });
+
+  it.each([[-5], [1.5], [Number.NaN], [Number.POSITIVE_INFINITY]])('rejects the count %s', async (annualServiceDays) => {
+    const { service, records, weekday } = await setup();
+    const findings = await findingsOf(service.updateServiceDay(records, weekday.id, { annualServiceDays }));
+    expect(findings).toMatchObject([{ ruleId: 'serviceDay.annualServiceDaysInvalid', field: 'annualServiceDays', entityId: weekday.id }]);
+  });
+
+  it('rejects a blank name, trims a name, and reports every field at once', async () => {
+    const { service, records, weekday } = await setup();
+    expect(await findingsOf(service.updateServiceDay(records, weekday.id, { name: '   ' }))).toMatchObject([{ ruleId: 'serviceDay.nameRequired', field: 'name', entityId: weekday.id }]);
+    const both = await findingsOf(service.updateServiceDay(records, weekday.id, { name: '', annualServiceDays: -1 }));
+    expect(both.map((finding) => finding.field).sort()).toEqual(['annualServiceDays', 'name']);
+    const renamed = await service.updateServiceDay(records, weekday.id, { name: '  Weekday plan  ' });
+    expect(renamed.serviceDays.find((day) => day.id === weekday.id)!.name).toBe('Weekday plan');
+  });
+
+  it('lets a total that is already above 365 come down in steps, and still refuses to raise it', async () => {
+    const { service, records, weekday, saturday } = await setup();
+    const repository = (service as unknown as { repository: InMemoryRouteDefinitionRepository }).repository;
+    // Data saved before the check existed: 300 + 100 + 52 + 0.
+    await repository.updateScenarioRecords(records.scenario.id, (current) => ({ ...current, serviceDays: current.serviceDays.map((day) => day.id === weekday.id ? { ...day, annualServiceDays: 300 } : day.id === saturday.id ? { ...day, annualServiceDays: 100 } : day) }));
+    const stale = (await repository.getScenarioRecords(records.scenario.id))!;
+    await expect(service.updateServiceDay(stale, saturday.id, { annualServiceDays: 120 })).rejects.toBeInstanceOf(ServiceDayValidationError);
+    const lowered = await service.updateServiceDay(stale, weekday.id, { annualServiceDays: 280 });
+    expect(lowered.serviceDays.find((day) => day.id === weekday.id)!.annualServiceDays).toBe(280);
+    const renamed = await service.updateServiceDay(lowered, saturday.id, { name: 'Saturday service' });
+    expect(renamed.serviceDays.find((day) => day.id === saturday.id)!.name).toBe('Saturday service');
+  });
+
+  it('renameScenario rejects a blank name and trims a name', async () => {
+    const { service, records } = await setup();
+    await expect(service.renameScenario(records, '   ')).rejects.toThrow('Scenario name is required');
+    expect((await service.loadWorkspace(records.scenario.projectId, records.scenario.id)).records!.scenario.name).toBe('Scenario 1');
+    expect((await service.renameScenario(records, '  Base  ')).scenario.name).toBe('Base');
+  });
+});
+
+// The P09 tests that need real storage run against the in-memory repository and the Dexie repository on fake-indexeddb.
+let databaseCounter = 0;
+type TestRepository = RouteDefinitionRepository & Pick<TripGenerationRepository, 'saveBlocks' | 'listBlocks'>;
+const implementations: { name: string; create(): Promise<{ repository: TestRepository; close(): Promise<void> }> }[] = [
+  { name: 'in-memory', create: async () => ({ repository: new InMemoryRouteDefinitionRepository(), close: async () => {} }) },
+  {
+    name: 'Dexie',
+    create: async () => {
+      const name = `transit-costing-p09-${Date.now()}-${databaseCounter += 1}`;
+      const db = new TransitDatabase(name);
+      await db.open();
+      return { repository: new DexieRouteDefinitionRepository(db), close: async () => { db.close(); await Dexie.delete(name); } };
+    },
+  },
+];
+
+function serviceOn(repository: TestRepository) {
+  const backup = new ProjectBackupService((id) => repository.getProjectSnapshot(id), (snapshot) => repository.saveProjectSnapshot(snapshot));
+  return new RouteDefinitionService(repository, backup, () => '2026-09-10T12:00:00.000Z');
+}
+
+describe.each(implementations)('Node deletion removes the non-revenue activities that name the Node: $name', ({ create }) => {
+  let close: () => Promise<void> = async () => {};
+  afterEach(async () => { await close(); });
+
+  const blocksOf = async (repository: TestRepository, serviceDayId: string) => new Map((await repository.listBlocks(serviceDayId)).map((block) => [block.id, block]));
+  async function setup() {
+    const harness = await create();
+    close = harness.close;
+    const repository = harness.repository;
+    const service = serviceOn(repository);
+    const created = await service.createProject('Node deletion');
+    const addedRoute = await service.addRoute(created.records);
+    let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
+    for (const name of ['A', 'B', 'Garage']) { aggregate = await service.addNode(aggregate); aggregate = await service.updateNode(aggregate, aggregate.nodes.at(-1)!.id, { name }); }
+    const added = await service.addPattern(aggregate);
+    aggregate = await service.addPatternPoint(added.aggregate, added.pattern.id);
+    aggregate = await service.addPatternPoint(aggregate, added.pattern.id);
+    aggregate = await service.updatePatternPoint(aggregate, added.pattern.id, 1, { nodeId: aggregate.nodes[1].id, cumulativeMiles: 1 });
+    const [a, b, garage] = aggregate.nodes;
+    const base = { scenarioId: created.records.scenario.id, serviceDayId: created.records.serviceDays[0].id, ...metadata() };
+    const block = (value: Block) => value;
+    await repository.saveBlocks([block({ id: 'b1', ...base, label: '1', activities: [
+      { id: 'b1-out', type: 'pullOut', sequence: 0, minutesBeforeFirstTrip: 5, fromNodeId: garage.id, toNodeId: a.id },
+      { id: 'b1-dh', type: 'deadhead', sequence: 1, minutesAfterPreviousTrip: 4, fromNodeId: a.id, toNodeId: b.id },
+      { id: 'b1-in', type: 'pullIn', sequence: 2, minutesAfterLastTrip: 5, fromNodeId: b.id, toNodeId: garage.id },
+    ] }), block({ id: 'b2', ...base, label: '2', activities: [{ id: 'b2-out', type: 'pullOut', sequence: 0, minutesBeforeFirstTrip: 5, fromNodeId: garage.id, toNodeId: a.id }] }), block({ id: 'b3', ...base, label: '3', activities: [{ id: 'b3-dh', type: 'deadhead', sequence: 0, minutesAfterPreviousTrip: 4, fromNodeId: a.id, toNodeId: b.id }] })]);
+    return { repository, service, routeId: aggregate.route.id, nodes: aggregate.nodes, garage, dayId: base.serviceDayId };
+  }
+
+  it('reports the affected Blocks and activities in the review and writes nothing while reviewing', async () => {
+    const { repository, service, routeId, nodes, garage, dayId } = await setup();
+    const before = JSON.stringify([...(await blocksOf(repository, dayId)).values()].sort((left, right) => left.id.localeCompare(right.id)));
+    const preview = await service.previewNodeChanges(routeId, nodes.filter((node) => node.id !== garage.id));
+    expect(preview.deletedNodeIds).toEqual([garage.id]);
+    expect({ blockIds: [...preview.nonRevenueImpact.blockIds].sort(), removedActivityCount: preview.nonRevenueImpact.removedActivityCount }).toEqual({ blockIds: ['b1', 'b2'], removedActivityCount: 3 });
+    expect(JSON.stringify([...(await blocksOf(repository, dayId)).values()].sort((left, right) => left.id.localeCompare(right.id)))).toBe(before);
+  });
+
+  it('removes those activities on commit, keeps the Blocks, and leaves no reference to the deleted Node', async () => {
+    const { repository, service, routeId, nodes, garage, dayId } = await setup();
+    const preview = await service.previewNodeChanges(routeId, nodes.filter((node) => node.id !== garage.id));
+    await service.commitNodeChanges(preview.previewToken);
+    const blocks = await blocksOf(repository, dayId);
+    expect(blocks.get('b1')!.activities.map((activity) => [activity.id, activity.sequence])).toEqual([['b1-dh', 0]]);
+    expect(blocks.get('b2')!.activities).toEqual([]);
+    expect(blocks.get('b3')!.activities.map((activity) => activity.id)).toEqual(['b3-dh']);
+    const references = [...blocks.values()].flatMap((block) => block.activities).filter((activity) => activity.type !== 'revenueTrip' && (activity.fromNodeId === garage.id || activity.toNodeId === garage.id));
+    expect(references).toEqual([]);
+    expect(await repository.getRouteDefinition(routeId)).toMatchObject({ nodes: expect.not.arrayContaining([expect.objectContaining({ id: garage.id })]) });
+  });
+
+  it('refuses the commit when a Block that would lose an activity was changed after the review', async () => {
+    const { repository, service, routeId, nodes, garage, dayId } = await setup();
+    const preview = await service.previewNodeChanges(routeId, nodes.filter((node) => node.id !== garage.id));
+    const b3 = (await blocksOf(repository, dayId)).get('b3')!;
+    await repository.saveBlocks([{ ...b3, activities: [...b3.activities, { id: 'b3-in', type: 'pullIn', sequence: 1, minutesAfterLastTrip: 5, fromNodeId: nodes[1].id, toNodeId: garage.id }] }]);
+    await expect(service.commitNodeChanges(preview.previewToken)).rejects.toThrow('changed after this review');
+    expect((await blocksOf(repository, dayId)).get('b3')!.activities.map((activity) => activity.id)).toEqual(['b3-dh', 'b3-in']);
+    expect((await repository.getRouteDefinition(routeId))!.nodes.map((node) => node.id)).toContain(garage.id);
+  });
+
+  it('counts deadhead and pull-in activities of a Node that a Pattern also uses, and reports none when no Node is deleted', async () => {
+    const { service, routeId, nodes } = await setup();
+    const preview = await service.previewNodeChanges(routeId, nodes.filter((node) => node.name !== 'B'));
+    expect({ blockIds: [...preview.nonRevenueImpact.blockIds].sort(), removedActivityCount: preview.nonRevenueImpact.removedActivityCount }).toEqual({ blockIds: ['b1', 'b3'], removedActivityCount: 3 });
+    const none = await service.previewNodeChanges(routeId, nodes);
+    expect(none.nonRevenueImpact).toEqual({ blockIds: [], removedActivityCount: 0 });
+  });
+});
+
+// P09 (review issues I-027, 4-011, 4-012): every deletion takes the token of the review the planner saw.
+describe('Deletion reviews carry a required token', () => {
+  async function setup() {
+    const repository = new InMemoryRouteDefinitionRepository();
+    const { service } = createService(repository);
+    const created = await service.createProject('Deletion reviews');
+    const alternate = await service.createScenario(created.project.id, 'Alternative');
+    const addedRoute = await service.addRoute(created.records);
+    let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
+    aggregate = await service.addNode(aggregate); aggregate = await service.addNode(aggregate);
+    const added = await service.addPattern(aggregate);
+    aggregate = await service.addPatternPoint(added.aggregate, added.pattern.id);
+    aggregate = await service.addPatternPoint(aggregate, added.pattern.id);
+    const pattern = aggregate.patterns[0];
+    const runtime = await service.ensureDefaultRuntimeProfile(pattern);
+    const scenarioId = created.records.scenario.id;
+    const serviceDayId = created.records.serviceDays[0].id;
+    const trip = { id: 'route-trip', scenarioId, routeId: aggregate.route.id, serviceDayId, patternId: pattern.id, tripProfileId: created.records.tripProfiles![0].id, stopTimes: pattern.points.map((point, index) => ({ patternPointId: point.id, sequence: index, time: 600 * index })), provenance: { kind: 'manual' as const, creationMethod: 'manual' as const, manuallyChangedFields: [] }, ...metadata() };
+    const block = { id: 'block', scenarioId, serviceDayId, label: '1', activities: [{ id: 'block-trip', type: 'revenueTrip' as const, sequence: 0, tripId: trip.id }], ...metadata() };
+    repository.trips.set(trip.id, trip); repository.blocks.set(block.id, block);
+    return { repository, service, created, alternate, aggregate, pattern, runtime, scenarioId, trip, block };
+  }
+  const stale = /out of date/;
+
+  it('refuses a Project deletion when anything the Project holds changed after the review, and accepts a fresh review', async () => {
+    const { repository, service, created, alternate } = await setup();
+    const review = await service.getProjectDeletionImpact(created.project.id);
+    expect(review.reviewToken).toEqual(expect.any(String));
+    await service.addRoute(alternate);
+    await expect(service.deleteProject(created.project.id, review.reviewToken)).rejects.toThrow(stale);
+    expect(await repository.getProject(created.project.id)).toBeDefined();
+    await service.deleteProject(created.project.id, (await service.getProjectDeletionImpact(created.project.id)).reviewToken);
+    expect(await repository.getProject(created.project.id)).toBeUndefined();
+  });
+
+  it('refuses a Scenario deletion after a Trip or Block of that Scenario changed, but not after another Scenario changed', async () => {
+    const { repository, service, created, alternate, scenarioId, block } = await setup();
+    const review = await service.getScenarioDeletionImpact(scenarioId);
+    await service.addRoute(alternate);
+    await service.renameScenario(alternate, 'Alternative renamed');
+    repository.blocks.set('late-block', { ...block, id: 'late-block', label: '2', activities: [] });
+    await expect(service.deleteScenario(scenarioId, review.reviewToken)).rejects.toThrow(stale);
+    expect((await repository.listScenarios(created.project.id)).map((scenario) => scenario.id).sort()).toEqual([scenarioId, alternate.scenario.id].sort());
+    const fresh = await service.getScenarioDeletionImpact(scenarioId);
+    await service.addRoute(alternate);
+    await service.deleteScenario(scenarioId, fresh.reviewToken);
+    expect((await repository.listScenarios(created.project.id)).map((scenario) => scenario.id)).toEqual([alternate.scenario.id]);
+  });
+
+  it('refuses a Route deletion after a Trip of the Route, or a Block it would change, changed after the review', async () => {
+    const { repository, service, aggregate, trip, block } = await setup();
+    const review = await service.getRouteDeletionImpact(aggregate.route.id);
+    repository.trips.set('late-trip', { ...trip, id: 'late-trip' });
+    await expect(service.deleteRoute(aggregate.route.id, review.reviewToken)).rejects.toThrow(stale);
+    expect(repository.trips.has(trip.id)).toBe(true);
+    const second = await service.getRouteDeletionImpact(aggregate.route.id);
+    repository.blocks.set(block.id, { ...block, activities: [...block.activities, { id: 'late-activity', type: 'revenueTrip', sequence: 1, tripId: 'late-trip' }] });
+    await expect(service.deleteRoute(aggregate.route.id, second.reviewToken)).rejects.toThrow(stale);
+    expect(await repository.getRouteDefinition(aggregate.route.id)).toBeDefined();
+    await service.deleteRoute(aggregate.route.id, (await service.getRouteDeletionImpact(aggregate.route.id)).reviewToken);
+    expect(await repository.getRouteDefinition(aggregate.route.id)).toBeUndefined();
+    expect(repository.blocks.get(block.id)!.activities).toEqual([]);
+  });
+
+  it('refuses a Runtime profile deletion after the profile or its assignments changed', async () => {
+    const { service, runtime, aggregate, pattern } = await setup();
+    const replacement = await service.createDefaultRuntimeProfile(pattern, 'Alternative');
+    const review = await service.getRuntimeProfileDeletionImpact(runtime.profile.id);
+    await service.renameRuntimeProfile(runtime.profile.id, 'Renamed after review');
+    await expect(service.deleteRuntimeProfile(runtime.profile.id, replacement.id, review.reviewToken)).rejects.toThrow(stale);
+    const second = await service.getRuntimeProfileDeletionImpact(runtime.profile.id);
+    await service.assignRuntimeProfile(pattern.scenarioId, pattern.id, runtime.assignments[0].serviceDayId, replacement.id);
+    await expect(service.deleteRuntimeProfile(runtime.profile.id, replacement.id, second.reviewToken)).rejects.toThrow(stale);
+    const fresh = await service.getRuntimeProfileDeletionImpact(runtime.profile.id);
+    await expect(service.deleteRuntimeProfile(runtime.profile.id, undefined, fresh.reviewToken)).rejects.toThrow(/replacement/);
+    await service.deleteRuntimeProfile(runtime.profile.id, replacement.id, fresh.reviewToken);
+    expect((await service.listRuntimeProfiles(aggregate.route.id, pattern.id)).map((profile) => profile.id)).toEqual([replacement.id]);
+  });
+
+  it('requires a token for every deletion, and an empty or foreign one is refused', async () => {
+    const { repository, service, created, aggregate, runtime, scenarioId } = await setup();
+    const missing = undefined as unknown as string;
+    await expect(service.deleteProject(created.project.id, missing)).rejects.toThrow(stale);
+    await expect(service.deleteScenario(scenarioId, '')).rejects.toThrow(stale);
+    await expect(service.deleteRoute(aggregate.route.id, missing)).rejects.toThrow(stale);
+    await expect(service.deleteRuntimeProfile(runtime.profile.id, undefined, 'not-a-token')).rejects.toThrow(stale);
+    const routeReview = await service.getRouteDeletionImpact(aggregate.route.id);
+    await expect(service.deleteScenario(scenarioId, routeReview.reviewToken)).rejects.toThrow(stale);
+    expect(await repository.getProject(created.project.id)).toBeDefined();
+    expect(await repository.getRouteDefinition(aggregate.route.id)).toBeDefined();
+  });
+});
+
+describe.each(implementations)('Default Runtime profile provisioning under overlapping calls: $name', ({ create }) => {
+  let close: () => Promise<void> = async () => {};
+  afterEach(async () => { await close(); });
+
+  async function setup() {
+    const harness = await create();
+    close = harness.close;
+    const repository = harness.repository;
+    const backup = new ProjectBackupService((id) => repository.getProjectSnapshot(id), (snapshot) => repository.saveProjectSnapshot(snapshot));
+    const service = new RouteDefinitionService(repository, backup, () => '2026-09-10T12:00:00.000Z');
+    const created = await service.createProject('Race');
+    const addedRoute = await service.addRoute(created.records);
+    let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
+    aggregate = await service.addNode(aggregate); aggregate = await service.addNode(aggregate);
+    const added = await service.addPattern(aggregate);
+    aggregate = await service.addPatternPoint(added.aggregate, added.pattern.id);
+    aggregate = await service.addPatternPoint(aggregate, added.pattern.id);
+    return { repository, service, aggregate, scenarioId: created.records.scenario.id, routeId: aggregate.route.id, pattern: aggregate.patterns[0] };
+  }
+
+  it.each([2, 5])('%i calls at once leave one Default profile and one assignment per standard Service day', async (calls) => {
+    const { repository, service, scenarioId, routeId, pattern } = await setup();
+    const results = await Promise.all(Array.from({ length: calls }, () => service.ensureDefaultRuntimeProfile(pattern)));
+    const profiles = await repository.listRuntimeProfiles(routeId, pattern.id);
+    expect(profiles.map((profile) => profile.name)).toEqual(['Default']);
+    const assignments = await repository.listRuntimeAssignments(scenarioId, undefined, pattern.id);
+    expect(assignments).toHaveLength(4);
+    expect(new Set(assignments.map((assignment) => assignment.serviceDayId)).size).toBe(4);
+    expect(assignments.every((assignment) => assignment.runtimeProfileId === profiles[0].id)).toBe(true);
+    for (const result of results) {
+      expect(result.profile.id).toBe(profiles[0].id);
+      expect(result.assignments.map((assignment) => assignment.id).sort()).toEqual(assignments.map((assignment) => assignment.id).sort());
+    }
+  });
+
+  it('a later call changes nothing and publishes no save status', async () => {
+    const { repository, service, scenarioId, pattern } = await setup();
+    await service.ensureDefaultRuntimeProfile(pattern);
+    const before = JSON.stringify(await repository.getScenarioRecords(scenarioId));
+    const states: string[] = [];
+    service.subscribeToSaveStatus((status) => states.push(status.state));
+    await service.ensureDefaultRuntimeProfile(pattern);
+    expect(JSON.stringify(await repository.getScenarioRecords(scenarioId))).toBe(before);
+    expect(states).not.toContain('saving');
+  });
+
+  it('keeps an existing profile and its assignments, and still resizes it to the Pattern', async () => {
+    const { repository, service, aggregate, scenarioId, routeId, pattern } = await setup();
+    const first = await service.ensureDefaultRuntimeProfile(pattern);
+    const longer = (await service.addPatternPoint(aggregate, pattern.id)).patterns.find((candidate) => candidate.id === pattern.id)!;
+    const again = await service.ensureDefaultRuntimeProfile(longer);
+    expect(again.profile.id).toBe(first.profile.id);
+    expect(again.profile.bands[0].segmentRuntimeSeconds).toHaveLength(2);
+    expect(again.profile.calculationRevision).toBe((first.profile.calculationRevision ?? 0) + 1);
+    expect(await repository.listRuntimeProfiles(routeId, pattern.id)).toHaveLength(1);
+    expect(await repository.listRuntimeAssignments(scenarioId, undefined, pattern.id)).toHaveLength(4);
+  });
+});
+
+// P09 criterion 5: the query U07 needs to name every Service day that shares a Runtime profile (02R-AC18).
+describe('Service days that share a Runtime profile', () => {
+  it('lists every Service day assigned to the profile in the canonical order', async () => {
+    const { service } = createService();
+    const created = await service.createProject('Shared profile');
+    const addedRoute = await service.addRoute(created.records);
+    let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
+    aggregate = await service.addNode(aggregate); aggregate = await service.addNode(aggregate);
+    const added = await service.addPattern(aggregate);
+    aggregate = await service.addPatternPoint(added.aggregate, added.pattern.id);
+    aggregate = await service.addPatternPoint(aggregate, added.pattern.id);
+    const pattern = aggregate.patterns[0];
+    const runtime = await service.ensureDefaultRuntimeProfile(pattern);
+    const saturday = created.records.serviceDays.find((day) => day.kind === 'saturday')!;
+    expect((await service.listRuntimeProfileServiceDays(runtime.profile.id)).map((day) => day.kind)).toEqual(['weekday', 'saturday', 'sunday', 'holiday']);
+    const alternative = await service.createDefaultRuntimeProfile(pattern, 'Saturday only');
+    await service.assignRuntimeProfile(pattern.scenarioId, pattern.id, saturday.id, alternative.id);
+    expect((await service.listRuntimeProfileServiceDays(runtime.profile.id)).map((day) => day.kind)).toEqual(['weekday', 'sunday', 'holiday']);
+    expect((await service.listRuntimeProfileServiceDays(alternative.id)).map((day) => day.name)).toEqual(['Saturday']);
+    expect(await service.listRuntimeProfileServiceDays(runtime.profile.id)).toEqual(expect.arrayContaining([expect.objectContaining({ id: created.records.serviceDays[0].id })]));
+  });
+
+  it('is empty for a profile nothing uses and rejects an unknown profile', async () => {
+    const { service } = createService();
+    const created = await service.createProject('Unused');
+    const addedRoute = await service.addRoute(created.records);
+    let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
+    aggregate = await service.addNode(aggregate); aggregate = await service.addNode(aggregate);
+    const added = await service.addPattern(aggregate);
+    aggregate = await service.addPatternPoint(added.aggregate, added.pattern.id);
+    aggregate = await service.addPatternPoint(aggregate, added.pattern.id);
+    const unused = await service.createDefaultRuntimeProfile(aggregate.patterns[0], 'Unused');
+    expect(await service.listRuntimeProfileServiceDays(unused.id)).toEqual([]);
+    await expect(service.listRuntimeProfileServiceDays('missing')).rejects.toThrow('no longer available');
   });
 });

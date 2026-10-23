@@ -65,10 +65,10 @@ test('a Route added in the active tab survives an annual-count edit attempted in
   await active.getByRole('menuitem', { name: 'New route', exact: true }).click();
   await expect.poll(() => runInPage(active, 'return await e.db.routes.count()')).toBe(2);
 
-  const days = readOnly.getByLabel('Weekday annual service days'); await days.fill('256'); await days.press('Enter');
+  const days = readOnly.getByLabel('Weekday annual service days'); await days.fill('254'); await days.press('Enter');
   await expectRejected(readOnly);
   expect(await runInPage(active, 'return await e.db.routes.count()')).toBe(2);
-  expect(await runInPage(active, "return (await e.db.serviceDays.toArray()).find((day) => day.kind === 'weekday').annualServiceDays")).not.toBe(256);
+  expect(await runInPage(active, "return (await e.db.serviceDays.toArray()).find((day) => day.kind === 'weekday').annualServiceDays")).not.toBe(254);
 });
 
 test('a Block reorder in the active tab survives an annual-count edit attempted in the read-only tab', async ({ browser }) => {
@@ -82,7 +82,7 @@ test('a Block reorder in the active tab survives an annual-count edit attempted 
   await expect.poll(() => runInPage(active, order)).not.toBe(before);
   const reordered = await runInPage(active, order);
 
-  const days = readOnly.getByLabel('Weekday annual service days'); await days.fill('256'); await days.press('Enter');
+  const days = readOnly.getByLabel('Weekday annual service days'); await days.fill('254'); await days.press('Enter');
   await expectRejected(readOnly);
   expect(await runInPage(active, order)).toBe(reordered);
 });
