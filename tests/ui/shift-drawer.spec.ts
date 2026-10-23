@@ -42,7 +42,14 @@ test('the step sizes are a keyboard radio group', async ({ page }) => {
   await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
   await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
   const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
-  await drawer.getByRole('radio', { name: '1', exact: true }).focus();
+  // The drawer previews the selection as it opens and disables its controls until that is done; when the preview ends, a control
+  // that lost the focus to the disabled state gives it to the first step button. A step size focused before then loses the focus
+  // (the cause of intermittent CI failures), so wait until the step buttons are enabled, which happens only after the preview.
+  const one = drawer.getByRole('radio', { name: '1', exact: true });
+  await expect(drawer.getByRole('button', { name: /min earlier/ })).toBeEnabled();
+  await expect(one).toBeEnabled();
+  await one.focus();
+  await expect(one).toBeFocused();
   await page.keyboard.press('ArrowRight');
   await expect(drawer.getByRole('radio', { name: '5', exact: true })).toBeChecked();
   await expect(drawer.getByRole('button', { name: '5 min later' })).toBeEnabled();

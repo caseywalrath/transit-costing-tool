@@ -2462,6 +2462,14 @@ The calculation adds about 60 ms once warm and about 120 ms on a cold first call
 - Placeholder Blocks are deleted without a report (the version 4 upgrade reports its count in the unit test only). They never appeared in Blocking.
 - The Trips load figure for 2,000 Trips was not measured.
 
+## F3: Flaky Shift drawer test
+
+- Date: 2026-10-23. Commit: see `git log`.
+- Failure: `tests/ui/shift-drawer.spec.ts` "the step sizes are a keyboard radio group" failed in CI runs 16 and 18 of PR #26 (the "5" step was not checked after ArrowRight) and passed in runs 17, 19, and 20 on the same code.
+- Cause: opening the drawer previews the selection, and the step controls are disabled until the preview resolves. The test focused the "1" step during that time, so the focus was lost and ArrowRight did nothing. The app is right to disable the controls while it previews.
+- Fix (test only): wait until the step buttons and the "1" step are enabled, then focus it and check that it has the focus before pressing ArrowRight. No assertion removed.
+- Proof: with an 800 ms delay added to the opening preview, the old test fails with the CI message and the new one passes; the spec passed 60 of 60 at `--repeat-each=30 --workers=8`.
+
 ## Register map
 
 Added by D01 (sitting 4K part 2). It maps every issue of the review register to the package that owns it and that package's commit. The package's entry above records what was fixed, deferred, or handed off; a package with two commits lists both. Checked mechanically: every issue except I-048 to I-051, I-053 to I-056, I-059 (this package) and I-102 (closed in Stage 3) appears in the "Issues fixed" table of the package named here. Packages with no register issue of their own: P17 (the user's decisions of 2026-10-23; it also finished I-027 and I-078), U09 and U10 (the user's decisions on two blocked U07 items), and P18 (the dependency upgrade that B01 left open).
