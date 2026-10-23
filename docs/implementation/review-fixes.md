@@ -2,15 +2,15 @@
 
 ## Next sitting
 
-**Sitting 4K part 2 (D01, U09, P18) is finished on the branch `claude/stage-4k-review-fixes`, restarted from `origin/main` after the merge of PR #24 (U08). The user must review the branch, open and merge the pull request, and read the first CI run. The next sitting is U10, on Opus, in a sitting of its own: the Shift drawer redesign (the user's brief is below). Start it only after this branch is merged; create a new work branch from the new `origin/main` (the user names it). Standing rules 1 to 10 below apply unchanged. With U10 done, Stage 4 is complete.**
+**U10 (Shift drawer redesign, Opus) is finished on the branch `claude/stage-4k-review-fixes`, restarted from `origin/main` after the merge of PR #25 (D01, U09, P18). The user must review the branch and the redesign (see the U10 entry, "Interaction, for review"), open and merge the pull request, and read the first CI run. With U10, every Stage 4 package is done. No next review sitting is planned; any follow-up (the open hand-offs below) needs the user's instruction.**
 
 - Done on this branch: D01 (`daec5d5`), U09 (`ef57f58`), and P18 (`9395d2c`). U08 landed earlier (`ac0bded`, PR #24).
-- Not started: U10.
+- U10 done on this branch (`PENDING`). Earlier on `main`: D01 (`daec5d5`), U09 (`ef57f58`), P18 (`9395d2c`).
 - Results of 4K part 2: D01 resolved ten documentation contradictions and added the register map at the end of this log (every register issue to its package and commit). U09: a status line under "Run Times Have Changed" names the count of Trips that their Runtime profile cannot calculate and each distinct reason once; `inspectStaleTrips` now also reports the reason for a Trip that is stale by revision. P18: Vitest 3.2.7 to 4.1.12, `pnpm audit` from 5 advisories to none, no test or config change. No decision was blocked.
 - Exceptions of the 4K part 2 sitting (user, 2026-10-23), not carried over: Sonnet main session, no sub-agents and no Opus review, the Decision 0005 gate waived, U09 inspected at 1024 and 1440 px, P18 a dependency upgrade only. The user states the exceptions for each sitting.
-- **U09 and U10: DECIDED by the user on 2026-10-23. U09 is done; U10 is not started and is the next sitting (Opus).**
+- **U09 and U10: DECIDED by the user on 2026-10-23. U09 and U10 are done.**
   - **U09 (Sonnet, small UI): why a Trip cannot be recalculated** (option A). **DONE in U09 (`ef57f58`).** One status line under the "Run Times Have Changed" indicator lists the distinct reasons from `inspectStaleTrips` (the message texts exist from P07). Reuse the existing notice/status line styling; no new component. Acceptance: when at least one Trip is flagged and its profile cannot calculate it, the line names each distinct reason once; with no such Trip nothing is shown; a browser test covers both; keyboard and screen-reader behavior as the other status lines (plain text, no focus trap). Verification: UI rules, visual check at 1024 and 1440 px.
-  - **U10 (Opus, UI design, beyond the scope of a fix; user will review the result afterward): redesign the Shift drawer.** The overlap of the open drawer with the Runtime Save and Discard buttons is **accepted as is** (option D); do not solve it as a goal of U10 unless the redesign does so as a side effect. The user's brief: the drawer wastes white space; the shifting control (left and right buttons and an up/down minute selector) is confusing; the drawer is valuable because the planner sees the effect of a shift on the Trips table, and that must stay. Wanted: a much more discreet control and a more intuitive increment selector. The agent decides the design and records the options it rejected. Constraints: the preview-then-apply behavior, Undo and Redo (U07), the net-shift label (`formatNetShift`, `formatStagedShift`), the minute parsing rules (`parseShiftSeconds`), keyboard and screen-reader operation, and the existing specs (`workflow-section-layout.spec.ts` asserts the right-docked drawer; it may change only with a recorded reason). Verification: UI rules plus screenshots at 1024 and 1440 px before and after, and the interaction written up so the user can review it.
+  - **U10 (Opus, UI design, beyond the scope of a fix; user will review the result afterward): redesign the Shift drawer.** **DONE in U10 (`PENDING`); awaiting the user's review.** The overlap of the open drawer with the Runtime Save and Discard buttons is **accepted as is** (option D); do not solve it as a goal of U10 unless the redesign does so as a side effect. The user's brief: the drawer wastes white space; the shifting control (left and right buttons and an up/down minute selector) is confusing; the drawer is valuable because the planner sees the effect of a shift on the Trips table, and that must stay. Wanted: a much more discreet control and a more intuitive increment selector. The agent decides the design and records the options it rejected. Constraints: the preview-then-apply behavior, Undo and Redo (U07), the net-shift label (`formatNetShift`, `formatStagedShift`), the minute parsing rules (`parseShiftSeconds`), keyboard and screen-reader operation, and the existing specs (`workflow-section-layout.spec.ts` asserts the right-docked drawer; it may change only with a recorded reason). Verification: UI rules plus screenshots at 1024 and 1440 px before and after, and the interaction written up so the user can review it.
 - **P18 (Vitest major upgrade, 5 advisories in the `vitest` chain): DONE in P18 (`9395d2c`).** Its own package, not mixed with feature work (user decision 5 below).
 - Known failures: `tests/ui/route-editing.spec.ts:6` failed once in the D01 full run (150 passed, 1 failed): after "Save nodes" for Node B, the click on "Add pattern" opened no draft ("New Pattern — not saved" never appeared). It passed 100 of 100 times alone (`--repeat-each=20 --workers=8` and `--repeat-each=80 --workers=16`) and in the full runs of U09 and P18. The probable cause is the L-16 race that `tests/ui/support/tripsWorkspace.ts` already works around (a save's reload lands after the next step starts); that helper retries the click, and this spec does not. If it returns, apply the same retry or find the application-side cause (a planner who clicks Add pattern right after Save nodes might lose the draft too). `unified-action-layer.spec.ts:139` passed in every full run of this sitting. If it returns, diagnose it as a package failure and fix the code.
 - State after P18: unit tests 52 files, 752 tests; browser suite 153 tests, all passing; bundle `index-Be19ICCN.js` 807.23 kB; `pnpm audit` clean. The user must still read the first CI run (branch protection and CI are the user's to watch).
@@ -32,7 +32,7 @@
   4. Branch protection: the user requires the two CI checks on `main`. User action only. The check names are "Typecheck, unit tests, build" (job `verify`) and "Browser tests" (job `browser`).
   5. Vitest major upgrade: its own package, **P18**, after D01, or in a separate maintenance sitting. Not mixed with feature work. **DONE in P18.**
   6. Defaults accepted: Runtime band totals use the duration format; a Pattern with no distance shows "incomplete"; menu typeahead is not built.
-  7. U07 blocked item 1: the Shift drawer overlap is accepted (option D); the drawer is redesigned in package **U10**.
+  7. U07 blocked item 1: the Shift drawer overlap is accepted (option D); the drawer is redesigned in package **U10**. **DONE in U10.**
   8. U07 blocked item 2: option A, a status line under the "Run Times Have Changed" indicator: package **U09**. **DONE in U09.**
 - Other hand-offs still open from earlier sittings:
   - **Decided by the user on 2026-10-23 (Option B), done in U07.** Under a segment-start or blended profile, an anchor that fits two first departures is rejected and the candidates are listed (Decision 0031 addendum).
@@ -2291,6 +2291,76 @@ Option A (user, 2026-10-23): one status line under the indicator lists the disti
 
 - `pnpm outdated` lists other newer majors (Vite 8, `@vitejs/plugin-react` 6, TypeScript 7, `@types/node` 26, Vitest 5). None carries an advisory. They are not part of P18 and have no owner.
 - CI has not run this lockfile. The user reads the first CI run of the branch. `@types/node` stays at 22 and Node at 22.
+
+## U10: Shift drawer redesign
+
+- Date: 2026-10-23. Sitting after 4K part 2 (the user asked to continue on the same branch after PR #25 was merged). Model: Opus (main session). No sub-agents.
+- Type: UI design, beyond the scope of a fix (user decision 7 of 2026-10-23). Severity: S3. Sol-class. `docs/review/fix-packages.md` has no U10 entry; the brief is in the Next sitting note.
+- Commit: `PENDING`.
+
+### The user's brief
+
+The drawer wasted white space; the shifting control (Back and Forward buttons around an up/down minute field) was confusing; seeing the effect on the Trips table must stay. Wanted: a much more discreet control and a more intuitive increment selector. The overlap with the Runtime Save and Discard buttons was accepted and was not a goal.
+
+### Design chosen
+
+- **Compact panel, lower right.** The full-height 380 px drawer (about 650 px of it empty at 900 px height) is now a 320 px panel 16 px in from the right edge and the bottom, about 220 px tall. The table to its left and above it stays visible, so the staged rows ("Staged 2 minutes later") stay in view. It is still right-docked and non-modal (Decision 0018 item 7, annotated).
+- **The result first.** The first line is the net shift in large type ("2 minutes later", `formatNetShift`) with the selection count, as one `role="status"`.
+- **Buttons that say what they do.** "← 5 min earlier" and "5 min later →" replace "− Back" and "+ Forward"; the label carries the current step, so the separate number between them no longer has to be read to know what a press does.
+- **Step sizes one press away.** A **Step** radio group (1, 5, 10, 15 minutes, styled as small segments) sits under the buttons, with a **Step minutes** field for any other whole number. Typing 3 leaves no preset checked. The field follows `parseShiftSeconds`; an invalid value (0, blank, a fraction) disables both step buttons, marks the field `aria-invalid`, and shows "Enter a whole number of minutes above 0." (before, the buttons were disabled with no explanation).
+- **One footer row:** Undo, Redo, then Discard and Done.
+- Unchanged: preview-then-apply, staged Undo and Redo (U07), `formatNetShift` and `formatStagedShift`, Escape and Close (with the discard question when something is staged), focus return after a step (5-012), stale-preview refusal, and the Build Trips drawer (which shares the `shift-drawer` class and keeps its full-height layout; the new rules sit under `.shift-drawer--compact`).
+
+### Options rejected
+
+- **Inline toolbar above the Trips table** instead of a panel: most discreet, but it moves the table down while staging and is far from the selected rows on a long schedule; a page-scroll change while staging also conflicts with the scroll restore after Done (Decision 0035 item 5).
+- **Popover anchored to the selected rows:** tied to rows that move when they are shifted and that may be scattered across the table.
+- **A slider or a time-picker for the offset:** imprecise for whole minutes and poor with the keyboard; the planner thinks in "5 minutes later", which the buttons now say.
+- **Keyboard shortcuts (arrow keys) for earlier and later:** would clash with the radio group and the number field, and the Trips table already uses the keyboard; not added.
+- **A bottom-docked full-width bar:** covers the last rows of every column instead of only the right-hand ones.
+
+### Interaction, for review
+
+1. Select Trips, then Trip actions → **Shift selected…**. The panel opens at the lower right showing "No net shift · N selected".
+2. Choose a step (1, 5, 10, 15, or type one). The two buttons change to name it.
+3. Press "… later →" or "← … earlier" as often as needed. The table shows the staged times and the row note; the panel shows the net shift.
+4. **Undo** and **Redo** step through the presses. **Discard**, ×, or Escape writes nothing (asking first when something is staged). **Done** saves the net shift in one write.
+
+Keyboard: Tab order is ×, earlier, later, the Step radios (one Tab stop; arrow keys move between sizes), Step minutes, Undo, Redo, Discard, Done.
+
+### Specs changed (assertions kept, names updated; the reason is this redesign)
+
+- `workflow-section-layout.spec.ts`: the button list is now `×, ← 1 min earlier, 1 min later →, Undo, Redo, Discard, Done`; it checks the 4 step radios with 1 checked and the `Step minutes` field; the geometry check is now width 320, right edge 16 px from the viewport edge, bottom edge 16 px from the bottom, height under 260 px (before: width 380 at the right edge). It still asserts a right-docked drawer.
+- `drafts-and-preferences`, `keyboard`, `trip-bounds`, `trip-table-layout`, `trips-runtime-presentation`, `trips-table-display`, `unified-action-layer`: `'− Back'` and `'+ Forward'` became `/min earlier/` and `/min later/`, and the `Shift minutes` label became `Step minutes`. No assertion was removed or loosened.
+
+### Tests added
+
+- `tests/ui/shift-drawer.spec.ts` (2 tests): choosing the 10 preset fills the field and names the buttons; a later press stages 10 minutes; 0 marks the field invalid, shows the message, and disables both buttons; typing 3 unchecks every preset and an earlier press gives a net 7 minutes later; Undo returns to 10; Done saves 6:10. The step radios are one keyboard group (ArrowRight moves from 1 to 5) and Escape closes the panel.
+
+### Deliberate breaks
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| New spec | the code before U10 | both tests fail |
+| Presets | a preset press does not set the step | both tests fail |
+| Invalid step | the buttons ignore an invalid step | the first test fails |
+
+### Verification run
+
+- `pnpm typecheck`: clean. `pnpm test`: 52 files, 752 passed (no unit change).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 155 passed, 0 failed (4.7 minutes); 153 before plus 2 new. No `test.fail`, `test.skip`, or `test.fixme`. The axe-core checks in `keyboard.spec.ts` pass with the new fieldset and radios.
+- Stress run `--repeat-each=10 --workers=8` of `shift-drawer.spec.ts` and `workflow-section-layout.spec.ts`: 30 of 30 passed.
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-aArffXHE.js` 807.82 kB (807.23 kB before).
+- Screenshots (session scratchpad only), three Trips staged 2 minutes later:
+  - before: `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/u10-before-1024.png`, `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/u10-before-1440.png`
+  - after: `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/u10-after-1024.png`, `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/u10-after-1440.png`
+  - What I saw: before, a full-height white drawer with three small controls at the top and empty space down to Discard and Done. After, a short panel at the lower right; the staged rows, their notes, and every time column stay visible. At 1024 px the panel covers the Block column and delete icons of the bottom five rows (before, the drawer covered them on every row). At 1440 px it covers only empty space to the right of the table.
+
+### Residual risks
+
+- On a narrow window or a short schedule the panel can still cover the Block column of the bottom rows; scroll the page to see them. The panel cannot be moved.
+- The Runtime Save and Discard overlap is gone as a side effect, because the panel now sits at the bottom of the window, unless the window is very short.
+- Not checked with a screen reader.
 
 ## Register map
 

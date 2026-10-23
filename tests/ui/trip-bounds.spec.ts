@@ -22,8 +22,8 @@ test('a Shift that would start a Trip before 0:00 is refused in the drawer, and 
   await expect(drawer).toBeVisible();
 
   // Six minutes earlier would be -0:01.
-  await drawer.getByLabel('Shift minutes').fill('6');
-  await drawer.getByRole('button', { name: '− Back' }).click();
+  await drawer.getByLabel('Step minutes').fill('6');
+  await drawer.getByRole('button', { name: /min earlier/ }).click();
   await expect(drawer.getByRole('alert')).toContainText('before 0:00');
   // The page is still there, the staged times did not change, and Done is unavailable until the Shift is valid.
   await expect(tripsSection.getByRole('button', { name: 'Trip actions', exact: true })).toBeVisible();
@@ -31,8 +31,8 @@ test('a Shift that would start a Trip before 0:00 is refused in the drawer, and 
   await expect(drawer.getByRole('button', { name: 'Done', exact: true })).toBeDisabled();
 
   // Five minutes earlier lands exactly on 0:00 and is allowed.
-  await drawer.getByLabel('Shift minutes').fill('5');
-  await drawer.getByRole('button', { name: '− Back' }).click();
+  await drawer.getByLabel('Step minutes').fill('5');
+  await drawer.getByRole('button', { name: /min earlier/ }).click();
   await expect(drawer.getByRole('alert')).toHaveCount(0);
   await expect(page.locator('.schedule-table')).toContainText('0:00');
   await drawer.getByRole('button', { name: 'Done', exact: true }).click();

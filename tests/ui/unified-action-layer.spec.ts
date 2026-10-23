@@ -125,7 +125,7 @@ test('restores the page scroll position after committing a shift', async ({ page
   await tripsSection.getByRole('button', { name: 'Trip actions', exact: true }).click();
   await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
   const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
-  await drawer.getByRole('button', { name: '+ Forward' }).click();
+  await drawer.getByRole('button', { name: /min later/ }).click();
   await expect(page.getByText('Staged 1 minute later')).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 300));
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(300);
@@ -146,7 +146,7 @@ test('stages Shift actions, guards scope changes, and persists only on Done', as
 
   const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
   await expect(drawer).toBeVisible();
-  await drawer.getByRole('button', { name: '− Back' }).click();
+  await drawer.getByRole('button', { name: /min earlier/ }).click();
   await expect(page.getByText('Staged 1 minute earlier')).toBeVisible();
   await expect(page.locator('.schedule-table')).toContainText('5:59');
 
@@ -165,7 +165,7 @@ test('stages Shift actions, guards scope changes, and persists only on Done', as
 
   await tripsSection.getByRole('button', { name: 'Trip actions', exact: true }).click();
   await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
-  await drawer.getByRole('button', { name: '+ Forward' }).click();
+  await drawer.getByRole('button', { name: /min later/ }).click();
   await expect(page.getByText('Staged 1 minute later')).toBeVisible();
   await drawer.getByRole('button', { name: 'Done', exact: true }).click();
   await expect(drawer).toHaveCount(0);
