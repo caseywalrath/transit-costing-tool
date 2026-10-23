@@ -43,6 +43,9 @@ export function validateGenerateTripsRequest(request: GenerateTripsRequest): Val
   if (tripCount !== undefined && (!Number.isInteger(tripCount) || tripCount < 1)) findings.push(requestFinding(request, 'tripGeneration.tripCountInvalid', 'tripGeneration.tripCountInvalid', 'tripCount'));
   if (tripCount !== undefined && Number.isInteger(tripCount) && tripCount > MAX_TRIPS_PER_GENERATION) findings.push(requestFinding(request, 'tripGeneration.tripCountTooLarge', 'tripGeneration.tripCountTooLarge', 'tripCount', { maximum: MAX_TRIPS_PER_GENERATION }));
   if (Number.isInteger(request.firstTrip) && Number.isInteger(lastTrip) && lastTrip !== undefined && lastTrip < request.firstTrip) findings.push(requestFinding(request, 'tripGeneration.lastBeforeFirst', 'tripGeneration.lastBeforeFirst', 'lastTrip'));
+  // The same 500-Trip limit applies to Last Trip: count the departures from First Trip to Last Trip, Last Trip included when it is on the headway sequence.
+  if (lastTrip !== undefined && Number.isInteger(lastTrip) && Number.isInteger(request.firstTrip) && request.firstTrip >= 0 && lastTrip >= request.firstTrip && Number.isInteger(request.headwaySeconds) && request.headwaySeconds > 0
+    && Math.floor((lastTrip - request.firstTrip) / request.headwaySeconds) + 1 > MAX_TRIPS_PER_GENERATION) findings.push(requestFinding(request, 'tripGeneration.tripCountTooLarge', 'tripGeneration.tripCountTooLarge', 'lastTrip', { maximum: MAX_TRIPS_PER_GENERATION }));
   return findings;
 }
 
@@ -250,6 +253,22 @@ export function calculateRecalculationImpact(trips: Trip[], blocks: Block[]): Re
   return { tripIds: trips.map((trip) => trip.id), manualTimeShiftTripIds, manualPatternChangeTripIds, blockIds, requiresConfirmation: hasUnverifiedRuntimeSource || manualTimeShiftTripIds.length > 0 || manualPatternChangeTripIds.length > 0 || blockIds.length > 0 };
 }
 
+/**
+ * Segment-start and blended profiles resolve a later anchor by searching first departures. Two or more departures that give the
+ * same anchor time are ambiguous: the recalculation is rejected and lists them (Decision 0031; user decision 3), as the single-band
+ * method does, instead of silently choosing the one nearest the saved departure. Returns the only solution, or none.
+ */
+function singleAnchorSolution(trip: Trip, profile: RuntimeProfile, matches: { departure: number; stopTimes: ScheduledPoint[] }[]): { departure: number; stopTimes: ScheduledPoint[] } | undefined {
+  const byDeparture = [...new Map(matches.map((match) => [match.departure, match])).values()].sort((left, right) => left.departure - right.departure);
+  if (byDeparture.length > 1) {
+    throw new AnchorBandChoiceError(trip.id, byDeparture.map((match): AnchorBandChoice => {
+      const band = selectRuntimeBand(profile, match.departure)!;
+      return { bandId: band.id, bandLabel: band.label, startTime: band.startTime, endTime: band.endTime, departure: match.departure, distanceSeconds: 0 };
+    }), tripFinding(trip, 'trip.anchorAmbiguous', 'trip.anchorAmbiguous'));
+  }
+  return byDeparture[0];
+}
+
 export function recalculateTripWithAnchor(trip: Trip, pattern: RoutePattern, profile: RuntimeProfile, now = new Date().toISOString(), anchorPointId?: string, chosenBandId?: string): { trip: Trip; bandSelection?: RecalculationBandSelection } {
   const departure = trip.stopTimes[0]?.time;
   if (departure === undefined) throw new TripGenerationError([tripFinding(trip, 'trip.departureMissing', 'trip.departureMissing')]);
@@ -274,7 +293,7 @@ export function recalculateTripWithAnchor(trip: Trip, pattern: RoutePattern, pro
       const result = propagatePatternTimes(pattern, candidate, profile);
       return 'finding' in result || result.stopTimes[anchorIndex]?.time !== anchorTime ? [] : [{ departure: candidate, stopTimes: result.stopTimes }];
     });
-    const chosen = matches.sort((left, right) => Math.abs(left.departure - departure) - Math.abs(right.departure - departure))[0];
+    const chosen = singleAnchorSolution(trip, profile, matches);
     if (!chosen) throw new TripGenerationError([tripFinding(trip, 'trip.anchorNoRuntime', 'trip.anchorNoRuntime')]);
     const revision = profile.calculationRevision ?? 0;
     return { trip: withUpdatedAt({ ...trip, patternId: pattern.id, stopTimes: chosen.stopTimes, provenance: { ...trip.provenance, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision }, manuallyChangedFields: [], manualTimeShiftSeconds: undefined } }, now) };
@@ -295,7 +314,7 @@ export function recalculateTripWithAnchor(trip: Trip, pattern: RoutePattern, pro
         if (actual === anchorTime) { matches.push({ departure: candidate, stopTimes: result.stopTimes }); break; }
       }
     }
-    const chosen = matches.sort((left, right) => Math.abs(left.departure - departure) - Math.abs(right.departure - departure))[0];
+    const chosen = singleAnchorSolution(trip, profile, matches);
     if (!chosen) throw new TripGenerationError([tripFinding(trip, 'trip.anchorNoRuntime', 'trip.anchorNoRuntime')]);
     const revision = profile.calculationRevision ?? 0;
     return { trip: withUpdatedAt({ ...trip, patternId: pattern.id, stopTimes: chosen.stopTimes, provenance: { ...trip.provenance, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision }, manuallyChangedFields: [], manualTimeShiftSeconds: undefined } }, now) };
@@ -403,6 +422,8 @@ export function validateTrip(trip: Trip, pattern: RoutePattern): ValidationFindi
     if (!scheduled || scheduled.patternPointId !== point.id || scheduled.sequence !== sequence) findings.push(tripFinding(trip, 'trip.patternPointMismatch', 'trip.patternPointMismatch', 'stopTimes', { sequence }));
   });
   for (let index = 1; index < trip.stopTimes.length; index += 1) if (trip.stopTimes[index].time < trip.stopTimes[index - 1].time) findings.push(tripFinding(trip, 'trip.timesNotMonotonic', 'trip.timesNotMonotonic', 'stopTimes', { sequence: index }));
+  // Decision 0002: schedule times are non-negative seconds from service-day midnight.
+  trip.stopTimes.forEach((point, sequence) => { if (point.time < 0) findings.push(tripFinding(trip, 'trip.timeBeforeServiceDay', 'trip.timeBeforeServiceDay', 'stopTimes', { sequence })); });
   return findings;
 }
 
@@ -412,6 +433,8 @@ function changedFields(provenance: Trip['provenance'], field: 'patternId' | 'tim
 
 export function shiftTrips(trips: Trip[], tripIds: string[], offsetSeconds: DurationSeconds, now = new Date().toISOString()): Trip[] {
   if (!Number.isInteger(offsetSeconds)) throw new Error('Trip shift must be an integer number of seconds');
+  // A shift of zero changes no time, so it is not a manual edit: no flag, no new updatedAt.
+  if (offsetSeconds === 0) return trips;
   const selected = new Set(tripIds);
   return trips.map((trip) => {
     if (!selected.has(trip.id)) return trip;

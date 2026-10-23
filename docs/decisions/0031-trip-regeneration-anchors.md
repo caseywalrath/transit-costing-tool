@@ -14,3 +14,15 @@ Blended-segment profiles resolve a later anchor by searching valid first departu
 The review table shows signed changes to first departure, last timepoint, and total Run Time. A change is regenerated time minus saved time; no change appears as `0:00`.
 
 The review also shows the change in layover from each selected Trip to its next Trip in a Block, after assigned deadhead. Layover is unavailable when a connection needs deadhead but none is assigned. A newly negative trip-end-to-next-departure gap is flagged as a warning on the affected selected Trip. The user may still regenerate after reviewing the warning. The preview checks adjacent saved Trips even when they are not selected and rechecks their times before applying.
+
+## Addendum (2026-10-22, code review package P08): segment-start and blend anchors
+
+The paragraph on later anchors says the review dialog identifies the Trip, the fixed timepoint, and the reason when an anchor resolves to multiple departures. The domain did that only for single-band profiles. Under the segment-start and the blended methods it searched for the first departures that give the anchor time and silently kept the one nearest the saved departure. For example, with band A (0:00 to 1:00, 10 minutes) and band B (1:00 to 2:00, 5 minutes), an anchor of 1:05 at the last timepoint is reached by departing at 0:55 in band A or at 1:00 in band B.
+
+User decision 3 settles it: reject and list the candidates, as single-band profiles do.
+
+1. For a segment-start or blended profile, when more than one first departure gives the anchor time, the recalculation raises `trip.anchorAmbiguous` as an `AnchorBandChoiceError`. Its choices list each candidate departure with the band that contains it, in departure order. Nothing is chosen on the planner's behalf, and no Trip is changed.
+2. Exactly one candidate is used as before. No candidate is `trip.anchorNoRuntime`, as before.
+3. Manual band override stays limited to single-band profiles (the paragraph above is unchanged). For segment-start and blended profiles the planner resolves an ambiguous Trip by switching it to first-departure anchoring, choosing another anchor, or revising the bands, as that paragraph already says.
+4. The Recalculate dialog presents an `AnchorBandChoiceError` with a band picker. Choosing a band for a segment-start or blended Trip is still refused (`trip.anchorBandChoiceInvalid`), so the dialog must not offer the picker for those methods. That presentation belongs to the Trips and Runtime UI package (U07).
+

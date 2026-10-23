@@ -1,8 +1,9 @@
 import { newId, withUpdatedAt } from './ids';
 import { normalizeDirections } from './directions';
 import { normalizePattern } from './patterns';
+import { propagatePatternTimes } from './runtime';
 import { adjustBlockReferences } from './trips';
-import type { Block, DirectionTimepointColumn, Node, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeProfile, Trip } from './types';
+import type { Block, DirectionTimepointColumn, Node, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeProfile, ScheduledPoint, Trip } from './types';
 
 export type RouteEditClassification = 'metadata' | 'distance' | 'deterministic' | 'reset' | 'invalid';
 export type RouteEditMode = 'rebalance' | 'reset';
@@ -254,7 +255,24 @@ export function rebalanceRuntimeProfile(profile: RuntimeProfile, saved: RoutePat
   }, now);
 }
 
-/** Preserve retained times and give a new point the preceding scheduled time. */
+function profileReproducesTimes(pattern: RoutePattern, stopTimes: ScheduledPoint[], profile: RuntimeProfile): boolean {
+  const departure = stopTimes[0]?.time;
+  if (departure === undefined) return false;
+  const calculated = propagatePatternTimes(pattern, departure, profile);
+  return !('finding' in calculated)
+    && calculated.stopTimes.length === stopTimes.length
+    && calculated.stopTimes.every((point, index) => point.patternPointId === stopTimes[index].patternPointId && point.time === stopTimes[index].time);
+}
+
+/**
+ * Preserve retained times and give a new point the preceding scheduled time.
+ *
+ * `profileById` holds the profiles after `rebalanceRuntimeProfile`, which raises each revision by exactly one. A Trip moves to the
+ * new revision only when it was current before the edit (its recorded revision is the one just below) and the rebalanced profile
+ * calculates its new times. Otherwise it keeps its recorded revision and is therefore stale: a Trip that was already stale stays
+ * stale, and a Trip whose times the merged or rebalanced profile can no longer produce (for example a segment-start Trip whose
+ * merged segment crossed two bands) is not declared current (Decision 0014 item 6; review findings 2-004 and 2-005).
+ */
 export function rebalanceTripForPattern(trip: Trip, saved: RoutePattern, proposed: RoutePattern, profileById: Map<string, RuntimeProfile>, now = new Date().toISOString()): Trip {
   const times = new Map(trip.stopTimes.map((point) => [point.patternPointId, point.time]));
   const oldFirst = trip.stopTimes[0]?.time ?? 0;
@@ -267,10 +285,12 @@ export function rebalanceTripForPattern(trip: Trip, saved: RoutePattern, propose
   const sourceId = trip.provenance.calculationSource?.runtimeProfileId ?? trip.provenance.runtimeProfileId;
   const profile = sourceId ? profileById.get(sourceId) : undefined;
   const revision = profile?.calculationRevision;
+  const recordedRevision = trip.provenance.calculationSource?.runtimeCalculationRevision ?? trip.provenance.runtimeCalculationRevision;
+  const carryForward = profile !== undefined && revision !== undefined && recordedRevision === revision - 1 && profileReproducesTimes(proposed, stopTimes, profile);
   return withUpdatedAt({
     ...trip,
     stopTimes,
-    provenance: profile && revision !== undefined ? {
+    provenance: carryForward ? {
       ...trip.provenance,
       runtimeProfileId: profile.id,
       runtimeCalculationRevision: revision,

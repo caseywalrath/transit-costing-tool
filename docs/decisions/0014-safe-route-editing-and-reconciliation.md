@@ -24,3 +24,16 @@ The original route interface saved every Node and Pattern field immediately. A P
 - The legacy immediate commands remain temporarily for historical tests and non-Route callers, but they are not the safe editing path.
 - A new Node must be saved before it can be selected in a Pattern draft.
 - No separate Trips rebuild command is needed after a successful Pattern save; the reconciled direction columns load immediately.
+
+## Addendum (2026-10-22, code review package P07): Trip revisions after a deterministic edit
+
+Items 5 and 6 predate the segment-start calculation method (Decision 0033), which is now the default for new Runtime profiles. A profile that uses it takes each segment's duration from the band that contains the segment's start. A Trip saved before the edit can hold a time that came from two bands: its segment from B to C started in the PM band and its segment from A to B in the AM band. Merging the two segments when B is removed keeps one duration, taken from the band at A, so the rebalanced profile calculates a different time at C than the Trip stores. The same can happen with the continuous blend method.
+
+The rebalance still preserves every retained scheduled time and every manual shift (items 5 and 6 are unchanged). What changes is the calculation source recorded on each Trip:
+
+1. A Trip is recorded at the new calculation revision only when it was current before the edit (its recorded revision equals the profile's revision before the edit) and the rebalanced profile calculates all of its new times from its first departure.
+2. Any other Trip keeps its recorded revision and is therefore stale in the sense of Decision 0030 item 1. A Trip that was already stale stays stale, whether or not its times happen to match. A Trip that records no revision keeps its provenance unchanged.
+3. The planner reviews and recalculates such Trips through the existing explicit recalculation. The edit never changes a time to make a Trip current.
+
+This applies to every calculation method; for the single-band and zero-minute-insertion cases the rebalanced profile reproduces the Trip, so those Trips move to the new revision as before.
+

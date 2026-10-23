@@ -56,6 +56,9 @@ export function buildTripShiftPreview(request: TripShiftRequest, trips: Trip[], 
   const selectedTrips = trips.filter((trip) => selected.has(trip.id));
   if (selectedTrips.length !== request.tripIds.length) throw new TripShiftValidationError([finding('trip-shift', 'tripShift.tripUnavailable', 'tripShift.tripUnavailable', 'tripIds')]);
   const shiftedTrips = shiftTrips(selectedTrips, request.tripIds, request.offsetSeconds, now);
+  // Decision 0002: no scheduled time may fall before service-day midnight. Refuse the Shift, naming each Trip it would break.
+  const beforeServiceDay = shiftedTrips.filter((trip) => trip.stopTimes.some((point) => point.time < 0));
+  if (beforeServiceDay.length) throw new TripShiftValidationError(beforeServiceDay.map((trip): ValidationFinding => ({ ruleId: 'tripShift.timeBeforeServiceDay', severity: 'error', entityType: 'trip', entityId: trip.id, field: 'stopTimes', messageKey: 'tripShift.timeBeforeServiceDay' })));
   return {
     request,
     sourceSignature: createTripShiftSourceSignature(request, selectedTrips),
@@ -68,5 +71,8 @@ export function buildTripShiftPreview(request: TripShiftRequest, trips: Trip[], 
 }
 
 export class TripShiftValidationError extends Error {
-  constructor(readonly findings: ValidationFinding[]) { super('The Trip shift request is invalid.'); this.name = 'TripShiftValidationError'; }
+  constructor(readonly findings: ValidationFinding[]) {
+    super(findings.some((item) => item.ruleId === 'tripShift.timeBeforeServiceDay') ? 'A Shift would move a Trip before 0:00. Use a smaller Shift.' : 'The Trip shift request is invalid.');
+    this.name = 'TripShiftValidationError';
+  }
 }

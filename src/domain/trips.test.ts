@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
 import type { Block, GenerateTripsRequest, RoutePattern, RuntimeProfile, Trip, TripGenerationSet } from './types';
-import { adjustBlockReferences, applyPatternChange, applyRegeneration, generateRequestDepartures, generateTrips, markTripRecalculated, MAX_TRIPS_PER_GENERATION, previewPatternChange, previewRegeneration, recalculateTripWithAnchor, shiftTrips, TripGenerationError, tripRunTimeSeconds, validateGenerateTripsRequest, validateTrip, validateTripGenerationSet } from './trips';
+import { AnchorBandChoiceError, adjustBlockReferences, applyPatternChange, applyRegeneration, generateAuthoritativeTrips, generateRequestDepartures, generateTrips, markTripRecalculated, MAX_TRIPS_PER_GENERATION, previewPatternChange, previewRegeneration, recalculateTripWithAnchor, shiftTrips, TripGenerationError, tripRunTimeSeconds, validateGenerateTripsRequest, validateTrip, validateTripGenerationSet } from './trips';
 
 const pattern: RoutePattern = { ...metadata(), id: 'p1', scenarioId: 's1', routeId: 'r1', name: 'Outbound', points: [
   { id: 'a', nodeId: 'na', sequence: 0, cumulativeMiles: 0 }, { id: 'b', nodeId: 'nb', sequence: 1, cumulativeMiles: 1 }, { id: 'c', nodeId: 'nc', sequence: 2, cumulativeMiles: 2 },
@@ -149,5 +149,95 @@ describe('trip generation and overrides', () => {
     const trips = generateTrips({ ...set({ mode: 'tripCount', tripCount: 500 }), headwaySeconds: 60 }, pattern, capacityProfile);
     expect(trips).toHaveLength(500);
     expect(trips[499].provenance.generationSequence).toBe(499);
+  });
+});
+
+describe('generation and shift bounds (P08)', () => {
+  const stamp = metadata('2026-01-01T00:00:00.000Z');
+  const twoPoint: RoutePattern = { ...stamp, id: 'p2', scenarioId: 's', routeId: 'r', name: 'Two', directionId: 'out', points: [{ id: 'a', nodeId: 'A', sequence: 0, cumulativeMiles: 0 }, { id: 'z', nodeId: 'Z', sequence: 1, cumulativeMiles: 5 }] };
+  const band = (id: string, startTime: number, endTime: number, segmentRuntimeSeconds: number[]) => ({ id, label: id.toUpperCase(), sequence: 0, startTime, endTime, segmentRuntimeSeconds });
+  const profileOf = (bands: RuntimeProfile['bands'], calculationMethod?: RuntimeProfile['calculationMethod']): RuntimeProfile => ({ ...stamp, id: 'rp', scenarioId: 's', routeId: 'r', patternId: 'p2', name: 'W', bands, calculationRevision: 3, ...(calculationMethod ? { calculationMethod } : {}) });
+  const tripOf = (id: string, times: number[]): Trip => ({ ...stamp, id, scenarioId: 's', routeId: 'r', serviceDayId: 'wk', patternId: 'p2', tripProfileId: 'tp', stopTimes: times.map((time, sequence) => ({ patternPointId: twoPoint.points[sequence].id, sequence, time })), provenance: { kind: 'generated', creationMethod: 'generated', manuallyChangedFields: [], runtimeProfileId: 'rp', runtimeCalculationRevision: 3, calculationSource: { runtimeProfileId: 'rp', runtimeCalculationRevision: 3 } } });
+  const request = (patch: Partial<GenerateTripsRequest>): GenerateTripsRequest => ({ scenarioId: 's', routeId: 'r', serviceDayId: 'wk', patternId: 'p2', tripProfileId: 'tp', firstTrip: 0, headwaySeconds: 60, ...patch });
+  const ruleIds = (fn: () => unknown) => { try { fn(); return []; } catch (error) { return (error as TripGenerationError).findings.map((item) => item.ruleId); } };
+
+  describe('Last Trip is limited to 500 departures (I-011, 2-001)', () => {
+    it('rejects a request that would produce 1,440 Trips, in the validation and in generation', () => {
+      const tooMany = request({ lastTrip: 86340 });
+      expect(validateGenerateTripsRequest(tooMany).map((finding) => [finding.ruleId, finding.field, finding.parameters])).toEqual([['tripGeneration.tripCountTooLarge', 'lastTrip', { maximum: 500 }]]);
+      expect(ruleIds(() => generateRequestDepartures(tooMany))).toEqual(['tripGeneration.tripCountTooLarge']);
+      expect(ruleIds(() => generateAuthoritativeTrips(tooMany, twoPoint, profileOf([band('all', 0, 90000, [600])], 'segmentStart'), stamp.createdAt))).toEqual(['tripGeneration.tripCountTooLarge']);
+    });
+
+    it('accepts exactly 500 departures and rejects 501, counting the Last Trip departure when it is on the headway sequence', () => {
+      expect(validateGenerateTripsRequest(request({ lastTrip: 499 * 60 }))).toEqual([]);
+      expect(generateRequestDepartures(request({ lastTrip: 499 * 60 }))).toHaveLength(500);
+      expect(validateGenerateTripsRequest(request({ lastTrip: 500 * 60 })).map((finding) => finding.ruleId)).toEqual(['tripGeneration.tripCountTooLarge']);
+      // A Last Trip between two departures does not add one.
+      expect(validateGenerateTripsRequest(request({ lastTrip: 500 * 60 - 1 }))).toEqual([]);
+      expect(MAX_TRIPS_PER_GENERATION).toBe(500);
+    });
+
+    it('still rejects more than 500 by count, and does not report the limit for an invalid request', () => {
+      expect(validateGenerateTripsRequest(request({ tripCount: 501 })).map((finding) => finding.ruleId)).toEqual(['tripGeneration.tripCountTooLarge']);
+      expect(validateGenerateTripsRequest(request({ lastTrip: 86340, headwaySeconds: 0 })).map((finding) => finding.ruleId)).toEqual(['tripGeneration.headwayInvalid']);
+      expect(validateGenerateTripsRequest(request({ firstTrip: 600, lastTrip: 0 })).map((finding) => finding.ruleId)).toEqual(['tripGeneration.lastBeforeFirst']);
+    });
+  });
+
+  describe('Trips may not have negative times (I-012, 2-002)', () => {
+    it('validateTrip rejects a negative time', () => {
+      expect(validateTrip(tripOf('t', [-300, 300]), twoPoint).map((finding) => [finding.ruleId, finding.field])).toEqual([['trip.timeBeforeServiceDay', 'stopTimes']]);
+      expect(validateTrip(tripOf('t', [0, 300]), twoPoint)).toEqual([]);
+    });
+  });
+
+  describe('an anchor with more than one valid departure is rejected and lists the candidates (I-013, 2-003, user decision 3)', () => {
+    // Anchor 3900 at Z: departure 3300 (band a, 600 s) and departure 3600 (band b, 300 s) both reproduce it.
+    const bands = [band('a', 0, 3600, [600]), band('b', 3600, 7200, [300])];
+    const candidates = (error: unknown) => (error as AnchorBandChoiceError).choices.map((choice) => [choice.bandId, choice.departure]);
+    const attempt = (profile: RuntimeProfile, saved: number[]) => { try { recalculateTripWithAnchor(tripOf('t', saved), twoPoint, profile, stamp.createdAt, 'z'); } catch (error) { return error; } throw new Error('expected the anchor to be rejected'); };
+
+    it('segmentStart: raises trip.anchorAmbiguous with both departures, whichever is nearer the saved one', () => {
+      for (const saved of [[3500, 3900], [3350, 3900]]) {
+        const error = attempt(profileOf(bands, 'segmentStart'), saved);
+        expect(error).toBeInstanceOf(AnchorBandChoiceError);
+        expect((error as AnchorBandChoiceError).findings.map((finding) => finding.ruleId)).toEqual(['trip.anchorAmbiguous']);
+        expect(candidates(error)).toEqual([['a', 3300], ['b', 3600]]);
+      }
+    });
+
+    it('blendSegments: raises trip.anchorAmbiguous with both departures', () => {
+      // Departures 3599 and 3600 both blend to 3900.
+      const error = attempt(profileOf(bands, 'blendSegments'), [3000, 3900]);
+      expect(error).toBeInstanceOf(AnchorBandChoiceError);
+      expect((error as AnchorBandChoiceError).findings.map((finding) => finding.ruleId)).toEqual(['trip.anchorAmbiguous']);
+      expect(candidates(error)).toEqual([['a', 3599], ['b', 3600]]);
+    });
+
+    it('single-band keeps raising it, and a unique anchor still recalculates', () => {
+      expect(ruleIds(() => recalculateTripWithAnchor(tripOf('t', [3500, 3900]), twoPoint, profileOf(bands), stamp.createdAt, 'z'))).toEqual(['trip.anchorAmbiguous']);
+      const unique = recalculateTripWithAnchor(tripOf('t', [1000, 1600]), twoPoint, profileOf(bands, 'segmentStart'), stamp.createdAt, 'z');
+      expect(unique.trip.stopTimes.map((point) => point.time)).toEqual([1000, 1600]);
+      const uniqueBlend = recalculateTripWithAnchor(tripOf('t', [1000, 1600]), twoPoint, profileOf(bands, 'blendSegments'), stamp.createdAt, 'z');
+      expect(uniqueBlend.trip.stopTimes.map((point) => point.time)).toEqual([1000, 1600]);
+    });
+  });
+
+  describe('a zero-second shift changes nothing (I-064, 2-010)', () => {
+    it('returns the Trips untouched: same times, no manual-change flag, no new updatedAt', () => {
+      const source = tripOf('t', [21600, 22200]);
+      const [result] = shiftTrips([source], ['t'], 0, '2026-10-22T00:00:00.000Z');
+      expect(result).toBe(source);
+      expect(result.provenance.manuallyChangedFields).toEqual([]);
+      expect(result.provenance.manualTimeShiftSeconds).toBeUndefined();
+      expect(result.updatedAt).toBe(source.updatedAt);
+    });
+
+    it('still marks a non-zero shift', () => {
+      const [result] = shiftTrips([tripOf('t', [21600, 22200])], ['t'], 60, '2026-10-22T00:00:00.000Z');
+      expect(result.provenance.manuallyChangedFields).toEqual(['times']);
+      expect(result.provenance.manualTimeShiftSeconds).toBe(60);
+    });
   });
 });

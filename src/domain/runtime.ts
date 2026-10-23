@@ -36,10 +36,10 @@ export class RuntimeProfileDeletionError extends Error {
 export function runtimeCalculationRevision(profile: RuntimeProfile): number { return profile.calculationRevision ?? 0; }
 
 function calculationShape(profile: RuntimeProfile): string {
-  return JSON.stringify({ method: profile.calculationMethod ?? 'singleBand', bands: orderedBands(profile).map((band) => ({ id: band.id, label: band.label, startTime: band.startTime, endTime: band.endTime, segmentRuntimeSeconds: band.segmentRuntimeSeconds })) });
+  return JSON.stringify({ method: profile.calculationMethod ?? 'singleBand', bands: orderedBands(profile).map((band) => ({ id: band.id, startTime: band.startTime, endTime: band.endTime, segmentRuntimeSeconds: band.segmentRuntimeSeconds })) });
 }
 
-/** Apply the revision rule: band or segment changes increment, rename does not. */
+/** Apply the revision rule: band bound, segment, or method changes increment; a profile rename or a band label change does not (neither is a calculation input). */
 export function withRuntimeCalculationRevision(previous: RuntimeProfile | undefined, next: RuntimeProfile): RuntimeProfile {
   if (!previous) return { ...next, calculationRevision: next.calculationRevision ?? 0 };
   const revision = runtimeCalculationRevision(previous) + (calculationShape(previous) === calculationShape(next) ? 0 : 1);
