@@ -2,15 +2,17 @@
 
 ## Next sitting
 
-**Sitting 4G: U01 (Standards-mode `index.html`), U02 (Data-safety and error presentation), U03 (Drafts, inputs, and preferences).** Main session: Sonnet. No sub-agents. None of these packages is S0 or S1, so there is no Opus review. Run them in this order. These are the first UI packages: `fix-packages.md` places a user-verification gate between the structural packages (4A to 4F) and the UI packages (Decision 0005), so the user reviews and merges the sitting 4F pull request, and confirms they want to start the UI packages, before 4G.
+**Combined sitting 4G + 4H, in progress on the branch `claude/stage-4g-4h-review-fixes` (created from `origin/main` after the 4F merge, PR #19).** The user directed one overnight sitting on Sonnet: U01, U02, U03, U04, U05 in that order, then P16 as the last package. No sub-agents and no Opus review (none of these is S0 or S1). The user waived the Decision 0005 verification gate between the structural and UI packages, pushes to the work branch after every package, and does not want to be asked: a package that needs a decision its text does not settle is recorded here as "blocked: decision needed" and the next independent package continues (U05 depends on U04, U04 on U03).
 
-- Work branch: the user names it in the prompt (suggested `claude/stage-4g-review-fixes`), created from current `origin/main`.
-- Prerequisite: the sitting 4F pull request (branch `claude/stage-4f-review-fixes`: P12 `ce5852d`, P13 `2463328`, P14 `3df50b6`, B01 `e6bf12e`, and the closing commit that records the hashes) must be merged into `main`. If it is not, stop and ask the user. Start 4G from current `origin/main`.
-- Before 4G starts, the user should open the 4F pull request and read its first CI run. The workflows added by B01 have not run (B01 entry, "What could not be verified"). If CI fails on the runner for a reason that is not a test defect, fix the workflow first; do not start U01 on a red CI.
-- State after 4F: the full browser suite has 80 tests, 80 passed on the last full run; no `test.fail`, `test.skip`, or `test.fixme` (about 2.6 minutes). Unit tests: 41 files, 637 tests, about 10 s. Bundle after B01: `index-BdF3r0BO.js` 790.12 kB, no chunk warning. `pnpm typecheck` now covers `tests` and `playwright.config.ts`.
-- **Known intermittent failure (open):** `tests/ui/unified-action-layer.spec.ts:139` failed at the same setup step (`tests/ui/support/tripsWorkspace.ts:95`, the Trip actions menu has no items after `ArrowDown`) in 2 of 6 full runs on the 4F branch and in 0 of 3 on `main`; it passes alone and on re-run. See the P14 entry, "Intermittent browser failure". A package that sees it should re-run the full suite once, say so in its report, and not change the spec to hide it. U04's keyboard work or U07's removal of the Runtime reload helper are the natural places to find the cause.
+- Done on the branch: U01 (see its fix log entry).
+- Next package: U02.
+- Blocked: none.
+- Known failures: none.
+- Not started in this sitting: U06, U07, P15, U08, D01 (and every package not named above).
+
+- State at the start of this sitting (after 4F): the browser suite had 80 tests, 80 passed; unit tests 41 files, 637 tests; bundle `index-BdF3r0BO.js` 790.12 kB. The user must still read the first CI run (the B01 workflows have not run).
 - New in 4F that 4G relies on:
-  - **U01.** `index.html` is untouched. B01 widened `pnpm typecheck` to `tests`; U01's layout baselines are in `tests/ui/` and are type-checked now.
+  - **U01. DONE** (U01 entry). `index.html` is a standards-mode document; no layout baseline changed. Layout problems seen in the screenshots are listed in the U01 entry, each with its owner.
   - **U02.** `showError` shows `error.message` unless it matches a technical pattern, so the typed `BlockingValidationError` messages (P12, P14) show as written. `blockingError` in `BlockingWorkspace.tsx` still inserts a space before each capital letter in a message that is not in `blockingMessages` (U02 criterion 4 removes it). Thrown by the Blocking service now: "Another Block on this service day already uses that label.", "No consecutive Trips use the selected From and To Nodes.", "Select a preceding Trip for the deadhead.".
   - **U02/U05 wording.** `block.deadheadOutsideGap` and `block.boundaryOverlap` (P12) have no sentence; the screen shows "Deadhead outside gap" and "Boundary overlap" (fallback). `block.minutesRequired` and `block.minutesInvalid` (P14) use "Enter a non-negative whole-minute duration.".
   - **U03.** The Blocking workspace now loads the unassigned Trips with the Blocks (`listUnassignedTrips`), not from the Trips tab's list; the New Block dialog value comes from `proposeBlockLabel`.
@@ -1340,3 +1342,73 @@ Before the first deployment, open the pull request and read the CI run; then mer
 - The first deployment after merge is the first real use of the `workflow_run` trigger. If the Deploy workflow does not start, the fallback is to restore `on: push` and make the build job `needs` a call to `ci.yml` through `workflow_call`.
 - The repository's branch protection (requiring the `verify` and `browser` checks) is a GitHub setting for the user; this package cannot set it.
 - The `engines` range is `>=22.12.0 <23`; pnpm warns, but does not fail, outside it unless `engine-strict` is set.
+
+## U01: Standards-mode `index.html`
+
+- Date: 2026-10-23. Sitting 4G/4H (combined). Model: Sonnet (main session). No sub-agents.
+- Type: UI/build. Severity: S2.
+- Commit: see "Commit" at the end of this entry.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-038 | 5-013, 6-008 | S2 | `index.html` held only the root element and the script tag: no doctype, `lang`, charset, viewport, or title. The browser rendered every screen in quirks mode (`document.compatMode` was `BackCompat`), where tables do not inherit the root font size (table text was 16 px, not the 14 px of `styles.css:1`) and the page has no language or title for assistive technology. |
+
+User decisions implemented: none (this is the Decision 0005 gate for the UI packages; the user waived the verification gate between 4F and U01 for this sitting).
+
+### What changed
+
+- `index.html`: `<!doctype html>`, `<html lang="en">`, `<meta charset="utf-8">`, `<meta name="viewport" content="width=device-width, initial-scale=1">`, `<title>Transit Costing Tool</title>`, and the root element and script tag inside `<head>` and `<body>`.
+- Behavior before and after: the page title in the browser tab was the address; it is now "Transit Costing Tool". Table text is 14 px (it was 16 px), so table rows are about 1 px shorter and more columns fit in the Trips table at 1024 px. No CSS was changed.
+- The Vite build wraps the same `index.html` (`dist/index.html` 0.41 kB). The bundle is unchanged (`index-BdF3r0BO.js`, 790.12 kB).
+
+### Tests added
+
+`tests/ui/standards-mode.spec.ts` (2 tests, 20 runs with `--repeat-each=10 --workers=8`, all passed):
+
+- "the page is a standards-mode HTML document with a language, charset, viewport, and title": `compatMode` is `CSS1Compat`, the doctype is `html`, `lang` is `en`, the document is UTF-8 with a `charset` meta, the viewport meta has `width=device-width`, the title is "Transit Costing Tool".
+- "table text renders at the 14 px root size instead of the quirks-mode 16 px": a table cell with no font size of its own computes to 14 px, and so does the root.
+
+Both tests failed on the unfixed `index.html` (`Expected "CSS1Compat", Received "BackCompat"`; `Expected "14px", Received "16px"`).
+
+Deliberate break: removing `lang="en"` from the fixed file made the first test fail (`Expected "en", Received ""`) and left the second passing; restored.
+
+### Layout tests and baselines
+
+All 14 layout-related specs pass unchanged (`trip-table-layout`, `runtime-table-layout`, `service-day-copy-layout`, `workflow-section-layout`, `unified-action-layer`, `costing-workspace`, `capacity-read-paths`, and the others). No measured value changed, so no layout baseline under `tests/ui/` was edited.
+
+### Screenshots (not committed; session scratchpad only)
+
+Taken on the Federal BRT project (Weekday, Southbound; Blocking Scenario "Workbook Blocks"; Costing assumptions of $150 per Revenue Hour added for the Costing view). "Before" is the unfixed page, "after" the fixed page.
+
+- After: `/tmp/claude-0/-home-user-transit-costing-tool/97a11f95-8195-5c0d-bed4-917d1a55f2e0/scratchpad/shots/u01/{1024,1440}-{route,trips,blocking,costing}.png`
+- Before: `/tmp/claude-0/-home-user-transit-costing-tool/97a11f95-8195-5c0d-bed4-917d1a55f2e0/scratchpad/shots/before/{1024,1440}-{route,trips,blocking,costing}.png`
+
+What the screenshots show: every screen keeps its structure at both widths. The changes are in table text (16 px to 14 px) and row height. At 1024 px the Trips table now shows the Yale and Englewood columns that the quirks-mode page cut off, and the Costing and Blocking tables are slightly more compact.
+
+Layout problems seen (listed, not fixed here; each existed before U01 and is owned by the package named):
+
+- Costing, 1024 px: the Cost Breakdown table scrolls inside its frame and the Annual Cost column is still clipped (finding 5-007, U06).
+- Trips, Runtime editor: band totals of 60 minutes or more read ":61" and ":65" (finding 5-028, U07).
+- Blocking, both widths: Pattern pills are cut off ("Northbound: Evan…", finding 5-021, U05).
+- Route, 1440 px: the Node Type select cuts its text ("timep", "termi"), Pattern Node selects cut long names, the order arrows stack on two lines, and "Delete Pattern" and "Add node" wrap onto two lines. Unchanged by U01; no finding owns them.
+
+No new layout regression was seen.
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 41 files, 637 tests passed (unchanged).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 82 passed, 0 failed (3.1 minutes); 80 before plus the 2 new tests. No `test.fail`, `test.skip`, or `test.fixme`. The intermittent `unified-action-layer.spec.ts:139` passed.
+- `pnpm build`: succeeds with no chunk warning.
+- Baseline before the change: 41 files, 637 tests; 80 browser tests, all passed (3.2 minutes).
+
+### Documentation
+
+No architecture or decision record changes: no structure, data flow, or persistence changed. The browser tab title and page language are described here only.
+
+### Residual risks
+
+- Any CSS that relied on a quirks-mode measurement would show it only in a layout the specs do not cover (the specs cover Trips, Runtime, and Costing; Route and Blocking were inspected by screenshot at 1024 and 1440 px, and no regression was seen).
+- Screenshots were taken in headless Chromium 141 only.
