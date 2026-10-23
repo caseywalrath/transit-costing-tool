@@ -6,6 +6,7 @@ import { BlockingWorkspace } from './BlockingWorkspace';
 import { CostingWorkspace } from './CostingWorkspace';
 import { MenuButton, type MenuGroup } from './MenuButton';
 import { userFacingError } from './errorMessages';
+import { readStoredRecord, storedText, storedTextMap } from './preferences';
 import { createCsvArchive } from '../application/csvDownload';
 import { type NodeChangePreview, type PatternChangePreview as SafePatternChangePreview, type RouteDefinitionApplication, type RouteEditCommitResult, type RouteEditMode, type ScenarioRecords } from '../application/routeDefinitionService';
 import { TripShiftStalePreviewError, type TripGenerationApplication } from '../application/tripGenerationService';
@@ -31,7 +32,9 @@ type Confirmation = { title: string; text: string; action: () => void; confirmLa
 type ActiveTab = 'route' | 'trips' | 'blocking' | 'costing';
 type SelectionPreference = { projectId?: string; scenarioId?: string; routeId?: string };
 type RouteNavigationGuard = (action: () => void) => void;
-type RuntimeEditorHandle = { addBand: () => void; discard: () => void; pasteRows: () => void; importRows: (contents: string) => void; save: () => void };
+type RuntimeEditorHandle = { addBand: () => void; discard: () => void; pasteRows: () => void; importRows: (contents: string) => void; /** Resolves to true when the profile was validated and saved. */ save: () => Promise<boolean> };
+type BuildTripsValues = { patternId: string; firstTrip: string; headway: string; tripCount: string; lastTrip: string };
+const EMPTY_BUILD_VALUES: BuildTripsValues = { patternId: '', firstTrip: '', headway: '', tripCount: '', lastTrip: '' };
 type RuntimeEditorState = { dirty: boolean; saving: boolean };
 type TripBlockAssignmentDraft = { operation: 'assign' | 'unassign'; tripIds: string[]; destinationBlockId: string; source: 'pill' | 'actions'; blockingScenarioId: string; tripProfileId: string; serviceDayId: string; sourceSignature: string };
 type TripBlockOption = { id: string; label: string; disabled?: boolean; reason?: string };
@@ -39,7 +42,21 @@ const SELECTION_PREFERENCE_KEY = 'transit-costing-tool.route-selection.v1';
 const TRIP_BLOCKING_SCENARIO_PREFERENCE_KEY = 'transit-costing-tool.trip-blocking-scenario.v1';
 
 function loadSelectionPreference(): SelectionPreference {
-  try { return JSON.parse(localStorage.getItem(SELECTION_PREFERENCE_KEY) ?? '{}') as SelectionPreference; } catch { return {}; }
+  const stored = readStoredRecord(SELECTION_PREFERENCE_KEY);
+  return { projectId: storedText(stored.projectId), scenarioId: storedText(stored.scenarioId), routeId: storedText(stored.routeId) };
+}
+
+/** The Blocking Scenario last chosen in Trips for each Trip Profile of a Scenario. An older record holds a single choice. */
+function rememberedTripBlockingScenarios(scenarioId: string): Record<string, string> {
+  const stored = readStoredRecord(TRIP_BLOCKING_SCENARIO_PREFERENCE_KEY);
+  if (storedText(stored.scenarioId) !== scenarioId) return {};
+  const byProfile = storedTextMap(stored.byTripProfile) ?? {};
+  const legacyProfile = storedText(stored.tripProfileId); const legacyChoice = storedText(stored.blockingScenarioId);
+  return legacyProfile && legacyChoice && !(legacyProfile in byProfile) ? { ...byProfile, [legacyProfile]: legacyChoice } : byProfile;
+}
+
+function rememberTripBlockingScenario(scenarioId: string, tripProfileId: string, blockingScenarioId: string) {
+  try { localStorage.setItem(TRIP_BLOCKING_SCENARIO_PREFERENCE_KEY, JSON.stringify({ scenarioId, byTripProfile: { ...rememberedTripBlockingScenarios(scenarioId), [tripProfileId]: blockingScenarioId } })); } catch { /* UI preference only. */ }
 }
 
 function saveSelectionPreference(preference: SelectionPreference) {
@@ -343,17 +360,20 @@ export function App({ service, tripService, blockingService, costingService, ses
   ];
   return <main className="app-shell">
     <header className="topbar"><div><strong>Transit Costing Tool</strong>{sessionStatus.mode === 'readOnly' ? <span className="save-status" aria-live="polite">Read-only</span> : (saveStatus.state === 'saving' || saveStatus.state === 'error') && <span className="save-status" aria-live="polite">{saveStatus.state === 'saving' ? 'Saving locally…' : 'Local save failed'}</span>}</div><nav aria-label="Primary"><button className={`tab ${activeTab === 'route' ? 'active' : ''}`} onClick={() => requestRouteNavigation(() => setActiveTab('route'))}>Route</button><button className={`tab ${activeTab === 'trips' ? 'active' : ''}`} disabled={!aggregate?.patterns.some((pattern) => pattern.points.length >= 2)} title={!aggregate?.patterns.some((pattern) => pattern.points.length >= 2) ? 'Add a pattern with at least two points to define runtimes.' : undefined} onClick={() => requestRouteNavigation(() => setActiveTab('trips'))}>Trips</button><button className={`tab ${activeTab === 'blocking' ? 'active' : ''}`} disabled={!aggregate || !(records?.tripProfiles ?? []).length} title={!aggregate ? 'Select a Route before blocking service.' : !(records?.tripProfiles ?? []).length ? 'Create a Trip Profile before blocking service.' : undefined} onClick={() => requestRouteNavigation(() => setActiveTab('blocking'))}>Blocking</button><button className={`tab ${activeTab === 'costing' ? 'active' : ''}`} disabled={!records} title={!records ? 'Select a Scenario before costing service.' : undefined} onClick={() => requestRouteNavigation(() => setActiveTab('costing'))}>Costing</button></nav></header>
-    <section className="context-bar" aria-label="Project and Scenario controls"><label>Project<select value={projectId} onChange={(event) => requestRouteNavigation(() => { void reload(event.target.value).catch(selectionFailed); })}><option value="">Select project</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><MenuButton label="Actions" triggerAriaLabel="Project actions" menuLabel="Project actions" groups={projectActions} /><span className="context-divider" aria-hidden="true" /><label>Scenario<select value={scenarioId} onChange={(event) => requestRouteNavigation(() => { void reload(projectId, event.target.value).catch(selectionFailed); })} disabled={!projectId}><option value="">Select scenario</option>{scenarios.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.name}</option>)}</select></label><MenuButton label="Actions" triggerAriaLabel="Scenario actions" menuLabel="Scenario actions" groups={scenarioActions} disabled={!projectId} /><input ref={importRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importJson} /></section>
+    <section className="context-bar" aria-label="Project and Scenario controls"><label>Project<select value={projectId} onChange={(event) => { const next = event.target.value; requestRouteNavigation(() => { void reload(next).catch(selectionFailed); }); }}><option value="">Select project</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><MenuButton label="Actions" triggerAriaLabel="Project actions" menuLabel="Project actions" groups={projectActions} /><span className="context-divider" aria-hidden="true" /><label>Scenario<select value={scenarioId} onChange={(event) => { const next = event.target.value; requestRouteNavigation(() => { void reload(projectId, next).catch(selectionFailed); }); }} disabled={!projectId}><option value="">Select scenario</option>{scenarios.map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.name}</option>)}</select></label><MenuButton label="Actions" triggerAriaLabel="Scenario actions" menuLabel="Scenario actions" groups={scenarioActions} disabled={!projectId} /><input ref={importRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importJson} /></section>
     {sessionStatus.mode === 'readOnly' && <div className="notice info" role="status">{sessionStatus.reason === 'databaseUpgraded' ? 'The saved data was upgraded in another tab. This tab is read-only. Reload this page to edit.' : 'This project is open in another tab. This tab is read-only.'}</div>}
     {notice && <div className={`notice ${notice.kind}`} role="status">{notice.text}<button onClick={() => setNotice(undefined)} aria-label="Dismiss message">×</button></div>}
     {!records ? loadFailed ? null : <section className="empty-state empty-project"><h1>Start a local planning project</h1><p>Use the Project menu above to create a project, then define a scenario, route, service days, nodes, and patterns. Everything saves in this browser.</p></section> : <>
-      {(activeTab === 'route' || activeTab === 'trips') && <section className="route-picker module-toolbar" aria-label={`${activeTab === 'route' ? 'Route' : 'Trips'} controls`}><label>Route<select value={routeId} onChange={(event) => requestRouteNavigation(() => { void reload(projectId, scenarioId, event.target.value).catch(selectionFailed); })}><option value="">No route selected</option>{records.routes.map((route) => <option key={route.id} value={route.id}>{route.shortName ? `${route.shortName} — ${route.name}` : route.name || 'Untitled route'}</option>)}</select></label>{activeTab === 'route' && <MenuButton label="Actions" triggerAriaLabel="Route actions" menuLabel="Route actions" groups={routeActions} />}{activeTab === 'trips' && aggregate && <><label>Day<select value={workspaceServiceDayId} onChange={(event) => requestRouteNavigation(() => setWorkspaceServiceDayId(event.target.value))}>{sortServiceDays(records.serviceDays).map((day) => <option key={day.id} value={day.id}>{day.name}</option>)}</select></label><label>Direction<select value={workspaceDirectionId} onChange={(event) => requestRouteNavigation(() => setWorkspaceDirectionId(event.target.value))}>{[...(aggregate.directions ?? [])].sort((left, right) => left.sequence - right.sequence).map((direction) => <option key={direction.id} value={direction.id}>{direction.name}</option>)}</select></label></>}</section>}
+      {(activeTab === 'route' || activeTab === 'trips') && <section className="route-picker module-toolbar" aria-label={`${activeTab === 'route' ? 'Route' : 'Trips'} controls`}><label>Route<select value={routeId} onChange={(event) => { const next = event.target.value; requestRouteNavigation(() => { void reload(projectId, scenarioId, next).catch(selectionFailed); }); }}><option value="">No route selected</option>{records.routes.map((route) => <option key={route.id} value={route.id}>{route.shortName ? `${route.shortName} — ${route.name}` : route.name || 'Untitled route'}</option>)}</select></label>{activeTab === 'route' && <MenuButton label="Actions" triggerAriaLabel="Route actions" menuLabel="Route actions" groups={routeActions} />}{activeTab === 'trips' && aggregate && <><label>Day<select value={workspaceServiceDayId} onChange={(event) => { const next = event.target.value; requestRouteNavigation(() => setWorkspaceServiceDayId(next)); }}>{sortServiceDays(records.serviceDays).map((day) => <option key={day.id} value={day.id}>{day.name}</option>)}</select></label><label>Direction<select value={workspaceDirectionId} onChange={(event) => { const next = event.target.value; requestRouteNavigation(() => setWorkspaceDirectionId(next)); }}>{[...(aggregate.directions ?? [])].sort((left, right) => left.sequence - right.sequence).map((direction) => <option key={direction.id} value={direction.id}>{direction.name}</option>)}</select></label></>}</section>}
       {activeTab === 'costing' && records ? <CostingWorkspace costingService={costingService} scenario={records.scenario} serviceDays={records.serviceDays} tripProfiles={records.tripProfiles ?? []} onRegisterNavigationGuard={(guard) => { costingNavigationGuard.current = guard; }} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update Costing.')} /> : aggregate ? <><div hidden={activeTab !== 'route'}><RouteWorkspace key={aggregate.route.id} service={service} aggregate={aggregate} findings={findings} selectedPatternId={selectedPatternId} segmentMiles={(pattern, index) => service.getSegmentMiles(pattern, index)} onRoute={saveRouteField} onServiceDay={updateServiceDay} serviceDays={records.serviceDays} onCommitted={acceptRouteEdit} onDeletePattern={deleteSelectedPattern} onSelectPattern={setSelectedPatternId} onRegisterNavigationGuard={(guard) => { routeNavigationGuard.current = guard; }} onError={(error) => showError(error, 'Unable to save route changes.')} /></div>{activeTab === 'trips' && <TripsWorkspace tripPatternSelections={tripPatternSelections} onTripPatternChange={(key, id) => setTripPatternSelections((current) => ({ ...current, [key]: id }))} service={service} tripService={tripService} blockingService={blockingService} aggregate={aggregate} records={records} serviceDayId={workspaceServiceDayId} directionId={workspaceDirectionId} tripProfileId={workspaceTripProfileId} tripProfileBusy={tripProfileBusy} onTripProfileChange={setWorkspaceTripProfileId} onTripProfileRename={() => setNameDialog({ title: 'Rename Trip Profile', label: 'Name', initialValue: records.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name, submitLabel: 'Rename', action: renameTripProfile })} onTripProfileCopy={() => setNameDialog({ title: 'Copy Trip Profile', label: 'Name', initialValue: `${records.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name ?? ''} Copy`, submitLabel: 'Copy', action: copyTripProfile })} onTripProfileDelete={deleteTripProfile} onRegisterNavigationGuard={(guard) => { tripNavigationGuard.current = guard; }} runtimeVersion={runtimeVersion} onRuntimeChanged={() => setRuntimeVersion((current) => current + 1)} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update trips.')} />}{activeTab === 'blocking' && <BlockingWorkspace blockingService={blockingService} tripService={tripService} aggregate={aggregate} records={records} routes={records.routes} routeId={routeId} onRouteChange={(nextRouteId) => requestRouteNavigation(() => { void reload(projectId, scenarioId, nextRouteId).catch(selectionFailed); })} onReload={() => reload(projectId, scenarioId, routeId)} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update Blocking.')} />}</> : <section className="empty-state"><h2>No route selected</h2><p>Add a route, then define its timepoints and patterns.</p></section>}
     </>}
     {nameDialog && <NameDialogForm dialog={nameDialog} onClose={() => setNameDialog(undefined)} />}
     {confirm && <ConfirmDialog dialog={confirm} onClose={() => setConfirm(undefined)} />}
   </main>;
 }
+
+/** What a saved Pattern says, without the save time that every commit refreshes. */
+function patternSignature(pattern: RoutePattern | undefined) { return JSON.stringify(pattern, (key, value) => key === 'updatedAt' ? undefined : value); }
 
 function RouteWorkspace({ service, aggregate, serviceDays, findings, selectedPatternId, segmentMiles, onRoute, onServiceDay, onCommitted, onDeletePattern, onSelectPattern, onRegisterNavigationGuard, onError }: { service: RouteDefinitionApplication; aggregate: RouteDefinitionAggregate; serviceDays: ServiceDayDefinition[]; findings: ValidationFinding[]; selectedPatternId: string; segmentMiles: (pattern: RoutePattern, index: number) => number; onRoute: (patch: Partial<Route>) => Promise<void>; onServiceDay: (id: string, patch: Partial<ServiceDayDefinition>) => Promise<void>; onCommitted: (result: RouteEditCommitResult) => void; onDeletePattern: () => void; onSelectPattern: (id: string) => void; onRegisterNavigationGuard: (guard: RouteNavigationGuard | undefined) => void; onError: (error: unknown) => void }) {
   const fieldError = (id: string, field?: string) => messages(findings, id, field);
@@ -369,13 +389,25 @@ function RouteWorkspace({ service, aggregate, serviceDays, findings, selectedPat
   const [discardDialog, setDiscardDialog] = useState<{ title: string; action: () => void }>();
   const [navigationDialog, setNavigationDialog] = useState<{ action: () => void }>();
 
-  useEffect(() => { setNodeDraft(aggregate.nodes); setPendingNodeDeletes(new Set()); setNodeFindings([]); }, [aggregate.nodes]);
+  // A save returns new arrays for both Nodes and Patterns. A draft is replaced only when its own saved records changed, so saving Nodes
+  // keeps an unsaved Pattern draft and saving a Pattern keeps unsaved Node edits (finding 5-006).
+  const syncedNodes = useRef(JSON.stringify(aggregate.nodes));
+  const syncedPattern = useRef(patternSignature(aggregate.patterns.find((pattern) => pattern.id === selectedPatternId) ?? aggregate.patterns[0]));
+  useEffect(() => {
+    const signature = JSON.stringify(aggregate.nodes);
+    if (signature === syncedNodes.current) return;
+    syncedNodes.current = signature;
+    setNodeDraft(aggregate.nodes); setPendingNodeDeletes(new Set()); setNodeFindings([]);
+  }, [aggregate.nodes]);
   useEffect(() => {
     const saved = aggregate.patterns.find((pattern) => pattern.id === selectedPatternId) ?? aggregate.patterns[0];
     // A new or duplicated Pattern is local draft state until Save Pattern
     // succeeds. Preserve it while the parent selection updates and while the
     // draft is being edited; it is not part of aggregate.patterns yet.
     if (patternDraft && !aggregate.patterns.some((pattern) => pattern.id === patternDraft.id)) return;
+    const signature = patternSignature(saved);
+    if (patternDraft && saved && saved.id === patternDraft.id && signature === syncedPattern.current) return;
+    syncedPattern.current = signature;
     setPatternDraft(saved ? { ...saved, points: saved.points.map((point) => ({ ...point })) } : undefined);
     setPatternFindings([]); setConflict(undefined);
   }, [aggregate.patterns, selectedPatternId, patternDraft?.id]);
@@ -540,6 +572,8 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
   const [shiftPreview, setShiftPreview] = useState<TripShiftPreview>();
   const [shiftError, setShiftError] = useState('');
   const [shiftDiscardAction, setShiftDiscardAction] = useState<(() => void)>();
+  const [runtimeLeave, setRuntimeLeave] = useState<{ action: () => void }>();
+  const buildValues = useRef<BuildTripsValues>(EMPTY_BUILD_VALUES);
   const [runtimeEditorState, setRuntimeEditorState] = useState<RuntimeEditorState>({ dirty: false, saving: false });
   const [showRuntimeBands, setShowRuntimeBands] = useState(false);
   const [showHeadways, setShowHeadways] = useState(false);
@@ -607,11 +641,9 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
       if (!live) return;
       const available = next.filter((item) => item.tripProfileId === tripProfileId);
       setBlockingScenarios(available);
-      let saved = '';
-      try { const preference = JSON.parse(localStorage.getItem(TRIP_BLOCKING_SCENARIO_PREFERENCE_KEY) ?? '{}') as { scenarioId?: string; tripProfileId?: string; blockingScenarioId?: string }; if (preference.scenarioId === records.scenario.id && preference.tripProfileId === tripProfileId) saved = preference.blockingScenarioId ?? ''; } catch { /* UI preference only. */ }
+      const saved = rememberedTripBlockingScenarios(records.scenario.id)[tripProfileId] ?? '';
       setTripBlockingScenarioId((current) => {
         if (current && available.some((item) => item.id === current)) return current;
-        if (current && !available.some((item) => item.id === current)) return '';
         if (saved && available.some((item) => item.id === saved)) return saved;
         return available[0]?.id ?? '';
       });
@@ -669,7 +701,8 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
     }).catch((error) => onError(error, 'Unable to load Trip connection details.'));
     return () => { live = false; };
   }, [blockingService, tripBlockingScenarioId, serviceDayId, tripBlockingBlocksBusy, tripBlockingBlocks, trips]);
-  useEffect(() => { try { localStorage.setItem(TRIP_BLOCKING_SCENARIO_PREFERENCE_KEY, JSON.stringify({ scenarioId: records.scenario.id, tripProfileId, blockingScenarioId: tripBlockingScenarioId })); } catch { /* UI preference only. */ } }, [records.scenario.id, tripProfileId, tripBlockingScenarioId]);
+  // Remember the choice for each Trip Profile. A change of Trip Profile, or a moment with no choice, must not erase another profile's choice.
+  useEffect(() => { if (!tripProfileId || !tripBlockingScenarioId || !blockingScenarios.some((item) => item.id === tripBlockingScenarioId && item.tripProfileId === tripProfileId)) return; rememberTripBlockingScenario(records.scenario.id, tripProfileId, tripBlockingScenarioId); }, [records.scenario.id, tripProfileId, tripBlockingScenarioId, blockingScenarios]);
   useEffect(() => { setTripBlockAssignment(undefined); setTripBlockAssignmentError(''); setTripBlockAssignmentStatus(''); }, [serviceDayId, directionId, tripProfileId, tripBlockingScenarioId]);
 
   const selectedBlockingScenario = blockingScenarios.find((item) => item.id === tripBlockingScenarioId);
@@ -763,11 +796,28 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
     if (shiftOperations.length) { setShiftDiscardAction(() => action); return; }
     action();
   }
+  // A change of Profile, Pattern, service day, Direction, or tab replaces the Runtime editor, and a Runtime save reloads the Trips. Either
+  // would drop unsaved Runtime edits or a staged Shift without a word (finding 5-004), so each asks first: Save, Discard, or Cancel for the
+  // Runtime draft, then the staged-Shift dialog.
+  function requestScopeChange(action: () => void) {
+    if (runtimeEditorState.dirty) { setRuntimeLeave({ action }); return; }
+    requestShiftScopeChange(action);
+  }
+  /** Saves the Runtime draft, asking first when a staged Shift would be dropped by the reload, then runs `action` if the save worked. */
+  function saveRuntimeThen(action: () => void) {
+    requestShiftScopeChange(() => { void (async () => { if (await runtimeEditorRef.current?.save()) action(); })(); });
+  }
   useEffect(() => {
-    if (!shiftDrawerOpen || !shiftOperations.length) { onRegisterNavigationGuard(undefined); return; }
-    onRegisterNavigationGuard(requestShiftScopeChange);
+    if (!runtimeEditorState.dirty && (!shiftDrawerOpen || !shiftOperations.length)) { onRegisterNavigationGuard(undefined); return; }
+    onRegisterNavigationGuard(requestScopeChange);
     return () => onRegisterNavigationGuard(undefined);
-  }, [shiftDrawerOpen, shiftOperations.length]);
+  }, [shiftDrawerOpen, shiftOperations.length, runtimeEditorState.dirty]);
+  useEffect(() => {
+    if (!runtimeEditorState.dirty) return;
+    const protect = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', protect);
+    return () => window.removeEventListener('beforeunload', protect);
+  }, [runtimeEditorState.dirty]);
 
   function shiftRequest(offsetSeconds: number, tripIds = shiftPreview?.request.tripIds ?? selectedTripIds) {
     return { scenarioId: records.scenario.id, routeId: aggregate.route.id, serviceDayId, directionId, tripProfileId, tripIds, offsetSeconds };
@@ -913,13 +963,13 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
   function closeBatchPatternChange() { setBatchPatternChangeOpen(false); window.setTimeout(() => tripsActionsRef.current?.focus()); }
   function closeBuildDrawer() { setBuildOpen(false); window.setTimeout(() => tripsActionsRef.current?.focus()); }
   const runtimeProfileMenu: MenuGroup[] = [
-    { label: 'Profiles', items: profiles.map((profile) => ({ id: profile.id, label: profile.name, wrapLabel: true, checked: profile.id === profileId, disabled: loading || tripProfileBusy, onSelect: () => void assignProfile(profile.id) })) },
+    { label: 'Profiles', items: profiles.map((profile) => ({ id: profile.id, label: profile.name, wrapLabel: true, checked: profile.id === profileId, disabled: loading || tripProfileBusy, onSelect: () => requestScopeChange(() => void assignProfile(profile.id)) })) },
     { items: [
-      { id: 'new', label: 'New profile…', disabled: tripProfileBusy, onSelect: () => setRuntimeDialog({ mode: 'new', initialName: `${selectedPattern?.name ?? 'Pattern'} runtimes` }) },
-      { id: 'rename', label: 'Rename profile…', disabled: !selectedProfile || tripProfileBusy, onSelect: () => selectedProfile && setRuntimeDialog({ mode: 'rename', initialName: selectedProfile.name }) },
-      { id: 'copy', label: 'Copy profile…', disabled: !selectedProfile || tripProfileBusy, onSelect: () => selectedProfile && setRuntimeDialog({ mode: 'copy', initialName: `${selectedProfile.name} Copy` }) },
-      ...(reverseCandidates.length ? [{ id: 'reverse-copy', label: 'Reverse-copy profile…', disabled: !selectedProfile || tripProfileBusy, onSelect: () => selectedProfile && setRuntimeDialog({ mode: 'reverse', initialName: `${selectedProfile.name} Reverse` }) }] : []),
-      { id: 'delete', label: 'Delete profile…', destructive: true, disabled: !selectedProfile || tripProfileBusy, onSelect: () => void requestProfileDeletion() },
+      { id: 'new', label: 'New profile…', disabled: tripProfileBusy, onSelect: () => requestScopeChange(() => setRuntimeDialog({ mode: 'new', initialName: `${selectedPattern?.name ?? 'Pattern'} runtimes` })) },
+      { id: 'rename', label: 'Rename profile…', disabled: !selectedProfile || tripProfileBusy, onSelect: () => requestScopeChange(() => { if (selectedProfile) setRuntimeDialog({ mode: 'rename', initialName: selectedProfile.name }); }) },
+      { id: 'copy', label: 'Copy profile…', disabled: !selectedProfile || tripProfileBusy, onSelect: () => requestScopeChange(() => { if (selectedProfile) setRuntimeDialog({ mode: 'copy', initialName: `${selectedProfile.name} Copy` }); }) },
+      ...(reverseCandidates.length ? [{ id: 'reverse-copy', label: 'Reverse-copy profile…', disabled: !selectedProfile || tripProfileBusy, onSelect: () => requestScopeChange(() => { if (selectedProfile) setRuntimeDialog({ mode: 'reverse', initialName: `${selectedProfile.name} Reverse` }); }) }] : []),
+      { id: 'delete', label: 'Delete profile…', destructive: true, disabled: !selectedProfile || tripProfileBusy, onSelect: () => requestScopeChange(() => void requestProfileDeletion()) },
     ] },
   ];
   const tripProfiles = records.tripProfiles ?? [];
@@ -967,9 +1017,9 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
   return <div className="trips-workspace">
     <section className="workflow-section" aria-label="Runtimes section">
       <div className="section-title"><div><h2>Runtimes</h2></div><div className="section-actions section-header-actions">
-        <label className="header-field">Pattern<select value={patternId} disabled={tripProfileBusy} onChange={(event) => setPatternId(event.target.value)}>{patterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label>
+        <label className="header-field">Pattern<select value={patternId} disabled={tripProfileBusy} onChange={(event) => { const next = event.target.value; requestScopeChange(() => setPatternId(next)); }}>{patterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label>
         <MenuButton fieldLabel="Profile" label={selectedProfile?.name ?? 'Select profile'} menuLabel="Runtime profile" groups={runtimeProfileMenu} disabled={loading || tripProfileBusy} />
-        {runtimeEditorState.dirty && <><span className="action-separator" aria-hidden="true" /><button onClick={() => runtimeEditorRef.current?.discard()} disabled={runtimeEditorState.saving || tripProfileBusy}>Discard</button><button className="primary" onClick={() => runtimeEditorRef.current?.save()} disabled={runtimeEditorState.saving || tripProfileBusy}>{runtimeEditorState.saving ? 'Saving…' : 'Save'}</button></>}
+        {runtimeEditorState.dirty && <><span className="action-separator" aria-hidden="true" /><button onClick={() => runtimeEditorRef.current?.discard()} disabled={runtimeEditorState.saving || tripProfileBusy}>Discard</button><button className="primary" onClick={() => saveRuntimeThen(() => undefined)} disabled={runtimeEditorState.saving || tripProfileBusy}>{runtimeEditorState.saving ? 'Saving…' : 'Save'}</button></>}
         <span className="action-separator" aria-hidden="true" />
         <MenuButton label="Actions" menuLabel="Runtime actions" groups={[
           { label: 'Calculation', items: [
@@ -1014,10 +1064,11 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
     {shiftDrawerOpen && <aside className="shift-drawer" role="complementary" aria-labelledby="shift-drawer-title"><header><h2 id="shift-drawer-title">Shift selected Trips</h2><button className="icon-button" type="button" aria-label="Close Shift drawer" title="Close Shift drawer" onClick={requestCloseShiftDrawer} disabled={busy}>×</button></header><div className="shift-drawer-body"><div className="shift-drawer-controls"><button type="button" disabled={!canShiftSelectedTrips || busy || tripProfileBusy} onClick={() => appendStagedShift(-parsedShiftMinutes * 60)}>− Back</button><label><span className="visually-hidden">Shift minutes</span><input aria-label="Shift minutes" type="number" min="1" step="1" inputMode="numeric" value={shiftMinutes} disabled={tripProfileBusy || busy} onChange={(event) => setShiftMinutes(event.target.value)} /></label><button type="button" disabled={!canShiftSelectedTrips || busy || tripProfileBusy} onClick={() => appendStagedShift(parsedShiftMinutes * 60)}>+ Forward</button></div><div className="shift-drawer-history"><button type="button" disabled={!shiftOperations.length || busy} onClick={() => { const undone = shiftOperations.at(-1)!; void reviewStagedShift(shiftOperations.slice(0, -1)); setRedoShiftOperations((current) => [...current, undone]); }}>Undo</button><button type="button" disabled={!redoShiftOperations.length || busy} onClick={() => { const restored = redoShiftOperations.at(-1)!; setRedoShiftOperations((current) => current.slice(0, -1)); void reviewStagedShift([...shiftOperations, restored]); }}>Redo</button></div><p className="shift-drawer-summary" role="status">{shiftPreview?.selectedTripIds.length ?? selectedTripIds.length} selected · {netShiftLabel}</p>{shiftError && <p className="field-error" role="alert">{shiftError}</p>}</div><footer><button type="button" onClick={() => discardStagedShift()} disabled={busy}>Discard</button><button className="primary" type="button" onClick={() => void completeStagedShift()} disabled={busy || Boolean(shiftError)}>{busy ? 'Saving…' : 'Done'}</button></footer></aside>}
     {tripBlockAssignment?.operation === 'assign' && <TripBlockAssignmentDialog draft={tripBlockAssignment} blockingScenarioName={selectedBlockingScenario?.name ?? 'Blocking Scenario'} serviceDayName={selectedDay?.name ?? 'selected service day'} blocks={dayBlockingBlocks} blockOptions={tripBlockOptions} currentAssignments={tripBlockByTripId} onConfirm={(destinationId) => void confirmTripBlockAssignment(destinationId)} onClose={closeTripBlockAssignment} busy={busy} error={tripBlockAssignmentError} />}
     {tripBlockAssignment?.operation === 'unassign' && <TripBlockUnassignmentDialog draft={tripBlockAssignment} blockingScenarioName={selectedBlockingScenario?.name ?? 'Blocking Scenario'} serviceDayName={selectedDay?.name ?? 'selected service day'} blocks={dayBlockingBlocks} currentAssignments={tripBlockByTripId} onConfirm={() => void confirmTripBlockAssignment('')} onClose={closeTripBlockAssignment} busy={busy} error={tripBlockAssignmentError} />}
+    {runtimeLeave && <RouteNavigationDraftDialog title="Save Runtime changes before leaving?" text="The Runtime profile has unsaved edits." onCancel={() => setRuntimeLeave(undefined)} onDiscard={() => { const action = runtimeLeave.action; setRuntimeLeave(undefined); runtimeEditorRef.current?.discard(); requestShiftScopeChange(action); }} onSave={() => { const action = runtimeLeave.action; setRuntimeLeave(undefined); saveRuntimeThen(action); }} />}
     {shiftDiscardAction && <ShiftDiscardDialog onDiscard={() => discardStagedShift(shiftDiscardAction)} onCancel={() => setShiftDiscardAction(undefined)} />}
     {runtimeDialog && <RuntimeProfileDialog2 dialog={runtimeDialog} candidates={reverseCandidates} onSubmit={submitRuntimeDialog} onClose={() => setRuntimeDialog(undefined)} />}
     {deleteProfileOpen && selectedProfile && profileDeletionImpact && <DeleteRuntimeProfileDialog profile={selectedProfile} profiles={profiles} assignmentCount={profileDeletionImpact.assignmentCount} tripCount={profileDeletionImpact.tripCount} onDelete={deleteProfile} onClose={() => { setDeleteProfileOpen(false); setProfileDeletionImpact(undefined); }} />}
-    {buildOpen && <BuildTripsDrawer tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} serviceDayId={serviceDayId} tripProfileId={tripProfileId} patterns={patterns} profileName={selectedProfile?.name} onDone={async () => { closeBuildDrawer(); clearTripShiftHistory(); await loadTrips(); }} onClose={closeBuildDrawer} />}
+    {buildOpen && <BuildTripsDrawer tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} serviceDayId={serviceDayId} tripProfileId={tripProfileId} patterns={patterns} profileName={selectedProfile?.name} initialValues={buildValues.current} onValuesChange={(values) => { buildValues.current = values; }} onDone={async () => { buildValues.current = EMPTY_BUILD_VALUES; closeBuildDrawer(); clearTripShiftHistory(); await loadTrips(); }} onClose={closeBuildDrawer} />}
     {tripDeletion && <DeleteTripsDialog tripCount={tripDeletion.tripIds.length} affectedBlockCount={tripDeletion.affectedBlockIds.length} onDelete={() => void deleteTrips()} onClose={() => setTripDeletion(undefined)} busy={busy} />}
     {recalculationTripIds.length > 0 && <RecalculationDialog tripService={tripService} tripIds={recalculationTripIds} trips={trips} patterns={aggregate.patterns} nodes={aggregate.nodes} onDone={finishRecalculation} onClose={() => setRecalculationTripIds([])} />}
     {tripImportPreview && <TripTableImportDialog preview={tripImportPreview.preview} issues={tripImportPreview.issues} busy={busy} onConfirm={() => void applyTripsCsvImport()} onClose={() => setTripImportPreview(undefined)} />}
@@ -1059,14 +1110,14 @@ const RuntimeEditor2 = forwardRef<RuntimeEditorHandle, { service: RouteDefinitio
     setFindings([]);
     setPasteRowsOpen(false);
   }
-  async function save() {
+  async function save(): Promise<boolean> {
     const nextFindings = await service.validateRuntimeProfile(draft, pattern);
     setFindings(nextFindings);
-    if (nextFindings.some((finding) => finding.severity === 'error')) return;
+    if (nextFindings.some((finding) => finding.severity === 'error')) return false;
     setSaving(true);
-    try { await service.saveRuntimeProfile(draft); await onSaved(); } catch (error) { onError(error); } finally { setSaving(false); }
+    try { await service.saveRuntimeProfile(draft); await onSaved(); return true; } catch (error) { onError(error); return false; } finally { setSaving(false); }
   }
-  useImperativeHandle(ref, () => ({ addBand, discard, pasteRows: () => openPasteRows(), importRows: (contents) => openPasteRows(contents), save: () => void save() }), [draft, profile, pattern]);
+  useImperativeHandle(ref, () => ({ addBand, discard, pasteRows: () => openPasteRows(), importRows: (contents) => openPasteRows(contents), save }), [draft, profile, pattern]);
   useEffect(() => onStateChange({ dirty, saving }), [dirty, saving, onStateChange]);
   return <div className="runtime-editor">
     <div className="table-scroll data-grid runtime-table"><table>
@@ -1368,8 +1419,10 @@ function DraftTripRow({ draft, patterns, columns, onChange, onSave, onCancel, bu
   return <tr className="draft-trip-row"><td className="trip-selection-column" aria-hidden="true" /><td className="trip-pattern-column"><select className="trip-pattern-select" autoFocus aria-label="New trip pattern" title={pattern?.name || 'Select a pattern'} value={draft.patternId} disabled={busy} onChange={(event) => onChange({ ...draft, patternId: event.target.value })}><option value="">Select pattern</option>{patterns.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></td>{columns.map((column) => <td className="trip-timepoint-column" key={column.id}>{firstPoint?.directionColumnId === column.id ? <input className="time-input" aria-label="First trip time" value={draft.firstTrip} placeholder="06:00" disabled={busy} onChange={(event) => onChange({ ...draft, firstTrip: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') onSave(); if (event.key === 'Escape') onCancel(); }} /> : '—'}</td>)}<td className="trip-run-time-column" /><td className="trip-connection-column" /><td className="trip-connection-column" /><td className="trip-next-trip-column" /><td className="trip-block-column">Unassigned</td><td className="trip-actions-column"><div className="row-actions"><button className="primary" disabled={!draft.patternId || !draft.firstTrip.trim() || busy} onClick={onSave}>Save</button><button disabled={busy} onClick={onCancel}>Cancel</button></div></td></tr>;
 }
 
-function BuildTripsDrawer({ tripService, scenarioId, routeId, serviceDayId, tripProfileId, patterns, profileName, onDone, onClose }: { tripService: TripGenerationApplication; scenarioId: string; routeId: string; serviceDayId: string; tripProfileId: string; patterns: RoutePattern[]; profileName?: string; onDone: () => Promise<void>; onClose: () => void }) {
-  const [patternId, setPatternId] = useState(''); const [firstTrip, setFirstTrip] = useState(''); const [headway, setHeadway] = useState(''); const [tripCount, setTripCount] = useState(''); const [lastTrip, setLastTrip] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
+function BuildTripsDrawer({ tripService, scenarioId, routeId, serviceDayId, tripProfileId, patterns, profileName, initialValues, onValuesChange, onDone, onClose }: { tripService: TripGenerationApplication; scenarioId: string; routeId: string; serviceDayId: string; tripProfileId: string; patterns: RoutePattern[]; profileName?: string; initialValues: BuildTripsValues; onValuesChange: (values: BuildTripsValues) => void; onDone: () => Promise<void>; onClose: () => void }) {
+  // The entered values outlive the drawer: closing it asks nothing and reopening it shows them again (Decision 14 of the review). A successful build clears them.
+  const [patternId, setPatternId] = useState(patterns.some((pattern) => pattern.id === initialValues.patternId) ? initialValues.patternId : ''); const [firstTrip, setFirstTrip] = useState(initialValues.firstTrip); const [headway, setHeadway] = useState(initialValues.headway); const [tripCount, setTripCount] = useState(initialValues.tripCount); const [lastTrip, setLastTrip] = useState(initialValues.lastTrip);
+  useEffect(() => { onValuesChange({ patternId, firstTrip, headway, tripCount, lastTrip }); }, [patternId, firstTrip, headway, tripCount, lastTrip]); const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
   const buildingByCount = tripCount.trim() !== '';
   const buildingByLastTrip = lastTrip.trim() !== '';
   useEffect(() => { const handleEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) { event.preventDefault(); onClose(); } }; document.addEventListener('keydown', handleEscape); return () => document.removeEventListener('keydown', handleEscape); }, [busy, onClose]);
@@ -1485,9 +1538,12 @@ function RuntimeTimeInput({ label, value, duration = false, onCommit }: { label:
   const display = (next: number) => duration ? formatRuntimeDuration(next) : formatServiceTime(next, next % 60 !== 0);
   const [draft, setDraft] = useState(() => display(value));
   const [error, setError] = useState('');
+  // Escape cancels the edit. Its blur must not commit the typed text, which the blur handler still holds (finding 5-024).
+  const cancelled = useRef(false);
   useEffect(() => { setDraft(display(value)); }, [value, duration]);
-  function commit() { if (!draft.trim()) { setError(duration ? 'Enter a runtime. Zero is valid.' : 'Enter a time.'); return; } try { const next = duration ? parseRuntimeDuration(draft) : parseServiceTime(draft); if (next === undefined) throw new Error(); setError(''); onCommit(next); setDraft(display(next)); } catch { setError(duration ? 'Use minutes such as 7, :07, or 7:30.' : 'Use a time such as 6:30 or 25:00.'); } }
-  return <><input className="time-input" aria-label={label} aria-invalid={Boolean(error)} value={draft} onChange={(event) => { setDraft(event.target.value); setError(''); }} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setDraft(display(value)); setError(''); event.currentTarget.blur(); } }} />{error && <small className="field-error" role="alert">{error}</small>}</>;
+  function commit() {
+    if (cancelled.current) { cancelled.current = false; return; } if (!draft.trim()) { setError(duration ? 'Enter a runtime. Zero is valid.' : 'Enter a time.'); return; } try { const next = duration ? parseRuntimeDuration(draft) : parseServiceTime(draft); if (next === undefined) throw new Error(); setError(''); onCommit(next); setDraft(display(next)); } catch { setError(duration ? 'Use minutes such as 7, :07, or 7:30.' : 'Use a time such as 6:30 or 25:00.'); } }
+  return <><input className="time-input" aria-label={label} aria-invalid={Boolean(error)} value={draft} onChange={(event) => { setDraft(event.target.value); setError(''); }} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { cancelled.current = true; setDraft(display(value)); setError(''); event.currentTarget.blur(); } }} />{error && <small className="field-error" role="alert">{error}</small>}</>;
 }
 
 function PatternEditor({ pattern, directions, nodes, segmentMiles, errors, conflict, isNew, dirty, canDuplicate, onPattern, onAddPoint, onUpdatePoint, onMovePoint, onRemovePoint, onReverse, onDuplicate, onDelete, onSave, onDiscard }: { pattern: RoutePattern; directions: RouteDirection[]; nodes: Node[]; segmentMiles: (pattern: RoutePattern, index: number) => number; errors: string[]; conflict?: string; isNew: boolean; dirty: boolean; canDuplicate: boolean; onPattern: (patch: Partial<RoutePattern>) => void; onAddPoint: () => void; onUpdatePoint: (index: number, patch: Partial<RoutePattern['points'][number]>) => void; onMovePoint: (index: number, direction: -1 | 1) => void; onRemovePoint: (index: number) => void; onReverse: () => void; onDuplicate: () => void; onDelete: () => void; onSave: () => void; onDiscard: () => void }) {
@@ -1511,8 +1567,8 @@ function DiscardRouteDraftDialog({ title, onDiscard, onClose }: { title: string;
   return <div className="modal-backdrop" role="presentation"><section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="discard-route-draft-title"><h2 id="discard-route-draft-title">{title}</h2><p>These edits have not been saved.</p><div className="dialog-actions"><button autoFocus onClick={onClose}>Cancel</button><button className="danger" onClick={onDiscard}>Discard</button></div></section></div>;
 }
 
-function RouteNavigationDraftDialog({ onCancel, onDiscard, onSave }: { onCancel: () => void; onDiscard: () => void; onSave: () => void }) {
-  return <div className="modal-backdrop" role="presentation"><section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="route-navigation-draft-title"><h2 id="route-navigation-draft-title">Save route changes before leaving?</h2><p>Nodes or a Pattern have unsaved edits.</p><div className="dialog-actions"><button autoFocus onClick={onCancel}>Cancel</button><button className="danger" onClick={onDiscard}>Discard</button><button className="primary" onClick={onSave}>Save</button></div></section></div>;
+function RouteNavigationDraftDialog({ title = 'Save route changes before leaving?', text = 'Nodes or a Pattern have unsaved edits.', onCancel, onDiscard, onSave }: { title?: string; text?: string; onCancel: () => void; onDiscard: () => void; onSave: () => void }) {
+  return <div className="modal-backdrop" role="presentation"><section className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="route-navigation-draft-title"><h2 id="route-navigation-draft-title">{title}</h2><p>{text}</p><div className="dialog-actions"><button autoFocus onClick={onCancel}>Cancel</button><button className="danger" onClick={onDiscard}>Discard</button><button className="primary" onClick={onSave}>Save</button></div></section></div>;
 }
 
 function TrashIcon() {
@@ -1528,14 +1584,16 @@ function Field({ label, required, errors = [], wide, children }: { label: string
 function NumericCommit({ label, value, integer = false, step = '1', onCommit }: { label: string; value: number; integer?: boolean; step?: string; onCommit: (value: number) => Promise<void> | void }) {
   const [draft, setDraft] = useState(String(value));
   const [error, setError] = useState('');
+  const cancelled = useRef(false);
   useEffect(() => { setDraft(String(value)); }, [value]);
   function commit() {
+    if (cancelled.current) { cancelled.current = false; return; }
     const parsed = Number(draft);
     if (!draft.trim()) { setError('A value is required. Zero is valid.'); return; }
     if (!Number.isFinite(parsed) || parsed < 0 || (integer && !Number.isInteger(parsed))) { setError(integer ? 'Enter a non-negative whole number.' : 'Enter a non-negative number.'); return; }
     setError(''); void onCommit(parsed);
   }
-  return <><input aria-label={label} aria-invalid={Boolean(error)} aria-describedby={error ? `${label.replaceAll(/[^a-z0-9]/gi, '-')}-error` : undefined} type="number" min="0" step={step} value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setDraft(String(value)); setError(''); event.currentTarget.blur(); } }} />{error && <small id={`${label.replaceAll(/[^a-z0-9]/gi, '-')}-error`} className="field-error" role="alert">{error} Saved value remains {value}.</small>}</>;
+  return <><input aria-label={label} aria-invalid={Boolean(error)} aria-describedby={error ? `${label.replaceAll(/[^a-z0-9]/gi, '-')}-error` : undefined} type="number" min="0" step={step} value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { cancelled.current = true; setDraft(String(value)); setError(''); event.currentTarget.blur(); } }} />{error && <small id={`${label.replaceAll(/[^a-z0-9]/gi, '-')}-error`} className="field-error" role="alert">{error} Saved value remains {value}.</small>}</>;
 }
 
 function NameDialogForm({ dialog, onClose }: { dialog: NameDialog; onClose: () => void }) {

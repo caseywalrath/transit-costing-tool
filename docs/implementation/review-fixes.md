@@ -4,8 +4,8 @@
 
 **Combined sitting 4G + 4H, in progress on the branch `claude/stage-4g-4h-review-fixes` (created from `origin/main` after the 4F merge, PR #19).** The user directed one overnight sitting on Sonnet: U01, U02, U03, U04, U05 in that order, then P16 as the last package. No sub-agents and no Opus review (none of these is S0 or S1). The user waived the Decision 0005 verification gate between the structural and UI packages, pushes to the work branch after every package, and does not want to be asked: a package that needs a decision its text does not settle is recorded here as "blocked: decision needed" and the next independent package continues (U05 depends on U04, U04 on U03).
 
-- Done on the branch: U01 (`8e347e4`), U02 (`dea5288`).
-- Next package: U03.
+- Done on the branch: U01 (`8e347e4`), U02 (`dea5288`), U03 (fix log entry; hash recorded in the entry).
+- Next package: U04.
 - Blocked: none.
 - Known failures: none.
 - Not started in this sitting: U06, U07, P15, U08, D01 (and every package not named above).
@@ -15,7 +15,7 @@
   - **U01. DONE** (U01 entry). `index.html` is a standards-mode document; no layout baseline changed. Layout problems seen in the screenshots are listed in the U01 entry, each with its owner.
   - **U02. DONE** (U02 entry). `showError` and every catch site use `userFacingError`; `blockingError` no longer splits words. Thrown by the Blocking service now (shown as written): "Another Block on this service day already uses that label.", "No consecutive Trips use the selected From and To Nodes.", "Select a preceding Trip for the deadhead.".
   - **U05 wording.** `block.deadheadOutsideGap` and `block.boundaryOverlap` (P12) have no sentence; the screen shows "Deadhead outside gap" and "Boundary overlap" (fallback). `block.minutesRequired` and `block.minutesInvalid` (P14) use "Enter a non-negative whole-minute duration.".
-  - **U03.** The Blocking workspace now loads the unassigned Trips with the Blocks (`listUnassignedTrips`), not from the Trips tab's list; the New Block dialog value comes from `proposeBlockLabel`.
+  - **U03. DONE** (U03 entry; the Blocking-workspace facts below stay true). The Blocking workspace now loads the unassigned Trips with the Blocks (`listUnassignedTrips`), not from the Trips tab's list; the New Block dialog value comes from `proposeBlockLabel`.
   - **U05 (I-035).** `previewDeleteBlock` and `previewDeleteBlockingScenario` exist and nothing calls them. Their `sourceSignature` is the review token that `deleteBlock` and `deleteBlockingScenario` take. The Delete Block and Delete Blocking Scenario dialogs should show the counts and pass the preview's signature.
   - **Costing (U06).** A `CostingFinding` is a `ValidationFinding` (`ruleId`, `entityType`, `entityId`, `field`); an assumption finding names the field, so the screen can show it beside its input. `CostingWorkspace.tsx` still reads only `validation.length` and severity.
   - **CSV.** The Trips CSV and ZIP writer live in `src/application`. A free-text cell that begins with `=`, `+`, `-`, or `@` is written with a leading apostrophe; the Trips CSV import and Runtime paste remove it (`restoreFormulaText`). A new CSV importer must do the same for the same columns.
@@ -1476,3 +1476,63 @@ User decisions implemented: none new. This package presents the P02 read-only st
 
 - A notice banner stays until dismissed, so a stale-source message from an earlier refusal remains on screen after a successful retry (the test pins this). Auto-clearing notices is a UX decision no package owns.
 - Errors from `RuntimeDurationError` and similar domain classes are matched by class in one place only (Build Trips); other inputs still show the filter's fallback or the domain sentence.
+
+## U03: Drafts, inputs, and preferences
+
+- Date: 2026-10-23. Sitting 4G/4H (combined). Model: Sonnet (main session). No sub-agents.
+- Type: UI. Severity: S2.
+- Commit: see "Commit" at the end of this entry.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-026 | 4-010 | S2 | A JSON `null` in the route-selection key blanked the app on every load (the key was rewritten only after a successful load, so it could not repair itself); `null` in the Blocking key blanked it when Blocking opened. |
+| I-030 | 5-004 | S2 | An unsaved Runtime editor draft was discarded silently on a Pattern, Profile, service day, Direction, or tab change; a staged Shift was discarded silently on a Runtime save; Build Trips input was lost on close; a reload with a dirty Runtime draft raised no leave prompt. |
+| I-032 | 5-006 | S2 | Saving Nodes replaced an unsaved Pattern draft with the saved copy, and saving a Pattern replaced unsaved Node edits. |
+| I-042 | 5-024 | S3 | Escape in a numeric field and in a Runtime time field committed the typed text instead of cancelling (the blur handler still held the typed draft). |
+| I-091 | 5-025 | S3 | The remembered Blocking Scenario was overwritten after a Trip Profile change in Trips, and Blocking overwrote its own record with empty values on its first render, so the choice was never restored. |
+
+User decision implemented: 14 (guard the Runtime editor draft and the staged Shift with the discard dialog; Build Trips closes without a prompt and keeps its values).
+
+### What changed
+
+- **Runtime draft and staged Shift (`App.tsx`, Trips).** A new `requestScopeChange` runs before any change that replaces the Runtime editor: the Runtime Pattern select, the Profile menu (select, New, Rename, Copy, Reverse-copy, Delete), and the App-level Route, Day, Direction, Project, Scenario, and tab controls (through the existing navigation guard, which now also covers a dirty Runtime draft). A dirty draft opens the existing three-button dialog (`RouteNavigationDraftDialog`, now with a title and text: "Save Runtime changes before leaving?" Cancel, Discard, Save). Save saves the draft and then continues; if the save fails validation the planner stays on the editor with its findings. A staged Shift keeps its existing Cancel/Discard dialog; when both are open the Runtime question comes first. The header Runtime Save also asks to discard a staged Shift first, because the save reloads the Trips and cleared the Shift without a word. A reload with a dirty Runtime draft raises the browser's leave prompt (`beforeunload`). `RuntimeEditor2`'s `save()` now resolves to whether it saved.
+- **Latent defect fixed on the way.** The Project, Scenario, Route, Day, and Direction selects read `event.target.value` inside the deferred navigation action. A controlled select resets its DOM value after the change event, so after any Save/Discard dialog the action used the old value and the change silently did nothing (it only worked when no dialog was needed). Each select now captures the value first. This also repairs the Route draft dialog for those selects.
+- **Build Trips.** The drawer's values live in a ref owned by the Trips workspace. Closing the drawer (Cancel, Escape, a service-day change) asks nothing; reopening shows the values again; a successful build clears them. The Pattern is kept only if it is still on offer.
+- **Nodes and Patterns.** A save returns new arrays for both. A draft is now replaced only when its own saved records changed (the Pattern comparison ignores the save time), so saving Nodes keeps an unsaved Pattern draft and saving a Pattern keeps unsaved Node edits. Deleting a Node that changes a Pattern still resets that draft.
+- **Escape.** `NumericCommit` and `RuntimeTimeInput` remember that Escape started the blur, restore the saved value, and skip the commit.
+- **Preferences.** New `src/ui/preferences.ts` (`readStoredRecord`, `storedText`, `storedTextMap`): a stored value that is not a plain object reads as empty, and each field must be a string (or a valid minimum-layover rule). The route-selection and Blocking-selection readers use it, so `null`, arrays, numbers, and wrong-typed fields fall back to the default selection.
+- **Remembered Blocking Scenario.** Trips remembers one Blocking Scenario for each Trip Profile of a Scenario (an older single-choice record still reads), writes only a real choice that belongs to the profile shown, and falls back to the remembered choice, then the first, when the profile changes (it used to fall to "No Blocking Scenario"). Blocking saves its selection only once the Trip Profile and service day are restored, keeps `blockingScenarioByProfile` the same way, and restores that choice.
+- **Docs.** `docs/ui-conventions.md` (drafts, Build Trips, selection preferences).
+
+### Files outside the package's owned list (recorded hand-offs)
+
+- `src/ui/preferences.ts` and `src/ui/preferences.test.ts` (new): the shared shape check (App and Blocking cannot share it from `App.tsx`).
+
+### Tests added
+
+- `src/ui/preferences.test.ts` (12 tests): stored `null`, arrays, numbers, strings, broken JSON, a missing or throwing storage read as empty; text and identifier-map checks.
+- `tests/ui/drafts-and-preferences.spec.ts` (14 tests, real IndexedDB): the Runtime dialog on a service-day change with Cancel, Discard, and Save (what is stored after each); the tab change; the Pattern select and the Profile menu, and the leave prompt (a cancelled `beforeunload`); a Runtime Save with a staged Shift (asks, Cancel keeps both, Discard saves and drops the Shift); a staged Shift and a dirty draft on a tab change (Runtime question first); Build Trips values kept across close and reopen and cleared by a build; saving Nodes with an unsaved Pattern edit and saving a Pattern with an unsaved Node edit; Escape in the annual-count field and in a Runtime time field (value restored, no write, no message) with Enter still committing; stored selections of four wrong shapes in both keys; the remembered Blocking Scenario across a Trip Profile change in Trips and after a reload in Blocking.
+- On the unfixed code (the U02 commit) 11 of 14 failed. The three that passed are controls: arrays, numbers, and wrong-typed fields in the selection keys already fell back (only `null` crashed, as the finding says).
+- `--repeat-each=10 --workers=8` on the spec found two defects in the tests themselves, both fixed in the tests: the Node test assumed the first Node input is Node "A" (5 failures in 140), and the leave-prompt test read the `beforeunload` listener before React had removed it (2 failures in 140; now polled). The final run: 140 of 140 passed. The full browser suite was run before the second test fix; the changed spec alone was re-run (140 of 140), and the next package's full run includes it.
+- Deliberate breaks, one per group, each made its test fail and was restored: bypassing `requestScopeChange` (service-day test), not recording Build values, removing the Escape guard in `NumericCommit`, resetting the Node draft on every save, removing the shape check in `preferences.ts` (the `null` selection test), and dropping the per-profile memory (the remembered-Scenario test).
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 43 files, 669 tests passed (657 before; +12).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 102 passed, 0 failed (3.8 minutes); 88 before plus the 14 new tests. No existing spec changed. The intermittent `unified-action-layer.spec.ts:139` passed.
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-BCu_9qhe.js` 796.30 kB (793.57 kB before).
+- Visual check of the new Runtime leave dialog at 1024 px (scratchpad, not committed): `/tmp/claude-0/-home-user-transit-costing-tool/97a11f95-8195-5c0d-bed4-917d1a55f2e0/scratchpad/shots/u03-leave-dialog.png`. It is the existing three-button dialog with Cancel focused.
+
+### Not done, or only partly
+
+- The finding also names the Add-trip row and Blocking dialog drafts as silently discarded. Decision 14 and the acceptance criteria cover only the Runtime editor, the staged Shift, and Build Trips, so those two are unchanged.
+- Build Trips values live in the Trips workspace; leaving the Trips tab and returning clears them (the workspace unmounts). Decision 14 says "until the drawer is reopened"; a tab change was not asked for.
+
+### Residual risks and hand-offs
+
+- **U07 (layout, Sol if redesigned):** at 1024 to 1900 px the docked Shift drawer covers the Runtime Save and Discard buttons, so with a staged Shift open the planner can reach Runtime Save only by keyboard (the new test presses it with the keyboard). Not fixed here; no package owns it.
+- The Runtime leave dialog says "Save Runtime changes before leaving?" for a Runtime Pattern or Profile change as well as for leaving the tab; the wording fits all of them, and no separate title was added.
+- A Pattern draft that is dirty when a Node save changes that Pattern (a deleted Node) is still replaced; the planner already saw the impact dialog.

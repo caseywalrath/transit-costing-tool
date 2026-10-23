@@ -10,6 +10,7 @@ import type { ScenarioRecords } from '../domain/project';
 import { MenuButton, type MenuGroup } from './MenuButton';
 import { createCsvArchive } from '../application/csvDownload';
 import { userFacingError } from './errorMessages';
+import { readStoredRecord, storedText, storedTextMap } from './preferences';
 
 type BlockingApplication = BlockingCommands & BlockingQueries;
 type Props = { blockingService: BlockingApplication; tripService: TripGenerationApplication; aggregate: RouteDefinitionAggregate; records: ScenarioRecords; routes: Route[]; routeId: string; onRouteChange: (routeId: string) => void; onReload: () => Promise<void>; onError: (error: unknown, fallback?: string) => void };
@@ -29,8 +30,18 @@ type UnassignedFilters = { patternIds: string[]; startNodeIds: string[]; endNode
 const emptyUnassignedFilters = (): UnassignedFilters => ({ patternIds: [], startNodeIds: [], endNodeIds: [], fromTime: { from: '', to: '' }, toTime: { from: '', to: '' } });
 
 const preferenceKey = 'transit-costing-tool.blocking-selection.v1';
-type BlockingSelectionPreference = { tripProfileId?: string; blockingScenarioId?: string; serviceDayId?: string; minimumLayover?: MinimumLayoverRule; blockSelections?: Record<string, string> };
-function preference() { try { return JSON.parse(localStorage.getItem(preferenceKey) ?? '{}') as BlockingSelectionPreference; } catch { return {}; } }
+type BlockingSelectionPreference = { tripProfileId?: string; blockingScenarioId?: string; blockingScenarioByProfile?: Record<string, string>; serviceDayId?: string; minimumLayover?: MinimumLayoverRule; blockSelections?: Record<string, string> };
+function storedLayoverRule(value: unknown): MinimumLayoverRule | undefined {
+  if (value === null || typeof value !== 'object') return undefined;
+  const { mode, value: amount } = value as Record<string, unknown>;
+  return (mode === 'minutes' || mode === 'percent') && typeof amount === 'number' && Number.isFinite(amount) && amount >= 0 ? { mode, value: amount } : undefined;
+}
+/** The stored selection, with every field checked: a value of the wrong shape reads as not stored (finding 4-010). */
+function preference(): BlockingSelectionPreference {
+  const stored = readStoredRecord(preferenceKey);
+  const minimumLayover = storedLayoverRule(stored.minimumLayover);
+  return { tripProfileId: storedText(stored.tripProfileId), blockingScenarioId: storedText(stored.blockingScenarioId), blockingScenarioByProfile: storedTextMap(stored.blockingScenarioByProfile), serviceDayId: storedText(stored.serviceDayId), ...(minimumLayover ? { minimumLayover } : {}), blockSelections: storedTextMap(stored.blockSelections) };
+}
 function savePreference(value: object) { try { localStorage.setItem(preferenceKey, JSON.stringify(value)); } catch { /* UI preference only. */ } }
 function blockSelectionKey(blockingScenarioId: string, serviceDayId: string) { return `${blockingScenarioId}:${serviceDayId}`; }
 const blockingMessages: Record<string, string> = {
@@ -194,11 +205,18 @@ export function BlockingWorkspace({ blockingService, tripService, aggregate, rec
   useEffect(() => { const prior = preference(); setTripProfileId((current) => current && profiles.some((item) => item.id === current) ? current : profiles.find((item) => item.id === prior.tripProfileId)?.id ?? profiles[0]?.id ?? ''); setServiceDayId((current) => current && days.some((item) => item.id === current) ? current : days.find((item) => item.id === prior.serviceDayId)?.id ?? days[0]?.id ?? ''); }, [records.scenario.id, profiles.length, days.length]);
   async function loadScenarios() { try { setScenarios(await blockingService.listBlockingScenarios(records.scenario.id)); } catch (error) { onError(error, 'Unable to load Blocking Scenarios.'); } }
   useEffect(() => { void loadScenarios(); }, [records.scenario.id]);
-  useEffect(() => { const prior = preference(); const candidates = scenarios.filter((item) => item.tripProfileId === tripProfileId); if (scenarioSelectionCleared) { setBlockingScenarioId(''); return; } setBlockingScenarioId((current) => current && candidates.some((item) => item.id === current) ? current : candidates.find((item) => item.id === prior.blockingScenarioId)?.id ?? candidates[0]?.id ?? ''); }, [scenarios, tripProfileId, scenarioSelectionCleared]);
+  useEffect(() => { const prior = preference(); const candidates = scenarios.filter((item) => item.tripProfileId === tripProfileId); if (scenarioSelectionCleared) { setBlockingScenarioId(''); return; } setBlockingScenarioId((current) => current && candidates.some((item) => item.id === current) ? current : candidates.find((item) => item.id === prior.blockingScenarioByProfile?.[tripProfileId])?.id ?? candidates.find((item) => item.id === prior.blockingScenarioId)?.id ?? candidates[0]?.id ?? ''); }, [scenarios, tripProfileId, scenarioSelectionCleared]);
   async function loadBlocks() { if (!blockingScenarioId) { setAllBlocks([]); setSummary(undefined); setUnassigned([]); return; } try { const values = await Promise.all([blockingService.listBlockingBlocks(blockingScenarioId), blockingService.getScenarioSummary(blockingScenarioId, serviceDayId), blockingService.listUnassignedTrips(blockingScenarioId, serviceDayId, aggregate.route.id)]); setAllBlocks(values[0]); setSummary(values[1]); setUnassigned(values[2]); const savedBlockId = preference().blockSelections?.[blockSelectionKey(blockingScenarioId, serviceDayId)]; setSelectedBlockId((current) => current && values[0].some((block) => block.id === current && block.serviceDayId === serviceDayId) ? current : values[0].find((block) => block.id === savedBlockId && block.serviceDayId === serviceDayId)?.id ?? values[0].find((block) => block.serviceDayId === serviceDayId)?.id ?? ''); } catch (error) { onError(error, 'Unable to load Blocks.'); } }
   useEffect(() => { void loadBlocks(); }, [blockingScenarioId, serviceDayId, aggregate.route.id]);
   useEffect(() => { let live = true; if (!serviceDayId || !tripProfileId) { setTrips([]); return; } void tripService.listScheduleTrips(serviceDayId, undefined, tripProfileId).then((value) => { if (live) setTrips(value); }).catch((error) => onError(error, 'Unable to load the selected service-day Trips.')); return () => { live = false; }; }, [tripService, serviceDayId, tripProfileId]);
-  useEffect(() => { const prior = preference(); const blockSelections = { ...(prior.blockSelections ?? {}) }; if (blockingScenarioId && serviceDayId && selectedBlockId) blockSelections[blockSelectionKey(blockingScenarioId, serviceDayId)] = selectedBlockId; savePreference({ ...prior, tripProfileId, blockingScenarioId, serviceDayId, ...(minimumLayover ? { minimumLayover } : {}), blockSelections }); }, [tripProfileId, blockingScenarioId, serviceDayId, selectedBlockId, minimumLayover?.mode, minimumLayover?.value]);
+  // Save the selection only once it has been restored: the first render holds empty values, and writing them would erase what was remembered.
+  // The Blocking Scenario is kept for each Trip Profile, so a change of Trip Profile does not replace another profile's choice (finding 5-025).
+  useEffect(() => {
+    if (!tripProfileId || !serviceDayId) return;
+    const prior = preference(); const blockSelections = { ...(prior.blockSelections ?? {}) }; if (blockingScenarioId && serviceDayId && selectedBlockId) blockSelections[blockSelectionKey(blockingScenarioId, serviceDayId)] = selectedBlockId;
+    const settled = scenarios.some((item) => item.id === blockingScenarioId && item.tripProfileId === tripProfileId);
+    savePreference({ ...prior, tripProfileId, serviceDayId, ...(settled ? { blockingScenarioId, blockingScenarioByProfile: { ...(prior.blockingScenarioByProfile ?? {}), [tripProfileId]: blockingScenarioId } } : {}), ...(minimumLayover ? { minimumLayover } : {}), blockSelections });
+  }, [tripProfileId, blockingScenarioId, serviceDayId, selectedBlockId, scenarios, minimumLayover?.mode, minimumLayover?.value]);
   useEffect(() => { setUnassignedFilters(emptyUnassignedFilters()); }, [aggregate.route.id, serviceDayId, tripProfileId]);
   useEffect(() => { setSelectedTripIds([]); setSelectedUnassignedTripIds([]); blockSelectionAnchorId.current = undefined; unassignedSelectionAnchorId.current = undefined; }, [blockingScenarioId, serviceDayId, selectedBlockId]);
   useEffect(() => {
