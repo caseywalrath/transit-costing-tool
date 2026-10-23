@@ -2,22 +2,25 @@
 
 ## Next sitting
 
-**Sitting 4K part 2 (D01, then U09, then P18) is in progress on the branch `claude/stage-4k-review-fixes`, restarted from `origin/main` after the merge of PR #24 (U08). D01 and U09 are done on this branch. The user must review the branch, open and merge the pull request, and read the first CI run when the sitting ends. U10 (Opus) stays a sitting of its own afterwards. Standing rules 1 to 10 below apply unchanged.**
+**Sitting 4K part 2 (D01, U09, P18) is finished on the branch `claude/stage-4k-review-fixes`, restarted from `origin/main` after the merge of PR #24 (U08). The user must review the branch, open and merge the pull request, and read the first CI run. The next sitting is U10, on Opus, in a sitting of its own: the Shift drawer redesign (the user's brief is below). Start it only after this branch is merged; create a new work branch from the new `origin/main` (the user names it). Standing rules 1 to 10 below apply unchanged. With U10 done, Stage 4 is complete.**
 
-- Done on this branch: D01 (`daec5d5`) and U09 (`ef57f58`). U08 landed earlier (`ac0bded`, PR #24).
-- Not started: P18, U10.
-- U08 result: "Regenerate selected" on 480 Trips at the capacity fixture, production build, 5 runs: review 407 to 461 ms (before: 1,043 to 1,300 ms), apply 556 to 587 ms (before: 918 to 1,072 ms). Anchor selection stays available for every Trip. Two layout defects of the dialog that predate U08 are fixed (details in the U08 entry). No decision was blocked.
+- Done on this branch: D01 (`daec5d5`), U09 (`ef57f58`), and P18 (`PENDING`). U08 landed earlier (`ac0bded`, PR #24).
+- Not started: U10.
+- Results of 4K part 2: D01 resolved ten documentation contradictions and added the register map at the end of this log (every register issue to its package and commit). U09: a status line under "Run Times Have Changed" names the count of Trips that their Runtime profile cannot calculate and each distinct reason once; `inspectStaleTrips` now also reports the reason for a Trip that is stale by revision. P18: Vitest 3.2.7 to 4.1.12, `pnpm audit` from 5 advisories to none, no test or config change. No decision was blocked.
 - Exceptions of the 4K part 2 sitting (user, 2026-10-23), not carried over: Sonnet main session, no sub-agents and no Opus review, the Decision 0005 gate waived, U09 inspected at 1024 and 1440 px, P18 a dependency upgrade only. The user states the exceptions for each sitting.
-- **U09 and U10: DECIDED by the user on 2026-10-23. U09 is done; U10 is not started.**
+- **U09 and U10: DECIDED by the user on 2026-10-23. U09 is done; U10 is not started and is the next sitting (Opus).**
   - **U09 (Sonnet, small UI): why a Trip cannot be recalculated** (option A). **DONE in U09 (`ef57f58`).** One status line under the "Run Times Have Changed" indicator lists the distinct reasons from `inspectStaleTrips` (the message texts exist from P07). Reuse the existing notice/status line styling; no new component. Acceptance: when at least one Trip is flagged and its profile cannot calculate it, the line names each distinct reason once; with no such Trip nothing is shown; a browser test covers both; keyboard and screen-reader behavior as the other status lines (plain text, no focus trap). Verification: UI rules, visual check at 1024 and 1440 px.
   - **U10 (Opus, UI design, beyond the scope of a fix; user will review the result afterward): redesign the Shift drawer.** The overlap of the open drawer with the Runtime Save and Discard buttons is **accepted as is** (option D); do not solve it as a goal of U10 unless the redesign does so as a side effect. The user's brief: the drawer wastes white space; the shifting control (left and right buttons and an up/down minute selector) is confusing; the drawer is valuable because the planner sees the effect of a shift on the Trips table, and that must stay. Wanted: a much more discreet control and a more intuitive increment selector. The agent decides the design and records the options it rejected. Constraints: the preview-then-apply behavior, Undo and Redo (U07), the net-shift label (`formatNetShift`, `formatStagedShift`), the minute parsing rules (`parseShiftSeconds`), keyboard and screen-reader operation, and the existing specs (`workflow-section-layout.spec.ts` asserts the right-docked drawer; it may change only with a recorded reason). Verification: UI rules plus screenshots at 1024 and 1440 px before and after, and the interaction written up so the user can review it.
-- **P18 (Vitest major upgrade, 5 advisories in the `vitest` chain):** its own package, not mixed with feature work (user decision 5 below). Not started.
-- Known failures: `tests/ui/route-editing.spec.ts:6` failed once in the D01 full run (150 passed, 1 failed): after "Save nodes" for Node B, the click on "Add pattern" opened no draft ("New Pattern — not saved" never appeared). It passed 100 of 100 times alone (`--repeat-each=20 --workers=8` and `--repeat-each=80 --workers=16`). The probable cause is the L-16 race that `tests/ui/support/tripsWorkspace.ts` already works around (a save's reload lands after the next step starts); that helper retries the click, and this spec does not. D01 changed no code. See the D01 entry. `unified-action-layer.spec.ts:139` passed. If it returns, diagnose it as a package failure and fix the code.
-- State after U08: unit tests 51 files, 747 tests; browser suite 151 tests, all passing; bundle `index--t3h4Nml.js` 806.22 kB. The user must still read the first CI run (branch protection and CI are the user's to watch).
-- Carried forward (details in the U06, U07, P15, P17, and U08 entries):
+- **P18 (Vitest major upgrade, 5 advisories in the `vitest` chain): DONE in P18 (`PENDING`).** Its own package, not mixed with feature work (user decision 5 below).
+- Known failures: `tests/ui/route-editing.spec.ts:6` failed once in the D01 full run (150 passed, 1 failed): after "Save nodes" for Node B, the click on "Add pattern" opened no draft ("New Pattern — not saved" never appeared). It passed 100 of 100 times alone (`--repeat-each=20 --workers=8` and `--repeat-each=80 --workers=16`) and in the full runs of U09 and P18. The probable cause is the L-16 race that `tests/ui/support/tripsWorkspace.ts` already works around (a save's reload lands after the next step starts); that helper retries the click, and this spec does not. If it returns, apply the same retry or find the application-side cause (a planner who clicks Add pattern right after Save nodes might lose the draft too). `unified-action-layer.spec.ts:139` passed in every full run of this sitting. If it returns, diagnose it as a package failure and fix the code.
+- State after P18: unit tests 52 files, 752 tests; browser suite 153 tests, all passing; bundle `index-Be19ICCN.js` 807.23 kB; `pnpm audit` clean. The user must still read the first CI run (branch protection and CI are the user's to watch).
+- Carried forward (details in the D01, U06, U07, U09, P15, P17, and U08 entries):
+  - **D01:** the Route draft editor bullets of `ui-conventions.md` were checked only against the contradictions the findings quote, not rewritten; Decisions 0011 and 0012 have no recorded day (their Date lines say so); historical plans (`phase-02-*.md`) were not edited.
+  - **U09:** the line gives a count and the reasons, not the affected rows; only the two band findings have wording written for the line, and other findings use the existing `userMessage` text; not checked with a screen reader; the extra calculation in `inspectStaleTrips` was not timed at 2,000 Trips.
+  - **P18:** other major versions exist and carry no advisory (Vite 8, `@vitejs/plugin-react` 6, TypeScript 7, `@types/node` 26, Vitest 5); no owner.
   - **U08:** an anchor list holds one option until it is focused or pressed; a screen reader may announce "1 of 1" on the first focus before the list fills (not verified with a screen reader). The Shift drawer, the bulk anchor row, and the band picker are unchanged.
   - **U06:** the persistence answer of `getLocalDataProtection()` is still not shown (no criterion asks for it), and the assumptions alert keeps its single sentence.
-  - **U07:** the Runtime totals read `:61` by design (the Decision 0010 duration format). The Shift drawer over the Runtime Save button is accepted as is (U10 redesigns the drawer); the `inspectStaleTrips` findings get a status line in U09.
+  - **U07:** the Runtime totals read `:61` by design (the Decision 0010 duration format). The Shift drawer over the Runtime Save button is accepted as is (U10 redesigns the drawer); the `inspectStaleTrips` findings now have their status line (U09).
   - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead; the Add-trip row drafts are not kept across a scope change.
   - **P15:** a CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
   - **P17:** `makePatternPoint` has no caller left (harmless).
@@ -27,10 +30,10 @@
   2. The legacy per-field route mutators are deleted, and the unit-test setups move to preview and commit. **DONE in P17.**
   3. Repeated Block labels already stored: the backup import refusal message explains the cause and the way out. No repair on load. **DONE in P17.**
   4. Branch protection: the user requires the two CI checks on `main`. User action only. The check names are "Typecheck, unit tests, build" (job `verify`) and "Browser tests" (job `browser`).
-  5. Vitest major upgrade: its own package, **P18**, after D01, or in a separate maintenance sitting. Not mixed with feature work. **Not started.**
+  5. Vitest major upgrade: its own package, **P18**, after D01, or in a separate maintenance sitting. Not mixed with feature work. **DONE in P18.**
   6. Defaults accepted: Runtime band totals use the duration format; a Pattern with no distance shows "incomplete"; menu typeahead is not built.
   7. U07 blocked item 1: the Shift drawer overlap is accepted (option D); the drawer is redesigned in package **U10**.
-  8. U07 blocked item 2: option A, a status line under the "Run Times Have Changed" indicator: package **U09**.
+  8. U07 blocked item 2: option A, a status line under the "Run Times Have Changed" indicator: package **U09**. **DONE in U09.**
 - Other hand-offs still open from earlier sittings:
   - **Decided by the user on 2026-10-23 (Option B), done in U07.** Under a segment-start or blended profile, an anchor that fits two first departures is rejected and the candidates are listed (Decision 0031 addendum).
   - **CSV.** The Trips CSV and ZIP writer live in `src/application`. A free-text cell that begins with `=`, `+`, `-`, or `@` is written with a leading apostrophe; the Trips CSV import and Runtime paste remove it (`restoreFormulaText`). A new CSV importer must do the same for the same columns.
@@ -2247,6 +2250,47 @@ Option A (user, 2026-10-23): one status line under the indicator lists the disti
 - Only the two band findings have wording written for this line. Any other finding that `inspectStaleTrips` can report (for example a Pattern whose points no longer match) shows its existing `userMessage` text, which is worded for other dialogs and may not read well here.
 - The line is announced as a status (`role="status"`) when it appears, like the other Trips status lines. It was not checked with a screen reader.
 - `inspectStaleTrips` now runs the calculation for every Trip that is stale by revision. The calculation is pure and cheap; no timing was measured at the 2,000-Trip capacity fixture.
+
+## P18: Vitest major upgrade
+
+- Date: 2026-10-23. Sitting 4K part 2. Model: Sonnet (main session). No sub-agents.
+- Type: dependency maintenance, no feature change. Severity: S3. Defined by the user's decision 5 of 2026-10-23 (the Next sitting note); `docs/review/fix-packages.md` has no P18 entry. B01 left the five advisories open on purpose (I-100).
+- Commit: `PENDING`.
+
+### What was wrong
+
+`pnpm audit` reported five advisories, all in the `vitest` chain of version 3.2.7: two critical ones in `tinypool` (prototype pollution, fixed from 2.1.1 and 2.1.2), two moderate ones in `vitest` and `@vitest/mocker` (path traversal through a mock redirect; fixed from 4.1.11), and one moderate one in `@vitest/mocker` (code injection through manual mock registration; fixed from 4.1.12). All are dev-toolchain only: Vitest runs on the developer's machine and in CI, never in the deployed site.
+
+### What changed
+
+- `package.json`: `vitest` `^3.2.4` to `^4.1.12` (installed 4.1.12). `pnpm-lock.yaml` updated by `pnpm add -D vitest@^4.1.12` (15 packages added, 23 removed). Version 4.1.12 is the smallest major step that clears all five advisories; 5.0.5 exists and also works with Vite 7, but it is a second major step and was not needed.
+- No change to `vitest.config.ts`, to any test, or to any file under `src/` or `tests/`. No test-config change was needed.
+- `codex.md`: the audit line (now no known vulnerabilities), the Vitest version in "Unit tests that need IndexedDB", and the coverage tool version.
+- Peer ranges checked: Vitest 4.1.12 accepts `vite` `^6 || ^7 || ^8` and Node `^20 || ^22 || >=24`; the repository uses Vite 7.3.7 and Node 22 (`.nvmrc`, `engines`, CI).
+
+### Tests added
+
+- None. This package changes no test. The existing 752 unit tests are the check.
+
+### Deliberate break
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| The test environment under Vitest 4 | `setupFiles: ['fake-indexeddb/auto']` removed from `vitest.config.ts` | 48 tests in 5 files fail (every Dexie-backed test); the config was restored from a saved copy |
+
+### Verification run
+
+- `pnpm audit`: no known vulnerabilities (5 before).
+- `pnpm install --frozen-lockfile`: up to date.
+- `pnpm typecheck`: clean.
+- `pnpm test`: 52 files, 752 tests passed, the same count as before the upgrade, with no Vitest warning in the output (Vitest 4.1.12, 8.3 s).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 153 passed, 0 failed (4.4 minutes). No `test.fail`, `test.skip`, or `test.fixme`. `unified-action-layer.spec.ts:139` and `route-editing.spec.ts:6` passed.
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-Be19ICCN.js` 807.23 kB, identical to the U09 build (Vitest is a dev dependency).
+
+### Hand-offs and residual risks
+
+- `pnpm outdated` lists other newer majors (Vite 8, `@vitejs/plugin-react` 6, TypeScript 7, `@types/node` 26, Vitest 5). None carries an advisory. They are not part of P18 and have no owner.
+- CI has not run this lockfile. The user reads the first CI run of the branch. `@types/node` stays at 22 and Node at 22.
 
 ## Register map
 
