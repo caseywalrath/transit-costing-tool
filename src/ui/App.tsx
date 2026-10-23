@@ -6,6 +6,7 @@ import { BlockingWorkspace } from './BlockingWorkspace';
 import { CostingWorkspace } from './CostingWorkspace';
 import { MenuButton, type MenuGroup } from './MenuButton';
 import { userFacingError } from './errorMessages';
+import { staleTripNotice, staleTripNoticeText, type StaleTripNotice } from './staleTripReasons';
 import { ModalDialog } from './ModalDialog';
 import { readStoredRecord, storedText, storedTextMap } from './preferences';
 import { singleFlight } from './singleFlight';
@@ -596,6 +597,7 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
   const [lastRegenerationUndo, setLastRegenerationUndo] = useState<import('../domain/types').TripRegenerationUndo>();
   const [tripImportPreview, setTripImportPreview] = useState<{ preview?: TripTableImportPreview; issues: string[] }>();
   const [tripsWithChangedRuntimes, setTripsWithChangedRuntimes] = useState<Trip[]>([]);
+  const [staleReasons, setStaleReasons] = useState<StaleTripNotice>();
   const [selectedTripIds, setSelectedTripIds] = useState<string[]>([]);
   const [tripDeletion, setTripDeletion] = useState<{ tripIds: string[]; affectedBlockIds: string[]; reviewToken: string }>();
   const [recalculationTripIds, setRecalculationTripIds] = useState<string[]>([]);
@@ -680,10 +682,11 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
     } catch (error) { onError(error); } finally { setLoading(false); }
   }
   async function loadTrips() {
-    if (!serviceDayId || !directionId) { setTrips([]); setTripsWithChangedRuntimes([]); setLastRegenerationUndo(await tripService.getLastTripRegenerationUndo()); return; }
+    if (!serviceDayId || !directionId) { setTrips([]); setTripsWithChangedRuntimes([]); setStaleReasons(undefined); setLastRegenerationUndo(await tripService.getLastTripRegenerationUndo()); return; }
     try {
-      const [nextTrips, nextStale, undo] = await Promise.all([tripService.listScheduleTrips(serviceDayId, directionId, tripProfileId), tripService.listStaleTrips(serviceDayId, tripProfileId), tripService.getLastTripRegenerationUndo()]);
-      setTrips(nextTrips); setTripsWithChangedRuntimes(nextStale.filter((trip) => nextTrips.some((item) => item.id === trip.id))); setLastRegenerationUndo(undo);
+      const [nextTrips, nextStale, undo] = await Promise.all([tripService.listScheduleTrips(serviceDayId, directionId, tripProfileId), tripService.inspectStaleTrips(serviceDayId, tripProfileId), tripService.getLastTripRegenerationUndo()]);
+      const shownTripIds = new Set(nextTrips.map((item) => item.id));
+      setTrips(nextTrips); setTripsWithChangedRuntimes(nextStale.trips.filter((trip) => shownTripIds.has(trip.id))); setStaleReasons(staleTripNotice(nextStale.findings, shownTripIds, userMessage)); setLastRegenerationUndo(undo);
     } catch (error) { onError(error); }
   }
   useEffect(() => { void loadRuntime(); }, [aggregate.route.id, selectedPattern?.id, serviceDayId, records.scenario.id, runtimeVersion]);
@@ -1120,6 +1123,7 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
       <div className="section-title"><div><h2>Trips</h2></div><div className="section-actions section-header-actions"><MenuButton fieldLabel="Profile" label={selectedTripProfile?.name ?? 'Select profile'} menuLabel="Trip Profile" groups={tripProfileMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} /><MenuButton fieldLabel="Blocking Scenario" label={selectedBlockingScenario?.name ?? 'No Blocking Scenario'} menuLabel="Blocking Scenario" groups={tripBlockingScenarioMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} /><span className="action-separator" aria-hidden="true" /><MenuButton label="Actions" menuLabel="Trip actions" groups={tripActionsMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} triggerRef={tripsActionsRef} /></div></div>
       <input ref={tripsCsvInputRef} className="visually-hidden" tabIndex={-1} type="file" accept=".csv,text/csv" aria-label="Import Trips CSV" onChange={(event) => void importTripsCsv(event)} />
       {tripsWithChangedRuntimes.length > 0 && <p className="section-status"><span className="runtime-change-indicator">Run Times Have Changed</span></p>}
+      {staleReasons && <p className="section-status" role="status">{staleTripNoticeText(staleReasons)}</p>}
       {tripBlockAssignmentStatus && <p className="section-status" role="status">{tripBlockAssignmentStatus}</p>}
       <ScheduleTable trips={trips} previewTrips={shiftPreview?.shiftedTrips} stagedShiftSeconds={shiftPreview?.netOffsetSeconds} draft={draftTrip} patterns={patterns} direction={directions.find((direction) => directionId === direction.id)!} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} showRuntimeBands={showRuntimeBands} showHeadways={showHeadways} roundDisplayedTimes={roundDisplayedTimes} blockAssignments={tripBlockByTripId} tripConnections={tripConnections} blockWarnings={tripBlockWarnings} blockOptions={tripBlockOptions} blockAssignmentDisabled={busy || tripProfileBusy || tripBlockingBlocksBusy || shiftOperations.length > 0 || shiftDrawerOpen || Boolean(tripBlockAssignment)} onAssignBlock={(trip, blockId, trigger) => openTripBlockAssignment([trip.id], blockId, 'pill', trigger)} onUnassignBlock={(trip, trigger) => openTripBlockAssignment([trip.id], '', 'pill', trigger, 'unassign')} selectedIds={selectedTripIds} changedRuntimeTripIds={changedRuntimeTripIds} onToggle={(id, index, shiftKey) => requestShiftScopeChange(() => {
         setSelectedTripIds((current) => {

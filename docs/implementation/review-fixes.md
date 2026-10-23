@@ -2,14 +2,14 @@
 
 ## Next sitting
 
-**Sitting 4K part 2 (D01, then U09, then P18) is in progress on the branch `claude/stage-4k-review-fixes`, restarted from `origin/main` after the merge of PR #24 (U08). D01 is done on this branch. The user must review the branch, open and merge the pull request, and read the first CI run when the sitting ends. U10 (Opus) stays a sitting of its own afterwards. Standing rules 1 to 10 below apply unchanged.**
+**Sitting 4K part 2 (D01, then U09, then P18) is in progress on the branch `claude/stage-4k-review-fixes`, restarted from `origin/main` after the merge of PR #24 (U08). D01 and U09 are done on this branch. The user must review the branch, open and merge the pull request, and read the first CI run when the sitting ends. U10 (Opus) stays a sitting of its own afterwards. Standing rules 1 to 10 below apply unchanged.**
 
-- Done on this branch: D01 (`daec5d5`). U08 landed earlier (`ac0bded`, PR #24).
-- Not started: U09, P18, U10.
+- Done on this branch: D01 (`daec5d5`) and U09 (`PENDING`). U08 landed earlier (`ac0bded`, PR #24).
+- Not started: P18, U10.
 - U08 result: "Regenerate selected" on 480 Trips at the capacity fixture, production build, 5 runs: review 407 to 461 ms (before: 1,043 to 1,300 ms), apply 556 to 587 ms (before: 918 to 1,072 ms). Anchor selection stays available for every Trip. Two layout defects of the dialog that predate U08 are fixed (details in the U08 entry). No decision was blocked.
 - Exceptions of the 4K part 2 sitting (user, 2026-10-23), not carried over: Sonnet main session, no sub-agents and no Opus review, the Decision 0005 gate waived, U09 inspected at 1024 and 1440 px, P18 a dependency upgrade only. The user states the exceptions for each sitting.
-- **U09 and U10: DECIDED by the user on 2026-10-23. Not started.**
-  - **U09 (Sonnet, small UI): why a Trip cannot be recalculated** (option A). One status line under the "Run Times Have Changed" indicator lists the distinct reasons from `inspectStaleTrips` (the message texts exist from P07). Reuse the existing notice/status line styling; no new component. Acceptance: when at least one Trip is flagged and its profile cannot calculate it, the line names each distinct reason once; with no such Trip nothing is shown; a browser test covers both; keyboard and screen-reader behavior as the other status lines (plain text, no focus trap). Verification: UI rules, visual check at 1024 and 1440 px.
+- **U09 and U10: DECIDED by the user on 2026-10-23. U09 is done; U10 is not started.**
+  - **U09 (Sonnet, small UI): why a Trip cannot be recalculated** (option A). **DONE in U09 (`PENDING`).** One status line under the "Run Times Have Changed" indicator lists the distinct reasons from `inspectStaleTrips` (the message texts exist from P07). Reuse the existing notice/status line styling; no new component. Acceptance: when at least one Trip is flagged and its profile cannot calculate it, the line names each distinct reason once; with no such Trip nothing is shown; a browser test covers both; keyboard and screen-reader behavior as the other status lines (plain text, no focus trap). Verification: UI rules, visual check at 1024 and 1440 px.
   - **U10 (Opus, UI design, beyond the scope of a fix; user will review the result afterward): redesign the Shift drawer.** The overlap of the open drawer with the Runtime Save and Discard buttons is **accepted as is** (option D); do not solve it as a goal of U10 unless the redesign does so as a side effect. The user's brief: the drawer wastes white space; the shifting control (left and right buttons and an up/down minute selector) is confusing; the drawer is valuable because the planner sees the effect of a shift on the Trips table, and that must stay. Wanted: a much more discreet control and a more intuitive increment selector. The agent decides the design and records the options it rejected. Constraints: the preview-then-apply behavior, Undo and Redo (U07), the net-shift label (`formatNetShift`, `formatStagedShift`), the minute parsing rules (`parseShiftSeconds`), keyboard and screen-reader operation, and the existing specs (`workflow-section-layout.spec.ts` asserts the right-docked drawer; it may change only with a recorded reason). Verification: UI rules plus screenshots at 1024 and 1440 px before and after, and the interaction written up so the user can review it.
 - **P18 (Vitest major upgrade, 5 advisories in the `vitest` chain):** its own package, not mixed with feature work (user decision 5 below). Not started.
 - Known failures: `tests/ui/route-editing.spec.ts:6` failed once in the D01 full run (150 passed, 1 failed): after "Save nodes" for Node B, the click on "Add pattern" opened no draft ("New Pattern — not saved" never appeared). It passed 100 of 100 times alone (`--repeat-each=20 --workers=8` and `--repeat-each=80 --workers=16`). The probable cause is the L-16 race that `tests/ui/support/tripsWorkspace.ts` already works around (a save's reload lands after the next step starts); that helper retries the click, and this spec does not. D01 changed no code. See the D01 entry. `unified-action-layer.spec.ts:139` passed. If it returns, diagnose it as a package failure and fix the code.
@@ -2186,6 +2186,67 @@ Also done (D01 text in `fix-packages.md`): `phase-05-costing.md` and `phase-05-c
 - Decision 0011 and 0012 have no exact date in the repository; the Date lines say so rather than guess a day.
 - `docs/implementation/phase-02-*.md` and other historical plans were not edited; they are history.
 - The overview and glossary were not re-read line by line beyond the passages the ten findings cite.
+
+## U09: Why a Trip cannot be recalculated
+
+- Date: 2026-10-23. Sitting 4K part 2. Model: Sonnet (main session). No sub-agents.
+- Type: UI (small). Severity: S3. Defined by the user's decision of 2026-10-23 (item 8 of the user decisions in the Next sitting note; option A for U07 blocked item 2). `docs/review/fix-packages.md` has no U09 entry.
+- Commit: `PENDING`.
+
+### What was wrong
+
+The "Run Times Have Changed" indicator said that Trips were stale but not why a Trip could not be recalculated. A planner who narrowed a Runtime band so that a departure no longer had a band saw the indicator, tried **Regenerate selected**, and had no explanation. `inspectStaleTrips` already reported such reasons, but only for legacy Trips that record no runtime source. Trips built by the current code record their source, so a changed revision marked them stale without trying to calculate them, and no reason was produced for the case that matters most.
+
+### Decision implemented
+
+Option A (user, 2026-10-23): one status line under the indicator lists the distinct reasons from `inspectStaleTrips`. No new component. With no such Trip, nothing is shown.
+
+### What changed
+
+- `src/application/tripGenerationService.ts` (`inspectStaleTrips`): a Trip that is stale because its profile, or its profile's calculation revision, differs from the runtime it was built from is now also tried against the current profile. If the profile cannot calculate it, the finding is reported, as for a Trip with no recorded source. The set of stale Trips is unchanged; only findings are added. This is the one application-layer change; U09 does not own the file, so it is a recorded hand-off (the minimum change the decision needs).
+- New `src/ui/staleTripReasons.ts` (pure): `staleTripNotice` collects, for the Trips shown in the selected Direction, the count of affected Trips and each distinct reason once, in the order the reasons first appear; `staleTripNoticeText` words it ("1 Trip cannot be recalculated. ..." or "N Trips cannot be recalculated. ..."). Both band findings (`trip.anchorNoRuntime`, `runtime.noApplicableBand`) read "No Runtime band covers its first departure. Add or extend a Runtime band." because the anchor wording of the existing message ("Choose another anchor") does not fit this status line. Every other finding uses the existing text of `userMessage`.
+- `src/ui/App.tsx`: `loadTrips` calls `inspectStaleTrips` instead of `listStaleTrips` and keeps the notice in state; one `<p className="section-status" role="status">` under the indicator shows it. The existing `section-status` style is reused; there is no new class and no new component.
+- `docs/ui-conventions.md`: the "Run Times Have Changed" bullet describes the line.
+
+### Behavior before and after
+
+- Before: indicator only. After, with a Runtime band narrowed so that two of three departures have no band: the indicator, then "2 Trips cannot be recalculated. No Runtime band covers its first departure. Add or extend a Runtime band." The third Trip is stale but calculable and is not counted.
+- With every stale Trip calculable (for example a longer segment runtime), nothing changes: the indicator alone.
+
+### Tests added
+
+- `src/ui/staleTripReasons.test.ts` (4 tests): empty when no shown Trip carries a finding; a Trip counts once and a reason is named once however many Trips and findings share it; distinct reasons appear in first-seen order and Trips that are not shown are ignored; singular and plural wording.
+- `src/application/tripGenerationService.test.ts` (+1 test): a Trip that records its source and that the narrowed profile cannot calculate carries a finding; a stale Trip that it can calculate carries none.
+- `tests/ui/stale-trip-reasons.spec.ts` (2 tests, real app and IndexedDB): the reason line appears with the exact text for two Trips and disappears when the band is extended; a Runtime change that every Trip can follow shows the indicator without a line.
+
+### Deliberate breaks (each applied, run, and restored from a saved copy)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| Reasons, unit | a reason is listed once per finding (no de-duplication) | 1 unit test fails; the browser test fails (the text repeats) |
+| Reasons, unit | findings of Trips that are not shown are counted | 2 unit tests fail |
+| Status line (browser) | the line is not rendered | the browser test fails |
+| Service finding | `inspectStaleTrips` as before (no finding for a Trip with a recorded source) | the new service unit test fails; the first browser run, made before the service change, failed at the same point |
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 52 files, 752 tests passed (747 before: +4 in `staleTripReasons.test.ts`, +1 in `tripGenerationService.test.ts`).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 153 passed, 0 failed (4.6 minutes); 151 before plus 2 new tests. No existing spec changed. No `test.fail`, `test.skip`, or `test.fixme`. `unified-action-layer.spec.ts:139` and `route-editing.spec.ts:6` passed.
+- New browser spec, stress run `--repeat-each=10 --workers=8`: 20 of 20 passed.
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-Be19ICCN.js` 807.23 kB (806.22 kB before).
+- Visual inspection at 1024 and 1440 px (images in the session scratchpad only, not committed):
+  - `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/u09-reason-line-1024.png`
+  - `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/u09-reason-line-1440.png`
+  - `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/u09-indicator-only-1024.png` and `u09-indicator-only-1440.png` (the unchanged state when every stale Trip can be calculated), in the same folder.
+  - What I saw: the line is one sentence of plain 14 px text on its own row between the amber indicator and the table grid, left aligned with the indicator and the grid. At 1024 and 1440 px it stays on one line, with no wrap and no horizontal scroll. The indicator, the row markers ("Run times changed"), and the grid are unchanged.
+
+### Hand-offs and residual risks
+
+- The line does not say which Trips are affected, only how many; the stale row marker is unchanged. A per-row reason was not requested.
+- Only the two band findings have wording written for this line. Any other finding that `inspectStaleTrips` can report (for example a Pattern whose points no longer match) shows its existing `userMessage` text, which is worded for other dialogs and may not read well here.
+- The line is announced as a status (`role="status"`) when it appears, like the other Trips status lines. It was not checked with a screen reader.
+- `inspectStaleTrips` now runs the calculation for every Trip that is stale by revision. The calculation is pure and cheap; no timing was measured at the 2,000-Trip capacity fixture.
 
 ## Register map
 
