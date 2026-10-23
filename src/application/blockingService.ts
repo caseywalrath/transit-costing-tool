@@ -4,6 +4,7 @@ import { applyTripAssignment, assertBlockingScenarioSourceUnchanged, classifyBlo
 import type { BlockingActivityEditRequest, BlockingAssignmentRequest, BlockingBulkAssignmentRequest, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingCompatibility, BlockSummary, BlockingSummary, BlockingTripsAssignmentRequest, MinimumLayoverRule } from '../domain/blocking';
 import { newId, withUpdatedAt } from '../domain/ids';
 import { blockingActivitiesCsv, blockingBlocksCsv, blockingScenariosCsv, blockingSummariesCsv } from '../persistence/csv';
+import { publishWrites, SaveStatusPublisher } from './saveStatus';
 
 export interface BlockingContextProvider {
   getTrip(id: string): Promise<Trip | undefined>;
@@ -26,9 +27,17 @@ function removeSelectedTripsFromBlock(block: BlockingBlock, tripIds: Set<string>
   return normalizeBlockActivities(withUpdatedAt({ ...block, activities: activities.filter((activity) => !removeActivityIds.has(activity.id)) }));
 }
 
+/** The `BlockingRepository` methods that write. Every call to one is published through the save-status publisher. */
+export const BLOCKING_WRITE_METHODS: readonly string[] = ['saveBlockingScenario', 'saveBlockingScenarioGraphAtomically', 'deleteBlockingScenarioAtomically', 'saveBlockingBlocksAtomically'];
+
 /** Application coordinator for lifecycle and transactional Blocking operations. */
 export class BlockingApplicationService implements BlockingCommands, BlockingQueries {
-  constructor(private readonly repository: BlockingRepository, private readonly context: BlockingContextProvider) {}
+  private readonly repository: BlockingRepository;
+
+  /** `saveStatus` is the one publisher of the visible save status, shared with the other services that write (Decision 0001, amendment). */
+  constructor(repository: BlockingRepository, private readonly context: BlockingContextProvider, saveStatus: SaveStatusPublisher = new SaveStatusPublisher()) {
+    this.repository = publishWrites(repository, saveStatus, BLOCKING_WRITE_METHODS);
+  }
 
   async createBlockingScenario(request: BlockingScenarioCreateRequest): Promise<BlockingScenario> {
     const siblings = await this.repository.listBlockingScenarios(request.scenarioId);
@@ -210,6 +219,25 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
   async getBlockSummary(blockingScenarioId: string, blockId: string): Promise<BlockSummary | undefined> { const [scenario, block] = await Promise.all([this.repository.getBlockingScenario(blockingScenarioId), this.repository.getBlockingBlock(blockId)]); if (!scenario || !block) return undefined; const trips = await this.context.listTrips(scenario.scenarioId, scenario.tripProfileId); return summarizeBlock(block, { scenario: { id: scenario.scenarioId }, blockingScenario: scenario, trips, patterns: await this.context.listPatterns(scenario.scenarioId) }); }
   async getScenarioSummary(blockingScenarioId: string, serviceDayId?: string): Promise<BlockingSummary | undefined> { const scenario = await this.repository.getBlockingScenario(blockingScenarioId); if (!scenario) return undefined; const blocks = await this.repository.listBlockingBlocks(blockingScenarioId, serviceDayId); return summarizeBlockingScenario(scenario, blocks, { trips: await this.context.listTrips(scenario.scenarioId, scenario.tripProfileId), patterns: await this.context.listPatterns(scenario.scenarioId) }); }
   async classifyInsertion(blockingScenarioId: string, blockId: string, tripId: string, insertAt?: number, minimumLayover?: MinimumLayoverRule): Promise<BlockingCompatibility> { const [scenario, block, trip] = await Promise.all([this.repository.getBlockingScenario(blockingScenarioId), this.repository.getBlockingBlock(blockId), this.context.getTrip(tripId)]); if (!scenario || !block || !trip) return { status: 'incomplete', findings: [] }; return classifyBlockingInsertion({ block, insertAt, trip, trips: await this.context.listTrips(scenario.scenarioId, scenario.tripProfileId), patterns: await this.context.listPatterns(scenario.scenarioId), minimumLayover }); }
+  /**
+   * Classifies every listed Trip against one Block, reading the Blocking Scenario, the Block, the Trips, and the Patterns once.
+   * A Trip that is not in the Scenario's Trip Profile is looked up on its own, as `classifyInsertion` does; one that cannot be found is
+   * incomplete. When the Blocking Scenario or the Block is gone, every Trip is incomplete and nothing else is read.
+   */
+  async classifyInsertions(blockingScenarioId: string, blockId: string, tripIds: string[], insertAt?: number, minimumLayover?: MinimumLayoverRule): Promise<Map<string, BlockingCompatibility>> {
+    const ids = [...new Set(tripIds)];
+    const incomplete = (): BlockingCompatibility => ({ status: 'incomplete', findings: [] });
+    const [scenario, block] = await Promise.all([this.repository.getBlockingScenario(blockingScenarioId), this.repository.getBlockingBlock(blockId)]);
+    if (!scenario || !block || !ids.length) return new Map(ids.map((id) => [id, incomplete()]));
+    const [trips, patterns] = await Promise.all([this.context.listTrips(scenario.scenarioId, scenario.tripProfileId), this.context.listPatterns(scenario.scenarioId)]);
+    const byId = new Map(trips.map((item) => [item.id, item]));
+    const result = new Map<string, BlockingCompatibility>();
+    for (const id of ids) {
+      const trip = byId.get(id) ?? await this.context.getTrip(id);
+      result.set(id, trip ? classifyBlockingInsertion({ block, insertAt, trip, trips, patterns, minimumLayover }) : incomplete());
+    }
+    return result;
+  }
   async exportBlockingScenarioCsv(blockingScenarioId: string): Promise<Array<{ suffix: 'blocking-scenarios' | 'blocking-blocks' | 'blocking-activities' | 'blocking-summaries'; contents: string }>> {
     const scenario = await this.repository.getBlockingScenario(blockingScenarioId);
     if (!scenario) throw new Error('Blocking Scenario not found.');

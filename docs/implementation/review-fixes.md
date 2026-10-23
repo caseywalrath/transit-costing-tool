@@ -2,34 +2,45 @@
 
 ## Next sitting
 
-**Sitting 4E: P09 (Application validation and deletion reviews), P10 (Save status and local-data protection), P11 (Blocking and Costing read paths).** Main session: Sonnet. No sub-agents: none of these packages is S0 or S1 (sitting plan). Run them in this order: P09 depends on P01 and P07, P10 on P02 and P09, P11 on P10.
+**Sitting 4F: P12 (Blocking calculation rules and finding shape), P13 (CSV serializers), P14 (Blocking rules into `blockingService`), B01 (CI, typecheck scope, and dependencies).** Main session: Sonnet. Sub-agents: Haiku for the P13 file moves only (sitting table). None of these packages is S0 or S1, so there is no Opus review. Run them in this order: P12, P13, P14, B01. B01 turns on CI.
 
-- Work branch: `claude/stage-4e-review-fixes`, created from current `origin/main`.
-- Prerequisite: the sitting 4D pull request (branch `claude/stage-4d-review-fixes`) and the follow-up that records the Option B decision (commit `9f863d9`) must be merged into `main`. If either is not, stop and ask the user. Start 4E from current `origin/main`.
-- State after 4D: the full browser suite is green and stays green. 61 tests, 61 passed; no `test.fail`, `test.skip`, or `test.fixme`. Every later package must keep 0 failures (`PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`). Unit tests: 33 files, 420 tests, about 9 s. Bundle after P08: `index-VVj0arcS.js` 772.60 kB.
-- New in 4D that 4E relies on:
-  - Unit tests run on `fake-indexeddb` (`vitest.config.ts`). `src/persistence/repositoryContract.test.ts` runs each test against both repositories; any new repository method goes into both repositories and into that suite. Both repositories return rows in primary-key order, which is random for generated ids: do not assert list order in a test (Decision 0040; `codex.md` "Unit tests that need IndexedDB"). P09's deletion review tokens and P10's save publisher may add repository methods, and `ports.ts` is theirs but the repositories are not on their owned lists: record the hand-off.
-  - `TripGenerationService` has `inspectStaleTrips` (stale Trips plus findings), `TripPatternChangeReview` (signed review), and a Trips CSV signature that covers Patterns (P07). `updateServiceDay` and the other whole-Scenario writes already re-read stored data (P01).
-- Browser-test helpers (all in `tests/ui/support/`): `dexieEnv.ts` (`runInPage`, `seedSnapshot`: real IndexedDB from a spec), `goldenFixture.ts` (the Federal BRT project), and from 4C `tripsWorkspace.ts` (`createRouteWithPattern`, `createShiftReadySchedule`, `openGoldenTrips`, `settleFrames`). New browser specs should use them. `createRouteWithPattern` creates the Default Runtime profile itself, before the Trips tab first mounts, to avoid the race in hand-off 1 below; do not remove that step until the race is fixed.
-- P09 specifics: `rebalanceDependentService` in `routeDefinitionService.ts` passes only the rebalanced profiles to `rebalanceTripForPattern`, which infers "was current" as `recorded === revision - 1` (P07 hand-off). If P09 changes that call, pass the pre-edit profiles. Acceptance criterion 3 makes deletions take a required review token, so the deletion callers in `App.tsx` must pass the token from the preview they already show: wire one call per caller without changing layout or interaction, and record it as a hand-off. P09 also provides the query U07 needs for I-041 (every service day that shares a Runtime profile). The Runtime first-visit race in the carried-forward decision below is P09's if the user assigns it.
-- P10 specifics: the quota simulation is `p6-quota.spec.ts` in the review's golden folder; port it with `tests/ui/support/`.
-- P11 specifics: `main.tsx` holds the costing context builder to move; the two capacity specs are `p6-capacity-latency.spec.ts` and `p6-costing-timing.spec.ts` (golden). `BlockingWorkspace.tsx` (the classification call only) and `CostingWorkspace.tsx` (port calls only) are the only UI files.
+- Work branch: the user names it in the prompt (suggested `claude/stage-4f-review-fixes`), created from current `origin/main`.
+- Prerequisite: the sitting 4E pull request (branch `claude/stage-4e-review-fixes`: P09 `fd1e65b`, P10 `2eb3439`, P11 `82bd08a`, and the closing commit that records the hashes) must be merged into `main`. If it is not, stop and ask the user. Start 4F from current `origin/main`.
+- State after 4E: the full browser suite is green and stays green. 77 tests, 77 passed; no `test.fail`, `test.skip`, or `test.fixme` (about 2.8 minutes). Every later package must keep 0 failures (`PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`). Unit tests: 36 files, 502 tests, about 9 s. Bundle after P11: `index-Xh7-lYti.js` 782.90 kB.
+- New in 4E that 4F relies on:
+  - **Findings (P12).** `ServiceDayValidationError` in `routeDefinitionService.ts` is a typed error that carries `ValidationFinding[]`; the Blocking error P12 adds can follow it. `CostingQueries.validateAssumptions` (P11) returns `CostingFinding[]`; when P12 gives `CostingFinding` the `ValidationFinding` shape, update that return type in `ports.ts` and `costingService.ts` (neither is on P12's owned list: make the minimum change and record the hand-off). `CostingWorkspace.tsx` only reads `validation.length`.
+  - **Save status (P14).** Each service names the repository methods it publishes: `ROUTE_DEFINITION_WRITE_METHODS`, `TRIP_GENERATION_WRITE_METHODS`, `BLOCKING_WRITE_METHODS`, `COSTING_WRITE_METHODS`. A guard test in `src/application/saveStatus.test.ts` fails for a repository method whose name starts with `save`, `delete`, `insert`, `replace`, `commit`, `update`, `restore`, or `copy` and is in no list. A new Blocking repository write must be listed in `BLOCKING_WRITE_METHODS`.
+  - **Deletion reviews (P14).** `src/application/reviewToken.ts` (`fingerprint`, `assertReviewCurrent`) and Decision 0041. The six deletions of P09 take a review token. P14's `previewDeleteBlock` and `previewDeleteBlockingScenario` return counts; if the deletion the planner confirms is meant to match that review, use the same helper.
+  - **Blocking (P14).** `BlockingQueries.classifyInsertions` (P11) is the one call `BlockingWorkspace.tsx` makes to review the unassigned Trips; keep it.
+  - **Costing (P12, P14).** The context builder is `src/application/costingContext.ts`. The Costing screen reads its rules from `CostingQueries` (`validateAssumptions`, `summarizeServiceDays`, `listServiceYears`, `normalizeFutureYearCount`).
+  - **B01 (typecheck scope).** The new specs and `tests/ui/support/capacityFixture.ts` (which uses explicit `any`) will be type-checked when B01 widens `pnpm typecheck` to `tests/ui`; fix any error there as B01's minimum change. In this environment the browser suite needs `PLAYWRIGHT_CHROMIUM_EXECUTABLE`; a GitHub runner does not (`codex.md`).
+  - Tests: `tests/ui/capacity-read-paths.spec.ts` asserts Trip-read counts and loose time limits on the development server; the 1 s and 2 s targets are met in the production build only (P11 entry, "Deviation from the criterion").
+- Open questions for the user (none blocks 4F). Both are in the P09 entry, "Residual risks":
+  1. `deletePattern` has no review token, though it deletes Runtime profiles, assignments, and Trips and changes Blocks. Suggested: add it to P14 or a small later package.
+  2. The legacy per-field route mutators (`updatePattern`, `addNode`, and the others listed there) still bypass the preview and the Pattern validation (the second half of finding 4-020); only unit tests use them. Suggested: delete them and move those fixtures to preview and commit, or keep them as test helpers.
+- Hand-offs from 4E for later sittings (details in the P09 to P11 entries):
+  - **U02:** show `getLocalDataProtection()` ("Last backup: <date and time>" or "No backup exported yet"; the persistence answer if wanted); add `QuotaExceededError`, `VersionError`, and `UnknownError` to the `showError` filter; present the read-only status before the header's "Local save failed" that a rejected write now also sets.
+  - **U05:** the Node editor's impact dialog does not list `nonRevenueImpact`; the Trip profile confirmation does not mention `blockingScenarioCount`; the Runtime profile and Trips delete dialogs stay open with the old review after a refusal.
+  - **U06:** show each `ServiceDayValidationError` finding beside its field.
+  - **U07:** the shared-profile line should call `listRuntimeProfileServiceDays` (I-041).
+  - Persistence (no owner yet): `listProfileTrips` in `main.tsx` loads every Trip of the Scenario and filters by Trip Profile in memory; a compound index on Scenario and Trip Profile would avoid reading Trips of other profiles.
+  - Unexplained: one timeout in 50 runs of `local-data-protection.spec.ts` (P10 entry); it did not return in 100 later runs.
 - Hand-offs from 4D for later sittings (details in the P06 to P08 entries):
   - **Decided by the user on 2026-10-23 (Option B), for U07 (sitting 4I).** Under a segment-start or blended profile, an anchor that fits two first departures is rejected and the candidates are listed (user decision 3). A planner cannot pick one of the listed candidates for those methods; Decision 0031 keeps manual band override for single-band profiles only. The Recalculate dialog must therefore hide its band picker for segment-start and blended Trips, say plainly that the fixed time can be reached two ways, and rely on the options it already has: "Use first departure for this trip", choosing another anchor, or revising the bands. No domain change is needed. See "Added acceptance criteria" below and the Decision 0031 addendum.
   - U07: the React error boundary; user-facing text for `tripShift.timeBeforeServiceDay` and for the findings of `inspectStaleTrips`.
   - P16: the golden "DEFECT 2-007" test (gap-midpoint tie between `segmentStart` and blend) was not ported with the `segmentStart` matrix.
   - Not covered by the contract suite: the legacy generation-set methods and `saveBlocks`.
-- **Decision for the user (found in 4C, not in the register).** Two app behaviors surfaced while making the browser suite reliable; see "Residual risks, hand-offs, and findings" in the P05 entry. (1) `ensureDefaultRuntimeProfile` is a non-atomic check-then-write that runs twice at once on the first visit to Trips (React `StrictMode` in development; also after a Runtime save): it can store duplicate Runtime assignments (8 instead of 4), show "Duplicate runtime assignment", and reset the Runtime editor draft. Suggested owner: P09 (owns `routeDefinitionService.ts`), with the single-flight load in `App.tsx` going to U07. (2) After a Runtime profile is saved, the Trips table keeps the profiles it loaded earlier, so Show runtime bands shades nothing until a reload. Suggested owner: U07 (or P15). Neither blocks P06 to P08.
-  - Status after 4D: unchanged by P06 to P08. The first behavior is P09's if assigned, with the single-flight load in `App.tsx` going to U07; the second is U07's or P15's.
-- Still carried forward from 4B, unchanged: enforce Block label uniqueness when a Block is created or renamed (Decision 0039), as an added acceptance criterion of Package P14 (sitting 4F), with a proposed default label of the first free "Block <n>"; clean-up of placeholder Blocks already stored in databases that imported version 3 and 4 files (no owner yet); presenting the import report and recovery findings (U02).
+- Status of the 4C decision (two app behaviors, "Residual risks, hand-offs, and findings" in the P05 entry): the service part of the Runtime first-visit race is fixed (P09, below); its single-flight load in `App.tsx` is U07's. After a Runtime profile is saved, the Trips table keeps the profiles it loaded earlier, so Show runtime bands shades nothing until a reload: U07's or P15's.
+- Still carried forward from 4B, unchanged: enforce Block label uniqueness when a Block is created or renamed (Decision 0039), as an added acceptance criterion of Package P14 (this sitting), with a proposed default label of the first free "Block <n>"; clean-up of placeholder Blocks already stored in databases that imported version 3 and 4 files (no owner yet); presenting the import report and recovery findings (U02).
 - Tests deferred to later packages (all recorded in the P05 entry): focus trap, Escape, and focus return (U04's `keyboard.spec.ts`); a unit test for `calculateTimepointHeadways` (P15); Annual cost visible without table scroll at 1024 px (U06).
+- Unit-test and browser-test conventions are in "Standing rules" below and in `codex.md`. Browser-test helpers (all in `tests/ui/support/`): `dexieEnv.ts` (`runInPage`, `seedSnapshot`), `goldenFixture.ts` (the Federal BRT project), `tripsWorkspace.ts` (`createRouteWithPattern`, `createShiftReadySchedule`, `openGoldenTrips`, `settleFrames`), and from 4E `capacityFixture.ts` (400 Blocks, 2,000 Trips).
 - Review documents: read them from the review branch with `git show origin/claude/upbeat-ritchie-51mpy5:docs/review/<file>`. Never copy `docs/review/` into the work branch.
 
 ### Added acceptance criteria
 
 Items that the user assigned to later packages. They are added to those packages' acceptance criteria and stay here, unchanged, until the owning package lands. The bullets above that describe them are carried forward verbatim.
 
-- **P09 (sitting 4E), the service part of the Runtime first-visit race.** `ensureDefaultRuntimeProfile` is a check-then-write that is not atomic, and two overlapping calls can store duplicate Runtime assignments. Make it idempotent: one check-and-write in a single transaction, so two calls at once leave one Default profile and one assignment per standard Service day, and "Duplicate runtime assignment" cannot appear. Add a test that runs two calls at the same time against both repositories. P09 does not change `App.tsx`. Do not remove the up-front Default Runtime profile step or the reload after the Runtime save in `tests/ui/support/tripsWorkspace.ts`; U07 removes them.
+- **P09 (sitting 4E), the service part of the Runtime first-visit race. DONE in P09 (commit `fd1e65b`).** `ensureDefaultRuntimeProfile` is a check-then-write that is not atomic, and two overlapping calls can store duplicate Runtime assignments. Make it idempotent: one check-and-write in a single transaction, so two calls at once leave one Default profile and one assignment per standard Service day, and "Duplicate runtime assignment" cannot appear. Add a test that runs two calls at the same time against both repositories. P09 does not change `App.tsx`. Do not remove the up-front Default Runtime profile step or the reload after the Runtime save in `tests/ui/support/tripsWorkspace.ts`; U07 removes them.
 - **P14 (sitting 4F):** enforce Block label uniqueness when a Block is created or renamed (Decision 0039), with a proposed default label of the first free "Block <n>".
 - **U07 (sitting 4I):**
   - the single-flight Runtime load in `App.tsx` (the other half of the race above), then remove the two test-helper steps named above;
@@ -687,3 +698,314 @@ User decision implemented: decision 3 (reject and list the candidates).
 - A request of 500 Trips or fewer that the Last Trip limit now allows is unchanged; a planner who needs a day of one-minute headway builds it in two requests.
 - The shift bound is checked on the Trips the Shift selects, at preview and at commit. The legacy `previewTripShift` (used only by tests since X01) still calls `shiftTrips` without the bound; it has no caller in the application.
 - What could still be wrong: negative times that already exist in stored data (from the old defect) are not repaired. The app could only reach them by committing a staged Shift, which the old UI could not do (the page crashed first), so none is expected; a hand-made backup could still carry one, and `validateTrip` now reports it only where a caller validates (CSV import).
+
+## P09: Application validation and deletion reviews
+
+- Date: 2026-10-23. Sitting 4E. Model: Sonnet (main session). No sub-agents: P09 is S2, so no Opus review (sitting plan).
+- Type: structural. Severity: S2.
+- Commit: `fd1e65b`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-009 | A-005, 4-005 | S2 | `updateServiceDay` saved a count above 365 (as a total), negative, fractional, or `NaN`, and a blank or untrimmed name. The Costing estimate then turned invalid with no edit-time message. |
+| I-018 | 3-007 | S2 | Deleting a Node in the Node editor left pull-out, pull-in, and deadhead activities pointing at the deleted Node (138 for a garage Node in the golden project), and the review did not report them. |
+| I-027 | 4-011, 4-012 | S2 | Deletion reviews were incomplete. The Trip profile token was optional and ignored Blocking Scenarios, so an empty Blocking Scenario created after the review was deleted silently. `deleteTrips` removed Block activities its review had not shown. Route, Scenario, Runtime profile, and Project deletions had no token. |
+| I-052 | 1-006 | S3 | The overview said annual counts are "capped at 365"; the code treats a total above 365 as an error. |
+| I-078 | 4-020 | S3 | `renameScenario` accepted a blank name. (The second half of the finding, the legacy per-field mutators, is not in the package's acceptance criteria; see the residual risks.) |
+
+Also done, as assigned:
+
+- **Added acceptance criterion from the 4C decision (the service half of the Runtime first-visit race).** `ensureDefaultRuntimeProfile` is one check-and-write in a single transaction. Marked done below.
+- **Criterion 5:** a query that returns every Service day that shares a Runtime profile, for U07 (I-041, 02R-AC18).
+
+No user decision applied beyond the assignment of the race to this package (4C decision bullet).
+
+### What changed
+
+- `src/application/routeDefinitionService.ts`:
+  - `updateServiceDay` accepts only `name` and `annualServiceDays` (the only two fields any caller patches; other fields are ignored). A blank name, a count that is not a whole number of 0 or more, and a total above 365 are refused with `ServiceDayValidationError`, whose `findings` use the existing finding shape (`ruleId`, `entityType: 'serviceDay'`, `entityId`, `field`, `parameters`) and whose message is plain language ("Annual service days cannot total more than 365. This change would make the total 504."). A name is trimmed. A refused edit writes nothing and publishes no save status. A total that is already above 365 (saved before this check) may be reduced in steps but not raised, so a planner can correct it. An unchanged patch still writes nothing.
+  - `renameScenario` rejects a blank name ("Scenario name is required", the message `createScenario` uses) and trims.
+  - Node deletion: `applyNodeChanges` removes the pull-out, pull-in, and deadhead activities that name a deleted Node (the Blocks stay and their remaining activities are renumbered). `NodeChangePreview.nonRevenueImpact` reports `{ blockIds, removedActivityCount }`. The route-edit signature also covers Blocks that name a Node of the Route, so a Block that changed after the review makes the commit refuse.
+  - Deletion reviews: `getProjectDeletionImpact`, `getScenarioDeletionImpact`, `getRouteDeletionImpact`, and `getRuntimeProfileDeletionImpact` return a `reviewToken`; `deleteProject(projectId, reviewToken)`, `deleteScenario(scenarioId, reviewToken)`, `deleteRoute(routeId, reviewToken)`, and `deleteRuntimeProfile(profileId, replacementProfileId, reviewToken)` require it. What each token covers is in Decision 0041. Route deletion and its review now come from one private plan (`planRouteDeletion`), so the review cannot disagree with the deletion; the review's numbers are unchanged.
+  - `ensureDefaultRuntimeProfile` computes what is missing from the stored Scenario and, only when something is missing, applies the same computation inside `updateScenarioRecords` (which re-reads the stored records in the write transaction). A call that finds everything in place writes nothing and publishes no save status.
+  - `listRuntimeProfileServiceDays(profileId)`: every Service day assigned the profile, in the canonical order. Added to `RouteDefinitionApplication`.
+- `src/application/tripGenerationService.ts`: `previewTripProfileDeletion` reads the Scenario's Blocking Scenarios, reports `blockingScenarioCount`, and signs the profile, the other profiles, its Trips, its Blocks, its Blocking Scenarios, and its stale Trips. `deleteTripProfile(profileId, previewToken)` requires the token (it was optional). `previewTripDeletion` returns a `reviewToken` over the Trips and every Block that would lose an activity; `deleteTrips(tripIds, reviewToken)` requires it.
+- New `src/application/reviewToken.ts`: `fingerprint` (a stable 53-bit hash of record sets ordered by id; 17 ms for the 984 Trips and 69 Blocks of the golden project), `assertReviewCurrent`, and `DeletionReviewStaleError` ("The <thing> deletion review is out of date. Review the impact again.").
+- `src/ui/App.tsx` (wiring only; no layout, state, or interaction changed): the six deletion callers pass the token from the preview they already hold (Project, Scenario, Route, Runtime profile, Trips; the Trip profile caller already did). The two pieces of state that keep a review (`profileDeletionImpact`, `tripDeletion`) carry the token.
+- `ports.ts` needed no change: tokens live in the services.
+- Documentation: Decision 0041 (new); `architecture_overview.md` (the 365 rule, deletion reviews and Node deletion, atomic default provisioning).
+
+### Behavior before and after (what you will see)
+
+- Service days table: typing a count that would push the total above 365 (or a negative or fractional count) is refused and the error banner says why; before, it saved and Costing turned invalid. A blank service day name is refused and a name is trimmed. The table does not yet show the message beside the field (U06).
+- Rename scenario with a blank name is refused.
+- Saving the Node editor after deleting a Node that pull-outs, pull-ins, or deadheads name now removes those activities; before, they stayed and pointed at a Node that no longer existed. The impact dialog does not list them yet (hand-off below).
+- Every deletion is checked against its review. If the data changed after the planner opened the confirmation, the app shows "The route deletion review is out of date. Review the impact again." (or scenario, project, runtime profile, Trip, Trip profile) and deletes nothing. After such a refusal the Runtime profile and Trips delete dialogs stay open with the old review; Cancel and open them again.
+- Opening Trips for the first time no longer risks eight stored assignments, a second Default profile, or the "Duplicate runtime assignment" banner.
+
+### Tests added
+
+- `src/application/routeDefinitionService.test.ts` (32 new test runs):
+  - "Service day and Scenario validation" (9): total above 365 refused with a field finding and no save status; a total of exactly 365 and a lower total accepted; `-5`, `1.5`, `NaN`, and `Infinity` refused; blank name refused, name trimmed, both fields reported at once; a total already above 365 comes down in steps but cannot be raised; `renameScenario` blank and trim.
+  - "Node deletion removes the non-revenue activities that name the Node", on the in-memory and the Dexie repository (4 × 2): the review lists Blocks and the activity count and writes nothing; commit removes them, keeps the Blocks, renumbers, leaves no reference; a Block that changed after the review makes the commit refuse; deadhead and pull-in activities of a Node that a Pattern also uses are counted.
+  - "Deletion reviews carry a required token" (5): Project, Scenario (not invalidated by a change in another Scenario), Route (a late Trip; a Block it would change), and Runtime profile (profile rename; assignment change) are refused when stale and accepted with a fresh review; every deletion refuses a missing, empty, or foreign token.
+  - "Default Runtime profile provisioning under overlapping calls", on both repositories (4 × 2): 2 and 5 calls at once leave one Default profile and four assignments, one per standard Service day, and every call returns the same ids; a later call changes nothing and publishes no save status; an existing profile is kept and resized to a longer Pattern.
+  - "Service days that share a Runtime profile" (2): the canonical order, a second profile on Saturday only, an unused profile, and an unknown profile.
+- `src/application/tripGenerationService.test.ts`, "Trip deletions carry a required review token" (7): an empty Blocking Scenario created after the review keeps the profile and the Blocking Scenario (A1-07); `blockingScenarioCount` and the full branch deleted with a current token; a Block of the Blocking Scenario changed after the review; a missing or empty token refused; Trips refused when a Block that uses one is saved after the review (A1-06); refused when a Trip changed, accepted with a fresh review that lists the Block; a token from another selection refused.
+- `src/persistence/repositoryContract.test.ts` (1 test, 2 runs): overlapping `updateScenarioRecords` calls each see the other's write.
+- `tests/ui/deletion-reviews.spec.ts` (5 tests, real app on IndexedDB): Delete route (with 3 Trips) after the review; Delete route refused after a Trip was added, then accepted with a fresh review; Delete scenario refused after a Service day of it changed, then accepted; Delete selected Trips refused after a Block that uses one was saved, then accepted with the Block shown; Delete runtime profile refused after the profile changed, then accepted with a replacement.
+
+### Tests first: what failed on the current code
+
+- Unit, the final tests run against the original source of the four changed files (and without `reviewToken.ts`): 36 of the 157 tests in the five affected test files failed. They are 35 of the 41 new runs and the one existing test that now expects a review token (`deletes selected trips and removes their revenue activities`). The 6 new runs that passed are controls: a total of exactly 365 and a lower total are accepted; a later `ensureDefaultRuntimeProfile` changes nothing and an existing profile is kept and resized (each on both repositories); the Dexie run of the overlapping-update contract test. The overlapping-call tests failed with "Duplicate runtime assignment for <pattern>:<service day>", the banner of the 4C finding, on the in-memory and on the Dexie repository (2 and 5 calls). All 7 Trip deletion tests failed (an optional token let `deleteTripProfile('tp2', undefined)` delete the profile).
+- The contract test failed on the old in-memory repository (`expected ['+c'] to equal ['+a', '+b', '+c']`: two of three overlapping updates were lost) and passed on Dexie. The in-memory `updateScenarioRecords` yielded between its read and its write.
+- Found by self-review and covered by a test that failed first: a Block that names a Node of the Route and changed after a Node review was not in the route-edit signature, so the commit removed activities the review had not shown.
+
+### Deliberate breaks (each applied to the source, the tests run, and the source restored)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| Service day validation | the validation before the write and the re-check inside the write both removed | 7 fail |
+| Service day validation | only the validation before the write removed (the re-check inside the write still refuses) | 1 fails: a refused edit must not start a save |
+| Service day count format | the whole-number-of-0-or-more check removed | 5 fail |
+| Service day total rule | the `> 365` condition replaced by false | 2 fail |
+| Blank service day name | the name check removed | 1 fails |
+| Blank scenario name | the check removed | 1 fails |
+| Node deletion commit | blocks left unchanged in `applyNodeChanges` | 1 fails (per repository, so 2 runs) |
+| Node deletion review | `nonRevenueImpact` empty | 2 fail |
+| Deletion token check | `assertReviewCurrent` does nothing | 5 fail |
+| Route token | changed Blocks left out of the fingerprint | 1 fails |
+| Scenario token | Blocks left out | 1 fails |
+| Trip profile token | Blocking Scenarios left out | 1 fails |
+| Trips token | Blocks left out | 1 fails |
+| Race tests | the write ignores the second computation (`() => unchanged.records`) | 4 fail |
+| Runtime query | assignments of other profiles included | 1 fails |
+| Contract: overlapping updates | in-memory `updateScenarioRecords` awaits the read again | 1 fails |
+| Browser spec | `assertReviewCurrent` does nothing | the 4 refusal tests fail (Delete route plain passes) |
+| Browser spec | `App.tsx` passes the token `'wrong'` for Route, Scenario, Trips, and Runtime profile | all 5 fail |
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 33 files, 461 tests passed (420 before; 41 new runs: 32 in `routeDefinitionService.test.ts`, 7 in `tripGenerationService.test.ts`, 2 contract runs; the existing tests that now take a token are not new). Three runs in a row, 8.5 s each.
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 66 passed, 0 failed (2.5 minutes); 61 before plus the 5 new tests. No `test.fail`, `test.skip`, or `test.fixme`. One earlier run failed 2 tests in `single-tab.spec.ts`; see the fixture change below.
+- New spec stress run: `--repeat-each=10 --workers=8`, 50 of 50 passed (1.7 minutes).
+- `pnpm build`: succeeds (existing chunk-size warning only). Bundle `index-DQ_m5s4t.js` 777.85 kB (772.60 kB before P09, +5.25 kB; the review-token module, the validation, the single plan for Route deletion, and the provisioning plan).
+
+### Fixture change forced by the intended behavior (assertion kept)
+
+`tests/ui/single-tab.spec.ts` (two tests) typed the value `256` into the Weekday annual count to produce an edit that only the read-only guard should refuse. The golden project's counts total exactly 365 (255 + 52 + 52 + 6), so 256 makes 366 and the new validation refuses it first, with a different message. The value is now `254` (total 364) and the second assertion reads `not.toBe(254)`. Every assertion about the read-only rejection is unchanged.
+
+### Hand-offs (files outside the package's owned list; minimum change each)
+
+- `src/persistence/inMemoryRepository.ts`: `updateScenarioRecords` now reads, changes, and writes without yielding (the read and the write were already synchronous inside `async` methods; the extra `await` between them is gone). Without it the in-memory repository loses an update under overlapping calls, which Dexie's transaction already prevents. `getScenarioRecords` and `saveScenarioRecords` are now thin wrappers over private synchronous methods. No behavior of the other methods changed. The new contract test is in `src/persistence/repositoryContract.test.ts`.
+- `src/persistence/repositoryContract.test.ts`: `deleteScenario` takes a token (one call). `src/application/tripProfile.test.ts` and `src/application/authoritativeTripService.test.ts` (tests of `TripGenerationService`): the calls that delete now take the token of a review taken first; assertions unchanged except that the expected review now includes `reviewToken: expect.any(String)`.
+- New `src/application/reviewToken.ts` (not on the owned list): the helper is shared by the two services.
+- New `tests/ui/deletion-reviews.spec.ts`: the package lists no browser spec; the six `App.tsx` callers it wires needed one.
+- UI packages (not done here, by design):
+  - **U05 (destructive actions):** the Node editor's impact dialog does not list `nonRevenueImpact` (Blocks and activities removed); the Trip profile confirmation does not mention `blockingScenarioCount`; the Runtime profile and Trips delete dialogs stay open with the old review after a refusal (close them, or refresh the review). The other confirmations close on confirm.
+  - **U06:** the Service days table shows the message in the error banner. Showing each `ServiceDayValidationError` finding beside its field is U06's (acceptance criterion 1).
+  - **U07:** the shared-profile line should call `listRuntimeProfileServiceDays` (I-041).
+
+### Residual risks
+
+- Pattern deletion (`deletePattern`) has no review token. It is the same defect class (it deletes Runtime profiles, assignments, Trips, and changes Blocks). Package P09's list names six deletions and Pattern is not among them, so it is not changed. Suggested owner: the user's choice (a small addition to P09's pattern, or P14).
+- The legacy per-field route mutators (`updatePattern`, `addNode`, `updateNode`, `addPattern`, `addPatternPoint`, `updatePatternPoint`, `movePatternPoint`, `removePatternPoint`, `createReversePattern`, `duplicatePattern`, and the Direction ones) still bypass the preview and the Pattern validation (the second half of finding 4-020). The application does not call them; only unit tests use them to build fixtures, and `addPatternPoint` itself builds a Pattern up through `updatePattern`, so a two-point minimum cannot be added there without rewriting those fixtures. Left for a decision: delete them and move the fixtures to preview/commit, or leave them as test helpers.
+- `ensureDefaultRuntimeProfile` now writes through `saveScenarioRecords`, which validates every Runtime profile of the Scenario and rewrites the Scenario's rows once, only when something is missing (first visit to a Pattern, or a resize). The application cannot store an invalid profile (`saveRuntimeProfile` refuses it), so no Scenario is expected to hold one; if one did, creating a Default profile for another Pattern would fail until it is corrected. Like every Scenario-wide write (Decision 0036), it reads and writes the whole Scenario.
+- A review token is a fingerprint of the stored records, so any change to a record it covers, even a harmless one, refuses the deletion and asks for a new review. That is the intended fail-safe.
+- The single-flight load in `App.tsx` (the other half of the race) and the two steps in `tests/ui/support/tripsWorkspace.ts` remain for U07, as the added criterion requires. With the service fixed, the app's own first-visit creation path is now correct, but the browser helper still creates the defaults first.
+- The P07 hand-off about `rebalanceDependentService` does not apply: P09 did not change that call.
+
+## P10: Save status and local-data protection
+
+- Date: 2026-10-23. Sitting 4E. Model: Sonnet (main session). No sub-agents: P10 is S2, so no Opus review (sitting plan).
+- Type: structural. Severity: S2.
+- Commit: `2eb3439`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-023 | 4-006 | S2 | Only Route saves published the visible save status. 33 repository writes in the Trips, Blocking, and Costing services never showed "Saving locally…" or "Local save failed", and an error status stayed until the next Route save. |
+| I-045 | 6-003 | S2 | The application never asked the browser to keep its store, never recorded when a backup was last exported, and showed the browser's raw text ("The current transaction exceeded its quota limitations. QuotaExceededError: …") when a write failed because the store was full. |
+
+User decisions implemented: decision 11 (the save status covers every write: Route, Trips, Blocking, and Costing) and decision 16 (request persistent storage, map quota errors to plain guidance, remember the time of the last backup). Decision C5 (the shared Pages origin) is recorded in the Decision 0001 amendment, with no code change, as approved.
+
+### What changed
+
+- New `src/application/saveStatus.ts`:
+  - `SaveStatusPublisher`: the one publisher of the save status. `run(write)` publishes `saving`, then `saved` (with the time) or `error` (with the message), and rethrows. The status is `saving` while any write is in flight, and a burst that contained a failure ends as `error`, so overlapping writes cannot hide a failure. `error` stays until the next successful write.
+  - `StorageFullError` and `isQuotaExceeded`: a quota failure (`QuotaExceededError` by name, DOMException code 22, a wrapper's `inner` or `cause`, or a message that names it) becomes `StorageFullError`, message "Browser storage is full. Export a backup, then free space.", with the original kept as `cause`. Other errors pass through unchanged.
+  - `publishWrites(repository, publisher, writes)`: returns the repository with the listed write methods run through the publisher. The Trips, Blocking, and Costing services use it, so no call site has to remember to publish. A method that is not listed, or that the repository lacks, is returned as it is.
+  - `LocalDataProtectionService`: after the first successful save on a browser profile it calls `navigator.storage.persist()` once (not when the store already reports itself persistent) and records `granted`, `denied`, or `unavailable`. A recorded answer is not asked for again; `requestPersistentStorage()` is available for a planner action. `recordBackupExported()` records the time. It implements the new `LocalDataProtectionQueries` port.
+- `src/application/ports.ts`: `LocalDataProtection`, `LocalDataProtectionQueries`, `LocalDataProtectionStore`, and `StorageManagerPort` (the part of `navigator.storage` the application uses, so the application layer does not touch the browser).
+- `src/application/routeDefinitionService.ts`: takes the shared publisher (and the protection service) as constructor arguments; `save` runs through it; `exportProject` records the backup time; `getLocalDataProtection` and `subscribeToLocalDataProtection` (also on `RouteDefinitionApplication`) give the screen the port without a new prop. The list `ROUTE_DEFINITION_WRITE_METHODS` names the repository writes this service publishes explicitly.
+- `src/application/tripGenerationService.ts`, `blockingService.ts`, `costingService.ts`: take the shared publisher and wrap their repository with `publishWrites` (`TRIP_GENERATION_WRITE_METHODS`, `BLOCKING_WRITE_METHODS`, `COSTING_WRITE_METHODS`). No write method body changed. Each defaults to its own publisher, so existing callers and tests are unaffected.
+- `src/main.tsx`: creates one `SaveStatusPublisher` and one `LocalDataProtectionService` (with the `localStorage` store and `navigator.storage`) and passes them to the four services.
+- New `src/persistence/localDataProtectionStore.ts` (not on the owned list): `LocalStorageDataProtectionStore` keeps the record under `transit-costing-tool.local-data-protection.v1`, like the selection preferences. A missing, unreadable, or wrong-shaped value reads as empty (each field is checked), and a failed write is ignored.
+- Documentation: Decision 0001 amendment (decision 11, decision 16, C5 including the shared-origin risk); `architecture_overview.md` (persistence section).
+
+### Behavior before and after (what you will see)
+
+- A Trips, Blocking, or Costing write now shows "Saving locally…" in the header while it runs, and "Local save failed" if it fails, until the next successful write. Before, only Route saves did.
+- A write that fails because the browser store is full now says "Browser storage is full. Export a backup, then free space." in the error banner. Before, it showed the browser's text.
+- A Blocking write that is refused because its source changed after the review also shows "Local save failed" (the refusal happens inside the write).
+- The first time anything is saved on a browser profile, the browser may be asked to keep the store (Firefox shows a permission prompt; Chromium decides silently). Nothing on screen says so yet.
+- Exporting "Backup project JSON" records the time on the device. Nothing on screen shows it yet (U02).
+
+### Tests added
+
+- `src/application/saveStatus.test.ts` (19 tests):
+  - `SaveStatusPublisher` (6 tests, 10 runs counting the five quota shapes): saving then saved with the time; a failure is rethrown unchanged and stays until a later success; overlapping writes stay `saving` until the last ends, a failure in the burst ends it as `error`, and a new burst starts clean; five quota shapes become `StorageFullError` with the plain message and the original as `cause`; other errors and an already-mapped error pass through, and a self-referencing error does not loop; the after-save hook runs once per successful burst and not after a failure.
+  - `LocalDataProtectionService` (4): persistence asked once after the first save with the answer recorded, however many saves follow; a refusal is recorded and not asked again on a later start, while an explicit request still asks; no request when the store is already persistent, and `unavailable` for a missing, empty, or throwing browser API; the backup time is recorded, keeps the persistence answer, and tells subscribers.
+  - "Every write of the four services publishes through one publisher" (5): one write in each service publishes saving and saved; a failed write in each service is a `StorageFullError` and the one status shows it, and the next write clears it; `exportProject` records the time through the Route service, a failed export does not, and the record is exposed; every write-like method (names beginning `save`, `delete`, `insert`, `replace`, `commit`, `update`, `restore`, `copy`) of the Dexie and in-memory route repositories and the Dexie and in-memory Blocking repositories is classified in one of the four lists, so a new write method fails the test until a service publishes it; a full Route workflow on the Dexie repository (create, duplicate, rename, edit, runtime, Node commit, import, three deletions) runs every repository write inside a published save.
+- `src/persistence/localDataProtectionStore.test.ts` (7 tests): round trip; `not json`, `null`, `[]`, a string, and a record with wrong field types each read as empty; a partly valid record keeps its valid fields; a storage that throws, or is missing, reads as empty and ignores a write.
+- `tests/ui/local-data-protection.spec.ts` (5 tests, real app on IndexedDB; the quota simulation is ported from the review's `p6-quota.spec.ts`):
+  - a full store, for a Route edit, Build Trips, New Block, and a Costing save: each starts from a clean status, shows the plain message and "Local save failed", stores nothing, and after the store has room again the same action succeeds and the status clears;
+  - a successful write in each of the four services shows "Saving locally…" in the one indicator (a transaction held open for 0.8 s makes the saving state last, because a fast write can finish before React draws it);
+  - the browser is asked once after the first save, not by later saves, and not again after a reload;
+  - a refusal and a browser without the request are recorded and not repeated;
+  - "Backup project JSON" records the time within the test's window, and the backup file does not contain it.
+
+### Tests first: what failed on the current code
+
+The final tests, run against the source of the package-P09 commit (the new modules present but not wired in):
+
+- Unit: 5 of the 26 new tests failed (one write per service; a failed write per service; the backup time; the write classification; the Route workflow). The other 21 test the new modules themselves, which did not exist before, so they pass on arrival and are shown by the deliberate breaks below.
+- Browser: all 5 failed.
+
+### Deliberate breaks (each applied, run, and restored)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| Publisher | quota errors not mapped | 5 fail |
+| Publisher | a failed write of a burst forgotten | 8 fail |
+| Write gate | `publishWrites` publishes nothing | 2 fail |
+| Persistence request | no once-only guard | 2 fail |
+| Backup time | `exportProject` does not record | 1 fails |
+| Route writes | `save` does not publish | 2 fail |
+| Write classification | `insertTripsAtomically` removed from the Trips list | 1 fails |
+| Store | any `persistentStorage` value accepted | 2 fail |
+| Browser, quota and indicator tests | the Trips service not given the shared publisher | both fail (first run of the quota test passed this break: the status was still `error` from the Route step, so the test was restructured to start each step from a clean status, and the break then failed it) |
+| Browser, quota and indicator tests | the Blocking service not given the shared publisher | the quota test fails (checked before the Costing leg was restored) |
+| Browser, quota and indicator tests | the Costing service not given the shared publisher | both fail |
+| Browser, persistence tests | no after-save hook in `main.tsx` | 2 fail |
+| Browser, backup test | `exportProject` does not record | 1 fails |
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 35 files, 487 tests passed (461 before; 26 new: 19 in `saveStatus.test.ts`, 7 in `localDataProtectionStore.test.ts`). Three runs in a row.
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 71 passed, 0 failed (2.7 minutes); 66 before plus the 5 new tests. No `test.fail`, `test.skip`, or `test.fixme`.
+- New spec stress runs, `--repeat-each=10 --workers=8`: the final form passed 50 of 50, then 49 of 50 (one timeout in the indicator test at the Trips step, 240 s, cause not found), then 50 of 50 with traces, and the indicator test alone 10 of 10. A final run is recorded in the P11 entry. Earlier forms of the spec failed in the Costing step; see "Costing save and I-044" below.
+- `pnpm build`: succeeds (existing chunk-size warning only). Bundle `index-CgKt-qRs.js` 781.75 kB (777.85 kB before P10, +3.90 kB).
+
+### Costing save and I-044 (a finding made while testing)
+
+A Costing save is slow when the Costing estimate is working. On the unchanged `origin/main` (ee0d61c), a probe that fills the rate and clicks Save on the golden project, run 16 times with 8 browsers sharing the machine, did not store the assumption within 8 seconds in 8 of the 16 runs; with the 90-second allowance used in the new spec, every run completed. The save is a read-write transaction, and the estimate (finding 6-002 / I-044, fixed by Package P11) issues about 800 reads per build that the transaction waits behind. I did not measure the queue directly; the evidence is the timing, the identical result before this package, and the fact that Route, Trips, and Blocking saves under the same load were never slow. While the save waits, the Save button and the header show "Saving…". The new spec gives its Costing steps 90 seconds and says why. P11 should make them fast.
+
+### Hand-offs and what the next packages must know
+
+- New file outside the owned list: `src/persistence/localDataProtectionStore.ts` and its test (the `localStorage` implementation of the port; the application layer stays free of browser APIs).
+- **U02:** show `getLocalDataProtection()` (available on the `service` object that `App` already holds): "Last backup: <date and time>" or "No backup exported yet" under "Backup project JSON", and the recorded persistence answer if wanted. Add `QuotaExceededError`, `VersionError`, and `UnknownError` to the technical-error filter of `showError` as U02 criterion 4 says; the new storage-full message does not match the filter, so it already reaches the banner.
+- **U02:** a read-only tab's rejected write now also sets the header status to "Local save failed" (the message is the read-only text); present the read-only status before that.
+- The constructor argument order changed: `RouteDefinitionService(repository, backup, now, saveStatus, protection)`, `TripGenerationService(repository, now, saveStatus)`, `BlockingApplicationService(repository, context, saveStatus)`, `CostingApplicationService(contextQueries, assumptionsRepository, now, saveStatus)`. All new arguments are optional.
+- P11 moves the Costing context builder out of `main.tsx`; the shared publisher stays wired as it is.
+
+### Residual risks
+
+- Real quota exhaustion was not reproduced here. Chromium's DevTools quota override did not block writes (a Costing save under it simply finished), so the browser spec uses the review's simulation (the store's `put` and `add` throw the error a full store raises). A real full store aborts the transaction asynchronously; `isQuotaExceeded` looks through Dexie's `inner` and `cause` chain and accepts the error name, the code 22, or a message that names it, which covers the shapes Dexie and IndexedDB produce, but it was proven with those shapes, not with a real failure.
+- The backup time is recorded when the backup text is produced, not when the download finishes. A download that the planner cancels is still counted; the application cannot observe a download.
+- `navigator.storage.persist()` in Firefox shows a permission prompt the first time. The answer is recorded and the request is not repeated, so a planner who dismisses the prompt is not asked again unless a later screen offers the request.
+- The `error` status stays until the next successful write, as before for Route saves. A planner who sees "Local save failed" and then does not save again keeps seeing it. The error banner carries the specific message.
+- The single timeout in the 49-of-50 stress run (an unrelated `selectOption` at the Trips step) was not reproduced in the roughly 70 runs of the same spec that followed (50 with traces, 10 of the indicator test alone, and the full-suite run). Its cause is unknown; I treat it as load on the shared machine, with that uncertainty recorded.
+- What could still be wrong: a repository write added later under a name that does not begin with one of the eight prefixes the classification test looks for would not be caught by it.
+
+## P11: Blocking and Costing read paths
+
+- Date: 2026-10-23. Sitting 4E. Model: Sonnet (main session). No sub-agents: P11 is S2, so no Opus review (sitting plan).
+- Type: structural. Severity: S2.
+- Commit: `82bd08a`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-043 | 6-001, 4-008 | S2 | The Blocking screen checked every unassigned Trip against the selected Block with one `classifyInsertion` call each, and each call re-read every Trip and Pattern of the Scenario. At capacity (400 Blocks, 2,000 Trips, 300 unassigned) that was 302 reads of the Trips and about 23 seconds before "Assign" was ready. |
+| I-044 | 6-002 (structural part) | S2 | The Costing context in `main.tsx` summarized each Block on its own, and each summary re-read every Trip and Pattern. At capacity that was 401 reads of the Trips and about 30 seconds before the estimate appeared. The same reads queued ahead of a Costing save (see the P10 entry, "Costing save and I-044"). |
+| I-074b | 4-014 (Costing items) | S3 | `CostingWorkspace.tsx` validated the assumptions, summed the annual service days, checked the 365-day limit, built the list of service years, and clamped the future years itself. |
+| I-080 | 4-023 | S3 | The Costing context builder lived in `main.tsx` (the composition root), where it could not be tested without the browser. |
+
+### What changed
+
+- `src/application/blockingService.ts` and `ports.ts`: `classifyInsertions(blockingScenarioId, blockId, tripIds, insertAt?, minimumLayover?)` returns a map from Trip id to compatibility. It reads the Blocking Scenario and the Block, then the Trips and the Patterns once, and classifies every Trip from that read. A Trip that is not in the Scenario's Trip Profile is looked up on its own, as `classifyInsertion` does, and a Trip that cannot be found is `incomplete`. When the Blocking Scenario or the Block is gone, every Trip is `incomplete` and nothing else is read. `classifyInsertion` (one Trip) is unchanged.
+- New `src/application/costingContext.ts`: `buildCostingCalculationContext(sources, scenarioId, blockingScenarioId)` and `createCostingContextQueries(sources)`. The Trips and the Patterns are read once per build and every Block is summarized from that read with `summarizeBlockingScenario`. A Blocking Scenario of another Scenario, a missing Scenario, and a missing Trip Profile each give `undefined`. `main.tsx` now only supplies the sources (`CostingContextSources` in `ports.ts`).
+- `src/application/costingService.ts` and `ports.ts` (`CostingQueries`): `validateAssumptions`, `summarizeServiceDays` (total, maximum 365, whether the total is above it), `listServiceYears`, and `normalizeFutureYearCount` (a whole number from 0 to 10; not-a-number gives 0). They use the domain constants and `validateCostingAssumptions`.
+- `src/ui/BlockingWorkspace.tsx`: the compatibility effect makes one `classifyInsertions` call instead of one `classifyInsertion` call per Trip (4 lines).
+- `src/ui/CostingWorkspace.tsx`: the five rules above are read from `costingService` (14 lines). The Total cell reads `annualDays.total`. Nothing else in the file changed.
+- `src/main.tsx`: the context builder moved out; `listProfileTrips` and `listScenarioPatterns` are the two shared reads for the Blocking and Costing sources.
+- Documentation: `architecture_overview.md` (Costing data flow).
+
+### Behavior before and after (what you will see)
+
+- Blocking, with a Block selected and many unassigned Trips: "Assign" is ready sooner. At capacity: 23.1 s before, 1.4 to 6.3 s after on the development server with eight browsers sharing the machine, and 0.57 to 0.70 s in the production build on an idle machine.
+- Costing at capacity: the estimate appears in 0.4 to 1.3 s (development server, eight browsers) instead of 30 s. A Costing save no longer waits behind the estimate.
+- Nothing else changes on screen. The Costing values are pinned by the new browser spec, which passes against both the old and the new `CostingWorkspace.tsx`.
+
+### Deviation from the criterion
+
+Criterion 1 says Assign is enabled within 1 s. The built application meets it (0.57 to 0.70 s, idle machine). The browser spec runs on the Vite development server, where React `StrictMode` runs every effect twice and the code is not minified: 1.2 to 1.4 s on an idle machine, and up to 6.3 s with eight browsers. A 1 s limit there would fail for the machine's load, not for a defect, so the committed spec asserts what the defect is (the number of Trip reads) with a loose time limit of 15 s (Blocking) and 10 s (Costing), a third of the old times. The production numbers above are the evidence for the 1 s and 2 s targets. They were measured once, by hand, and are not asserted by any test.
+
+### Tests added
+
+- Unit, `src/application/blockingService.test.ts` (4 tests, "Batch insertion classification"): the result for every listed Trip equals the result of `classifyInsertion` for it, from one read of the Trips and the Patterns; the Trips are read once however many Trips are classified, and a duplicate id is classified once (read counts, not time); a Trip it cannot find is `incomplete` after a single lookup for it; a missing Blocking Scenario or Block gives `incomplete` for every Trip without reading the Trips.
+- Unit, `src/application/costingContext.test.ts` (7 tests, two Scenarios and two Trip Profiles, four Blocking Scenarios): the context holds only the selected Blocking Scenario, its Trip Profile, its Trips and Blocks, and its Scenario; each of the four Blocking Scenarios gets its own data; each Block's summary equals the Blocking service's summary for that Block; the Trips and the Patterns are read once per build however many Blocks there are; a Blocking Scenario of another Scenario, an unknown one, or one whose Scenario or Trip Profile is gone gives `undefined`; a Blocking Scenario of another Scenario is ignored even when a source returns it; the queries list the Blocking Scenarios of one Scenario only.
+- Unit, `src/application/costingService.test.ts` (4 tests, "assumption and service-day rules the screen reads from the service"): `validateAssumptions` returns what the domain returns; `summarizeServiceDays` totals the days against the 365-day limit; `listServiceYears` starts at the first year of service and has one more year than the number of future years; `normalizeFutureYearCount` gives a whole number from 0 to 10.
+- Browser, `tests/ui/capacity-read-paths.spec.ts` (2 tests, the golden specs `p6-capacity-latency.spec.ts` and `p6-costing-timing.spec.ts` ported) with the new support file `tests/ui/support/capacityFixture.ts` (four Service days of 100 Blocks and 500 Trips each, so 400 Blocks and 2,000 Trips; with 2 Trips per Block 300 Trips per day stay unassigned; Trips in a Block are 90 minutes apart so every Block is valid): reads of the Trips store while the tab opens (at most 16 for Blocking, at most 8 for Costing; measured 3 and 1) and a loose time limit; every unassigned Trip is reviewed.
+- Browser, `tests/ui/costing-rules-from-service.spec.ts` (4 tests, golden project): the day counts and the total "365 / 365" in the valid style; a saved total above 365 marked invalid; the year list starts at the first year of service and Future Years clamps to 0 to 10; a rate year after the first year of service blocks Save and shows the explanation.
+
+### Tests first: what failed on the current code
+
+- Unit: all 15 new tests fail on the unfixed code, because the new module and methods do not exist there. That shows only that they are new; what each one guards is shown by the deliberate breaks below, and the old behavior (one read per Trip, one per Block) is shown by the capacity spec on the unfixed source.
+- Capacity spec on the unfixed source (`origin/main` plus P09 and P10), one worker: both tests failed on the read count: Blocking 302 reads and 23,140 ms; Costing 401 reads and 30,315 ms.
+- Costing display spec on the unfixed source: passes. It is a characterization of values that must not change; it passes against the old and the new `CostingWorkspace.tsx`, and fails when the service rules are broken (below).
+
+### Deliberate breaks (each applied, run, and restored from a saved copy)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| Batch classification | reads the Trips once per Trip | 3 fail |
+| Batch classification | no single-Trip fallback for a Trip outside the Trip Profile | 1 fails |
+| Costing context | reads the Trips once per Block | 1 fails |
+| Costing context | accepts a Blocking Scenario of another Scenario | 1 fails |
+| Costing context | reads the Trips of every Trip Profile | 2 fail |
+| Costing rules | `validateAssumptions` returns no findings | 1 fails |
+| Costing rules | the day total never exceeds the limit | 1 fails |
+| Costing rules | the year list omits the first year's future years (`+ 1` removed) | 1 fails |
+| Costing rules | Future Years not clamped | 1 fails |
+| Costing display spec | `>` changed to `>=` in the 365 check | the 365 / 365 test fails |
+| Costing display spec | `+ 1` removed from the year list | the year-list test fails |
+| Costing display spec | the Future Years clamp removed | the clamp test fails |
+| Capacity spec | the unfixed source (per-Trip classification and per-Block summaries) | both fail (302 and 401 reads) |
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 36 files, 502 tests passed (487 before; 15 new: 4 + 7 + 4). Three runs in a row.
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 77 passed, 0 failed (2.8 minutes); 71 before plus the 6 new tests. No `test.fail`, `test.skip`, or `test.fixme`.
+- New spec stress runs, `--repeat-each=10 --workers=8`: `costing-rules-from-service.spec.ts` 40 of 40; `capacity-read-paths.spec.ts` 20 of 20 (Blocking 1.4 to 6.3 s with 3 reads of the Trips; Costing 0.4 to 1.3 s with 1 read).
+- P10 spec after P11: `local-data-protection.spec.ts` 50 of 50 with the unchanged 90 s allowance, then 50 of 50 after the allowance was cut to 30 s (the Costing save is no longer slow) and its comment was brought up to date. The P10 timeout that was never explained did not return in these 100 runs.
+- `pnpm build`: succeeds (existing chunk-size warning only). Bundle `index-Xh7-lYti.js` 782.90 kB (781.75 kB after P10, +1.15 kB).
+
+### Hand-offs
+
+- `tests/ui/local-data-protection.spec.ts` (P10's file): the Costing allowance went from 90 s to 30 s and its comment was updated, as the P10 entry said P11 should allow.
+- Costing screen wording: the alert "Review the rate, years, horizon, and escalation…" and the "Total n / 365" display keep their text. The values come from the service; the wording was not touched.
+
+### Residual risks
+
+- The 1 s and 2 s targets are asserted only as read counts and loose limits in the browser spec; the production numbers are a manual measurement.
+- `classifyInsertions` takes the Block and the Trips as stored at the time of the call; like `classifyInsertion`, it does not re-check them when the answer is used. The Blocking write path still refuses a stale source (the source signature).
+- Real capacity for the Dexie reads is bounded by `listProfileTrips`, which loads every Trip of the Scenario and filters by Trip Profile in memory. At 2,000 Trips that is one read; at much larger sizes it would read more than it needs. A compound index on Scenario and Trip Profile would avoid it and is not part of this package.

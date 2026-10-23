@@ -209,7 +209,7 @@ export function App({ service, tripService, blockingService, costingService }: P
     if (!selectedProject) return;
     void service.getProjectDeletionImpact(selectedProject.id).then((impact) => {
       const summary = `${impact.scenarioCount} scenario${impact.scenarioCount === 1 ? '' : 's'}, ${impact.routeCount} route${impact.routeCount === 1 ? '' : 's'}, ${impact.patternCount} pattern${impact.patternCount === 1 ? '' : 's'}, ${impact.tripCount} trip${impact.tripCount === 1 ? '' : 's'}, and ${impact.blockCount} Block${impact.blockCount === 1 ? '' : 's'}`;
-      setConfirm({ title: 'Delete project?', text: `Delete “${selectedProject.name}” and its ${summary}? All related service days, runtime and Trip profiles, Blocking Scenarios, and costing data will also be deleted. This cannot be undone.`, confirmLabel: 'Delete project', action: () => { void service.deleteProject(selectedProject.id).then(async () => { setActiveTab('route'); await reload(selectedProject.id); }).catch((error) => showError(error, 'Unable to delete project.')); } });
+      setConfirm({ title: 'Delete project?', text: `Delete “${selectedProject.name}” and its ${summary}? All related service days, runtime and Trip profiles, Blocking Scenarios, and costing data will also be deleted. This cannot be undone.`, confirmLabel: 'Delete project', action: () => { void service.deleteProject(selectedProject.id, impact.reviewToken).then(async () => { setActiveTab('route'); await reload(selectedProject.id); }).catch((error) => showError(error, 'Unable to delete project.')); } });
     }).catch((error) => showError(error, 'Unable to review project deletion.'));
   }
   async function addScenario(name: string) { if (!selectedProject) return; try { const next = await service.createScenario(selectedProject.id, name); await reload(selectedProject.id, next.scenario.id); } catch (error) { showError(error, 'Unable to create scenario.'); } }
@@ -230,7 +230,7 @@ export function App({ service, tripService, blockingService, costingService }: P
         impact.tripCount ? `${impact.tripCount} trip${impact.tripCount === 1 ? '' : 's'}` : '',
         impact.blockCount ? `${impact.blockCount} block${impact.blockCount === 1 ? '' : 's'}` : '',
       ].filter(Boolean);
-      setConfirm({ title: 'Delete scenario?', text: `Delete “${records.scenario.name}”${affected.length ? ` and its ${affected.join(', ')}?` : '?'} All service days and remaining scenario data will also be deleted. This cannot be undone.`, confirmLabel: 'Delete scenario', action: () => { void service.deleteScenario(records.scenario.id).then(async () => { setActiveTab('route'); await reload(projectId); }).catch((error) => showError(error, 'Unable to delete scenario.')); } });
+      setConfirm({ title: 'Delete scenario?', text: `Delete “${records.scenario.name}”${affected.length ? ` and its ${affected.join(', ')}?` : '?'} All service days and remaining scenario data will also be deleted. This cannot be undone.`, confirmLabel: 'Delete scenario', action: () => { void service.deleteScenario(records.scenario.id, impact.reviewToken).then(async () => { setActiveTab('route'); await reload(projectId); }).catch((error) => showError(error, 'Unable to delete scenario.')); } });
     }).catch((error) => showError(error, 'Unable to review scenario deletion.'));
   }
   async function addRoute() { if (!records) return; try { const next = await service.addRoute(records); setRecords(next.records); await reload(projectId, scenarioId, next.route.id); } catch (error) { showError(error, 'Unable to add route.'); } }
@@ -248,7 +248,7 @@ export function App({ service, tripService, blockingService, costingService }: P
         impact.removedNonRevenueActivityCount ? `${impact.removedNonRevenueActivityCount} pull-out, pull-in, or deadhead activit${impact.removedNonRevenueActivityCount === 1 ? 'y' : 'ies'}` : '',
       ].filter(Boolean);
       const blockNote = impact.affectedBlockCount ? ` ${impact.affectedBlockCount} block${impact.affectedBlockCount === 1 ? '' : 's'} will remain without those trips.` : '';
-      setConfirm({ title: 'Delete route?', text: `Delete “${aggregate.route.name || 'Untitled route'}”${affected.length ? ` and its ${affected.join(', ')}?` : '?'}${blockNote} This cannot be undone.`, confirmLabel: 'Delete route', action: () => { void service.deleteRoute(aggregate.route.id).then(async () => { await reload(projectId, scenarioId); }).catch((error) => showError(error, 'Unable to delete route.')); } });
+      setConfirm({ title: 'Delete route?', text: `Delete “${aggregate.route.name || 'Untitled route'}”${affected.length ? ` and its ${affected.join(', ')}?` : '?'}${blockNote} This cannot be undone.`, confirmLabel: 'Delete route', action: () => { void service.deleteRoute(aggregate.route.id, impact.reviewToken).then(async () => { await reload(projectId, scenarioId); }).catch((error) => showError(error, 'Unable to delete route.')); } });
     }).catch((error) => showError(error, 'Unable to review route deletion.'));
   }
   async function updateServiceDay(id: string, patch: Partial<ServiceDayDefinition>) { if (!records) return; try { setRecords(await service.updateServiceDay(records, id, patch)); } catch (error) { showError(error, 'Unable to save service day.'); } }
@@ -508,13 +508,13 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
   const [loading, setLoading] = useState(false);
   const [runtimeDialog, setRuntimeDialog] = useState<NewRuntimeDialog>();
   const [deleteProfileOpen, setDeleteProfileOpen] = useState(false);
-  const [profileDeletionImpact, setProfileDeletionImpact] = useState<{ assignmentCount: number; tripCount: number }>();
+  const [profileDeletionImpact, setProfileDeletionImpact] = useState<{ assignmentCount: number; tripCount: number; reviewToken: string }>();
   const [trips, setTrips] = useState<Trip[]>([]);
   const [lastRegenerationUndo, setLastRegenerationUndo] = useState<import('../domain/types').TripRegenerationUndo>();
   const [tripImportPreview, setTripImportPreview] = useState<{ preview?: TripTableImportPreview; issues: string[] }>();
   const [tripsWithChangedRuntimes, setTripsWithChangedRuntimes] = useState<Trip[]>([]);
   const [selectedTripIds, setSelectedTripIds] = useState<string[]>([]);
-  const [tripDeletion, setTripDeletion] = useState<{ tripIds: string[]; affectedBlockIds: string[] }>();
+  const [tripDeletion, setTripDeletion] = useState<{ tripIds: string[]; affectedBlockIds: string[]; reviewToken: string }>();
   const [recalculationTripIds, setRecalculationTripIds] = useState<string[]>([]);
   const [buildOpen, setBuildOpen] = useState(false);
   const [draftTrip, setDraftTrip] = useState<{ patternId: string; firstTrip: string }>();
@@ -823,7 +823,7 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
   }
   const reverseCandidates = selectedPattern ? patterns.filter((candidate) => candidate.id !== selectedPattern.id && candidate.points.length === selectedPattern.points.length && candidate.points.every((point, index) => point.nodeId === selectedPattern.points[selectedPattern.points.length - index - 1].nodeId)) : [];
   async function requestProfileDeletion() { if (!selectedProfile) return; try { const impact = await service.getRuntimeProfileDeletionImpact(selectedProfile.id); setProfileDeletionImpact(impact); setDeleteProfileOpen(true); } catch (error) { onError(error); } }
-  async function deleteProfile(replacementProfileId?: string) { if (!selectedProfile) return; try { await service.deleteRuntimeProfile(selectedProfile.id, replacementProfileId); setDeleteProfileOpen(false); setProfileDeletionImpact(undefined); await loadRuntime(); onRuntimeChanged(); } catch (error) { onError(error, 'Unable to delete the runtime profile. Your data was not changed.'); } }
+  async function deleteProfile(replacementProfileId?: string) { if (!selectedProfile || !profileDeletionImpact) return; try { await service.deleteRuntimeProfile(selectedProfile.id, replacementProfileId, profileDeletionImpact.reviewToken); setDeleteProfileOpen(false); setProfileDeletionImpact(undefined); await loadRuntime(); onRuntimeChanged(); } catch (error) { onError(error, 'Unable to delete the runtime profile. Your data was not changed.'); } }
   async function changeTripPattern(trip: Trip, targetPatternId: string) { try { const preview = await tripService.previewTripPatternChange(trip.id, targetPatternId, directionId); if (preview.finding) { onError(new TripGenerationError([preview.finding])); return; } await tripService.changeTripPattern(preview); clearTripShiftHistory(); await loadTrips(); } catch (error) { onError(error); } }
   async function saveDraftTrip() {
     if (!draftTrip?.patternId || !draftTrip.firstTrip.trim()) return;
@@ -865,13 +865,13 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
   async function requestTripDeletion(tripIds: string[]) {
     try {
       const preview = await tripService.previewTripDeletion(tripIds);
-      setTripDeletion({ tripIds: preview.deletedTripIds, affectedBlockIds: preview.affectedBlockIds });
+      setTripDeletion({ tripIds: preview.deletedTripIds, affectedBlockIds: preview.affectedBlockIds, reviewToken: preview.reviewToken });
     } catch (error) { onError(error); }
   }
   async function deleteTrips() {
     if (!tripDeletion) return;
     setBusy(true);
-    try { await tripService.deleteTrips(tripDeletion.tripIds); setSelectedTripIds((ids) => ids.filter((id) => !tripDeletion.tripIds.includes(id))); setTripDeletion(undefined); clearTripShiftHistory(); await loadTrips(); }
+    try { await tripService.deleteTrips(tripDeletion.tripIds, tripDeletion.reviewToken); setSelectedTripIds((ids) => ids.filter((id) => !tripDeletion.tripIds.includes(id))); setTripDeletion(undefined); clearTripShiftHistory(); await loadTrips(); }
     catch (error) { onError(error); } finally { setBusy(false); }
   }
   async function completeRuntimeCopy() { await loadRuntime(); onRuntimeChanged(); }

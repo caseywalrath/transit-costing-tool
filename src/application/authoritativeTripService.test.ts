@@ -231,8 +231,9 @@ describe('authoritative trip workflow', () => {
     const generated = await service.generateTrips(request('p1', 0, 300));
     const block: Block = { ...metadata(), id: 'block', scenarioId: 'scenario', serviceDayId: 'weekday', label: '1', activities: [{ id: 'activity', type: 'revenueTrip', sequence: 0, tripId: generated.trips[0].id }] };
     repository.blocks.set(block.id, block);
-    expect(await service.previewTripDeletion([generated.trips[0].id])).toEqual({ deletedTripIds: [generated.trips[0].id], affectedBlockIds: ['block'] });
-    await service.deleteTrips([generated.trips[0].id]);
+    const review = await service.previewTripDeletion([generated.trips[0].id]);
+    expect(review).toEqual({ deletedTripIds: [generated.trips[0].id], affectedBlockIds: ['block'], reviewToken: expect.any(String) });
+    await service.deleteTrips([generated.trips[0].id], review.reviewToken);
     expect(repository.trips.has(generated.trips[0].id)).toBe(false);
     expect(repository.blocks.get('block')?.activities).toEqual([]);
   });

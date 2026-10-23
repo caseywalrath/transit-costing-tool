@@ -186,7 +186,8 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       const before = await harness.ownedCounts(copyId);
       expect((await harness.ownedCounts(sourceId)).trips).toBeGreaterThan(0);
       const backup = new ProjectBackupService((id) => repository.getProjectSnapshot(id), (snapshot) => repository.saveProjectSnapshot(snapshot));
-      await new RouteDefinitionService(repository, backup).deleteScenario(sourceId);
+      const service = new RouteDefinitionService(repository, backup);
+      await service.deleteScenario(sourceId, (await service.getScenarioDeletionImpact(sourceId)).reviewToken);
       expect(await harness.ownedCounts(sourceId)).toEqual(Object.fromEntries(SCENARIO_OWNED.map((kind) => [kind, 0])));
       expect(await harness.ownedCounts(copyId)).toEqual(before);
       expect(await repository.getScenarioRecords(sourceId)).toBeUndefined();
@@ -257,6 +258,17 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       await repository.updateScenarioRecords(scenarioId, untouched);
       expect(untouched).toHaveBeenCalledTimes(1);
       await expect(repository.updateScenarioRecords('missing', (current) => current)).rejects.toThrow('Scenario not found.');
+    });
+
+    it('overlapping updateScenarioRecords calls run one after the other, so none loses another\'s write (P09)', async () => {
+      const { snapshot, scenarioId } = fixture();
+      await repository.saveProjectSnapshot(snapshot);
+      const original = snapshot.scenarios[0].name;
+      const append = (suffix: string) => repository.updateScenarioRecords(scenarioId, (current) => ({ ...current, scenario: { ...current.scenario, name: `${current.scenario.name}${suffix}` } }));
+      await Promise.all([append('+a'), append('+b'), append('+c')]);
+      const name = (await repository.getScenarioRecords(scenarioId))!.scenario.name;
+      expect(name.startsWith(original)).toBe(true);
+      expect([...name.slice(original.length).matchAll(/\+[abc]/g)].map((match) => match[0]).sort()).toEqual(['+a', '+b', '+c']);
     });
 
     it('a write rejected for costing ownership leaves the regeneration undo in place', async () => {

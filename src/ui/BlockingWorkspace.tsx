@@ -196,8 +196,8 @@ export function BlockingWorkspace({ blockingService, tripService, aggregate, rec
     let live = true;
     setCompatibility(new Map());
     setCompatibilityPending(true);
-    void Promise.all(unassigned.map(async (trip) => [trip.id, (await blockingService.classifyInsertion(blockingScenarioId, selectedBlock.id, trip.id, undefined, minimumLayover)).status] as const))
-      .then((items) => { if (live && requestId === compatibilityRequestRef.current) { setCompatibility(new Map(items)); setCompatibilityPending(false); } })
+    void blockingService.classifyInsertions(blockingScenarioId, selectedBlock.id, unassigned.map((trip) => trip.id), undefined, minimumLayover)
+      .then((items) => { if (live && requestId === compatibilityRequestRef.current) { setCompatibility(new Map([...items].map(([tripId, item]) => [tripId, item.status] as const))); setCompatibilityPending(false); } })
       .catch((error) => { if (live && requestId === compatibilityRequestRef.current) { setCompatibilityPending(false); onError(error, 'Unable to review insertion compatibility.'); } });
     return () => { live = false; };
   }, [blockingScenarioId, selectedBlock?.id, selectedBlockActivitySignature, unassigned.map((item) => item.id).join(','), minimumLayover?.mode, minimumLayover?.value]);

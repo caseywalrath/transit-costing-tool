@@ -178,3 +178,66 @@ describe('Blocking application service', () => {
     expect(await repository.getBlockingBlock(destination.id)).toEqual(destination);
   });
 });
+
+// P11 (review issues I-043, 6-001, 4-008): the compatibility review of every unassigned Trip reads the Trips and Patterns once.
+describe('Batch insertion classification', () => {
+  const scenario = { id: 'blocking', scenarioId: 'scenario', tripProfileId: profile.id, name: 'Base', ...metadata() };
+  const tripAt = (id: string, start: number) => ({ ...trip, id, stopTimes: [{ patternPointId: 'a', sequence: 0, time: start }, { patternPointId: 'b', sequence: 1, time: start + 100 }] });
+  const existing = tripAt('existing', 1000);
+  const candidates = [tripAt('early', 100), tripAt('overlapping', 1050), tripAt('later', 5000), tripAt('latest', 9000)];
+  const trips = [existing, ...candidates];
+  const block: BlockingBlock = { id: 'block', scenarioId: 'scenario', blockingScenarioId: scenario.id, serviceDayId: 'weekday', label: '1', activities: [{ id: 'existing-activity', type: 'revenueTrip', sequence: 0, tripId: existing.id }], ...metadata() };
+  function setup(extraTrips: typeof trips = []) {
+    const calls = { listTrips: 0, listPatterns: 0, getTrip: 0 };
+    const all = [...trips, ...extraTrips];
+    const service = new BlockingApplicationService(new InMemoryBlockingRepository([scenario], [block]), {
+      getTrip: async (id) => { calls.getTrip += 1; return all.find((item) => item.id === id); },
+      listTrips: async () => { calls.listTrips += 1; return trips; },
+      getTripProfile: async () => profile,
+      listPatterns: async () => { calls.listPatterns += 1; return [pattern]; },
+    });
+    return { service, calls };
+  }
+
+  it('returns the same compatibility as one call per Trip, from one read of the Trips and Patterns', async () => {
+    const { service, calls } = setup();
+    const batch = await service.classifyInsertions(scenario.id, block.id, candidates.map((item) => item.id));
+    expect(calls).toEqual({ listTrips: 1, listPatterns: 1, getTrip: 0 });
+    expect([...batch.keys()].sort()).toEqual(candidates.map((item) => item.id).sort());
+    const single = setup();
+    for (const candidate of candidates) expect(batch.get(candidate.id)).toEqual(await single.service.classifyInsertion(scenario.id, block.id, candidate.id));
+    expect(new Set([...batch.values()].map((item) => item.status)).size).toBeGreaterThan(1);
+  });
+
+  it('reads once however many Trips are classified, and each duplicate id is classified once', async () => {
+    const { service, calls } = setup();
+    const many = Array.from({ length: 300 }, (_, index) => tripAt(`bulk-${index}`, 20000 + index * 200));
+    trips.push(...many);
+    try {
+      const batch = await service.classifyInsertions(scenario.id, block.id, [...many.map((item) => item.id), many[0].id]);
+      expect(batch.size).toBe(300);
+      expect(calls).toEqual({ listTrips: 1, listPatterns: 1, getTrip: 0 });
+    } finally { trips.length -= many.length; }
+  });
+
+  it('marks a Trip it cannot find as incomplete, falling back to a single lookup for it', async () => {
+    const outside = tripAt('other-profile-trip', 7000);
+    const { service, calls } = setup([outside]);
+    const batch = await service.classifyInsertions(scenario.id, block.id, ['early', 'missing', outside.id]);
+    expect(batch.get('missing')).toEqual({ status: 'incomplete', findings: [] });
+    expect(batch.get('early')?.status).not.toBe('incomplete');
+    expect(batch.get(outside.id)).toEqual(await setup([outside]).service.classifyInsertion(scenario.id, block.id, outside.id));
+    expect(calls.listTrips).toBe(1);
+    expect(calls.getTrip).toBe(2);
+  });
+
+  it('marks every Trip incomplete, without reading Trips, when the Blocking Scenario or Block is gone', async () => {
+    const { service, calls } = setup();
+    for (const [scenarioId, blockId] of [['gone', block.id], [scenario.id, 'gone']]) {
+      const batch = await service.classifyInsertions(scenarioId, blockId, ['early', 'later']);
+      expect([...batch.values()]).toEqual([{ status: 'incomplete', findings: [] }, { status: 'incomplete', findings: [] }]);
+    }
+    expect(calls).toEqual({ listTrips: 0, listPatterns: 0, getTrip: 0 });
+    expect((await setup().service.classifyInsertions(scenario.id, block.id, [])).size).toBe(0);
+  });
+});

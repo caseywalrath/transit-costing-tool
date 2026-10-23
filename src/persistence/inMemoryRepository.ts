@@ -66,7 +66,9 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     this.costingAssumptions.set(value.id, value);
   }
 
-  async getScenarioRecords(scenarioId: string): Promise<ScenarioRecords | undefined> {
+  async getScenarioRecords(scenarioId: string): Promise<ScenarioRecords | undefined> { return this.readScenarioRecords(scenarioId); }
+
+  private readScenarioRecords(scenarioId: string): ScenarioRecords | undefined {
     const scenario = this.scenarios.get(scenarioId);
     if (!scenario) return undefined;
     const routes = inKeyOrder(this.routes.values()).filter((route) => route.scenarioId === scenarioId);
@@ -90,7 +92,9 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     };
   }
 
-  async saveScenarioRecords(records: ScenarioRecords): Promise<void> {
+  async saveScenarioRecords(records: ScenarioRecords): Promise<void> { this.writeScenarioRecords(records); }
+
+  private writeScenarioRecords(records: ScenarioRecords): void {
     const oldRoutes = inKeyOrder(this.routes.values()).filter((route) => route.scenarioId === records.scenario.id);
     const oldRouteIds = new Set(oldRoutes.map((route) => route.id));
     const routeIds = new Set(records.routes.map((route) => route.id));
@@ -140,10 +144,11 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
   }
 
   async updateScenarioRecords(scenarioId: string, change: (current: ScenarioRecords) => ScenarioRecords): Promise<ScenarioRecords> {
-    const current = await this.getScenarioRecords(scenarioId);
+    // Read, change, and write without yielding, so overlapping calls run one after the other as Dexie's transaction makes them.
+    const current = this.readScenarioRecords(scenarioId);
     if (!current) throw new Error('Scenario not found.');
     const next = change(current);
-    if (next !== current) await this.saveScenarioRecords(next);
+    if (next !== current) this.writeScenarioRecords(next);
     return next;
   }
 

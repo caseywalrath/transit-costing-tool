@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CostingCommands, CostingQueries } from '../application/ports';
 import type { CostingAssumptionsInput, CostingBlockExclusionReason, CostingCalculationResult } from '../domain/costing';
-import { DEFAULT_COSTING_ESCALATION, roundCostingDisplay, validateCostingAssumptions } from '../domain/costing';
+import { DEFAULT_COSTING_ESCALATION, roundCostingDisplay } from '../domain/costing';
 import type { BlockingScenario, CostingAssumptions, Scenario, ServiceDayDefinition, TripProfile } from '../domain/types';
 import { createCsvArchive } from './csvDownload';
 import { MenuButton, type MenuGroup } from './MenuButton';
@@ -73,13 +73,13 @@ export function CostingWorkspace({ costingService, scenario, serviceDays, tripPr
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
-  const validation = useMemo(() => validateCostingAssumptions(assumptions), [assumptions]);
+  const validation = useMemo(() => costingService.validateAssumptions(assumptions), [assumptions, costingService]);
   const dirty = persisted ? JSON.stringify(toInput(persisted)) !== JSON.stringify(assumptions) : true;
   const hasUnsavedAssumptions = loadedAssumptions !== undefined && JSON.stringify(loadedAssumptions) !== JSON.stringify(assumptions);
   const hasUnsavedAssumptionsRef = useRef(false);
   hasUnsavedAssumptionsRef.current = hasUnsavedAssumptions;
   const tripProfile = tripProfiles.find((profile) => profile.id === blockingScenarios.find((item) => item.id === blockingScenarioId)?.tripProfileId);
-  const years = Array.from({ length: Math.max(0, assumptions.futureYearCount) + 1 }, (_, index) => assumptions.baseServiceYear + index);
+  const years = costingService.listServiceYears(assumptions);
   const selectedYear = years.includes(viewYear) ? viewYear : years[0];
   const selectedYearResult = result?.yearRows.find((row) => row.serviceYear === selectedYear);
 
@@ -167,7 +167,7 @@ export function CostingWorkspace({ costingService, scenario, serviceDays, tripPr
   if (busy) return <section className="costing-workspace"><div className="prerequisite">Loading Costing…</div></section>;
   if (!blockingScenarios.length) return <section className="costing-workspace"><div className="prerequisite"><h1>Costing</h1><p>Create a Blocking Scenario before estimating annual service cost.</p></div></section>;
 
-  const annualDays = serviceDays.reduce((sum, day) => sum + day.annualServiceDays, 0);
+  const annualDays = costingService.summarizeServiceDays(serviceDays);
   const totalDailyRevenue = result?.dailyRows.reduce((sum, row) => sum + row.revenueHoursPerDay, 0) ?? 0;
   const totalDailyPlatform = result?.dailyRows.reduce((sum, row) => sum + row.platformHoursPerDay, 0) ?? 0;
   const costingActions: MenuGroup[] = [{ label: 'Data', items: [{ id: 'export-costing', label: 'Export Costing CSV (ZIP)', disabled: saving || !result, onSelect: () => { void exportCsv(); } }] }];
@@ -181,10 +181,10 @@ export function CostingWorkspace({ costingService, scenario, serviceDays, tripPr
         <label>Rate year<input type="number" min="1" max="9999" value={assumptions.rateYear} onChange={(event) => update('rateYear', Number(event.target.value))} /></label>
         <label>Source<select value={assumptions.sourceType} onChange={(event) => update('sourceType', event.target.value as 'user' | 'ntd')}><option value="user">User entered</option><option value="ntd">NTD</option></select></label>
         <label>First Year of Service<input type="number" min="1" max="9999" value={assumptions.baseServiceYear} onChange={(event) => { const value = Number(event.target.value); update('baseServiceYear', value); setViewYear(value); }} /></label>
-        <label>Future Years<input type="number" min="0" max="10" step="1" value={assumptions.futureYearCount} onChange={(event) => { const value = Number(event.target.value); update('futureYearCount', Math.min(10, Math.max(0, Math.trunc(value)))); }} /></label>
+        <label>Future Years<input type="number" min="0" max="10" step="1" value={assumptions.futureYearCount} onChange={(event) => { const value = Number(event.target.value); update('futureYearCount', costingService.normalizeFutureYearCount(value)); }} /></label>
         <label>Inflation Rate (%)<input type="number" min="-99.99" step="0.1" value={assumptions.annualEscalation * 100} onChange={(event) => update('annualEscalation', Number(event.target.value) / 100)} /></label>
       </div>
-      <div className="costing-days" aria-label="Annual service days">{serviceDays.map((day) => <span key={day.id}><strong>{day.name}</strong> {day.annualServiceDays}</span>)}<span className={annualDays > 365 ? 'invalid' : ''}><strong>Total</strong> {annualDays} / 365</span></div>
+      <div className="costing-days" aria-label="Annual service days">{serviceDays.map((day) => <span key={day.id}><strong>{day.name}</strong> {day.annualServiceDays}</span>)}<span className={annualDays.exceedsMaximum ? 'invalid' : ''}><strong>Total</strong> {annualDays.total} / {annualDays.maximum}</span></div>
       {validation.length > 0 && <div className="costing-alert error" role="alert">Review the rate, years, horizon, and escalation. The rate year cannot be later than the base service year.</div>}
     </section>
 
@@ -192,7 +192,7 @@ export function CostingWorkspace({ costingService, scenario, serviceDays, tripPr
       <div className="section-title"><div><h2 id="costing-estimate-title" ref={estimateHeading} tabIndex={-1}>Cost Breakdown</h2><span>{selectedYearResult ? `Applied rate ${number(selectedYearResult.appliedRateUsdPerRevenueHour)} USD per Revenue Hour` : 'Enter a rate to calculate costs.'}</span></div><div className="section-header-actions"><label className="costing-year-selector">View year<select aria-label="Cost breakdown year" value={selectedYear} onChange={(event) => setViewYear(Number(event.target.value))}>{years.map((year) => <option key={year}>{year}</option>)}</select></label>{result && result.state !== 'complete' && <span className={`costing-state ${result.state}`}>{result.state === 'partial' ? 'Partial estimate' : result.state === 'invalid' ? 'Invalid inputs' : 'No estimate'}</span>}</div></div>
       {result?.state === 'noEstimate' && <div className="costing-alert warning" role="status">{result.noEstimateReason === 'rateMissing' ? 'Enter an operating cost rate to calculate costs. Service quantities remain available below.' : 'No eligible Blocks are available. Correct Blocking issues before using a cost estimate.'}</div>}
       {result?.state === 'invalid' && <div className="costing-alert error" role="alert">The estimate cannot be calculated until the listed input or source-data problems are corrected.</div>}
-      {result && result.dailyRows.length > 0 && <div className="table-scroll data-grid costing-results-table"><table><thead><tr><th>Service day</th><th>Days</th><th>Blocks</th><th>Daily Revenue Hours</th><th>Daily Platform Hours</th><th>Daily Cost</th><th>Annual Revenue Hours</th><th>Annual Platform Hours</th><th>Annual Cost (Revenue Hours)</th></tr></thead><tbody>{result.dailyRows.map((row) => { const cost = row.yearCosts.find((item) => item.serviceYear === selectedYear); return <tr key={row.serviceDayId}><th scope="row">{row.serviceDayName}</th><td>{row.annualServiceDays}</td><td>{row.eligibleBlockCount}</td><td>{number(row.revenueHoursPerDay)}</td><td>{number(row.platformHoursPerDay)}</td><td>{cost ? money(cost.costPerDayUsd) : '—'}</td><td>{number(row.annualRevenueHours)}</td><td>{number(row.annualPlatformHours)}</td><td>{cost ? money(cost.annualCostUsd) : '—'}</td></tr>; })}</tbody><tfoot><tr><th scope="row">Total</th><td>{annualDays}</td><td>{result.eligibleBlockCount}</td><td>{number(totalDailyRevenue)}</td><td>{number(totalDailyPlatform)}</td><td>—</td><td>{selectedYearResult ? number(selectedYearResult.annualRevenueHours) : number(result.dailyRows.reduce((sum, row) => sum + row.annualRevenueHours, 0))}</td><td>{selectedYearResult ? number(selectedYearResult.annualPlatformHours) : number(result.dailyRows.reduce((sum, row) => sum + row.annualPlatformHours, 0))}</td><td>{selectedYearResult ? money(selectedYearResult.annualCostUsd) : '—'}</td></tr></tfoot></table></div>}
+      {result && result.dailyRows.length > 0 && <div className="table-scroll data-grid costing-results-table"><table><thead><tr><th>Service day</th><th>Days</th><th>Blocks</th><th>Daily Revenue Hours</th><th>Daily Platform Hours</th><th>Daily Cost</th><th>Annual Revenue Hours</th><th>Annual Platform Hours</th><th>Annual Cost (Revenue Hours)</th></tr></thead><tbody>{result.dailyRows.map((row) => { const cost = row.yearCosts.find((item) => item.serviceYear === selectedYear); return <tr key={row.serviceDayId}><th scope="row">{row.serviceDayName}</th><td>{row.annualServiceDays}</td><td>{row.eligibleBlockCount}</td><td>{number(row.revenueHoursPerDay)}</td><td>{number(row.platformHoursPerDay)}</td><td>{cost ? money(cost.costPerDayUsd) : '—'}</td><td>{number(row.annualRevenueHours)}</td><td>{number(row.annualPlatformHours)}</td><td>{cost ? money(cost.annualCostUsd) : '—'}</td></tr>; })}</tbody><tfoot><tr><th scope="row">Total</th><td>{annualDays.total}</td><td>{result.eligibleBlockCount}</td><td>{number(totalDailyRevenue)}</td><td>{number(totalDailyPlatform)}</td><td>—</td><td>{selectedYearResult ? number(selectedYearResult.annualRevenueHours) : number(result.dailyRows.reduce((sum, row) => sum + row.annualRevenueHours, 0))}</td><td>{selectedYearResult ? number(selectedYearResult.annualPlatformHours) : number(result.dailyRows.reduce((sum, row) => sum + row.annualPlatformHours, 0))}</td><td>{selectedYearResult ? money(selectedYearResult.annualCostUsd) : '—'}</td></tr></tfoot></table></div>}
       {!result && !validation.length && <p className="table-empty">Select a valid Blocking Scenario to calculate an estimate.</p>}
     </section>
 

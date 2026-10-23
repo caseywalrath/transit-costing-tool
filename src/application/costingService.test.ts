@@ -80,4 +80,35 @@ describe('CostingApplicationService', () => {
     expect(updated.enteredRate).toBe(160);
     expect(await service.loadAssumptions(scenarioId)).toEqual(updated);
   });
+
+  // P11 (review issues I-074b, finding 4-014): the rules the Costing screen used to hold itself.
+  describe('assumption and service-day rules the screen reads from the service', () => {
+    const service = new CostingApplicationService({ listBlockingScenarios: async () => [], getCostingCalculationContext: async () => undefined });
+    const valid = { enteredRate: 150, rateYear: 2025, sourceType: 'user' as const, baseServiceYear: 2026, futureYearCount: 3, annualEscalation: 0.03 };
+    const day = (annualServiceDays: number, id = `day-${annualServiceDays}`) => ({ id, scenarioId, kind: 'custom' as const, name: id, annualServiceDays, sequence: 0, ...metadata('2026-01-01T00:00:00.000Z') });
+
+    it('validates assumptions as the domain does', () => {
+      expect(service.validateAssumptions(valid)).toEqual([]);
+      expect(service.validateAssumptions({ ...valid, rateYear: 2030 }).map((finding) => finding.code)).toEqual(['costing.rateYearAfterBaseServiceYear']);
+      expect(service.validateAssumptions({ ...valid, enteredRate: -1, futureYearCount: 11 }).map((finding) => finding.code)).toEqual(['costing.rateInvalid', 'costing.futureYearCountInvalid']);
+      expect(service.validateAssumptions({ ...valid, enteredRate: undefined })).toEqual([]);
+    });
+
+    it('totals the annual service days against the 365-day limit', () => {
+      expect(service.summarizeServiceDays([day(255, 'a'), day(52, 'b'), day(52, 'c'), day(6, 'd')])).toEqual({ total: 365, maximum: 365, exceedsMaximum: false });
+      expect(service.summarizeServiceDays([day(260, 'a'), day(52, 'b'), day(52, 'c'), day(2, 'd')])).toEqual({ total: 366, maximum: 365, exceedsMaximum: true });
+      expect(service.summarizeServiceDays([])).toEqual({ total: 0, maximum: 365, exceedsMaximum: false });
+    });
+
+    it('lists the service years from the first year of service, one more than the number of future years', () => {
+      expect(service.listServiceYears({ baseServiceYear: 2026, futureYearCount: 3 })).toEqual([2026, 2027, 2028, 2029]);
+      expect(service.listServiceYears({ baseServiceYear: 2026, futureYearCount: 0 })).toEqual([2026]);
+      expect(service.listServiceYears({ baseServiceYear: 2026, futureYearCount: -2 })).toEqual([2026]);
+    });
+
+    it('clamps the number of future years to a whole number from 0 to 10', () => {
+      expect([-3, 0, 4.9, 10, 11, 99].map((value) => service.normalizeFutureYearCount(value))).toEqual([0, 0, 4, 10, 10, 10]);
+      expect(service.normalizeFutureYearCount(Number.NaN)).toBe(0);
+    });
+  });
 });
