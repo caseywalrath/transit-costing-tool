@@ -4,8 +4,8 @@
 
 **Combined sitting 4G + 4H, in progress on the branch `claude/stage-4g-4h-review-fixes` (created from `origin/main` after the 4F merge, PR #19).** The user directed one overnight sitting on Sonnet: U01, U02, U03, U04, U05 in that order, then P16 as the last package. No sub-agents and no Opus review (none of these is S0 or S1). The user waived the Decision 0005 verification gate between the structural and UI packages, pushes to the work branch after every package, and does not want to be asked: a package that needs a decision its text does not settle is recorded here as "blocked: decision needed" and the next independent package continues (U05 depends on U04, U04 on U03).
 
-- Done on the branch: U01 (`8e347e4`), U02 (`dea5288`), U03 (`215ec5c`), U04 (`d596125`).
-- Next package: U05.
+- Done on the branch: U01 (`8e347e4`), U02 (`dea5288`), U03 (`215ec5c`), U04 (`d596125`), U05 (fix log entry; hash recorded in the entry).
+- Next package: P16.
 - Blocked: none.
 - Known failures: none. The intermittent `unified-action-layer.spec.ts:139` failure is explained and fixed in the U04 entry (a deferred menu refocus); watch the next full runs to confirm it does not return.
 - Not started in this sitting: U06, U07, P15, U08, D01 (and every package not named above).
@@ -14,9 +14,9 @@
 - New in 4F that 4G relies on:
   - **U01. DONE** (U01 entry). `index.html` is a standards-mode document; no layout baseline changed. Layout problems seen in the screenshots are listed in the U01 entry, each with its owner.
   - **U02. DONE** (U02 entry). `showError` and every catch site use `userFacingError`; `blockingError` no longer splits words. Thrown by the Blocking service now (shown as written): "Another Block on this service day already uses that label.", "No consecutive Trips use the selected From and To Nodes.", "Select a preceding Trip for the deadhead.".
-  - **U05 wording.** `block.deadheadOutsideGap` and `block.boundaryOverlap` (P12) have no sentence; the screen shows "Deadhead outside gap" and "Boundary overlap" (fallback). `block.minutesRequired` and `block.minutesInvalid` (P14) use "Enter a non-negative whole-minute duration.".
+  - **U05 wording. DONE** (U05 entry). `block.deadheadOutsideGap` and `block.boundaryOverlap` (P12) have no sentence; the screen shows "Deadhead outside gap" and "Boundary overlap" (fallback). `block.minutesRequired` and `block.minutesInvalid` (P14) use "Enter a non-negative whole-minute duration.".
   - **U03. DONE** (U03 entry; the Blocking-workspace facts below stay true). The Blocking workspace now loads the unassigned Trips with the Blocks (`listUnassignedTrips`), not from the Trips tab's list; the New Block dialog value comes from `proposeBlockLabel`.
-  - **U05 (I-035).** `previewDeleteBlock` and `previewDeleteBlockingScenario` exist and nothing calls them. Their `sourceSignature` is the review token that `deleteBlock` and `deleteBlockingScenario` take. The Delete Block and Delete Blocking Scenario dialogs should show the counts and pass the preview's signature.
+  - **U05 (I-035). DONE** (U05 entry). `previewDeleteBlock` and `previewDeleteBlockingScenario` exist and nothing calls them. Their `sourceSignature` is the review token that `deleteBlock` and `deleteBlockingScenario` take. The Delete Block and Delete Blocking Scenario dialogs should show the counts and pass the preview's signature.
   - **Costing (U06).** A `CostingFinding` is a `ValidationFinding` (`ruleId`, `entityType`, `entityId`, `field`); an assumption finding names the field, so the screen can show it beside its input. `CostingWorkspace.tsx` still reads only `validation.length` and severity.
   - **CSV.** The Trips CSV and ZIP writer live in `src/application`. A free-text cell that begins with `=`, `+`, `-`, or `@` is written with a leading apostrophe; the Trips CSV import and Runtime paste remove it (`restoreFormulaText`). A new CSV importer must do the same for the same columns.
 - Open questions for the user (none blocks 4G). The first two are in the P09 entry, "Residual risks"; nothing in P12 to P14 required changing either, so both are unchanged:
@@ -1592,3 +1592,67 @@ User decision implemented: 14 (guard the Runtime editor draft and the staged Shi
 
 - `ModalDialog` pulls focus back with a document-level `focusin` listener. Another feature that focuses a control outside an open dialog on purpose would be overridden; none exists today.
 - Focus return trusts that the invoking control is still on the page; when a row is re-created (a Trips reload) the new control does not receive focus. The tests cover the Block pill and Trip actions flows.
+
+## U05: Blocking presentation and destructive actions
+
+- Date: 2026-10-23. Sitting 4G/4H (combined). Model: Sonnet (main session). No sub-agents.
+- Type: UI. Severity: S2.
+- Commit: see "Commit" at the end of this entry.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-034 | 5-008 | S2 | Removing a Trip, Pull-out, or Pull-in from a Block was one click, with no confirmation. |
+| I-035 | 5-009 | S2 | Delete Block and Delete Blocking Scenario showed no impact counts and used the screen's older source signature; Delete Pattern's confirmation button read "Confirm". |
+| I-040 | 5-015 | S2 | A Block holding a Trip from another Route showed "Missing pattern" and dashes for its Nodes. |
+| I-083 | 4-026 | S3 | Blocking loads had no guard against out-of-order responses. |
+| I-088 | 5-020 | S3 | Blocking showed hours with `toFixed(2)` and Costing with half-away-from-zero; 14 of 345 golden Block quantities differed (Saturday Block 22: 14.575 h showed 14.57 h). |
+| I-089 | 5-021 | S3 | Truncated Pattern pills with no full name, a warning style on "No current issues.", "Move Trip N" off by one when a Pull-out row exists, "Trip profile" and "Trip Profile" mixed, and a Delete Pattern button whose accessible name did not contain its label. |
+
+User decision implemented: 15 (the Route short name in the Pattern pill, only for activities from another Route; no new column).
+
+### What changed
+
+- **Remove asks first.** The remove button of a Trip, Pull-out, or Pull-in opens the existing Confirm dialog: "Remove Trip 3?" ("Remove Trip 3 from Block “26”? The Trip will become unassigned and its connected deadheads will be removed.") and "Remove pull-out?" / "Remove pull-in?" ("Platform hours and miles are incomplete until a new pull-out is added."). The button's accessible name is now "Remove Trip 3" (it was the Pattern name).
+- **Delete previews (hand-off from P14).** Delete Block calls `previewDeleteBlock` and shows "Delete Block “26” with 14 Trips, 0 deadheads, and 16 activities in all?"; Delete Blocking Scenario calls `previewDeleteBlockingScenario` and shows "with 69 Blocks and N activities across every service day". Each deletion passes the preview's `sourceSignature`, so it deletes what was reviewed even if the screen is older, and is refused ("Blocking Scenario changed since the operation was reviewed…") when the data changed after the review; the dialog then closes and Blocking reloads (U02), so the next review is current. Delete Pattern's confirmation is titled "Delete Pattern?" with a "Delete Pattern" button; the button's accessible name is "Delete Pattern <name>" (it contains its visible label).
+- **Other-Route Trips.** `ActivityRow` reads the Patterns and Nodes of every Route of the Scenario (not only the selected one) and shows `31B · Cross Pattern` in the pill for a Trip whose Route differs from the selected Route. The Pattern pills (Current Block and Unassigned Trips) carry the full name as a title.
+- **Out-of-order loads.** New `src/ui/latestRequest.ts`: `loadBlocks` and `loadScenarios` each begin a numbered request and apply their result only if still the latest; an older response and its error are ignored.
+- **Rounding.** `formatBlockingHours` and `formatBlockingMiles` use `roundCostingDisplay(value, 2)`. Every hours and miles figure of the Blocks table, the totals row, and the summary changes only where `toFixed(2)` was wrong (Saturday Block 22 revenue: 14.57 h to 14.58 h).
+- **Labels.** "Move Trip N" uses the Trip's number in the Block; "No current issues." is a neutral note (`.blocking-no-issues`); the visible message strings and menu names "Trip profile" in App.tsx are "Trip Profile" (Blocking already used it).
+- **Wording (hand-off from P12).** `block.deadheadOutsideGap`: "The deadhead times fall outside the time between its two Trips. Edit the deadhead to fit between them." `block.boundaryOverlap`: "The pull-out or pull-in overlaps its adjacent Trip. Shorten it, or change the Trip times." Both use the glossary terms Deadhead, Pull-out, Pull-in, and Trip. `block.missingTrip` already carries its next step (U02).
+- **Docs.** `docs/ui-conventions.md` (Blocking rules).
+
+### Files outside the package's owned list (recorded hand-offs)
+
+- `src/ui/latestRequest.ts` and its test (new); `src/ui/blockingFormat.test.ts` (new; imports the golden backup and the format functions); `src/styles.css` gained `.blocking-no-issues` (owned).
+- `src/ui/App.tsx` beyond "the Delete Pattern button label only": the Delete Pattern confirmation label and the "Trip Profile" capitalization (10 strings). The Delete Pattern confirmation is the other half of finding 5-009; the capitalization is one of the 5-021 label fixes.
+
+### Tests added
+
+- `src/ui/latestRequest.test.ts` (3 tests): only the latest request is current; with a slow older and a fast newer response, the newer result stays.
+- `src/ui/blockingFormat.test.ts` (2 tests): Block 22 reads "14.58 h"; every golden Block quantity (300 or more) shows exactly as `roundCostingDisplay` rounds it, and some of them differ from `toFixed(2)` (the old defect). Both fail with `toFixed`.
+- `tests/ui/blocking-presentation.spec.ts` (8 tests, real IndexedDB): the three removals ask first, name the activity, keep everything on Cancel, and remove exactly that activity on confirm; Delete Block shows its counts (compared with the stored Block), is refused after a change made after the review, and then deletes after a fresh review; Delete Block uses the reviewed source when the screen was loaded before another change; Delete Blocking Scenario shows its Block and activity counts, is refused after a change, and then deletes; the Delete Pattern button and confirmation read "Delete Pattern"; a Trip of another Route (a second Route, Nodes, Pattern, and Trip seeded) shows `31B · Cross Pattern` with its Nodes resolved while the selected Route's pill is unchanged; Saturday Block 22 reads 14.58 h; "Move Trip 1" with a Pull-out row first, the full Pattern name as a title, a neutral "No current issues.", and "Trip Profile" in the menus.
+- On the unfixed code (the U04 commit) all 7 of the first 7 specs failed (the Delete Block source test was added later and passes only with the fix).
+- Deliberate breaks, each restored: removal without asking; no Route in the pill; deleting a Block with the screen's signature instead of the reviewed one (the added source test failed); "Move Trip" by row index; `toFixed` instead of the Costing rounding (both unit tests failed).
+- `--repeat-each=10 --workers=8` on the spec: 80 of 80 passed (8 tests; the ninth added later is in the full run).
+- The out-of-order guard is covered by the unit test only. A browser test cannot hold one Blocking response back while another overtakes it without stubbing IndexedDB inside the page, and that stub would cut a transaction between its steps. No guard-removal break was run on the browser suite.
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 46 files, 677 tests passed (672 before; +3 +2).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 125 passed, 0 failed (4.5 minutes); 117 before plus the 8 new tests. No existing spec was changed. `unified-action-layer.spec.ts:139` passed.
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-BjSl236P.js` 801.32 kB (799.22 kB before).
+- Visual inspection of Blocking (Block 26 selected) at 1024 and 1440 px (scratchpad, not committed): `/tmp/claude-0/-home-user-transit-costing-tool/97a11f95-8195-5c0d-bed4-917d1a55f2e0/scratchpad/shots/u05/{1024,1440}-{blocking,remove-trip,delete-block}.png`. The two confirmation dialogs read clearly with Cancel focused; "No current issues." is a plain grey note; the totals and summary use two decimals. Seen and left alone: at 1024 px the Blocks table scrolls inside its frame and its Platform column is cut off (not new; U01 list); Pattern pills are still cut off by the pill's width, now with the full name as a tooltip.
+
+### Not done, or only partly
+
+- A Route column or a wider pill (the decision chose the short name in the pill only); no hover-free way to read a cut-off Pattern name on a touch screen.
+- The Block name dialogs and the layover dialog keep their texts.
+- Costing still shows whole hours (Decision 2 of the review); "Block 22 shows 14.58 in both workspaces" holds for the Blocking side, and Costing has no Block-level hours.
+
+### Residual risks
+
+- `ActivityRow` trusts `records.patterns` and `records.nodes` for other Routes; a Trip whose Pattern was deleted still shows "Missing pattern".
+- The Delete Block confirmation says "in all" after the three counts to mean the totals do not add up to the activity count (Trips plus deadheads plus boundary activities); the wording is plain but not elegant.
