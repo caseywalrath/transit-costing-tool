@@ -2,48 +2,33 @@
 
 ## Next sitting
 
-**Combined sitting 4G + 4H, in progress on the branch `claude/stage-4g-4h-review-fixes` (created from `origin/main` after the 4F merge, PR #19).** The user directed one overnight sitting on Sonnet: U01, U02, U03, U04, U05 in that order, then P16 as the last package. No sub-agents and no Opus review (none of these is S0 or S1). The user waived the Decision 0005 verification gate between the structural and UI packages, pushes to the work branch after every package, and does not want to be asked: a package that needs a decision its text does not settle is recorded here as "blocked: decision needed" and the next independent package continues (U05 depends on U04, U04 on U03).
+**Next sitting: 4I (U06, U07), on Sonnet, then 4J and 4K as the plan says.** The combined sitting 4G + 4H is finished on the branch `claude/stage-4g-4h-review-fixes` (created from `origin/main` after the 4F merge, PR #19): U01, U02, U03, U04, U05, and P16 are done. The user did not ask for a pull request.
 
-- Done on the branch: U01 (`8e347e4`), U02 (`dea5288`), U03 (`215ec5c`), U04 (`d596125`), U05 (`25752ee`).
-- Next package: P16.
-- Blocked: none.
-- Known failures: none. The intermittent `unified-action-layer.spec.ts:139` failure is explained and fixed in the U04 entry (a deferred menu refocus); watch the next full runs to confirm it does not return.
-- Not started in this sitting: U06, U07, P15, U08, D01 (and every package not named above).
-
-- State at the start of this sitting (after 4F): the browser suite had 80 tests, 80 passed; unit tests 41 files, 637 tests; bundle `index-BdF3r0BO.js` 790.12 kB. The user must still read the first CI run (the B01 workflows have not run).
-- New in 4F that 4G relies on:
-  - **U01. DONE** (U01 entry). `index.html` is a standards-mode document; no layout baseline changed. Layout problems seen in the screenshots are listed in the U01 entry, each with its owner.
-  - **U02. DONE** (U02 entry). `showError` and every catch site use `userFacingError`; `blockingError` no longer splits words. Thrown by the Blocking service now (shown as written): "Another Block on this service day already uses that label.", "No consecutive Trips use the selected From and To Nodes.", "Select a preceding Trip for the deadhead.".
-  - **U05 wording. DONE** (U05 entry). `block.deadheadOutsideGap` and `block.boundaryOverlap` (P12) have no sentence; the screen shows "Deadhead outside gap" and "Boundary overlap" (fallback). `block.minutesRequired` and `block.minutesInvalid` (P14) use "Enter a non-negative whole-minute duration.".
-  - **U03. DONE** (U03 entry; the Blocking-workspace facts below stay true). The Blocking workspace now loads the unassigned Trips with the Blocks (`listUnassignedTrips`), not from the Trips tab's list; the New Block dialog value comes from `proposeBlockLabel`.
-  - **U05 (I-035). DONE** (U05 entry). `previewDeleteBlock` and `previewDeleteBlockingScenario` exist and nothing calls them. Their `sourceSignature` is the review token that `deleteBlock` and `deleteBlockingScenario` take. The Delete Block and Delete Blocking Scenario dialogs should show the counts and pass the preview's signature.
-  - **Costing (U06).** A `CostingFinding` is a `ValidationFinding` (`ruleId`, `entityType`, `entityId`, `field`); an assumption finding names the field, so the screen can show it beside its input. `CostingWorkspace.tsx` still reads only `validation.length` and severity.
-  - **CSV.** The Trips CSV and ZIP writer live in `src/application`. A free-text cell that begins with `=`, `+`, `-`, or `@` is written with a leading apostrophe; the Trips CSV import and Runtime paste remove it (`restoreFormulaText`). A new CSV importer must do the same for the same columns.
-- Open questions for the user (none blocks 4G). The first two are in the P09 entry, "Residual risks"; nothing in P12 to P14 required changing either, so both are unchanged:
+- Prerequisite: the pull request for `claude/stage-4g-4h-review-fixes` is merged into `main`. The user must open and merge it. Start sitting 4I from the new `origin/main` on a new branch, for example `claude/stage-4i-review-fixes`. Standing rules 1 to 8 below apply unchanged.
+- Done on the branch: U01 (`8e347e4`), U02 (`dea5288`), U03 (`215ec5c`), U04 (`d596125`), U05 (`25752ee`), P16 (fix log entry; hash recorded in the entry).
+- Packages for 4I: **U06** (Costing and Service day presentation: show each `ServiceDayValidationError` finding beside its field, Annual cost visible without table scroll at 1024 px, the Costing findings display) and **U07** (Runtime and Trips presentation, with the added acceptance criteria below). Both on Sonnet. U07 may need a UX decision that the package text does not settle; record it as "blocked: decision needed" and continue.
+- After 4I: **4J is now P15 only** (P16 landed in the combined sitting). **4K** is U08 on Opus, then D01 on Sonnet.
+- Blocked: none. No package of this sitting needed a user decision.
+- Known failures: none. The intermittent `unified-action-layer.spec.ts:139` failure is explained and fixed in the U04 entry (a deferred menu refocus); full runs after U04 (U04, U05, P16: three runs) did not show it. If it returns, diagnose it as a package failure.
+- Not started: U06, U07, P15, U08, D01.
+- State at the end of this sitting: unit tests 47 files, 696 tests; browser suite 125 tests, all passing; bundle `index-D0zj91Yn.js` 801.78 kB. The user must still read the first CI run (the B01 workflows have not run).
+- Carried forward for U06 and U07 from this sitting (details in the U01 to U05 entries):
+  - **U06:** Costing at 1024 px clips the Annual Cost column (U01 screenshots); the Costing screen reads only `validation.length` and severity; the persistence answer of `getLocalDataProtection()` is not shown.
+  - **U07:** Runtime totals show ":61"/":65" (U01 screenshots); the Shift drawer covers the Runtime Save button at some widths; the Runtime profile single-flight load, Runtime reload after save, and the Recalculate band picker (added criteria below); the React error boundary; user-facing text for `tripShift.timeBeforeServiceDay` and `inspectStaleTrips` findings; the shared-profile line should call `listRuntimeProfileServiceDays` (I-041).
+  - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead; the Add-trip row drafts are not kept across a scope change; 24 dialogs were converted (the finding counted 28, four were removed by X01).
+  - **P15:** the Trips and Pattern screens still show 0.0 miles for a Pattern with no distance (only Blocking treats a 0 total as incomplete); `calculateTimepointHeadways` has no unit test; display rounding in the Trips table. A CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
+  - **P16 leftovers:** `resetPatternService` (legacy mutator) still stamps wall-clock `now`; about 40 other domain signatures still default `now` to the wall clock.
+- Open questions for the user (none blocks 4I):
   1. `deletePattern` has no review token, though it deletes Runtime profiles, assignments, and Trips and changes Blocks. Suggested: add it to a small later package.
-  2. The legacy per-field route mutators (`updatePattern`, `addNode`, and the others listed there) still bypass the preview and the Pattern validation (the second half of finding 4-020); only unit tests use them. Suggested: delete them and move those fixtures to preview and commit, or keep them as test helpers.
-  3. Repeated Block labels already stored (saved before the P14 rule): a backup of such a database is refused on import, and a Block with a repeated label can still be edited. No package owns clean-up. Suggested: say so in U02's import message, or add a repair on load.
+  2. The legacy per-field route mutators (`updatePattern`, `addNode`, and the others in the P09 entry) still bypass the preview and the Pattern validation (the second half of finding 4-020); only unit tests use them. Suggested: delete them and move those fixtures to preview and commit, or keep them as test helpers.
+  3. Repeated Block labels already stored (saved before the P14 rule): a backup of such a database is refused on import, and a Block with a repeated label can still be edited. No package owns clean-up. Suggested: say so in the import message, or add a repair on load.
   4. Branch protection: require the `verify` and `browser` CI checks on `main`. This is a GitHub setting only the user can change.
-- Hand-offs from 4F for later sittings (details in the P12 to B01 entries):
-  - **P15/P16:** the Trips and Pattern screens still show 0.0 miles for a Pattern with no distance entered (only Blocking treats a 0 total as incomplete); showing incomplete mileage there is a presentation question.
-  - **P16:** a CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
-  - **Vitest major upgrade:** 5 `pnpm audit` advisories remain, all in the `vitest` chain (decision C4: a separate package, not scheduled). Decide with the user whether it joins 4K or a later maintenance sitting.
-  - **Persistence (no owner yet), unchanged:** a compound index on Scenario and Trip Profile for `listProfileTrips`.
-- Hand-offs from 4E for later sittings (details in the P09 to P11 entries):
-  - **U02:** show `getLocalDataProtection()` ("Last backup: <date and time>" or "No backup exported yet"; the persistence answer if wanted); add `QuotaExceededError`, `VersionError`, and `UnknownError` to the `showError` filter; present the read-only status before the header's "Local save failed" that a rejected write now also sets.
-  - **U05:** the Node editor's impact dialog does not list `nonRevenueImpact`; the Trip profile confirmation does not mention `blockingScenarioCount`; the Runtime profile and Trips delete dialogs stay open with the old review after a refusal.
-  - **U06:** show each `ServiceDayValidationError` finding beside its field.
-  - **U07:** the shared-profile line should call `listRuntimeProfileServiceDays` (I-041).
-  - Persistence (no owner yet): `listProfileTrips` in `main.tsx` loads every Trip of the Scenario and filters by Trip Profile in memory; a compound index on Scenario and Trip Profile would avoid reading Trips of other profiles.
-  - Unexplained: one timeout in 50 runs of `local-data-protection.spec.ts` (P10 entry); it did not return in 100 later runs.
-- Hand-offs from 4D for later sittings (details in the P06 to P08 entries):
-  - **Decided by the user on 2026-10-23 (Option B), for U07 (sitting 4I).** Under a segment-start or blended profile, an anchor that fits two first departures is rejected and the candidates are listed (user decision 3). A planner cannot pick one of the listed candidates for those methods; Decision 0031 keeps manual band override for single-band profiles only. The Recalculate dialog must therefore hide its band picker for segment-start and blended Trips, say plainly that the fixed time can be reached two ways, and rely on the options it already has: "Use first departure for this trip", choosing another anchor, or revising the bands. No domain change is needed. See "Added acceptance criteria" below and the Decision 0031 addendum.
-  - U07: the React error boundary; user-facing text for `tripShift.timeBeforeServiceDay` and for the findings of `inspectStaleTrips`.
-  - P16: the golden "DEFECT 2-007" test (gap-midpoint tie between `segmentStart` and blend) was not ported with the `segmentStart` matrix.
-  - Not covered by the contract suite: the legacy generation-set methods and `saveBlocks`.
-- Status of the 4C decision (two app behaviors, "Residual risks, hand-offs, and findings" in the P05 entry): the service part of the Runtime first-visit race is fixed (P09, below); its single-flight load in `App.tsx` is U07's. After a Runtime profile is saved, the Trips table keeps the profiles it loaded earlier, so Show runtime bands shades nothing until a reload: U07's or P15's.
-- Still carried forward from 4B, unchanged: clean-up of placeholder Blocks already stored in databases that imported version 3 and 4 files (no owner yet); presenting the import report and recovery findings (U02).
-- Tests deferred to later packages (all recorded in the P05 entry): focus trap, Escape, and focus return (U04's `keyboard.spec.ts`); a unit test for `calculateTimepointHeadways` (P15); Annual cost visible without table scroll at 1024 px (U06).
+  5. Vitest major upgrade: 5 `pnpm audit` advisories remain, all in the `vitest` chain (decision C4: a separate package, not scheduled). Decide whether it joins 4K or a later maintenance sitting.
+- Other hand-offs still open from earlier sittings:
+  - **Decided by the user on 2026-10-23 (Option B), for U07.** Under a segment-start or blended profile, an anchor that fits two first departures is rejected and the candidates are listed (user decision 3). The Recalculate dialog must hide its band picker for segment-start and blended Trips, say plainly that the fixed time can be reached two ways, and rely on the options it already has: "Use first departure for this trip", choosing another anchor, or revising the bands. No domain change is needed. See the Decision 0031 addendum.
+  - **CSV.** The Trips CSV and ZIP writer live in `src/application`. A free-text cell that begins with `=`, `+`, `-`, or `@` is written with a leading apostrophe; the Trips CSV import and Runtime paste remove it (`restoreFormulaText`). A new CSV importer must do the same for the same columns.
+  - **U05 hand-offs from 4E (not done in U05; see its entry):** the Node editor's impact dialog does not list `nonRevenueImpact`; the Trip profile confirmation does not mention `blockingScenarioCount`; the Runtime profile and Trips delete dialogs stay open with the old review after a refusal.
+  - **Persistence (no owner yet):** `listProfileTrips` in `main.tsx` loads every Trip of the Scenario and filters by Trip Profile in memory; a compound index on Scenario and Trip Profile would avoid reading Trips of other profiles. Placeholder Blocks already stored in databases that imported version 3 and 4 files have no clean-up. Not covered by the contract suite: the legacy generation-set methods and `saveBlocks`. One timeout in 50 runs of `local-data-protection.spec.ts` (P10 entry) is unexplained; it did not return in 100 later runs.
 - Unit-test and browser-test conventions are in "Standing rules" below and in `codex.md`. Browser-test helpers (all in `tests/ui/support/`): `dexieEnv.ts` (`runInPage`, `seedSnapshot`), `goldenFixture.ts` (the Federal BRT project), `tripsWorkspace.ts` (`createRouteWithPattern`, `createShiftReadySchedule`, `openGoldenTrips`, `settleFrames`), and from 4E `capacityFixture.ts` (400 Blocks, 2,000 Trips).
 - Review documents: read them from the review branch with `git show origin/claude/upbeat-ritchie-51mpy5:docs/review/<file>`. Never copy `docs/review/` into the work branch.
 
@@ -1656,3 +1641,60 @@ User decision implemented: 15 (the Route short name in the Pattern pill, only fo
 
 - `ActivityRow` trusts `records.patterns` and `records.nodes` for other Routes; a Trip whose Pattern was deleted still shows "Missing pattern".
 - The Delete Block confirmation says "in all" after the three counts to mean the totals do not add up to the activity count (Trips plus deadheads plus boundary activities); the wording is plain but not elegant.
+
+## P16: Domain precision and message polish
+
+- Date: 2026-10-23. Sitting 4G/4H (combined; the last package). Model: Sonnet (main session). No sub-agents.
+- Type: structural. Severity: S3.
+- Commit: see "Commit" at the end of this entry.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-061 | 2-007 | S3 | At the exact midpoint of a gap between Runtime bands, `segmentStart` picked the earlier band and the blend fallback picked the later band. |
+| I-062 | 2-008 | S3 | A decimal-minute entry that is exactly half a second rounded inconsistently: 0.025 gave 2 s but 1.025 gave 61 s and 4.225 gave 253 s (binary multiplication: 1.025 * 60 is 61.49999999999999); 4,369 of 200,000 half-second entries rounded down. |
+| I-063 | 2-009 | S3 | The direction-order conflict message did not name the Direction, which Decision 0014 item 4 requires. |
+| I-067 | 2-013 | S3 | Per-day hour totals were summed in floating hours: 17 Blocks that total exactly 266:30:00 gave 266.49999999999994, which the whole-hour display rounded to 266 instead of 267. |
+| I-068 | 2-014 | S3 | `adjustBlockReferences` and `planBulkBoundaryActivities` stamped adjusted Blocks with the wall clock, so a copy preview was not reproducible; domain identifiers could not be injected in tests. |
+
+User decisions implemented: none new (finding 2-007 was marked "either rule acceptable once documented"; the later band is documented in a Decision 0033 addendum).
+
+### What changed
+
+- `src/domain/runtime.ts`: `resolveSegmentStartBand` resolves a tie to the later band (`<=`), matching the blend.
+- `src/domain/durations.ts`: a decimal-minute entry is converted from its decimal text with `BigInt` arithmetic, rounding half a second up. `0.025`, `1.025`, `4.225` give 2, 62, 254; every colon form and every whole-minute entry is unchanged.
+- `src/domain/safeRouteEditing.ts`: the conflict message reads "… place B and A in conflicting order in the Outbound Direction. …".
+- `src/domain/blocking.ts`, `src/domain/costing.ts`: `BlockSummary` gains optional `revenueSeconds` and `platformSeconds` (the whole seconds behind the hours; `summarizeBlock` fills them). The costing day total adds seconds and converts to hours once. A summary without them (hand-built in a test) gives the seconds behind its hours. The golden Federal BRT costing is unchanged: the same run before and after differs only in the sixth decimal of one annual cost (241823.216917 against 241823.216918 USD), far below the four decimals that the CSV and the screen use.
+- `src/domain/trips.ts`, `src/domain/serviceDayCopy.ts`, `src/domain/blocking.ts`: `adjustBlockReferences(blocks, removed, surviving, now)` and `planBulkBoundaryActivities(request, blocks, trips, patterns, now)` take `now` (default: the wall clock, as before); `applyRegeneration` and the Trip copy preview pass their own `now`, so an adjusted Block carries the preview's time.
+- `src/domain/ids.ts`: `setIdGenerator(generator)` replaces the identifier source and returns a function that restores the previous one (injections nest). Production still draws a random UUID.
+- Documentation: Decision 0033 addendum (the tie rule) and Decision 0010 addendum (decimal minutes).
+
+### Tests added
+
+- `src/domain/runtime.test.ts`: at the exact gap midpoint (55,800 s between MID and PM) `segmentStart` resolves to PM, one second earlier to MID, one second later to PM, and its second segment uses the same band as the blend. Ported from the review's "DEFECT 2-007" reproduction, which the 4D hand-off said was not ported.
+- `src/domain/durations.test.ts` (10 tests): 0.025, 1.025, 4.225, and five other values; a sweep of 2,000 exact half-second entries of the form (2j + 1) / 40 minutes (the floating-point conversion failed 1,000 of 2,000, the old scan found 4,369 of 200,000 over a wider range); malformed decimals are still rejected.
+- `src/domain/safeRouteEditing.test.ts`: the message contains "Outbound Direction", both Pattern names, and the timepoints; `conflict.directionName` is the Direction name.
+- `src/domain/costing.test.ts` (2 tests): the 17 Blocks (959,400 s) give 266.5 revenue and platform hours and display as 267, both with seconds on the summaries and with hours only. Ported from the review's "DEFECT 2-013".
+- `src/domain/trips.test.ts`: an adjusted Block carries the given time and an unaffected Block is returned as it was. `src/domain/blockingRules.test.ts`: `planBulkBoundaryActivities` stamps changed Blocks with the given time and draws new activity ids from the injected generator. `src/domain/ids.test.ts` (3 tests, new): default uniqueness, injection and restore, nested injections.
+- On the unfixed code 11 of the new tests failed; the others in the same files are controls (0.025, 0.5, the malformed-decimal check, default uniqueness).
+- Deliberate breaks, each restored: the tie back to the earlier band; the floating-point conversion; the message without the Direction; hours summed as floats; the injected generator ignored.
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 47 files, 696 tests passed (677 before; +19).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 125 passed, 0 failed, no `test.fail`, `test.skip`, or `test.fixme`. `unified-action-layer.spec.ts:139` passed. No browser spec changed in this package.
+- `pnpm build`: succeeds; `index-D0zj91Yn.js` 801.78 kB (the bundle size message is the existing chunk-size notice, not new).
+- Golden reconciliation: `calculateCosting` on the Federal BRT project, before and after, equal to six decimals except the one annual cost noted above.
+
+### Not done, or only partly
+
+- `resetPatternService` (a legacy mutator in `safeRouteEditing.ts`) still calls `adjustBlockReferences` without `now`; it has no `now` parameter and only unit tests use it (open question 2 in the Next sitting note).
+- About 40 other domain signatures still default `now` to the wall clock. The finding asked for the two functions above; the rest stay optional parameters.
+- Display rounding in the Trips table is not part of this package (P15 owns the "display rounding" item).
+
+### Residual risks
+
+- A `BlockSummary` built by hand without `revenueSeconds` has its seconds recovered with `Math.round(hours * 3600)`, which is exact for hours that come from whole seconds and moves a fractional-second value to the nearest second.
+- The later-band tie rule changes the Trip times of a Runtime profile only for a segment that starts at the exact midpoint of a gap, an event of one second in a gap; no stored data is rewritten, and a Trip keeps its stored times until recalculated.

@@ -134,6 +134,19 @@ describe('trip generation and overrides', () => {
     expect(validateTrip(result.trips[0], pattern)).toEqual([]);
   });
 
+  // P16 (I-068, finding 2-014): the time stamped on an adjusted Block is the caller's, so a copy preview is reproducible.
+  it('stamps the adjusted Block with the time it is given', () => {
+    const blocks: Block[] = [{ ...metadata('2026-01-01T00:00:00.000Z'), id: 'b1', scenarioId: 's1', serviceDayId: 'weekday', label: '1', activities: [
+      { id: 'first', type: 'revenueTrip', sequence: 0, tripId: 'first' },
+      { id: 'last', type: 'revenueTrip', sequence: 1, tripId: 'last' },
+    ] }, { ...metadata('2026-01-01T00:00:00.000Z'), id: 'b2', scenarioId: 's1', serviceDayId: 'weekday', label: '2', activities: [{ id: 'other', type: 'revenueTrip', sequence: 0, tripId: 'other' }] }];
+    const stamp = '2030-05-06T07:08:09.000Z';
+    const adjusted = adjustBlockReferences(blocks, ['last'], [], stamp);
+    expect(adjusted.blocks[0].updatedAt).toBe(stamp);
+    expect(adjusted.blocks[0].createdAt).toBe('2026-01-01T00:00:00.000Z');
+    expect(adjusted.blocks[1]).toBe(blocks[1]); // an unaffected Block is returned as it was
+  });
+
   it('removes a connection deadhead when either adjacent revenue Trip is removed', () => {
     const blocks: Block[] = [{ ...metadata(), id: 'b1', scenarioId: 's1', serviceDayId: 'weekday', label: '1', activities: [
       { id: 'first', type: 'revenueTrip', sequence: 0, tripId: 'first' },

@@ -48,3 +48,7 @@ Phase 2 draft data and backup compatibility are not required. The implementation
 - arrival and departure pairs at one timepoint;
 - Excel schedule import;
 - automatic blocking.
+
+## Addendum (2026-10-23, code review package P16): decimal minutes
+
+A decimal-minute entry (for example `7.5`) is converted to whole seconds from its decimal text, and a half second rounds up (away from zero; entries are never negative). So `0.025`, `1.025`, and `4.225` minutes are 2, 62, and 254 seconds. The conversion does not go through floating-point multiplication, which gave 61 and 253 for the last two (finding 2-008). The colon forms (`7:30`, `:07:30`) are already whole seconds.

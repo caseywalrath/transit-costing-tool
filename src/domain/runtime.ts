@@ -98,7 +98,8 @@ export function resolveSegmentStartBand(profile: RuntimeProfile, time: ServiceSe
     if (!best) return candidate;
     const distance = time < candidate.startTime ? candidate.startTime - time : time >= candidate.endTime ? time - candidate.endTime : 0;
     const bestDistance = time < best.startTime ? best.startTime - time : time >= best.endTime ? time - best.endTime : 0;
-    return distance < bestDistance ? candidate : best;
+    // A tie (the exact midpoint of a gap) goes to the later band, as in the blend fallback (Decision 0033 item 1).
+    return distance <= bestDistance ? candidate : best;
   }, undefined);
 }
 

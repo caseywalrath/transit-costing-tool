@@ -459,7 +459,7 @@ export function applyPatternChange(trip: Trip, targetPattern: RoutePattern, prev
 
 export interface BlockReferenceAdjustment { blockId: string; removedTripIds: string[]; survivingTripIds: string[]; }
 export interface AdjustedBlocks { blocks: Block[]; adjustments: BlockReferenceAdjustment[]; }
-export function adjustBlockReferences(blocks: Block[], removedTripIds: string[], survivingTripIds: string[] = []): AdjustedBlocks {
+export function adjustBlockReferences(blocks: Block[], removedTripIds: string[], survivingTripIds: string[] = [], now = new Date().toISOString()): AdjustedBlocks {
   const removed = new Set(removedTripIds); const surviving = new Set(survivingTripIds); const adjustments: BlockReferenceAdjustment[] = [];
   const adjusted = blocks.map((block) => {
     const referenced = block.activities.filter((activity) => activity.type === 'revenueTrip').map((activity) => activity.tripId);
@@ -475,7 +475,7 @@ export function adjustBlockReferences(blocks: Block[], removedTripIds: string[],
       const next = source.slice(index + 1).find((candidate) => candidate.type === 'revenueTrip');
       return !(previous?.type === 'revenueTrip' && removed.has(previous.tripId)) && !(next?.type === 'revenueTrip' && removed.has(next.tripId));
     });
-    return withUpdatedAt({ ...block, activities: activities.map((activity, sequence) => ({ ...activity, sequence })) });
+    return withUpdatedAt({ ...block, activities: activities.map((activity, sequence) => ({ ...activity, sequence })) }, now);
   });
   return { blocks: adjusted, adjustments };
 }
@@ -527,6 +527,6 @@ export function applyRegeneration(preview: RegenerationPreview, existingTrips: T
   const oldBySequence = new Map(existingTrips.filter((trip) => trip.provenance.generationSetId === preview.generationSetId && sequenceOf(trip) !== undefined).map((trip) => [sequenceOf(trip)!, trip]));
   const materialized = preview.generatedTrips.map((trip) => { const existing = oldBySequence.get(sequenceOf(trip)!); return existing ? withUpdatedAt({ ...trip, id: existing.id }, now) : withUpdatedAt(trip, now); });
   const removedIds = new Set(preview.removed); const others = existingTrips.filter((trip) => trip.provenance.generationSetId !== preview.generationSetId && !removedIds.has(trip.id));
-  const adjusted = adjustBlockReferences(blocks, preview.removed, materialized.map((trip) => trip.id));
+  const adjusted = adjustBlockReferences(blocks, preview.removed, materialized.map((trip) => trip.id), now);
   return { trips: [...others, ...materialized], blocks: adjusted.blocks, adjustments: adjusted.adjustments };
 }

@@ -93,6 +93,33 @@ function input(overrides: Partial<CostingCalculationInput> = {}): CostingCalcula
   };
 }
 
+// P16 (I-067, finding 2-013). phase-05-costing.md: "Keep full numeric precision through all calculations and totals ... exact half-unit
+// ties rounded away from zero". Seventeen Blocks whose Revenue time adds up to exactly 266:30:00 (959,400 s) are 266.5 hours; summing
+// the Blocks' hours as floating point gave 266.49999999999994, which the whole-hour display rounded to 266 instead of 267.
+describe('per-day hours accumulate in whole seconds', () => {
+  const seconds = [67770, 66750, 71370, 56040, 59880, 57060, 50460, 50910, 56130, 54450, 56100, 51240, 45150, 58830, 44010, 57600, 55650];
+  const build = (withSeconds: boolean) => {
+    const trips = seconds.map((_, index) => trip(`t${index}`));
+    const blocks = seconds.map((_, index) => block(`b${index}`, `t${index}`));
+    const blockSummaries = seconds.map((value, index) => summary(`b${index}`, { revenueHours: value / 3600, platformHours: value / 3600, ...(withSeconds ? { revenueSeconds: value, platformSeconds: value } : {}) }));
+    return calculateCosting(input({ trips, blocks, blockSummaries }));
+  };
+
+  it('adds up to exactly 266.5 revenue hours, which display as 267', () => {
+    expect(seconds.reduce((sum, value) => sum + value, 0)).toBe(266.5 * 3600);
+    const row = build(true).dailyRows.find((item) => item.serviceDayId === 'weekday')!;
+    expect(row.revenueHoursPerDay).toBe(266.5);
+    expect(row.platformHoursPerDay).toBe(266.5);
+    expect(roundCostingDisplay(row.revenueHoursPerDay, 0)).toBe(267);
+  });
+
+  it('gives the same total for summaries that carry only hours (the sum of their whole seconds)', () => {
+    const row = build(false).dailyRows.find((item) => item.serviceDayId === 'weekday')!;
+    expect(row.revenueHoursPerDay).toBe(266.5);
+    expect(roundCostingDisplay(row.revenueHoursPerDay, 0)).toBe(267);
+  });
+});
+
 describe('Phase 5A costing calculations', () => {
   it('keeps a Block eligible when only its mileage is incomplete', () => {
     const current = input({
