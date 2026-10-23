@@ -2,12 +2,12 @@
 
 ## Next sitting
 
-**Next sitting: 4I (U06, U07), on Sonnet, then 4J and 4K as the plan says.** The combined sitting 4G + 4H is finished on the branch `claude/stage-4g-4h-review-fixes` (created from `origin/main` after the 4F merge, PR #19): U01, U02, U03, U04, U05, and P16 are done. The user did not ask for a pull request.
+**Next sitting: 4I and 4J combined (U06, U07, P15, in that order), on Sonnet, then 4K as the plan says.** The combined sitting 4G + 4H is finished on the branch `claude/stage-4g-4h-review-fixes` (created from `origin/main` after the 4F merge, PR #19): U01, U02, U03, U04, U05, and P16 are done. The user did not ask for a pull request.
 
 - Prerequisite: the pull request for `claude/stage-4g-4h-review-fixes` is merged into `main`. The user must open and merge it. Start sitting 4I from the new `origin/main` on a new branch, for example `claude/stage-4i-review-fixes`. Standing rules 1 to 8 below apply unchanged.
 - Done on the branch: U01 (`8e347e4`), U02 (`dea5288`), U03 (`215ec5c`), U04 (`d596125`), U05 (`25752ee`), P16 (`cf2d189`).
 - Packages for 4I: **U06** (Costing and Service day presentation: show each `ServiceDayValidationError` finding beside its field, Annual cost visible without table scroll at 1024 px, the Costing findings display) and **U07** (Runtime and Trips presentation, with the added acceptance criteria below). Both on Sonnet. U07 may need a UX decision that the package text does not settle; record it as "blocked: decision needed" and continue.
-- After 4I: **4J is now P15 only** (P16 landed in the combined sitting). **4K** is U08 on Opus, then D01 on Sonnet.
+- Decided by the user on 2026-10-23: sittings 4I and 4J are combined. Order: U06, U07, P15 (P16 already landed). The Decision 0005 gate between UI and structural work is waived again for this sitting, as it was for 4G/4H. The standing rules (push after every package, no questions, "blocked: decision needed" for an unsettled decision) apply as in the 4G/4H sitting; a prompt can restate them. After it: **4K** is U08 on Opus, then D01 on Sonnet, then the Vitest package below if time allows.
 - Blocked: none. No package of this sitting needed a user decision.
 - Known failures: none. The intermittent `unified-action-layer.spec.ts:139` failure is explained and fixed in the U04 entry (a deferred menu refocus); full runs after U04 (U04, U05, P16: three runs) did not show it. If it returns, diagnose it as a package failure.
 - Not started: U06, U07, P15, U08, D01.
@@ -18,12 +18,13 @@
   - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead; the Add-trip row drafts are not kept across a scope change; 24 dialogs were converted (the finding counted 28, four were removed by X01).
   - **P15:** the Trips and Pattern screens still show 0.0 miles for a Pattern with no distance (only Blocking treats a 0 total as incomplete); `calculateTimepointHeadways` has no unit test; display rounding in the Trips table. A CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
   - **P16 leftovers:** `resetPatternService` (legacy mutator) still stamps wall-clock `now`; about 40 other domain signatures still default `now` to the wall clock.
-- Open questions for the user (none blocks 4I):
-  1. `deletePattern` has no review token, though it deletes Runtime profiles, assignments, and Trips and changes Blocks. Suggested: add it to a small later package.
-  2. The legacy per-field route mutators (`updatePattern`, `addNode`, and the others in the P09 entry) still bypass the preview and the Pattern validation (the second half of finding 4-020); only unit tests use them. Suggested: delete them and move those fixtures to preview and commit, or keep them as test helpers.
-  3. Repeated Block labels already stored (saved before the P14 rule): a backup of such a database is refused on import, and a Block with a repeated label can still be edited. No package owns clean-up. Suggested: say so in the import message, or add a repair on load.
-  4. Branch protection: require the `verify` and `browser` CI checks on `main`. This is a GitHub setting only the user can change.
-  5. Vitest major upgrade: 5 `pnpm audit` advisories remain, all in the `vitest` chain (decision C4: a separate package, not scheduled). Decide whether it joins 4K or a later maintenance sitting.
+- Decisions made by the user on 2026-10-23 (all follow the recommended option). `docs/review/fix-packages.md` is on the review branch and is not edited; this note is the record.
+  1. `deletePattern` gets a review token (Decision 0041 pattern). **Approved, unscheduled:** new small structural package **P17**, with items 2 and 3. Place it after P15 in the combined sitting if time allows, otherwise in its own sitting before 4K.
+  2. The legacy per-field route mutators (`updatePattern`, `addNode`, and the others in the P09 entry) are deleted, and the unit-test setups that use them move to preview and commit. **Approved, in P17.**
+  3. Repeated Block labels already stored: the backup import refusal message explains the cause and the way out (rename the repeated labels in the source project, then export again). No repair on load. **Approved, in P17** (the message text is in the import path in `src/application` and the U02 error display).
+  4. Branch protection: the user will require the two CI checks on `main` after the first CI run passes. User action only; no package. The check names in the GitHub list are the job names "Typecheck, unit tests, build" (job `verify`) and "Browser tests" (job `browser`).
+  5. Vitest major upgrade (5 advisories in the `vitest` chain): its own package, **P18**, in sitting 4K after U08 and D01, or in a separate maintenance sitting. Not mixed with feature work.
+  6. Defaults accepted: Runtime band totals use the duration format (U07 criterion 6 first checks what the screen shows); a Pattern with no distance shows "incomplete" instead of 0.0 miles on the Trips and Pattern screens (added criterion to P15, below); menu typeahead is not built.
 - Other hand-offs still open from earlier sittings:
   - **Decided by the user on 2026-10-23 (Option B), for U07.** Under a segment-start or blended profile, an anchor that fits two first departures is rejected and the candidates are listed (user decision 3). The Recalculate dialog must hide its band picker for segment-start and blended Trips, say plainly that the fixed time can be reached two ways, and rely on the options it already has: "Use first departure for this trip", choosing another anchor, or revising the bands. No domain change is needed. See the Decision 0031 addendum.
   - **CSV.** The Trips CSV and ZIP writer live in `src/application`. A free-text cell that begins with `=`, `+`, `-`, or `@` is written with a leading apostrophe; the Trips CSV import and Runtime paste remove it (`restoreFormulaText`). A new CSV importer must do the same for the same columns.
@@ -42,6 +43,8 @@ Items that the user assigned to later packages. They are added to those packages
   - the single-flight Runtime load in `App.tsx` (the other half of the race above), then remove the two test-helper steps named above;
   - the Trips table must reload Runtime profiles after a Runtime profile is saved, so Show runtime bands shades without a page reload (the second behavior in the 4C decision bullet);
   - the Recalculate dialog hides the band picker for segment-start and blended Trips (Option B, decided 2026-10-23).
+
+- **P15 (sitting 4I/4J), added 2026-10-23.** A Pattern with no distance entered shows "incomplete" instead of "0.0 miles" on the Trips and Pattern screens, using the same rule as Blocking (a total of 0 is incomplete mileage, P12). This is the one intended display change in P15; every other displayed value stays unchanged, and the user-visible text is recorded in the P15 entry.
 
 ### Standing rules for every sitting
 
