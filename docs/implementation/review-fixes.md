@@ -4,7 +4,7 @@
 
 **Combined sitting 4G + 4H, in progress on the branch `claude/stage-4g-4h-review-fixes` (created from `origin/main` after the 4F merge, PR #19).** The user directed one overnight sitting on Sonnet: U01, U02, U03, U04, U05 in that order, then P16 as the last package. No sub-agents and no Opus review (none of these is S0 or S1). The user waived the Decision 0005 verification gate between the structural and UI packages, pushes to the work branch after every package, and does not want to be asked: a package that needs a decision its text does not settle is recorded here as "blocked: decision needed" and the next independent package continues (U05 depends on U04, U04 on U03).
 
-- Done on the branch: U01 (`8e347e4`), U02 (`dea5288`), U03 (`215ec5c`), U04 (`d596125`), U05 (fix log entry; hash recorded in the entry).
+- Done on the branch: U01 (`8e347e4`), U02 (`dea5288`), U03 (`215ec5c`), U04 (`d596125`), U05 (`25752ee`).
 - Next package: P16.
 - Blocked: none.
 - Known failures: none. The intermittent `unified-action-layer.spec.ts:139` failure is explained and fixed in the U04 entry (a deferred menu refocus); watch the next full runs to confirm it does not return.
@@ -1597,7 +1597,7 @@ User decision implemented: 14 (guard the Runtime editor draft and the staged Shi
 
 - Date: 2026-10-23. Sitting 4G/4H (combined). Model: Sonnet (main session). No sub-agents.
 - Type: UI. Severity: S2.
-- Commit: see "Commit" at the end of this entry.
+- Commit: `25752ee`.
 
 ### Issues fixed
 
