@@ -21,7 +21,7 @@
 
 ### 12. Time the U09 calculation
 
-- Measure the Trips load (`loadTrips`, which calls `inspectStaleTrips`) at the capacity fixture (`tests/ui/support/capacityFixture.ts`) in a production build, with the Runtime profile revised so every Trip is stale, 5 runs, before and after F2. Change code only if the stale check adds more than about 100 ms; if it does, cache the calculation per Pattern and departure. Record the numbers in the fix log.
+- Measure the Trips load (`loadTrips`, which calls `inspectStaleTrips`) at the capacity fixture (`tests/ui/support/capacityFixture.ts`) in a production build, with the Runtime profile revised so every Trip is stale, 5 runs, once (see "Expedited verification"). Change code only if the stale check adds more than about 100 ms; if it does, cache the calculation per Pattern and departure. Record the numbers in the fix log.
 
 ### 13. Contract tests for `saveBlocks` and the legacy generation-set methods
 
@@ -36,7 +36,21 @@
 
 - Add to the CSV rules in `architecture_overview.md`: a new CSV importer must remove the leading apostrophe added to free-text cells that begin with `=`, `+`, `-`, or `@` (`restoreFormulaText`), for the same columns the writer protects. Then drop this item from the open hand-offs.
 
-## Verification and records
+## Expedited verification (approved by the user on 2026-10-23; replaces the matching parts of standing rules 5, 7, 9, and 10 for this package)
 
-- Standing rule 5 regression; standing rule 7 proof for each new test (fails first, one deliberate break per group).
-- One commit (or a short series) plus a hash-record commit. Fix log entry "F2: Structural follow-up and maintenance" before the "Register map" section; mark items 10 to 13, 16, and 18 done in the "Post-Stage-4 hand-offs" list; replace the Next sitting note header and the `codex.md` status paragraph. Push. Report and stop.
+- Read only the documents and sections named in "Read first". Do not re-read whole guiding documents.
+- During work: `pnpm typecheck`, `pnpm test`, and only the browser specs that touch the changed screens. Run the full browser suite once, at the end of the package, and read only its summary line (and the names of any failures).
+- Every new test is shown failing on the old code first. Do not skip this.
+- One deliberate break per package, on the riskiest test named below. Not one per test group.
+- `--repeat-each=10 --workers=8` only for the specs named below as timing-dependent.
+- Fix log entry, short: issues, what changed, tests added, exact counts (unit, browser, build), the deliberate break, deferred items. No separate hash-record commit: write "Commit: see `git log`" in the entry.
+- One commit for the package. Push. Then a short report.
+- Riskiest test (deliberate break): the version 8 upgrade test. No stress run is needed unless a browser spec is added for item 10.
+- No visual check (no UI change).
+- Item 12: measure once, after the change (5 runs), not before and after; compare with the U08 load figures in the fix log if a baseline is needed.
+- Do not cut: the version 8 upgrade test and the JSON backup round trip.
+
+## Records (as modified by "Expedited verification" above)
+
+- Regression and proof as in "Expedited verification".
+- One commit. Short fix log entry "F2: Structural follow-up and maintenance" before the "Register map" section; mark items 10 to 13, 16, and 18 done in the "Post-Stage-4 hand-offs" list; replace the Next sitting note header and the `codex.md` status paragraph. Push. Report and stop.

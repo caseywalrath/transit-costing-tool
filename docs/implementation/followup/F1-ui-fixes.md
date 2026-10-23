@@ -44,8 +44,21 @@
 - Required: when the answer is "not granted" (refused or unsupported), the Project menu shows one more disabled info line under the last backup time: "This browser may clear local data. Export backups regularly." When granted or not yet known, nothing is added. Reuse the existing last-backup line's markup.
 - Acceptance: a browser test that stubs `navigator.storage.persist`/`persisted` to false (shows the line) and to true (no line). Update `docs/ui-conventions.md` and the Decision 0001 amendment text if it describes what is shown.
 
-## Verification and records
+## Expedited verification (approved by the user on 2026-10-23; replaces the matching parts of standing rules 5, 7, 9, and 10 for this package)
 
-- Standing rule 5 regression after the package (typecheck, unit tests, full browser suite, build); standing rule 7 proof for each new test (fails first, one deliberate break per test group, `--repeat-each=10 --workers=8`).
-- Visual check at 1024 and 1440 px of each changed dialog and the Project menu; screenshots in the session scratchpad only, paths in the fix log.
-- One commit (or a short series) plus a hash-record commit. Fix log entry "F1: UI follow-up fixes" before the "Register map" section; mark items 1, 2, 4, 5, 7 done in the "Post-Stage-4 hand-offs" list of the Next sitting note; replace the Next sitting note header and the `codex.md` status paragraph. Push. Report and stop; F2 is a separate session.
+- Read only the documents and sections named in "Read first". Do not re-read whole guiding documents.
+- During work: `pnpm typecheck`, `pnpm test`, and only the browser specs that touch the changed screens. Run the full browser suite once, at the end of the package, and read only its summary line (and the names of any failures).
+- Every new test is shown failing on the old code first. Do not skip this.
+- One deliberate break per package, on the riskiest test named below. Not one per test group.
+- `--repeat-each=10 --workers=8` only for the specs named below as timing-dependent.
+- Fix log entry, short: issues, what changed, tests added, exact counts (unit, browser, build), the deliberate break, deferred items. No separate hash-record commit: write "Commit: see `git log`" in the entry.
+- One commit for the package. Push. Then a short report.
+- Riskiest test (deliberate break): item 2's race test. Timing-dependent specs (stress run): items 1 and 2.
+- Visual check: one screenshot at 1024 px per changed screen (the Trips scope-change question, the two delete dialogs after a refusal, the two impact dialogs, the Project menu), session scratchpad only, paths in the entry.
+- Do not cut: item 2's root-cause step.
+
+## Records (as modified by "Expedited verification" above)
+
+- Regression and proof as in "Expedited verification".
+- Visual check as in "Expedited verification".
+- One commit. Short fix log entry "F1: UI follow-up fixes" before the "Register map" section; mark items 1, 2, 4, 5, 7 done in the "Post-Stage-4 hand-offs" list of the Next sitting note; replace the Next sitting note header and the `codex.md` status paragraph. Push. Report and stop; F2 is a separate session.
