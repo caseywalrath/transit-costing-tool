@@ -295,7 +295,7 @@ export function buildTripCopyPreview(
     const source = profileCalculationSource(trip);
     return Boolean(source && (!assignment || !profile || source.runtimeProfileId !== assignment.runtimeProfileId || source.runtimeCalculationRevision !== (profile.calculationRevision ?? 0)));
   }).map((trip) => trip.id);
-  const adjusted = adjustBlockReferences(targetBlocks, routeTargetTrips.map((trip) => trip.id));
+  const adjusted = adjustBlockReferences(targetBlocks, routeTargetTrips.map((trip) => trip.id), [], now);
   const copiedTrips = routeSourceTrips.map((trip) => copyTrip(trip, request.targetServiceDayId, now));
   const sourceSignature = createTripCopySignature(request, routeSourceTrips, routeTargetTrips, targetBlocks, targetAssignments, targetProfiles);
   return {

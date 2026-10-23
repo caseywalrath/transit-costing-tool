@@ -41,9 +41,13 @@ export function parseRuntimeDuration(value: string): DurationSeconds | undefined
     return minutes * 60 + seconds;
   }
   if (!/^\d+(?:\.\d+)?$/.test(text)) throw new RuntimeDurationError(`Invalid runtime duration: ${value}`);
-  const minutes = Number(text);
-  if (!Number.isFinite(minutes) || minutes < 0) throw new RuntimeDurationError(`Invalid runtime duration: ${value}`);
-  return Math.round(minutes * 60);
+  // Decimal minutes become whole seconds from the decimal text itself, with half a second rounded up (away from zero for a non-negative
+  // value). Going through floating point gave 61 for 1.025 minutes (61.5 s), because 1.025 * 60 is 61.49999999999999.
+  const [whole, fraction = ''] = text.split('.');
+  const scale = 10n ** BigInt(fraction.length);
+  const seconds = Number((BigInt(whole + fraction) * 120n + scale) / (2n * scale));
+  if (!Number.isFinite(seconds)) throw new RuntimeDurationError(`Invalid runtime duration: ${value}`);
+  return seconds;
 }
 
 /** Format integer seconds as :MM or :MM:SS; minutes are not capped at 59. */

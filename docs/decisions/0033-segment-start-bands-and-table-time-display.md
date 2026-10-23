@@ -16,3 +16,7 @@ The Trips Actions menu has an off-by-default **Round displayed times** option. I
 - Segment-start band changes appear as steps between timepoints rather than inside a segment.
 - Existing continuous-blend profiles remain readable and keep their saved calculation meaning until the user changes their method.
 - Table rounding can differ from exact Run Time or layover durations; those durations remain exact.
+
+## Addendum (2026-10-23, code review package P16): the tie at the midpoint of a gap
+
+The decision says that at a gap or beyond the outer bands the nearest band is used, matching the prior blend's fallback. When a segment starts exactly halfway between the end of one band and the start of the next, the two bands are equally near. The blend resolved that tie to the later band (it evaluates the instant after the boundary); the segment-start method resolved it to the earlier band (finding 2-007). The tie now goes to the **later band** in both methods, so a Runtime profile gives the same times whichever of the two methods reads it at that instant. Beyond the outer bands the nearest band is still the only candidate, so nothing else changes.

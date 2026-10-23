@@ -401,6 +401,9 @@ export function roundCostingDisplay(value: number, decimalPlaces: number): numbe
 
 interface DayCoverage {
   eligibleBlockCount: number;
+  /** The day's totals are added in whole seconds and converted to hours once, so a half-hour tie is not lost to floating-point error. */
+  revenueSecondsPerDay: number;
+  platformSecondsPerDay: number;
   revenueHoursPerDay: number;
   platformHoursPerDay: number;
   excludedBlocks: CostingBlockExclusion[];
@@ -418,6 +421,8 @@ interface Coverage {
 function buildCoverage(input: CostingCalculationInput, serviceDayIds: ReadonlySet<string>): Coverage {
   const days = new Map<string, DayCoverage>(input.serviceDays.map((day) => [day.id, {
     eligibleBlockCount: 0,
+    revenueSecondsPerDay: 0,
+    platformSecondsPerDay: 0,
     revenueHoursPerDay: 0,
     platformHoursPerDay: 0,
     excludedBlocks: [],
@@ -439,9 +444,11 @@ function buildCoverage(input: CostingCalculationInput, serviceDayIds: ReadonlySe
     }
     const summary = matchingSummaries[0];
     day.eligibleBlockCount += 1;
-    day.revenueHoursPerDay += summary.revenueHours;
-    day.platformHoursPerDay += summary.platformHours!;
+    // A summary from the Blocking rules carries its whole seconds; one without them (a hand-built summary) gives the seconds behind its hours.
+    day.revenueSecondsPerDay += summary.revenueSeconds ?? Math.round(summary.revenueHours * 3600);
+    day.platformSecondsPerDay += summary.platformSeconds ?? Math.round(summary.platformHours! * 3600);
   }
+  for (const day of days.values()) { day.revenueHoursPerDay = day.revenueSecondsPerDay / 3600; day.platformHoursPerDay = day.platformSecondsPerDay / 3600; }
 
   for (const trip of input.trips) {
     if (assignedTripIds.has(trip.id)) continue;

@@ -2,46 +2,33 @@
 
 ## Next sitting
 
-**Sitting 4G: U01 (Standards-mode `index.html`), U02 (Data-safety and error presentation), U03 (Drafts, inputs, and preferences).** Main session: Sonnet. No sub-agents. None of these packages is S0 or S1, so there is no Opus review. Run them in this order. These are the first UI packages: `fix-packages.md` places a user-verification gate between the structural packages (4A to 4F) and the UI packages (Decision 0005), so the user reviews and merges the sitting 4F pull request, and confirms they want to start the UI packages, before 4G.
+**Next sitting: 4I (U06, U07), on Sonnet, then 4J and 4K as the plan says.** The combined sitting 4G + 4H is finished on the branch `claude/stage-4g-4h-review-fixes` (created from `origin/main` after the 4F merge, PR #19): U01, U02, U03, U04, U05, and P16 are done. The user did not ask for a pull request.
 
-- Work branch: the user names it in the prompt (suggested `claude/stage-4g-review-fixes`), created from current `origin/main`.
-- Prerequisite: the sitting 4F pull request (branch `claude/stage-4f-review-fixes`: P12 `ce5852d`, P13 `2463328`, P14 `3df50b6`, B01 `e6bf12e`, and the closing commit that records the hashes) must be merged into `main`. If it is not, stop and ask the user. Start 4G from current `origin/main`.
-- Before 4G starts, the user should open the 4F pull request and read its first CI run. The workflows added by B01 have not run (B01 entry, "What could not be verified"). If CI fails on the runner for a reason that is not a test defect, fix the workflow first; do not start U01 on a red CI.
-- State after 4F: the full browser suite has 80 tests, 80 passed on the last full run; no `test.fail`, `test.skip`, or `test.fixme` (about 2.6 minutes). Unit tests: 41 files, 637 tests, about 10 s. Bundle after B01: `index-BdF3r0BO.js` 790.12 kB, no chunk warning. `pnpm typecheck` now covers `tests` and `playwright.config.ts`.
-- **Known intermittent failure (open):** `tests/ui/unified-action-layer.spec.ts:139` failed at the same setup step (`tests/ui/support/tripsWorkspace.ts:95`, the Trip actions menu has no items after `ArrowDown`) in 2 of 6 full runs on the 4F branch and in 0 of 3 on `main`; it passes alone and on re-run. See the P14 entry, "Intermittent browser failure". A package that sees it should re-run the full suite once, say so in its report, and not change the spec to hide it. U04's keyboard work or U07's removal of the Runtime reload helper are the natural places to find the cause.
-- New in 4F that 4G relies on:
-  - **U01.** `index.html` is untouched. B01 widened `pnpm typecheck` to `tests`; U01's layout baselines are in `tests/ui/` and are type-checked now.
-  - **U02.** `showError` shows `error.message` unless it matches a technical pattern, so the typed `BlockingValidationError` messages (P12, P14) show as written. `blockingError` in `BlockingWorkspace.tsx` still inserts a space before each capital letter in a message that is not in `blockingMessages` (U02 criterion 4 removes it). Thrown by the Blocking service now: "Another Block on this service day already uses that label.", "No consecutive Trips use the selected From and To Nodes.", "Select a preceding Trip for the deadhead.".
-  - **U02/U05 wording.** `block.deadheadOutsideGap` and `block.boundaryOverlap` (P12) have no sentence; the screen shows "Deadhead outside gap" and "Boundary overlap" (fallback). `block.minutesRequired` and `block.minutesInvalid` (P14) use "Enter a non-negative whole-minute duration.".
-  - **U03.** The Blocking workspace now loads the unassigned Trips with the Blocks (`listUnassignedTrips`), not from the Trips tab's list; the New Block dialog value comes from `proposeBlockLabel`.
-  - **U05 (I-035).** `previewDeleteBlock` and `previewDeleteBlockingScenario` exist and nothing calls them. Their `sourceSignature` is the review token that `deleteBlock` and `deleteBlockingScenario` take. The Delete Block and Delete Blocking Scenario dialogs should show the counts and pass the preview's signature.
-  - **Costing (U06).** A `CostingFinding` is a `ValidationFinding` (`ruleId`, `entityType`, `entityId`, `field`); an assumption finding names the field, so the screen can show it beside its input. `CostingWorkspace.tsx` still reads only `validation.length` and severity.
-  - **CSV.** The Trips CSV and ZIP writer live in `src/application`. A free-text cell that begins with `=`, `+`, `-`, or `@` is written with a leading apostrophe; the Trips CSV import and Runtime paste remove it (`restoreFormulaText`). A new CSV importer must do the same for the same columns.
-- Open questions for the user (none blocks 4G). The first two are in the P09 entry, "Residual risks"; nothing in P12 to P14 required changing either, so both are unchanged:
+- Prerequisite: the pull request for `claude/stage-4g-4h-review-fixes` is merged into `main`. The user must open and merge it. Start sitting 4I from the new `origin/main` on a new branch, for example `claude/stage-4i-review-fixes`. Standing rules 1 to 8 below apply unchanged.
+- Done on the branch: U01 (`8e347e4`), U02 (`dea5288`), U03 (`215ec5c`), U04 (`d596125`), U05 (`25752ee`), P16 (`cf2d189`).
+- Packages for 4I: **U06** (Costing and Service day presentation: show each `ServiceDayValidationError` finding beside its field, Annual cost visible without table scroll at 1024 px, the Costing findings display) and **U07** (Runtime and Trips presentation, with the added acceptance criteria below). Both on Sonnet. U07 may need a UX decision that the package text does not settle; record it as "blocked: decision needed" and continue.
+- After 4I: **4J is now P15 only** (P16 landed in the combined sitting). **4K** is U08 on Opus, then D01 on Sonnet.
+- Blocked: none. No package of this sitting needed a user decision.
+- Known failures: none. The intermittent `unified-action-layer.spec.ts:139` failure is explained and fixed in the U04 entry (a deferred menu refocus); full runs after U04 (U04, U05, P16: three runs) did not show it. If it returns, diagnose it as a package failure.
+- Not started: U06, U07, P15, U08, D01.
+- State at the end of this sitting: unit tests 47 files, 696 tests; browser suite 125 tests, all passing; bundle `index-D0zj91Yn.js` 801.78 kB. The user must still read the first CI run (the B01 workflows have not run).
+- Carried forward for U06 and U07 from this sitting (details in the U01 to U05 entries):
+  - **U06:** Costing at 1024 px clips the Annual Cost column (U01 screenshots); the Costing screen reads only `validation.length` and severity; the persistence answer of `getLocalDataProtection()` is not shown.
+  - **U07:** Runtime totals show ":61"/":65" (U01 screenshots); the Shift drawer covers the Runtime Save button at some widths; the Runtime profile single-flight load, Runtime reload after save, and the Recalculate band picker (added criteria below); the React error boundary; user-facing text for `tripShift.timeBeforeServiceDay` and `inspectStaleTrips` findings; the shared-profile line should call `listRuntimeProfileServiceDays` (I-041).
+  - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead; the Add-trip row drafts are not kept across a scope change; 24 dialogs were converted (the finding counted 28, four were removed by X01).
+  - **P15:** the Trips and Pattern screens still show 0.0 miles for a Pattern with no distance (only Blocking treats a 0 total as incomplete); `calculateTimepointHeadways` has no unit test; display rounding in the Trips table. A CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
+  - **P16 leftovers:** `resetPatternService` (legacy mutator) still stamps wall-clock `now`; about 40 other domain signatures still default `now` to the wall clock.
+- Open questions for the user (none blocks 4I):
   1. `deletePattern` has no review token, though it deletes Runtime profiles, assignments, and Trips and changes Blocks. Suggested: add it to a small later package.
-  2. The legacy per-field route mutators (`updatePattern`, `addNode`, and the others listed there) still bypass the preview and the Pattern validation (the second half of finding 4-020); only unit tests use them. Suggested: delete them and move those fixtures to preview and commit, or keep them as test helpers.
-  3. Repeated Block labels already stored (saved before the P14 rule): a backup of such a database is refused on import, and a Block with a repeated label can still be edited. No package owns clean-up. Suggested: say so in U02's import message, or add a repair on load.
+  2. The legacy per-field route mutators (`updatePattern`, `addNode`, and the others in the P09 entry) still bypass the preview and the Pattern validation (the second half of finding 4-020); only unit tests use them. Suggested: delete them and move those fixtures to preview and commit, or keep them as test helpers.
+  3. Repeated Block labels already stored (saved before the P14 rule): a backup of such a database is refused on import, and a Block with a repeated label can still be edited. No package owns clean-up. Suggested: say so in the import message, or add a repair on load.
   4. Branch protection: require the `verify` and `browser` CI checks on `main`. This is a GitHub setting only the user can change.
-- Hand-offs from 4F for later sittings (details in the P12 to B01 entries):
-  - **P15/P16:** the Trips and Pattern screens still show 0.0 miles for a Pattern with no distance entered (only Blocking treats a 0 total as incomplete); showing incomplete mileage there is a presentation question.
-  - **P16:** a CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
-  - **Vitest major upgrade:** 5 `pnpm audit` advisories remain, all in the `vitest` chain (decision C4: a separate package, not scheduled). Decide with the user whether it joins 4K or a later maintenance sitting.
-  - **Persistence (no owner yet), unchanged:** a compound index on Scenario and Trip Profile for `listProfileTrips`.
-- Hand-offs from 4E for later sittings (details in the P09 to P11 entries):
-  - **U02:** show `getLocalDataProtection()` ("Last backup: <date and time>" or "No backup exported yet"; the persistence answer if wanted); add `QuotaExceededError`, `VersionError`, and `UnknownError` to the `showError` filter; present the read-only status before the header's "Local save failed" that a rejected write now also sets.
-  - **U05:** the Node editor's impact dialog does not list `nonRevenueImpact`; the Trip profile confirmation does not mention `blockingScenarioCount`; the Runtime profile and Trips delete dialogs stay open with the old review after a refusal.
-  - **U06:** show each `ServiceDayValidationError` finding beside its field.
-  - **U07:** the shared-profile line should call `listRuntimeProfileServiceDays` (I-041).
-  - Persistence (no owner yet): `listProfileTrips` in `main.tsx` loads every Trip of the Scenario and filters by Trip Profile in memory; a compound index on Scenario and Trip Profile would avoid reading Trips of other profiles.
-  - Unexplained: one timeout in 50 runs of `local-data-protection.spec.ts` (P10 entry); it did not return in 100 later runs.
-- Hand-offs from 4D for later sittings (details in the P06 to P08 entries):
-  - **Decided by the user on 2026-10-23 (Option B), for U07 (sitting 4I).** Under a segment-start or blended profile, an anchor that fits two first departures is rejected and the candidates are listed (user decision 3). A planner cannot pick one of the listed candidates for those methods; Decision 0031 keeps manual band override for single-band profiles only. The Recalculate dialog must therefore hide its band picker for segment-start and blended Trips, say plainly that the fixed time can be reached two ways, and rely on the options it already has: "Use first departure for this trip", choosing another anchor, or revising the bands. No domain change is needed. See "Added acceptance criteria" below and the Decision 0031 addendum.
-  - U07: the React error boundary; user-facing text for `tripShift.timeBeforeServiceDay` and for the findings of `inspectStaleTrips`.
-  - P16: the golden "DEFECT 2-007" test (gap-midpoint tie between `segmentStart` and blend) was not ported with the `segmentStart` matrix.
-  - Not covered by the contract suite: the legacy generation-set methods and `saveBlocks`.
-- Status of the 4C decision (two app behaviors, "Residual risks, hand-offs, and findings" in the P05 entry): the service part of the Runtime first-visit race is fixed (P09, below); its single-flight load in `App.tsx` is U07's. After a Runtime profile is saved, the Trips table keeps the profiles it loaded earlier, so Show runtime bands shades nothing until a reload: U07's or P15's.
-- Still carried forward from 4B, unchanged: clean-up of placeholder Blocks already stored in databases that imported version 3 and 4 files (no owner yet); presenting the import report and recovery findings (U02).
-- Tests deferred to later packages (all recorded in the P05 entry): focus trap, Escape, and focus return (U04's `keyboard.spec.ts`); a unit test for `calculateTimepointHeadways` (P15); Annual cost visible without table scroll at 1024 px (U06).
+  5. Vitest major upgrade: 5 `pnpm audit` advisories remain, all in the `vitest` chain (decision C4: a separate package, not scheduled). Decide whether it joins 4K or a later maintenance sitting.
+- Other hand-offs still open from earlier sittings:
+  - **Decided by the user on 2026-10-23 (Option B), for U07.** Under a segment-start or blended profile, an anchor that fits two first departures is rejected and the candidates are listed (user decision 3). The Recalculate dialog must hide its band picker for segment-start and blended Trips, say plainly that the fixed time can be reached two ways, and rely on the options it already has: "Use first departure for this trip", choosing another anchor, or revising the bands. No domain change is needed. See the Decision 0031 addendum.
+  - **CSV.** The Trips CSV and ZIP writer live in `src/application`. A free-text cell that begins with `=`, `+`, `-`, or `@` is written with a leading apostrophe; the Trips CSV import and Runtime paste remove it (`restoreFormulaText`). A new CSV importer must do the same for the same columns.
+  - **U05 hand-offs from 4E (not done in U05; see its entry):** the Node editor's impact dialog does not list `nonRevenueImpact`; the Trip profile confirmation does not mention `blockingScenarioCount`; the Runtime profile and Trips delete dialogs stay open with the old review after a refusal.
+  - **Persistence (no owner yet):** `listProfileTrips` in `main.tsx` loads every Trip of the Scenario and filters by Trip Profile in memory; a compound index on Scenario and Trip Profile would avoid reading Trips of other profiles. Placeholder Blocks already stored in databases that imported version 3 and 4 files have no clean-up. Not covered by the contract suite: the legacy generation-set methods and `saveBlocks`. One timeout in 50 runs of `local-data-protection.spec.ts` (P10 entry) is unexplained; it did not return in 100 later runs.
 - Unit-test and browser-test conventions are in "Standing rules" below and in `codex.md`. Browser-test helpers (all in `tests/ui/support/`): `dexieEnv.ts` (`runInPage`, `seedSnapshot`), `goldenFixture.ts` (the Federal BRT project), `tripsWorkspace.ts` (`createRouteWithPattern`, `createShiftReadySchedule`, `openGoldenTrips`, `settleFrames`), and from 4E `capacityFixture.ts` (400 Blocks, 2,000 Trips).
 - Review documents: read them from the review branch with `git show origin/claude/upbeat-ritchie-51mpy5:docs/review/<file>`. Never copy `docs/review/` into the work branch.
 
@@ -1340,3 +1327,374 @@ Before the first deployment, open the pull request and read the CI run; then mer
 - The first deployment after merge is the first real use of the `workflow_run` trigger. If the Deploy workflow does not start, the fallback is to restore `on: push` and make the build job `needs` a call to `ci.yml` through `workflow_call`.
 - The repository's branch protection (requiring the `verify` and `browser` checks) is a GitHub setting for the user; this package cannot set it.
 - The `engines` range is `>=22.12.0 <23`; pnpm warns, but does not fail, outside it unless `engine-strict` is set.
+
+## U01: Standards-mode `index.html`
+
+- Date: 2026-10-23. Sitting 4G/4H (combined). Model: Sonnet (main session). No sub-agents.
+- Type: UI/build. Severity: S2.
+- Commit: `8e347e4`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-038 | 5-013, 6-008 | S2 | `index.html` held only the root element and the script tag: no doctype, `lang`, charset, viewport, or title. The browser rendered every screen in quirks mode (`document.compatMode` was `BackCompat`), where tables do not inherit the root font size (table text was 16 px, not the 14 px of `styles.css:1`) and the page has no language or title for assistive technology. |
+
+User decisions implemented: none (this is the Decision 0005 gate for the UI packages; the user waived the verification gate between 4F and U01 for this sitting).
+
+### What changed
+
+- `index.html`: `<!doctype html>`, `<html lang="en">`, `<meta charset="utf-8">`, `<meta name="viewport" content="width=device-width, initial-scale=1">`, `<title>Transit Costing Tool</title>`, and the root element and script tag inside `<head>` and `<body>`.
+- Behavior before and after: the page title in the browser tab was the address; it is now "Transit Costing Tool". Table text is 14 px (it was 16 px), so table rows are about 1 px shorter and more columns fit in the Trips table at 1024 px. No CSS was changed.
+- The Vite build wraps the same `index.html` (`dist/index.html` 0.41 kB). The bundle is unchanged (`index-BdF3r0BO.js`, 790.12 kB).
+
+### Tests added
+
+`tests/ui/standards-mode.spec.ts` (2 tests, 20 runs with `--repeat-each=10 --workers=8`, all passed):
+
+- "the page is a standards-mode HTML document with a language, charset, viewport, and title": `compatMode` is `CSS1Compat`, the doctype is `html`, `lang` is `en`, the document is UTF-8 with a `charset` meta, the viewport meta has `width=device-width`, the title is "Transit Costing Tool".
+- "table text renders at the 14 px root size instead of the quirks-mode 16 px": a table cell with no font size of its own computes to 14 px, and so does the root.
+
+Both tests failed on the unfixed `index.html` (`Expected "CSS1Compat", Received "BackCompat"`; `Expected "14px", Received "16px"`).
+
+Deliberate break: removing `lang="en"` from the fixed file made the first test fail (`Expected "en", Received ""`) and left the second passing; restored.
+
+### Layout tests and baselines
+
+All 14 layout-related specs pass unchanged (`trip-table-layout`, `runtime-table-layout`, `service-day-copy-layout`, `workflow-section-layout`, `unified-action-layer`, `costing-workspace`, `capacity-read-paths`, and the others). No measured value changed, so no layout baseline under `tests/ui/` was edited.
+
+### Screenshots (not committed; session scratchpad only)
+
+Taken on the Federal BRT project (Weekday, Southbound; Blocking Scenario "Workbook Blocks"; Costing assumptions of $150 per Revenue Hour added for the Costing view). "Before" is the unfixed page, "after" the fixed page.
+
+- After: `/tmp/claude-0/-home-user-transit-costing-tool/97a11f95-8195-5c0d-bed4-917d1a55f2e0/scratchpad/shots/u01/{1024,1440}-{route,trips,blocking,costing}.png`
+- Before: `/tmp/claude-0/-home-user-transit-costing-tool/97a11f95-8195-5c0d-bed4-917d1a55f2e0/scratchpad/shots/before/{1024,1440}-{route,trips,blocking,costing}.png`
+
+What the screenshots show: every screen keeps its structure at both widths. The changes are in table text (16 px to 14 px) and row height. At 1024 px the Trips table now shows the Yale and Englewood columns that the quirks-mode page cut off, and the Costing and Blocking tables are slightly more compact.
+
+Layout problems seen (listed, not fixed here; each existed before U01 and is owned by the package named):
+
+- Costing, 1024 px: the Cost Breakdown table scrolls inside its frame and the Annual Cost column is still clipped (finding 5-007, U06).
+- Trips, Runtime editor: band totals of 60 minutes or more read ":61" and ":65" (finding 5-028, U07).
+- Blocking, both widths: Pattern pills are cut off ("Northbound: Evan…", finding 5-021, U05).
+- Route, 1440 px: the Node Type select cuts its text ("timep", "termi"), Pattern Node selects cut long names, the order arrows stack on two lines, and "Delete Pattern" and "Add node" wrap onto two lines. Unchanged by U01; no finding owns them.
+
+No new layout regression was seen.
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 41 files, 637 tests passed (unchanged).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 82 passed, 0 failed (3.1 minutes); 80 before plus the 2 new tests. No `test.fail`, `test.skip`, or `test.fixme`. The intermittent `unified-action-layer.spec.ts:139` passed.
+- `pnpm build`: succeeds with no chunk warning.
+- Baseline before the change: 41 files, 637 tests; 80 browser tests, all passed (3.2 minutes).
+
+### Documentation
+
+No architecture or decision record changes: no structure, data flow, or persistence changed. The browser tab title and page language are described here only.
+
+### Residual risks
+
+- Any CSS that relied on a quirks-mode measurement would show it only in a layout the specs do not cover (the specs cover Trips, Runtime, and Costing; Route and Blocking were inspected by screenshot at 1024 and 1440 px, and no regression was seen).
+- Screenshots were taken in headless Chromium 141 only.
+
+## U02: Data-safety and error presentation
+
+- Date: 2026-10-23. Sitting 4G/4H (combined). Model: Sonnet (main session). No sub-agents.
+- Type: UI. Severity: S2.
+- Commit: `dea5288`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-039 | 5-014 | S2 | After a stale-source refusal Blocking kept its old data and refused every later edit until the planner changed day or reloaded the page. |
+| I-072 | 3-015, 4-017 | S3 | UI error paths showed `error.message` directly or lost it: Trips Block assignment, the Shift preview, the Trips CSV preview, Build Trips, Recalculation, and the copy and batch dialogs. The filter missed `QuotaExceededError`, `VersionError`, "not part of transaction", `TypeError`, and Dexie's "Database has been closed". `blockingError` inserted a space before every capital letter of a typed message, and raw message-key lists reached the screen. |
+| I-076 | 4-016 | S3 | A failed startup, a failed selection reload, and a failed JSON or CSV export had no error handling: the empty "Start a local planning project" screen appeared, or nothing happened. |
+| I-095 | 5-029 | S3 | Messages with no next step, technical terms, inconsistent Trip and Block capitalization, and wrong text. |
+
+User decisions implemented: none new. This package presents the P02 read-only status and the P10 last-backup time (hand-offs from 4A and 4E).
+
+### What changed
+
+- **Read-only tab.** `App` takes the P02 `SessionStatusQueries` (`main.tsx` passes the tab guard). A read-only tab shows the notice banner "This project is open in another tab. This tab is read-only." (a new `notice info` variant in `styles.css`; a tab whose database was upgraded elsewhere shows "The saved data was upgraded in another tab. This tab is read-only. Reload this page to edit."). The header shows "Read-only" instead of "Saving locally…" or "Local save failed", which a rejected write also set. Edit controls stay visible; writes are still rejected by P02.
+- **Last backup.** The Project menu shows "Last backup: <date and time>" or "No backup exported yet" under "Backup project JSON", from `getLocalDataProtection()`. `MenuButton` gained an optional `note` on an item (shown under the item and read as its accessible description; the item's name is unchanged).
+- **One error filter.** New `src/ui/errorMessages.ts` (`userFacingError`). It shows application text as written and returns the fallback for browser, Dexie, or JavaScript wording (`QuotaExceededError`, `VersionError`, `UnknownError`, "not part of transaction", `TypeError`, Dexie error names, "Database has been closed", and others) and for a raw message-key list. It also checks the error name, because a `DOMException` keeps its technical name there. `showError` and every catch site use it.
+- **Catch sites.** Trips Block assignment and unassignment, Shift preview and save, Trips CSV preview and import, Runtime profile CSV, pasted Runtime rows, Build Trips (a Headway such as "abc" now reads "Enter a Headway in minutes, such as 10, or as minutes and seconds, such as 7:30."), Recalculation review and apply, and the Runtime copy, Trip copy, and batch Pattern change dialogs show filtered text with a next step. The copy and batch dialogs no longer also post a second banner.
+- **Blocking.** `blockingError` returns the mapped sentence for a list of message keys (each once), the message as written for any other text (commas kept), and the fallback for technical text. Every Blocking write goes through `failed()`. After a stale-source refusal (`blockingScenario.sourceChanged` or `block.endpointsChanged`) it shows the refusal once and reloads the Blocking Scenarios and Blocks, so the next edit uses the current source. Message: "Blocking Scenario changed since the operation was reviewed. Nothing was saved, and the latest Blocks are loaded. Review them and try again." (it keeps the earlier sentence, so `single-tab.spec.ts:248` passes unchanged).
+- **Startup, selection, export.** A failed startup shows the error banner ("Unable to open your saved projects. Reload this page and try again.") and not the start screen. The Project, Scenario, Route, and Blocking Route selectors catch a failed reload ("Unable to load that selection. Reload this page and try again."). JSON and Route CSV export failures show the banner ("Unable to export the project backup. Your data was not changed. Try again.").
+- **Messages (5-029).** Next steps added to `node.referencedBeforeDelete`, `pattern.sequenceNormalized`, `block.missingTrip` (both lists), `runtime.noApplicableBand`, the "Review this item." fallback, the staged Shift save, Trips CSV and Runtime CSV imports, the pasted rows, and every "Unable to …" fallback in the copy and batch dialogs. "The Trip shift request is invalid." is replaced in the UI (the domain wording stays). Trip, Block, Pattern, Node, Route, Scenario, Direction, and Runtime capitalization follows the glossary in the validation messages and the Build Trips messages. The Runtime profile dialog says "Enter a name." or "Select a Pattern." for the field that is missing.
+- **Docs.** `architecture_overview.md` (tab model paragraph) and `docs/ui-conventions.md` (error text and read-only rules).
+
+### Files outside the package's owned list (recorded hand-offs)
+
+- `src/ui/MenuButton.tsx`: the optional item `note` (minimum change for criterion 2; U04 owns this file next and keeps it).
+- `src/ui/errorMessages.ts` (new) and its test: the shared filter. `App.tsx` imports it, and `BlockingWorkspace.tsx` cannot import `App.tsx` (circular).
+- `src/main.tsx`: passes the tab guard to `App`.
+- `src/ui/BlockingWorkspace.test.ts`: tests for `blockingError`.
+- `tests/ui/trip-bounds.spec.ts:60`: "Enter 500 trips or fewer." became "Enter 500 Trips or fewer." Same assertion (the Build Trips limit message is shown), new capitalization.
+
+### Tests added
+
+- `src/ui/errorMessages.test.ts` (16 tests): application text and `StorageFullError` pass through; 14 technical or key-list texts become the fallback; the error name is checked; non-Error values use the fallback. The old inline filter let 5 of 8 sample technical texts through (`QuotaExceededError`, `VersionError`, "not part of transaction", `TypeError`, "is not a function").
+- `src/ui/BlockingWorkspace.test.ts`, "blockingError" (4 tests): typed messages as written, commas kept, key lists once each with the fallback for an unknown key, technical text hidden. Against the old function all 4 failed (it returned " Another  Block on this service day already uses that label." and repeated "A Block can have only one pull-in.").
+- `tests/ui/data-safety.spec.ts` (6 tests, real IndexedDB): a read-only tab shows the banner and header, keeps its controls, and does not say "Local save failed" after a rejected write; the Project menu shows "No backup exported yet" and then "Last backup: <time>" after a download; a stale-source refusal reloads Blocking, shows the message once, and the retry in the same dialog saves; a duplicate Block label shows its typed message once, as written; a failed startup shows the banner and not the start screen, with no browser error text; after the database is removed under the page, a selection reload and a JSON export each show their plain banner message with no Dexie or "closed" text. On the unfixed code 5 of the 6 failed; the sixth (typed message) is a control, because that path never used `blockingError` (the unit test covers the old defect).
+- Proof they are stable: `--repeat-each=10 --workers=8` on `data-safety.spec.ts`: 60 of 60 passed.
+- Deliberate break: removing the reload in `failed()` made the stale-source test fail ("Expected substring: Renamed elsewhere, Received 26 ▾"); restored.
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 42 files, 657 tests passed (637 before; +16 and +4).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 88 passed, 0 failed (3.3 minutes); 82 before plus the 6 new tests. A first full run showed one failure, `single-tab.spec.ts:248`, because its assertion read the old stale-source sentence; the new message keeps that sentence, and the spec passes unchanged. The intermittent `unified-action-layer.spec.ts:139` passed in both full runs.
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-BntBzvlk.js` 793.57 kB (790.12 kB before).
+- Visual check at 1024 px (scratchpad, not committed): `/tmp/claude-0/-home-user-transit-costing-tool/97a11f95-8195-5c0d-bed4-917d1a55f2e0/scratchpad/shots/u02-readonly.png` (banner between the context bar and the Route bar; "Read-only" in the header) and `.../shots/u02-menu.png` (the note under "Backup project JSON"). Both read well.
+
+### Not done, or only partly
+
+- The persistence answer of `getLocalDataProtection()` ("kept" or "may be cleared") is not shown. The hand-off said "if wanted"; no acceptance criterion asks for it.
+- Repeated Block labels saved before P14 (open question 3): not addressed here; the import message is unchanged.
+- `RuntimeProfileDialog2` and the other name dialogs still close on submit before the write finishes, as before.
+- Messages listed in 5-029 under terminology that belong to U07 ("Run Time" as a term) are left for U07.
+
+### Residual risks
+
+- A notice banner stays until dismissed, so a stale-source message from an earlier refusal remains on screen after a successful retry (the test pins this). Auto-clearing notices is a UX decision no package owns.
+- Errors from `RuntimeDurationError` and similar domain classes are matched by class in one place only (Build Trips); other inputs still show the filter's fallback or the domain sentence.
+
+## U03: Drafts, inputs, and preferences
+
+- Date: 2026-10-23. Sitting 4G/4H (combined). Model: Sonnet (main session). No sub-agents.
+- Type: UI. Severity: S2.
+- Commit: `215ec5c`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-026 | 4-010 | S2 | A JSON `null` in the route-selection key blanked the app on every load (the key was rewritten only after a successful load, so it could not repair itself); `null` in the Blocking key blanked it when Blocking opened. |
+| I-030 | 5-004 | S2 | An unsaved Runtime editor draft was discarded silently on a Pattern, Profile, service day, Direction, or tab change; a staged Shift was discarded silently on a Runtime save; Build Trips input was lost on close; a reload with a dirty Runtime draft raised no leave prompt. |
+| I-032 | 5-006 | S2 | Saving Nodes replaced an unsaved Pattern draft with the saved copy, and saving a Pattern replaced unsaved Node edits. |
+| I-042 | 5-024 | S3 | Escape in a numeric field and in a Runtime time field committed the typed text instead of cancelling (the blur handler still held the typed draft). |
+| I-091 | 5-025 | S3 | The remembered Blocking Scenario was overwritten after a Trip Profile change in Trips, and Blocking overwrote its own record with empty values on its first render, so the choice was never restored. |
+
+User decision implemented: 14 (guard the Runtime editor draft and the staged Shift with the discard dialog; Build Trips closes without a prompt and keeps its values).
+
+### What changed
+
+- **Runtime draft and staged Shift (`App.tsx`, Trips).** A new `requestScopeChange` runs before any change that replaces the Runtime editor: the Runtime Pattern select, the Profile menu (select, New, Rename, Copy, Reverse-copy, Delete), and the App-level Route, Day, Direction, Project, Scenario, and tab controls (through the existing navigation guard, which now also covers a dirty Runtime draft). A dirty draft opens the existing three-button dialog (`RouteNavigationDraftDialog`, now with a title and text: "Save Runtime changes before leaving?" Cancel, Discard, Save). Save saves the draft and then continues; if the save fails validation the planner stays on the editor with its findings. A staged Shift keeps its existing Cancel/Discard dialog; when both are open the Runtime question comes first. The header Runtime Save also asks to discard a staged Shift first, because the save reloads the Trips and cleared the Shift without a word. A reload with a dirty Runtime draft raises the browser's leave prompt (`beforeunload`). `RuntimeEditor2`'s `save()` now resolves to whether it saved.
+- **Latent defect fixed on the way.** The Project, Scenario, Route, Day, and Direction selects read `event.target.value` inside the deferred navigation action. A controlled select resets its DOM value after the change event, so after any Save/Discard dialog the action used the old value and the change silently did nothing (it only worked when no dialog was needed). Each select now captures the value first. This also repairs the Route draft dialog for those selects.
+- **Build Trips.** The drawer's values live in a ref owned by the Trips workspace. Closing the drawer (Cancel, Escape, a service-day change) asks nothing; reopening shows the values again; a successful build clears them. The Pattern is kept only if it is still on offer.
+- **Nodes and Patterns.** A save returns new arrays for both. A draft is now replaced only when its own saved records changed (the Pattern comparison ignores the save time), so saving Nodes keeps an unsaved Pattern draft and saving a Pattern keeps unsaved Node edits. Deleting a Node that changes a Pattern still resets that draft.
+- **Escape.** `NumericCommit` and `RuntimeTimeInput` remember that Escape started the blur, restore the saved value, and skip the commit.
+- **Preferences.** New `src/ui/preferences.ts` (`readStoredRecord`, `storedText`, `storedTextMap`): a stored value that is not a plain object reads as empty, and each field must be a string (or a valid minimum-layover rule). The route-selection and Blocking-selection readers use it, so `null`, arrays, numbers, and wrong-typed fields fall back to the default selection.
+- **Remembered Blocking Scenario.** Trips remembers one Blocking Scenario for each Trip Profile of a Scenario (an older single-choice record still reads), writes only a real choice that belongs to the profile shown, and falls back to the remembered choice, then the first, when the profile changes (it used to fall to "No Blocking Scenario"). Blocking saves its selection only once the Trip Profile and service day are restored, keeps `blockingScenarioByProfile` the same way, and restores that choice.
+- **Docs.** `docs/ui-conventions.md` (drafts, Build Trips, selection preferences).
+
+### Files outside the package's owned list (recorded hand-offs)
+
+- `src/ui/preferences.ts` and `src/ui/preferences.test.ts` (new): the shared shape check (App and Blocking cannot share it from `App.tsx`).
+
+### Tests added
+
+- `src/ui/preferences.test.ts` (12 tests): stored `null`, arrays, numbers, strings, broken JSON, a missing or throwing storage read as empty; text and identifier-map checks.
+- `tests/ui/drafts-and-preferences.spec.ts` (14 tests, real IndexedDB): the Runtime dialog on a service-day change with Cancel, Discard, and Save (what is stored after each); the tab change; the Pattern select and the Profile menu, and the leave prompt (a cancelled `beforeunload`); a Runtime Save with a staged Shift (asks, Cancel keeps both, Discard saves and drops the Shift); a staged Shift and a dirty draft on a tab change (Runtime question first); Build Trips values kept across close and reopen and cleared by a build; saving Nodes with an unsaved Pattern edit and saving a Pattern with an unsaved Node edit; Escape in the annual-count field and in a Runtime time field (value restored, no write, no message) with Enter still committing; stored selections of four wrong shapes in both keys; the remembered Blocking Scenario across a Trip Profile change in Trips and after a reload in Blocking.
+- On the unfixed code (the U02 commit) 11 of 14 failed. The three that passed are controls: arrays, numbers, and wrong-typed fields in the selection keys already fell back (only `null` crashed, as the finding says).
+- `--repeat-each=10 --workers=8` on the spec found two defects in the tests themselves, both fixed in the tests: the Node test assumed the first Node input is Node "A" (5 failures in 140), and the leave-prompt test read the `beforeunload` listener before React had removed it (2 failures in 140; now polled). The final run: 140 of 140 passed. The full browser suite was run before the second test fix; the changed spec alone was re-run (140 of 140), and the next package's full run includes it.
+- Deliberate breaks, one per group, each made its test fail and was restored: bypassing `requestScopeChange` (service-day test), not recording Build values, removing the Escape guard in `NumericCommit`, resetting the Node draft on every save, removing the shape check in `preferences.ts` (the `null` selection test), and dropping the per-profile memory (the remembered-Scenario test).
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 43 files, 669 tests passed (657 before; +12).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 102 passed, 0 failed (3.8 minutes); 88 before plus the 14 new tests. No existing spec changed. The intermittent `unified-action-layer.spec.ts:139` passed.
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-BCu_9qhe.js` 796.30 kB (793.57 kB before).
+- Visual check of the new Runtime leave dialog at 1024 px (scratchpad, not committed): `/tmp/claude-0/-home-user-transit-costing-tool/97a11f95-8195-5c0d-bed4-917d1a55f2e0/scratchpad/shots/u03-leave-dialog.png`. It is the existing three-button dialog with Cancel focused.
+
+### Not done, or only partly
+
+- The finding also names the Add-trip row and Blocking dialog drafts as silently discarded. Decision 14 and the acceptance criteria cover only the Runtime editor, the staged Shift, and Build Trips, so those two are unchanged.
+- Build Trips values live in the Trips workspace; leaving the Trips tab and returning clears them (the workspace unmounts). Decision 14 says "until the drawer is reopened"; a tab change was not asked for.
+
+### Residual risks and hand-offs
+
+- **U07 (layout, Sol if redesigned):** at 1024 to 1900 px the docked Shift drawer covers the Runtime Save and Discard buttons, so with a staged Shift open the planner can reach Runtime Save only by keyboard (the new test presses it with the keyboard). Not fixed here; no package owns it.
+- The Runtime leave dialog says "Save Runtime changes before leaving?" for a Runtime Pattern or Profile change as well as for leaving the tab; the wording fits all of them, and no separate title was added.
+- A Pattern draft that is dirty when a Node save changes that Pattern (a deleted Node) is still replaced; the planner already saw the impact dialog.
+
+## U04: Dialogs, focus, and keyboard
+
+- Date: 2026-10-23. Sitting 4G/4H (combined). Model: Sonnet (main session). No sub-agents.
+- Type: UI. Severity: S2.
+- Commit: `d596125`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-036 | 5-010 | S2 | No modal dialog trapped Tab; a dialog opened from a menu lost its focus to the trigger (so Escape did nothing and focus fell to the page on close); 10 dialogs ignored Escape; two Runtime dialogs had no accessible name. |
+| I-037 | 5-012 | S2 | Focus dropped to the page after Shift drawer steps and after Block pill moves, Unassign, Delete trips, Runtime Discard, and Node Discard. |
+| I-086 | 5-018 | S3 | The independent Display toggles had the radio role; an open menu stayed open on Tab. |
+| I-090 | 5-023 | S3 | Missing `aria-invalid` and `aria-describedby` on fields with errors; no `h1` on Trips, Blocking, or Costing; a nested `main`; an unlabelled JSON file input; table headers without `scope`; a `form` carrying the dialog role. |
+
+### What changed
+
+- **`src/ui/ModalDialog.tsx` (new).** One wrapper for every modal dialog: initial focus (the `autoFocus` control, else the first focusable control, else the dialog), Tab and Shift+Tab wrap inside it, focus that escapes is pulled back (only the innermost open dialog does this), Escape cancels (`onClose`, ignored while `busy`), and focus returns to the invoking control when the dialog closes, unless other code has already placed it. A menu item records its trigger as the invoker, because the menu is gone by the time the dialog mounts. The role is `dialog` or `alertdialog`; the name comes from `labelledBy` or `label`. A dialog that submits is a dialog section holding a `<form class="dialog-form">` with `display: contents` (a `form` may not carry the dialog role; four CSS selectors gained a `.dialog-form` variant, so the layout is unchanged).
+- **All 24 modal dialogs use it** (App 17, Blocking 6, Costing 1). The count in the finding was 28; four were dialogs of the legacy screens that X01 removed. The two Runtime dialogs now have names (`runtime-profile-dialog-title`, `delete-runtime-profile-title`). The dialogs' own `Escape` handlers were removed, and the 10 that had none now close on Escape. Existing specs pass unchanged.
+- **`MenuButton`.** An item that opens a dialog records the trigger and no longer refocuses it (it refocuses the trigger only when focus was lost). Independent toggles use `kind: 'checkbox'` (`menuitemcheckbox`): Show runtime bands, Show headways, Round displayed times. Tab closes an open menu and the browser moves on from the trigger. Escape returns focus to the trigger at once (see "Intermittent browser failure" below).
+- **Focus after common actions.** Shift drawer steps restore focus to the pressed button, or to the next enabled control when that button stays disabled. Block pill moves, Unassign, and Delete trips return focus through the dialog's invoker rule. Runtime Discard and Save return focus to Runtime actions; Node Discard to New node; Pattern Discard to Add node.
+- **Fields and landmarks.** `Field` marks its control `aria-invalid` and `aria-describedby` its messages when it has errors. The Build Trips drawer marks the fields it cannot use (Pattern, First Trip, Headway, Number of Trips, Last Trip) and points at its alert; the Runtime profile dialog marks Name or Pattern; Costing inputs named by a finding point at the alert (`CostingFinding.field`). Trips, Blocking, and Costing each get one visually hidden `h1` ("Trips and runtimes", "Blocking", "Cost estimate"; Costing's must not be "Costing", which `costing-workspace.spec.ts` forbids); the early-return states use `h1.box-heading`. The Costing `main` is a `div` (the App owns the one `main`). The JSON file input is labelled "Restore project JSON file" and, like the other two hidden file inputs, is out of the Tab order. Every column header has `scope="col"` (76 headers).
+- **Dependency.** `axe-core` 4.13.0 (exact; released 2026-08-05) added as a dev dependency for the accessibility scan. It is used only by `tests/ui/keyboard.spec.ts`. `package.json` and `pnpm-lock.yaml` are not on U04's owned list (recorded hand-off).
+- **Docs.** `docs/ui-conventions.md` (dialogs, menus, accessibility baseline).
+
+### Intermittent browser failure (cause found, fixed here)
+
+`unified-action-layer.spec.ts:139` failed at `tripsWorkspace.ts:95` in some full runs (the Trip actions menu had no items after `ArrowDown`). The cause: when a menu closed, `MenuButton.dismiss()` returned focus to its trigger in a `setTimeout`. The helper presses Escape on the Runtime actions menu and immediately focuses Trip actions; under load the timer fired after that, pulled focus back to the Runtime trigger, and the next `ArrowDown` opened the Runtime menu. `keyboard.spec.ts` "Escape returns focus to the menu trigger at once" reproduces the mechanism deterministically: with the timer the focus ends on "Runtime actions" instead of "Trip actions". `dismiss()` now focuses the trigger synchronously. The failure had been seen in 2 of 6 full runs on the 4F branch, so the real fix is confirmed by the deterministic test rather than by absence: the full suite ran green here (117 of 117). The first 140 runs of the new spec hit the symptom once, before the fix was complete.
+
+### Tests added
+
+- `src/ui/modalDialogs.test.ts` (3 tests): `modal-backdrop` and `aria-modal` appear only in `ModalDialog.tsx`; 24 `ModalDialog` uses in the three workspaces; each has `labelledBy` or `label`.
+- `tests/ui/keyboard.spec.ts` (15 tests; the B4 reproductions ported as normal tests plus new ones): a name dialog opened from a menu by keyboard takes focus, closes on Escape, and returns focus; a menu item that opens a dialog never gives its trigger focus (a focus counter, with the mouse); Tab and Shift+Tab stay inside and stray focus is pulled back; the Runtime profile dialog has a name and closes on Escape; Delete trips closes on Escape and, after confirming, returns focus to Trip actions; axe (dialog name, label, landmark, heading, role, document rules) on the four screens and on four open dialogs; Shift drawer steps keep focus; focus after a Block pill assignment and after Unassign; Runtime Discard and Node Discard; Escape returns focus at once; Display toggles are checkboxes and Tab closes a menu; `aria-invalid` on Route name, Build Trips, the Runtime dialog, and Costing; one `h1` and one `main` per workspace, a labelled file input, `scope` on every header.
+- All 14 specs written before the Escape one failed on the unfixed code (the U03 commit; axe reported the unlabelled input there). `--repeat-each=10 --workers=8`: 150 of 150 passed.
+- Deliberate breaks, each restored: removing the Tab trap (the trap test failed: "Tab press 2 left the dialog; focus on BODY"); the menu always refocusing its trigger (the focus-counter test failed); a Display toggle back to radio; `Field` without `aria-invalid`; no focus restore in the Shift drawer; the deferred `dismiss()` (focus ended on Runtime actions); a column header without `scope` in Blocking.
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 44 files, 672 tests passed (669 before; +3).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 117 passed, 0 failed (4.2 minutes); 102 before plus the 15 new tests. No existing spec was changed. `unified-action-layer.spec.ts:139` passed.
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-Jh7TRu9e.js` 799.22 kB (796.30 kB before).
+- Visual check at 1024 px (scratchpad, not committed): `/tmp/claude-0/-home-user-transit-costing-tool/97a11f95-8195-5c0d-bed4-917d1a55f2e0/scratchpad/shots/u04-after/{name-dialog,activity-dialog,notes-dialog}.png` against `.../shots/u04-before/name-dialog.png`: the dialogs are laid out as before; the input now shows its focus ring because it has focus.
+
+### Not done, or only partly
+
+- "Compatible only" in the Blocking menu is a single filter toggle but keeps the radio role: it is in the Compatibility group, not a Display option, and `blocking-workspace.spec.ts` asserts `menuitemradio` for it. Changing it needs that spec to change; left for a later package.
+- Typeahead in menus (finding 5-018) is not implemented; the acceptance criteria do not ask for it.
+- The Add-trip row, the Blocking dialogs that open inside other dialogs, and the frozen-column row headers (Sol-class) are unchanged.
+- Initial focus in a dialog without an `autoFocus` control is its first focusable control, which for a confirmation is the Cancel or Close button in some dialogs and a destructive button in none that was checked; each alert dialog already marks Cancel `autoFocus`.
+
+### Residual risks
+
+- `ModalDialog` pulls focus back with a document-level `focusin` listener. Another feature that focuses a control outside an open dialog on purpose would be overridden; none exists today.
+- Focus return trusts that the invoking control is still on the page; when a row is re-created (a Trips reload) the new control does not receive focus. The tests cover the Block pill and Trip actions flows.
+
+## U05: Blocking presentation and destructive actions
+
+- Date: 2026-10-23. Sitting 4G/4H (combined). Model: Sonnet (main session). No sub-agents.
+- Type: UI. Severity: S2.
+- Commit: `25752ee`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-034 | 5-008 | S2 | Removing a Trip, Pull-out, or Pull-in from a Block was one click, with no confirmation. |
+| I-035 | 5-009 | S2 | Delete Block and Delete Blocking Scenario showed no impact counts and used the screen's older source signature; Delete Pattern's confirmation button read "Confirm". |
+| I-040 | 5-015 | S2 | A Block holding a Trip from another Route showed "Missing pattern" and dashes for its Nodes. |
+| I-083 | 4-026 | S3 | Blocking loads had no guard against out-of-order responses. |
+| I-088 | 5-020 | S3 | Blocking showed hours with `toFixed(2)` and Costing with half-away-from-zero; 14 of 345 golden Block quantities differed (Saturday Block 22: 14.575 h showed 14.57 h). |
+| I-089 | 5-021 | S3 | Truncated Pattern pills with no full name, a warning style on "No current issues.", "Move Trip N" off by one when a Pull-out row exists, "Trip profile" and "Trip Profile" mixed, and a Delete Pattern button whose accessible name did not contain its label. |
+
+User decision implemented: 15 (the Route short name in the Pattern pill, only for activities from another Route; no new column).
+
+### What changed
+
+- **Remove asks first.** The remove button of a Trip, Pull-out, or Pull-in opens the existing Confirm dialog: "Remove Trip 3?" ("Remove Trip 3 from Block “26”? The Trip will become unassigned and its connected deadheads will be removed.") and "Remove pull-out?" / "Remove pull-in?" ("Platform hours and miles are incomplete until a new pull-out is added."). The button's accessible name is now "Remove Trip 3" (it was the Pattern name).
+- **Delete previews (hand-off from P14).** Delete Block calls `previewDeleteBlock` and shows "Delete Block “26” with 14 Trips, 0 deadheads, and 16 activities in all?"; Delete Blocking Scenario calls `previewDeleteBlockingScenario` and shows "with 69 Blocks and N activities across every service day". Each deletion passes the preview's `sourceSignature`, so it deletes what was reviewed even if the screen is older, and is refused ("Blocking Scenario changed since the operation was reviewed…") when the data changed after the review; the dialog then closes and Blocking reloads (U02), so the next review is current. Delete Pattern's confirmation is titled "Delete Pattern?" with a "Delete Pattern" button; the button's accessible name is "Delete Pattern <name>" (it contains its visible label).
+- **Other-Route Trips.** `ActivityRow` reads the Patterns and Nodes of every Route of the Scenario (not only the selected one) and shows `31B · Cross Pattern` in the pill for a Trip whose Route differs from the selected Route. The Pattern pills (Current Block and Unassigned Trips) carry the full name as a title.
+- **Out-of-order loads.** New `src/ui/latestRequest.ts`: `loadBlocks` and `loadScenarios` each begin a numbered request and apply their result only if still the latest; an older response and its error are ignored.
+- **Rounding.** `formatBlockingHours` and `formatBlockingMiles` use `roundCostingDisplay(value, 2)`. Every hours and miles figure of the Blocks table, the totals row, and the summary changes only where `toFixed(2)` was wrong (Saturday Block 22 revenue: 14.57 h to 14.58 h).
+- **Labels.** "Move Trip N" uses the Trip's number in the Block; "No current issues." is a neutral note (`.blocking-no-issues`); the visible message strings and menu names "Trip profile" in App.tsx are "Trip Profile" (Blocking already used it).
+- **Wording (hand-off from P12).** `block.deadheadOutsideGap`: "The deadhead times fall outside the time between its two Trips. Edit the deadhead to fit between them." `block.boundaryOverlap`: "The pull-out or pull-in overlaps its adjacent Trip. Shorten it, or change the Trip times." Both use the glossary terms Deadhead, Pull-out, Pull-in, and Trip. `block.missingTrip` already carries its next step (U02).
+- **Docs.** `docs/ui-conventions.md` (Blocking rules).
+
+### Files outside the package's owned list (recorded hand-offs)
+
+- `src/ui/latestRequest.ts` and its test (new); `src/ui/blockingFormat.test.ts` (new; imports the golden backup and the format functions); `src/styles.css` gained `.blocking-no-issues` (owned).
+- `src/ui/App.tsx` beyond "the Delete Pattern button label only": the Delete Pattern confirmation label and the "Trip Profile" capitalization (10 strings). The Delete Pattern confirmation is the other half of finding 5-009; the capitalization is one of the 5-021 label fixes.
+
+### Tests added
+
+- `src/ui/latestRequest.test.ts` (3 tests): only the latest request is current; with a slow older and a fast newer response, the newer result stays.
+- `src/ui/blockingFormat.test.ts` (2 tests): Block 22 reads "14.58 h"; every golden Block quantity (300 or more) shows exactly as `roundCostingDisplay` rounds it, and some of them differ from `toFixed(2)` (the old defect). Both fail with `toFixed`.
+- `tests/ui/blocking-presentation.spec.ts` (8 tests, real IndexedDB): the three removals ask first, name the activity, keep everything on Cancel, and remove exactly that activity on confirm; Delete Block shows its counts (compared with the stored Block), is refused after a change made after the review, and then deletes after a fresh review; Delete Block uses the reviewed source when the screen was loaded before another change; Delete Blocking Scenario shows its Block and activity counts, is refused after a change, and then deletes; the Delete Pattern button and confirmation read "Delete Pattern"; a Trip of another Route (a second Route, Nodes, Pattern, and Trip seeded) shows `31B · Cross Pattern` with its Nodes resolved while the selected Route's pill is unchanged; Saturday Block 22 reads 14.58 h; "Move Trip 1" with a Pull-out row first, the full Pattern name as a title, a neutral "No current issues.", and "Trip Profile" in the menus.
+- On the unfixed code (the U04 commit) all 7 of the first 7 specs failed (the Delete Block source test was added later and passes only with the fix).
+- Deliberate breaks, each restored: removal without asking; no Route in the pill; deleting a Block with the screen's signature instead of the reviewed one (the added source test failed); "Move Trip" by row index; `toFixed` instead of the Costing rounding (both unit tests failed).
+- `--repeat-each=10 --workers=8` on the spec: 80 of 80 passed (8 tests; the ninth added later is in the full run).
+- The out-of-order guard is covered by the unit test only. A browser test cannot hold one Blocking response back while another overtakes it without stubbing IndexedDB inside the page, and that stub would cut a transaction between its steps. No guard-removal break was run on the browser suite.
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 46 files, 677 tests passed (672 before; +3 +2).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 125 passed, 0 failed (4.5 minutes); 117 before plus the 8 new tests. No existing spec was changed. `unified-action-layer.spec.ts:139` passed.
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-BjSl236P.js` 801.32 kB (799.22 kB before).
+- Visual inspection of Blocking (Block 26 selected) at 1024 and 1440 px (scratchpad, not committed): `/tmp/claude-0/-home-user-transit-costing-tool/97a11f95-8195-5c0d-bed4-917d1a55f2e0/scratchpad/shots/u05/{1024,1440}-{blocking,remove-trip,delete-block}.png`. The two confirmation dialogs read clearly with Cancel focused; "No current issues." is a plain grey note; the totals and summary use two decimals. Seen and left alone: at 1024 px the Blocks table scrolls inside its frame and its Platform column is cut off (not new; U01 list); Pattern pills are still cut off by the pill's width, now with the full name as a tooltip.
+
+### Not done, or only partly
+
+- A Route column or a wider pill (the decision chose the short name in the pill only); no hover-free way to read a cut-off Pattern name on a touch screen.
+- The Block name dialogs and the layover dialog keep their texts.
+- Costing still shows whole hours (Decision 2 of the review); "Block 22 shows 14.58 in both workspaces" holds for the Blocking side, and Costing has no Block-level hours.
+
+### Residual risks
+
+- `ActivityRow` trusts `records.patterns` and `records.nodes` for other Routes; a Trip whose Pattern was deleted still shows "Missing pattern".
+- The Delete Block confirmation says "in all" after the three counts to mean the totals do not add up to the activity count (Trips plus deadheads plus boundary activities); the wording is plain but not elegant.
+
+## P16: Domain precision and message polish
+
+- Date: 2026-10-23. Sitting 4G/4H (combined; the last package). Model: Sonnet (main session). No sub-agents.
+- Type: structural. Severity: S3.
+- Commit: `cf2d189`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-061 | 2-007 | S3 | At the exact midpoint of a gap between Runtime bands, `segmentStart` picked the earlier band and the blend fallback picked the later band. |
+| I-062 | 2-008 | S3 | A decimal-minute entry that is exactly half a second rounded inconsistently: 0.025 gave 2 s but 1.025 gave 61 s and 4.225 gave 253 s (binary multiplication: 1.025 * 60 is 61.49999999999999); 4,369 of 200,000 half-second entries rounded down. |
+| I-063 | 2-009 | S3 | The direction-order conflict message did not name the Direction, which Decision 0014 item 4 requires. |
+| I-067 | 2-013 | S3 | Per-day hour totals were summed in floating hours: 17 Blocks that total exactly 266:30:00 gave 266.49999999999994, which the whole-hour display rounded to 266 instead of 267. |
+| I-068 | 2-014 | S3 | `adjustBlockReferences` and `planBulkBoundaryActivities` stamped adjusted Blocks with the wall clock, so a copy preview was not reproducible; domain identifiers could not be injected in tests. |
+
+User decisions implemented: none new (finding 2-007 was marked "either rule acceptable once documented"; the later band is documented in a Decision 0033 addendum).
+
+### What changed
+
+- `src/domain/runtime.ts`: `resolveSegmentStartBand` resolves a tie to the later band (`<=`), matching the blend.
+- `src/domain/durations.ts`: a decimal-minute entry is converted from its decimal text with `BigInt` arithmetic, rounding half a second up. `0.025`, `1.025`, `4.225` give 2, 62, 254; every colon form and every whole-minute entry is unchanged.
+- `src/domain/safeRouteEditing.ts`: the conflict message reads "… place B and A in conflicting order in the Outbound Direction. …".
+- `src/domain/blocking.ts`, `src/domain/costing.ts`: `BlockSummary` gains optional `revenueSeconds` and `platformSeconds` (the whole seconds behind the hours; `summarizeBlock` fills them). The costing day total adds seconds and converts to hours once. A summary without them (hand-built in a test) gives the seconds behind its hours. The golden Federal BRT costing is unchanged: the same run before and after differs only in the sixth decimal of one annual cost (241823.216917 against 241823.216918 USD), far below the four decimals that the CSV and the screen use.
+- `src/domain/trips.ts`, `src/domain/serviceDayCopy.ts`, `src/domain/blocking.ts`: `adjustBlockReferences(blocks, removed, surviving, now)` and `planBulkBoundaryActivities(request, blocks, trips, patterns, now)` take `now` (default: the wall clock, as before); `applyRegeneration` and the Trip copy preview pass their own `now`, so an adjusted Block carries the preview's time.
+- `src/domain/ids.ts`: `setIdGenerator(generator)` replaces the identifier source and returns a function that restores the previous one (injections nest). Production still draws a random UUID.
+- Documentation: Decision 0033 addendum (the tie rule) and Decision 0010 addendum (decimal minutes).
+
+### Tests added
+
+- `src/domain/runtime.test.ts`: at the exact gap midpoint (55,800 s between MID and PM) `segmentStart` resolves to PM, one second earlier to MID, one second later to PM, and its second segment uses the same band as the blend. Ported from the review's "DEFECT 2-007" reproduction, which the 4D hand-off said was not ported.
+- `src/domain/durations.test.ts` (10 tests): 0.025, 1.025, 4.225, and five other values; a sweep of 2,000 exact half-second entries of the form (2j + 1) / 40 minutes (the floating-point conversion failed 1,000 of 2,000, the old scan found 4,369 of 200,000 over a wider range); malformed decimals are still rejected.
+- `src/domain/safeRouteEditing.test.ts`: the message contains "Outbound Direction", both Pattern names, and the timepoints; `conflict.directionName` is the Direction name.
+- `src/domain/costing.test.ts` (2 tests): the 17 Blocks (959,400 s) give 266.5 revenue and platform hours and display as 267, both with seconds on the summaries and with hours only. Ported from the review's "DEFECT 2-013".
+- `src/domain/trips.test.ts`: an adjusted Block carries the given time and an unaffected Block is returned as it was. `src/domain/blockingRules.test.ts`: `planBulkBoundaryActivities` stamps changed Blocks with the given time and draws new activity ids from the injected generator. `src/domain/ids.test.ts` (3 tests, new): default uniqueness, injection and restore, nested injections.
+- On the unfixed code 11 of the new tests failed; the others in the same files are controls (0.025, 0.5, the malformed-decimal check, default uniqueness).
+- Deliberate breaks, each restored: the tie back to the earlier band; the floating-point conversion; the message without the Direction; hours summed as floats; the injected generator ignored.
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 47 files, 696 tests passed (677 before; +19).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 125 passed, 0 failed, no `test.fail`, `test.skip`, or `test.fixme`. `unified-action-layer.spec.ts:139` passed. No browser spec changed in this package.
+- `pnpm build`: succeeds; `index-D0zj91Yn.js` 801.78 kB (the bundle size message is the existing chunk-size notice, not new).
+- Golden reconciliation: `calculateCosting` on the Federal BRT project, before and after, equal to six decimals except the one annual cost noted above.
+
+### Not done, or only partly
+
+- `resetPatternService` (a legacy mutator in `safeRouteEditing.ts`) still calls `adjustBlockReferences` without `now`; it has no `now` parameter and only unit tests use it (open question 2 in the Next sitting note).
+- About 40 other domain signatures still default `now` to the wall clock. The finding asked for the two functions above; the rest stay optional parameters.
+- Display rounding in the Trips table is not part of this package (P15 owns the "display rounding" item).
+
+### Residual risks
+
+- A `BlockSummary` built by hand without `revenueSeconds` has its seconds recovered with `Math.round(hours * 3600)`, which is exact for hours that come from whole seconds and moves a fractional-second value to the nearest second.
+- The later-band tie rule changes the Trip times of a Runtime profile only for a segment that starts at the exact midpoint of a gap, an event of one second in a gap; no stored data is rewritten, and a Trip keeps its stored times until recalculated.

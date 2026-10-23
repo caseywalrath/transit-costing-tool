@@ -172,6 +172,21 @@ describe('segmentStart boundary matrix', () => {
     expect(validateRuntimeProfile(overlapping, abc).map((finding) => finding.ruleId)).toContain('runtime.bandOverlap');
   });
 
+  // P16 (I-061, finding 2-007). Decision 0033 item 1: "At a gap or beyond the outer bands, use the nearest band, matching the prior blend's
+  // fallback." A segment that starts exactly at the midpoint of a gap resolves to the same band as the blend: the later one.
+  it('at the exact gap midpoint picks the same band as the blend fallback (the later band)', () => {
+    // MID ends 54000, PM starts 57600, midpoint 55800. Departure 53700 plus MID's first segment of 2100 s starts the second segment at 55800.
+    expect(resolveSegmentStartBand(profileWithGap, 55800)?.id).toBe('pm');
+    expect(resolveSegmentStartBand(profileWithGap, 55799)?.id).toBe('mid');
+    expect(resolveSegmentStartBand(profileWithGap, 55801)?.id).toBe('pm');
+    expect(times(propagatePatternTimes(abc, 53700, profileWithGap))).toEqual([53700, 55800, 57000]); // PM's second segment (1200 s) is used
+    const blend = blendSegmentTimes(abc, 53700, { ...profileWithGap, calculationMethod: 'blendSegments' });
+    if ('finding' in blend) throw new Error('unexpected finding');
+    const start = segmentStartTimes(abc, 53700, profileWithGap);
+    if ('finding' in start) throw new Error('unexpected finding');
+    expect(start.segments[1].contributions[0].bandId).toBe(blend.segments[1].contributions[0].bandId);
+  });
+
   it('a zero-length band is invalid and never contains a departure', () => {
     const zero = segmentStartProfile([band('z', 3600, 3600, [60, 60])]);
     expect(selectRuntimeBand(zero, 3600)).toBeUndefined();

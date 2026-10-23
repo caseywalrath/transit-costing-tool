@@ -150,7 +150,7 @@ export function reconcileDirectionTimetable(
         patternNames: names,
         earlierNodeName: firstName,
         laterNodeName: secondName,
-        message: `${names.join(' and ') || 'These patterns'} place ${firstName} and ${secondName} in conflicting order. Change one Pattern's Node order or Direction before saving.`,
+        message: `${names.join(' and ') || 'These patterns'} place ${firstName} and ${secondName} in conflicting order in the ${direction.name} Direction. Change one Pattern's Node order or Direction before saving.`,
       },
     };
   }

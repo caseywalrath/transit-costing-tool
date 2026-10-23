@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { metadata } from './ids';
+import { metadata, setIdGenerator } from './ids';
 import type { BlockActivity, BlockingBlock, BlockingScenario, RoutePattern, Trip } from './types';
 import {
   applyTripAssignment,
@@ -184,6 +184,24 @@ describe('P12: Blocking structural rejections carry findings (I-060, finding 2-0
     expect(missing.findings[0]).toMatchObject({ ruleId: 'block.unavailable', entityType: 'block', entityId: 'gone' });
     const noNode = caught(() => planBulkBoundaryActivities({ blockingScenarioId: 'bs', serviceDayId: 'weekday', sourceBlockId: 'b', activity: { ...boundary, toNodeId: '' }, replaceExisting: false, sourceSignature: 's' }, [block([rev('t1')])], [t1], patterns));
     expect(noNode.findings[0]).toMatchObject({ ruleId: 'block.boundaryNode', entityType: 'block', entityId: 'b', field: 'toNodeId' });
+  });
+});
+
+describe('P16: planBulkBoundaryActivities takes the time and uses injectable identifiers (I-068, finding 2-014)', () => {
+  const t1 = trip('t1', 6 * H, 7 * H);
+  const other = { ...block([rev('t1')]), id: 'other', label: 'O', activities: [{ ...rev('t1'), id: 'r-other' }] };
+  const request = { blockingScenarioId: 'bs', serviceDayId: 'weekday', sourceBlockId: 'b', activity: { id: 'out', type: 'pullOut', sequence: 0, minutesBeforeFirstTrip: 10, toNodeId: 'A' } as const, replaceExisting: false, sourceSignature: 's' };
+
+  it('stamps every changed Block with the given time and draws new activity ids from the injected generator', () => {
+    const stamp = '2030-05-06T07:08:09.000Z';
+    let counter = 0;
+    const restore = setIdGenerator(() => `id-${++counter}`);
+    try {
+      const planned = planBulkBoundaryActivities(request, [block([rev('t1')]), other], [t1], patterns, stamp);
+      expect(planned.blocks.map((item) => item.updatedAt)).toEqual([stamp, stamp]);
+      expect(planned.blocks[1].activities.find((activity) => activity.type === 'pullOut')?.id).toBe('id-1');
+      expect(planned.blocks[0].activities.find((activity) => activity.type === 'pullOut')?.id).toBe('out');
+    } finally { restore(); }
   });
 });
 

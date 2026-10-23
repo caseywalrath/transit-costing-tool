@@ -43,6 +43,17 @@ describe('safe route editing', () => {
     expect(result.conflict?.message).toContain('B');
   });
 
+  // P16 (I-063, finding 2-009, Decision 0014 item 4): the message names the Direction, the Patterns, and the timepoints.
+  it('names the Direction in the conflict message', () => {
+    const first = pattern('first', 'Southbound 1', ['a', 'b']);
+    const second = pattern('second', 'Southbound 2', ['b', 'a']);
+    const result = reconcileRouteTimetables(aggregate([first, second]), [first, second], now);
+    expect(result.conflict?.directionName).toBe(outbound.name);
+    expect(result.conflict?.message).toContain(`${outbound.name} Direction`);
+    expect(result.conflict?.message).toContain('Southbound 1');
+    expect(result.conflict?.message).toContain('Southbound 2');
+  });
+
   it('uses zero minutes before an inserted point and preserves the former following segment', () => {
     const saved = pattern('p', 'Pattern', ['a', 'c'], ['a-point', 'c-point']);
     const proposed = pattern('p', 'Pattern', ['a', 'b', 'c'], ['a-point', 'b-point', 'c-point']);

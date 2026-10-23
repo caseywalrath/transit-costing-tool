@@ -36,6 +36,7 @@ nav { display: flex; gap: 2px; }
 .notice { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; border-left: 4px solid; padding: 8px 10px; }
 .notice.error { background: #fff0ee; border-color: #b43c31; }
 .notice.success { background: #edf8ef; border-color: #24763e; }
+.notice.info { background: #eaf2f7; border-color: #24485d; }
 .notice button { border: 0; background: transparent; font-size: 1.25rem; }
 
 .empty-state { max-width: 620px; margin: 72px auto; border: 1px solid #bfcbd2; background: #fff; padding: 24px; }
@@ -141,9 +142,10 @@ nav { display: flex; gap: 2px; }
 .recalculation-row-warning td:first-child { background: #fff9ee; }
 .recalculation-row-warning-note { display: block; margin-top: 4px; color: #835521; font-size: .75rem; white-space: normal; }
 .confirm-dialog p.recalculation-fallback-summary { margin: 10px 0; padding: 8px 10px; border: 1px solid #d8bd8a; background: #fff9ed; color: #634716; font-size: .82rem; }
-.confirm-dialog > div.field-error[role="alert"] { display: block; margin: 12px 0; padding: 9px 12px; border: 1px solid #e0aaa5; background: #fff8f7; font-size: .84rem; line-height: 1.4; }
-.confirm-dialog > div.field-error[role="alert"] p { margin: 0 0 6px; }
-.confirm-dialog > div.field-error[role="alert"] button { margin-top: 4px; }
+.dialog-form { display: contents; }
+.confirm-dialog > div.field-error[role="alert"], .confirm-dialog > .dialog-form > div.field-error[role="alert"] { display: block; margin: 12px 0; padding: 9px 12px; border: 1px solid #e0aaa5; background: #fff8f7; font-size: .84rem; line-height: 1.4; }
+.confirm-dialog > div.field-error[role="alert"] p, .confirm-dialog > .dialog-form > div.field-error[role="alert"] p { margin: 0 0 6px; }
+.confirm-dialog > div.field-error[role="alert"] button, .confirm-dialog > .dialog-form > div.field-error[role="alert"] button { margin-top: 4px; }
 .recalculation-band-choice { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 .recalculation-band-choice label { display: grid; gap: 4px; min-width: min(390px, 100%); max-width: 100%; }
 .recalculation-band-choice select { width: 100%; color: #263f4e; }
@@ -228,6 +230,7 @@ th:first-child { z-index: 2; background: #e8eef1; }
 .action-menu { position: absolute; z-index: 8; top: calc(100% + 3px); right: 0; display: grid; min-width: 210px; max-width: min(420px, calc(100vw - 24px)); border: 1px solid #9eafb8; background: #fff; box-shadow: 0 3px 10px rgb(0 0 0 / .15); padding: 4px; }
 .action-menu-group { display: grid; gap: 3px; }
 .action-menu-label { padding: 4px 5px 2px; color: #536a77; font-size: .75rem; font-weight: 700; text-transform: uppercase; }
+.action-menu-note { padding: 0 8px 5px; color: #536a77; font-size: .75rem; }
 .action-menu-separator { height: 1px; margin: 3px 0; background: #c6d0d5; }
 .action-menu button { display: flex; align-items: center; min-width: 0; text-align: left; white-space: nowrap; }
 .action-menu .menu-item-label { min-width: 0; }
@@ -422,6 +425,7 @@ th:first-child { z-index: 2; background: #e8eef1; }
 .runtime-band-legend i { display: inline-block; width: 13px; height: 13px; border: 1px solid #b8c7cd; }
 .link-button { min-height: 0; border: 0; padding: 0; color: #174e6d; background: transparent; text-decoration: underline; font: inherit; font-weight: 700; }
 .link-button:hover { color: #0f405c; }
+.blocking-no-issues { margin: 8px 0 0; color: #46606f; font-size: .8rem; }
 .blocking-findings { margin: 8px 0 0; border-left: 3px solid #c78a36; background: #fff8e9; padding: 7px 9px; color: #5d4a26; font-size: .8rem; }
 .blocking-findings ul { margin: 5px 0 0; padding-left: 17px; }
 .blocking-findings li + li { margin-top: 3px; }
@@ -488,7 +492,7 @@ th:first-child { z-index: 2; background: #e8eef1; }
 .clear-target { margin: 0 0 12px; color: #633f1d; font-size: .82rem; font-weight: 700; }
 .batch-pattern-results { max-height: 190px; overflow-y: auto; }
 .dialog-field { display: grid; gap: 6px; margin: 14px 0; color: #3d4d59; font-size: .82rem; font-weight: 700; }
-.dialog-actions, .confirm-dialog > div:not(.activity-form) { display: flex; justify-content: end; gap: 8px; }
+.dialog-actions, .confirm-dialog > div:not(.activity-form), .confirm-dialog > .dialog-form > div:not(.activity-form) { display: flex; justify-content: end; gap: 8px; }
 .dialog-actions.activity-dialog-actions { display: grid; grid-template-columns: repeat(3, minmax(104px, 1fr)); align-items: stretch; gap: 8px; margin-top: 16px; }
 .dialog-actions.activity-dialog-actions--two { grid-template-columns: repeat(2, minmax(104px, 1fr)); }
 .activity-dialog-actions button { min-width: 0; min-height: 32px; }
