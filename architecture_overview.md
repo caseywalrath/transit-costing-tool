@@ -250,6 +250,8 @@ The first blocking release supports manual trip assignment and unassignment, man
 - negative layover;
 - location discontinuity without deadhead;
 - deadhead that does not fit in the available gap;
+- a deadhead with explicit clock times (a legacy or imported shape) that lies outside the gap between its two Trips, which is reported as misplaced and leaves that connection's layover uncounted;
+- an explicit pull-out that ends after the first Trip starts, or an explicit pull-in that starts before the last Trip ends (boundary overlap);
 - missing pull-out or pull-in data required for platform hours.
 
 Structural ownership, reference, duplicate-assignment, and malformed-time violations reject writes. Structurally valid but operationally infeasible Blocks remain saved with visible findings. Selected-day subtotals include valid Blocks; Block-level status and findings identify incomplete or infeasible work.
@@ -265,14 +267,16 @@ Initial service quantities are:
 - running time: sum of scheduled revenue-trip durations, excluding layover;
 - revenue hours: running time plus usable layover time between revenue Trips;
 - platform hours: resolved block pull-in time minus resolved block pull-out time;
-- revenue miles: sum of pattern miles for revenue trips when distances are complete;
+- revenue miles: sum of pattern miles for revenue trips when distances are complete. A Pattern whose total distance is 0 has no distance entered, so its miles are incomplete and are never counted as 0;
 - annual quantities: daily quantities multiplied by annual service-day counts.
 
 Phase 5 uses one Scenario-owned set of Costing assumptions, not multiple named Costing scenarios. A selected Blocking Scenario supplies eligible Revenue and Platform Hours; the initial cost multiplier is manually entered USD operating cost per Revenue Hour. Platform Hours are displayed but are not separately multiplied or added. The source rate year is adjusted automatically to the service year using an editable annual escalation assumption, defaulting to 3%. The horizon is the base year plus up to ten future years. Annual quantities use stored service-day counts. A count is a whole number of 0 or more, and the counts of all service days must total at most 365: an edit that would raise the total above 365 is refused with a field finding, not clamped, and a total above 365 saved earlier makes the estimate invalid until it is corrected (Decision 0041). The UI shows one Blocking Scenario at a time through a selector, without a cross-scenario comparison table. Detailed eligibility, lifecycle, and export rules are in `docs/implementation/phase-05-costing.md`.
 
 ## Validation
 
-Validation returns structured findings rather than formatted strings. Each finding includes a rule identifier, severity, entity reference, message parameters, and optional acknowledgment information.
+Validation returns structured findings rather than formatted strings. Every module reports the one `ValidationFinding` shape: a rule identifier (`ruleId`), severity, an optional category (`structural` or `operational`), an entity type and id, an optional field, a message key, and message parameters. Route, Pattern, Blocking, and Costing findings all use it. A Costing finding names the Scenario, the assumptions, the Service day, the Trip, or the Block that it is about; a finding about assumptions names the field. A Blocking operation that a structural rule refuses (for example an invalid Block, a Trip outside the Blocking Scenario's service context, or a taken Blocking Scenario name) throws a `BlockingValidationError` whose `findings` carry the rule and entity, and whose `message` is the text screens show.
+
+Acknowledgment of a warning is still planned and is not part of the finding: no code reads or stores an acknowledgment, and no table has a field for one. When acknowledgments are built, they will be stored separately and keyed by `ruleId` and entity, so a finding stays a derived value (`docs/data-schema.md`, "Validation result").
 
 Errors prevent an operation when the resulting data would be unusable. Warnings allow confirmation or later correction. Acknowledging a warning does not remove the underlying condition.
 

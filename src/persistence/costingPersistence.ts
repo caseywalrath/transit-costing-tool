@@ -3,7 +3,7 @@ import { validatePersistedCostingAssumptions } from '../domain/costing';
 
 export function assertCostingAssumptions(value: CostingAssumptions, scenarioId: string): void {
   const errors = validatePersistedCostingAssumptions(value, scenarioId).filter((finding) => finding.severity === 'error');
-  if (errors.length) throw new Error(`Invalid costing assumptions: ${errors.map((finding) => finding.code).join(', ')}`);
+  if (errors.length) throw new Error(`Invalid costing assumptions: ${errors.map((finding) => finding.ruleId).join(', ')}`);
 }
 
 export function assertCostingAssumptionsCollection(values: CostingAssumptions[], scenarioIds: ReadonlySet<string>): void {

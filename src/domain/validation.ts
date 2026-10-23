@@ -1,4 +1,4 @@
-import type { Block, Node, Route, RouteDefinitionAggregate, RoutePattern, Trip, ValidationFinding } from './types';
+import type { Node, Route, RouteDefinitionAggregate, RoutePattern, ValidationFinding } from './types';
 import { validatePattern } from './patterns';
 import { validateDirection, validatePatternDirection } from './directions';
 
@@ -72,5 +72,3 @@ export function validateNodeDeletion(nodeId: string, patterns: RoutePattern[]): 
     parameters: { patternCount: references.length },
   }];
 }
-
-export function validateBlock(block: Block, trips: Map<string, Trip>): ValidationFinding[] { const findings: ValidationFinding[] = []; let previousEnd: number | undefined; for (const activity of [...block.activities].sort((a, b) => a.sequence - b.sequence)) { let start: number | undefined; let end: number | undefined; if (activity.type === 'revenueTrip') { const trip = trips.get(activity.tripId); if (!trip) { findings.push({ ruleId: 'block.tripExists', severity: 'error', entityType: 'block', entityId: block.id, messageKey: 'block.missingTrip' }); continue; } start = trip.stopTimes[0]?.time; end = trip.stopTimes.at(-1)?.time; } else { start = activity.startTime; end = activity.endTime; } if (start === undefined || end === undefined) continue; if (end < start) findings.push({ ruleId: 'block.activityOrder', severity: 'error', entityType: 'block', entityId: block.id, messageKey: 'block.activityEndsBeforeStart', parameters: { sequence: activity.sequence } }); if (previousEnd !== undefined && start < previousEnd) findings.push({ ruleId: 'block.noOverlap', severity: 'error', entityType: 'block', entityId: block.id, messageKey: 'block.overlap', parameters: { sequence: activity.sequence } }); previousEnd = end; } return findings; }

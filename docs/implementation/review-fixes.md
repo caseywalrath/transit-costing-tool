@@ -1009,3 +1009,82 @@ Criterion 1 says Assign is enabled within 1 s. The built application meets it (0
 - The 1 s and 2 s targets are asserted only as read counts and loose limits in the browser spec; the production numbers are a manual measurement.
 - `classifyInsertions` takes the Block and the Trips as stored at the time of the call; like `classifyInsertion`, it does not re-check them when the answer is used. The Blocking write path still refuses a stale source (the source signature).
 - Real capacity for the Dexie reads is bounded by `listProfileTrips`, which loads every Trip of the Scenario and filters by Trip Profile in memory. At 2,000 Trips that is one read; at much larger sizes it would read more than it needs. A compound index on Scenario and Trip Profile would avoid it and is not part of this package.
+
+## P12: Blocking calculation rules and finding shape
+
+- Date: 2026-10-23. Sitting 4F. Model: Sonnet (main session). No sub-agents: P12 is S2, so no Opus review (sitting plan).
+- Type: structural. Severity: S2.
+- Commit: `P12_HASH`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-015 | 2-006 | S2 | A deadhead with explicit clock times (legacy or imported) was never checked against the gap between its two Trips, so a deadhead at 9:00 between Trips ending 7:00 and starting 7:30 counted as valid with 20 minutes of layover. A pull-out that ended after the first Trip started, or a pull-in that started before the last Trip ended, understated Platform hours and raised no finding. |
+| I-060 | 1-016, 2-015 | S3 | `CostingFinding` was `{ code, severity, entityId?, serviceDayId? }`, not the `ValidationFinding` shape that OV-VAL-01 and DS-25 describe. Blocking structural rejections were plain `Error`s with joined message keys. `validation.ts` held an exported, unused `validateBlock` with the same name as the Blocking validator. |
+| I-066 | 2-012 | S3 | A Pattern whose points are all at 0 miles was reported as complete mileage (0 revenue miles). |
+
+User decisions implemented: C2 (option (a): report a finding, leave stored data unchanged) and decision 8 (a 0-mile total is incomplete; no schema change).
+
+### What changed
+
+- `src/domain/blocking.ts`
+  - New rule `block.deadheadOutsideGap`: an explicit-time deadhead that starts before the previous Trip ends or ends after the next Trip starts. The connection becomes a `conflict`, the Block `invalid`, and that connection's layover is not counted (its deadhead hours still are). A deadhead placed by minutes after the previous Trip is never reported, because it is inside the gap by construction. `classifyBlockingInsertion` reports the same rule for the deadhead next to the insertion, so a misplaced deadhead no longer reads as `compatible`.
+  - New rule `block.boundaryOverlap`: a pull-out that ends after the first Trip starts, or a pull-in that starts before the last Trip ends. The Block becomes `invalid`.
+  - Both rule ids join the set of operational rules that make a Block invalid (`INVALIDATING_RULES`, with the three that were already there).
+  - `revenueDistance` requires a total above 0. A Block with a 0-mile Pattern now has no revenue miles and no platform miles, reports `block.revenueMilesIncomplete` and `block.platformMilesIncomplete`, and is `incomplete`.
+  - New `BlockingValidationError` (carries `findings`; `message` is the text screens show). Every `throw new Error` in the file is now one: invalid Block (`assertStructurallyValidBlock`), Blocking Scenario name (`renameBlockingScenario`, `duplicateBlockingScenario`), a stale Blocking Scenario source, an unavailable Block, a missing boundary Node, changed Trip endpoints, and the five `applyTripAssignment` refusals. Messages are unchanged. New rule ids: `block.tripExists`, `block.tripContext`, `block.destinationUnavailable`, `block.tripAlreadyAssigned`, `block.assignmentRoute`, `block.unavailable`, `block.boundaryNode`, `block.endpointsChanged`, `blockingScenario.sourceChanged`, `blocking.fieldRequired`.
+- `src/domain/costing.ts`: `CostingFinding` is an alias of `ValidationFinding`. `ruleId` is the former `code`; every finding has an entity type and id (assumption findings name the Scenario and the field; Service day, Trip, Block, Blocking Scenario, and Trip Profile findings name their own id); the Service day of a Trip or Block finding is the `serviceDayId` parameter. `validateCostingAssumptions` takes an optional Scenario id (default `costing-assumptions`, for assumptions not yet saved).
+- `src/domain/validation.ts`: the unused legacy `validateBlock` is removed.
+- Because `CostingFinding` is an alias, `ports.ts` and `costingService.ts` needed no change (the 4E note expected an edit to the return type).
+- Documentation: `architecture_overview.md` (Validation, Blocking findings list, Summary and Cost Model) and `docs/data-schema.md` (Validation result, Pattern rules). Whether acknowledgment remains planned: yes, planned and not implemented; the finding shape has no field for it, and when it is built it will be stored separately, keyed by `ruleId` and entity (OV-VAL-01 and DS-25 both record this).
+
+### Behavior before and after (what you will see)
+
+- A Block with a legacy deadhead outside its gap, or a legacy pull-out or pull-in that overlaps its Trips, is now shown as invalid with a finding, excluded from the day subtotals and from the Costing estimate, instead of valid with wrong hours. Blocks built in the app (relative times) are never affected.
+- A Block whose Trip uses a Pattern with no distances entered shows incomplete miles instead of 0.0 miles.
+- The two new findings have no wording of their own yet. The Blocking screen's fallback turns `block.deadheadOutsideGap` into "Deadhead outside gap" and `block.boundaryOverlap` into "Boundary overlap". Proper sentences are U05's (presentation).
+- Federal BRT project: no change (the golden reconciliation and 13 of the 16 shapes below pass unchanged).
+
+### Tests added
+
+- `src/domain/blockingRules.test.ts` (19 tests): the deadhead inside the gap stays valid with its layover; four misplaced explicit deadheads (after the next Trip starts, before the previous Trip ends, and the two straddling cases) give the finding, a `conflict` connection, no layover, and an `invalid` Block; a relative deadhead is not reported as misplaced and a too-long one gets only `deadheadDoesNotFit`; insertion next to a misplaced deadhead is a `conflict`; pull-out and pull-in overlap, and touching or relative boundaries are accepted; a 0-mile Pattern gives undefined revenue and platform miles and an incomplete Block (alone and mixed with a Pattern that has miles); a Pattern with miles still counts; the typed errors carry the right rule, entity, and field with the unchanged message, for an invalid Block, a Trip outside the context, a duplicate assignment, an unavailable Block, a second Route, Blocking Scenario names, and bulk boundary requests; `validation.ts` exports no `validateBlock`.
+- `src/domain/costing.test.ts` (2 new tests; the 2 existing `finding.code` reads became `finding.ruleId`): the full shape of an assumption finding, an entity-less finding (`rateMissing`, `noEligibleBlocks`, the 365-day total), the Service day findings, and the parameters of a Trip and a Block source mismatch.
+- `src/application/costingService.test.ts`: two assertions read `ruleId`.
+
+### Tests first: what failed on the current code
+
+17 of the 21 new tests failed on the unfixed code. The other 4 are controls that must keep passing (deadhead inside the gap; relative deadheads; touching and relative boundaries; a Pattern with miles). The 3 existing tests that read `code` failed until they were changed to `ruleId`.
+
+### Deliberate breaks (each applied, run, and restored from a saved copy)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| 0-mile Pattern | `end > 0` changed back to `end >= 0` | 2 fail |
+| Deadhead placement | `explicitDeadheadOutsideGap` always returns false | 5 fail |
+| Boundary overlap | `block.boundaryOverlap` removed from `INVALIDATING_RULES` | 2 fail |
+| Typed errors | the Trip-context refusal throws a plain `Error` | 1 fails |
+| Costing finding shape | `entityId` written as an empty string | 2 fail |
+
+### Review reproductions
+
+The review's golden file (`p2-blocking.golden.test.ts`, copied temporarily into `src/` and deleted afterwards) was run against the fix. S1 to S13 pass unchanged. S14, S15, and S16 are "DEFECT" tests that assert the old behavior, and they now fail in exactly the intended way (S14: the connection is not `valid`; S15: revenue miles are undefined, not 0; S16: a finding exists). The Federal BRT reconciliation, the rounding golden, and 10 of the 12 tests in the costing golden file pass unchanged; the other 2 read `finding.code`, which is now `ruleId`.
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 37 files, 523 tests passed (502 before; 21 new).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 77 passed, 0 failed (2.5 minutes). No `test.fail`, `test.skip`, or `test.fixme`.
+- `pnpm build`: succeeds (existing chunk-size warning only).
+
+### Hand-offs
+
+- `src/persistence/costingPersistence.ts` (not owned): one word, `finding.code` to `finding.ruleId`, in the error text of an invalid assumptions record.
+- U05 (Blocking presentation): sentences for `block.deadheadOutsideGap` and `block.boundaryOverlap` in `blockingMessages` (`BlockingWorkspace.tsx`) and, if the old Block table still uses it, the map in `App.tsx`.
+- `blockingService.ts` throws plain `Error`s of its own (about 30 sites, for example "Select a Block first"). They are application checks, not domain rules, and `blockingService.ts` is P14's. P14 may adopt `BlockingValidationError` where a rule has a finding.
+
+### Residual risks
+
+- Other code that treats a Pattern's 0 total as a valid distance is untouched: the Trips and Pattern screens still show 0.0 miles for such a Pattern. Only Blocking's mileage is incomplete now.
+- `block.deadheadOutsideGap` and `block.boundaryOverlap` invalidate the Block, which excludes it from subtotals and from the Costing estimate. That matches how the other timing contradictions (`connectionOverlap`, `deadheadDoesNotFit`) are treated; a planner who disagrees would change `INVALIDATING_RULES`.
+- An explicit pull-out or pull-in with no Trips in the Block is not checked (nothing to overlap).

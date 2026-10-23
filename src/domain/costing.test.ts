@@ -179,7 +179,7 @@ describe('Phase 5A costing calculations', () => {
     [366, 2],
   ])('accepts %i annual service days only when the total is at most 365', (total, holidayDays) => {
     const findings = validateAnnualServiceDays(serviceDays({ weekday: 260, saturday: 52, sunday: 52, holiday: holidayDays }), scenario.id);
-    expect(findings.some((finding) => finding.code === 'costing.annualServiceDaysExceed365')).toBe(total === 366);
+    expect(findings.some((finding) => finding.ruleId === 'costing.annualServiceDaysExceed365')).toBe(total === 366);
   });
 
   it('shows quantities for a zero-count day and adds zero to annual cost', () => {
@@ -220,7 +220,38 @@ describe('Phase 5A costing calculations', () => {
   it('does not calculate when the source rate year is later than the base service year', () => {
     const result = calculateCosting(input({ assumptions: { ...assumptions, rateYear: 2027, baseServiceYear: 2026 } }));
     expect(result.state).toBe('invalid');
-    expect(result.findings.map((finding) => finding.code)).toContain('costing.rateYearAfterBaseServiceYear');
+    expect(result.findings.map((finding) => finding.ruleId)).toContain('costing.rateYearAfterBaseServiceYear');
+  });
+
+  it('reports every finding in the ValidationFinding shape, each with an entity reference (I-060)', () => {
+    const invalid = calculateCosting(input({ assumptions: { ...assumptions, rateYear: 2027, baseServiceYear: 2026, futureYearCount: 11 } }));
+    expect(invalid.findings).toContainEqual({ ruleId: 'costing.rateYearAfterBaseServiceYear', severity: 'error', entityType: 'costingAssumptions', entityId: scenario.id, field: 'rateYear', messageKey: 'costing.rateYearAfterBaseServiceYear' });
+    expect(invalid.findings).toContainEqual(expect.objectContaining({ ruleId: 'costing.futureYearCountInvalid', field: 'futureYearCount' }));
+
+    const missingRate = calculateCosting(input({ assumptions: { ...assumptions, enteredRate: undefined } }));
+    expect(missingRate.findings).toEqual([{ ruleId: 'costing.rateMissing', severity: 'warning', entityType: 'costingAssumptions', entityId: scenario.id, field: 'enteredRate', messageKey: 'costing.rateMissing' }]);
+
+    const days = serviceDays({ weekday: 260, saturday: 52, sunday: 52, holiday: 2 });
+    const overTotal = calculateCosting(input({ serviceDays: days }));
+    expect(overTotal.findings).toContainEqual({ ruleId: 'costing.annualServiceDaysExceed365', severity: 'error', entityType: 'scenario', entityId: scenario.id, messageKey: 'costing.annualServiceDaysExceed365' });
+
+    const negative = validateAnnualServiceDays([{ ...days[0], annualServiceDays: -1 }], scenario.id);
+    expect(negative).toEqual([{ ruleId: 'costing.annualServiceDaysInvalid', severity: 'error', entityType: 'serviceDay', entityId: days[0].id, field: 'annualServiceDays', messageKey: 'costing.annualServiceDaysInvalid' }]);
+    const foreign = validateAnnualServiceDays([{ ...days[0], scenarioId: 'other' }], scenario.id);
+    expect(foreign).toEqual([{ ruleId: 'costing.serviceDayScenarioMismatch', severity: 'error', entityType: 'serviceDay', entityId: days[0].id, field: 'scenarioId', messageKey: 'costing.serviceDayScenarioMismatch' }]);
+
+    const emptyBlocks = calculateCosting(input({ blocks: [], blockSummaries: [], trips: [] }));
+    expect(emptyBlocks.findings).toEqual([{ ruleId: 'costing.noEligibleBlocks', severity: 'warning', entityType: 'blockingScenario', entityId: blockingScenario.id, messageKey: 'costing.noEligibleBlocks' }]);
+  });
+
+  it('names the Trip or Block behind a source-mismatch finding and keeps its Service day as a parameter', () => {
+    const base = input();
+    const foreignTrip = { ...base.trips[0], tripProfileId: 'another-profile' };
+    const result = calculateCosting({ ...base, trips: [foreignTrip, ...base.trips.slice(1)] });
+    expect(result.findings).toContainEqual({ ruleId: 'costing.tripSourceMismatch', severity: 'error', entityType: 'trip', entityId: foreignTrip.id, messageKey: 'costing.tripSourceMismatch', parameters: { serviceDayId: foreignTrip.serviceDayId } });
+    const foreignBlock = { ...base.blocks[0], blockingScenarioId: 'another-blocking-scenario' };
+    const blockResult = calculateCosting({ ...base, blocks: [foreignBlock, ...base.blocks.slice(1)] });
+    expect(blockResult.findings).toContainEqual({ ruleId: 'costing.blockSourceMismatch', severity: 'error', entityType: 'block', entityId: foreignBlock.id, messageKey: 'costing.blockSourceMismatch', parameters: { serviceDayId: foreignBlock.serviceDayId } });
   });
 
   it('returns quantities without fabricating a cost when no rate has been entered', () => {
