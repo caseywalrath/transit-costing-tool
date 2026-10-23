@@ -1,7 +1,7 @@
 import type { BlockingCommands, BlockingQueries, BlockingRepository } from './ports';
 import type { BlockingBlock, BlockingScenario, BlockActivity, RoutePattern, Trip, TripProfile, ValidationFinding } from '../domain/types';
-import { applyTripAssignment, assertBlockingScenarioSourceUnchanged, classifyBlockingInsertion, createBlockingBlock, createBlockingScenario, createBlockingScenarioSourceSignature, duplicateBlockingScenario, normalizeBlockActivities, planBulkBoundaryActivities, renameBlockingScenario, summarizeBlock, summarizeBlockingScenario, validateBlockingAssignments, validateBlockingBlock, type BlockingScenarioGraph, type BulkBoundaryRequest, type BulkBoundaryPreview } from '../domain/blocking';
-import type { BlockingActivityEditRequest, BlockingAssignmentRequest, BlockingBulkAssignmentRequest, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingCompatibility, BlockSummary, BlockingSummary, BlockingTripsAssignmentRequest, MinimumLayoverRule } from '../domain/blocking';
+import { applyDeadheadToMatchingConnections, applyTripAssignment, assertBlockingScenarioSourceUnchanged, assertBlockLabelAvailable, calculateBlockDeletionImpact, calculateBlockingScenarioDeletionImpact, classifyBlockingInsertion, createBlockingBlock, createBlockingScenario, createBlockingScenarioSourceSignature, duplicateBlockingScenario, insertBlockActivity, moveRevenueTripGroup, normalizeBlockActivities, parseActivityInput, parseMinimumLayoverRule, planBulkBoundaryActivities, proposeBlockLabel, renameBlockingScenario, summarizeBlock, summarizeBlockingScenario, unassignedRouteTrips, validateBlockingAssignments, validateBlockingBlock, type BlockingScenarioGraph, type BulkBoundaryRequest, type BulkBoundaryPreview } from '../domain/blocking';
+import type { ActivityTextInput, BlockDeletionImpact, BlockingActivityAddRequest, BlockingActivityEditRequest, BlockingAssignmentRequest, BulkDeadheadRequest, ParsedActivityInput, ParsedMinimumLayover, BlockingBulkAssignmentRequest, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingCompatibility, BlockSummary, BlockingSummary, BlockingTripsAssignmentRequest, MinimumLayoverRule } from '../domain/blocking';
 import { newId, withUpdatedAt } from '../domain/ids';
 import { blockingActivitiesCsv, blockingBlocksCsv, blockingScenariosCsv, blockingSummariesCsv } from '../persistence/csv';
 import { publishWrites, SaveStatusPublisher } from './saveStatus';
@@ -75,13 +75,17 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
   async createBlock(blockingScenarioId: string, serviceDayId: string, label: string, sourceSignature: string): Promise<BlockingBlock> {
     const scenario = await this.repository.getBlockingScenario(blockingScenarioId); if (!scenario) throw new Error('Blocking Scenario not found.');
     const blocks = await this.repository.listBlockingBlocks(blockingScenarioId); assertBlockingScenarioSourceUnchanged(scenario, blocks, sourceSignature);
+    assertBlockLabelAvailable(label, serviceDayId, blocks);
     const block = createBlockingBlock(scenario, serviceDayId, label); await this.repository.saveBlockingBlocksAtomically([...blocks, block], sourceSignature, scenario.id); return block;
   }
 
   async updateBlock(block: BlockingBlock, sourceSignature: string): Promise<BlockingBlock> {
     const scenario = await this.repository.getBlockingScenario(block.blockingScenarioId); if (!scenario) throw new Error('Blocking Scenario not found.');
     const blocks = await this.repository.listBlockingBlocks(scenario.id); assertBlockingScenarioSourceUnchanged(scenario, blocks, sourceSignature);
-    const updated = normalizeBlockActivities(withUpdatedAt(block));
+    // A label is checked when it is new or changed. A Block saved with a repeated label before this rule can still be edited otherwise.
+    const stored = blocks.find((candidate) => candidate.id === block.id); const renamed = !stored || stored.label.trim() !== block.label.trim();
+    if (renamed) assertBlockLabelAvailable(block.label, block.serviceDayId, blocks, block.id);
+    const updated = normalizeBlockActivities(withUpdatedAt(renamed ? { ...block, label: block.label.trim() } : block));
     await this.assertWriteValid(scenario, [...blocks.filter((candidate) => candidate.id !== block.id), updated]);
     await this.repository.saveBlockingBlocksAtomically([...blocks.filter((candidate) => candidate.id !== block.id), updated], sourceSignature, scenario.id); return updated;
   }
@@ -179,6 +183,40 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
     await this.repository.saveBlockingBlocksAtomically([...blocks.filter((candidate) => candidate.id !== block.id), updated], request.sourceSignature, scenario.id); return updated;
   }
 
+  async addActivity(request: BlockingActivityAddRequest): Promise<BlockingBlock> {
+    const { scenario, blocks, block } = await this.loadBlock(request.blockingScenarioId, request.blockId, request.sourceSignature);
+    return this.saveBlock(scenario, blocks, normalizeBlockActivities(withUpdatedAt(insertBlockActivity(block, request.activity, request.afterTripId))), request.sourceSignature);
+  }
+
+  async applyDeadheadToMatchingConnections(request: BulkDeadheadRequest): Promise<{ block: BlockingBlock; appliedCount: number }> {
+    const { scenario, blocks, block } = await this.loadBlock(request.blockingScenarioId, request.blockId, request.sourceSignature);
+    const [trips, patterns] = await Promise.all([this.context.listTrips(scenario.scenarioId, scenario.tripProfileId), this.context.listPatterns(scenario.scenarioId)]);
+    const planned = applyDeadheadToMatchingConnections(block, request.deadhead, trips, patterns);
+    return { block: await this.saveBlock(scenario, blocks, normalizeBlockActivities(withUpdatedAt(planned.block)), request.sourceSignature), appliedCount: planned.appliedCount };
+  }
+
+  async moveTripGroup(blockingScenarioId: string, blockId: string, activityId: string, movement: -1 | 1, sourceSignature: string): Promise<BlockingBlock> {
+    const { scenario, block } = await this.loadBlock(blockingScenarioId, blockId, sourceSignature);
+    const order = moveRevenueTripGroup(block, activityId, movement);
+    if (!order) return block;
+    return this.reorderActivities(scenario.id, block.id, order, sourceSignature);
+  }
+
+  /** Reads the Blocking Scenario, its Blocks, and one Block, and refuses a source that changed since the screen read it. */
+  private async loadBlock(blockingScenarioId: string, blockId: string, sourceSignature: string) {
+    const scenario = await this.repository.getBlockingScenario(blockingScenarioId); if (!scenario) throw new Error('Blocking Scenario not found.');
+    const blocks = await this.repository.listBlockingBlocks(scenario.id); assertBlockingScenarioSourceUnchanged(scenario, blocks, sourceSignature);
+    const block = blocks.find((candidate) => candidate.id === blockId); if (!block) throw new Error('Block not found.');
+    return { scenario, blocks, block };
+  }
+
+  private async saveBlock(scenario: BlockingScenario, blocks: BlockingBlock[], updated: BlockingBlock, sourceSignature: string): Promise<BlockingBlock> {
+    const next = [...blocks.filter((candidate) => candidate.id !== updated.id), updated];
+    await this.assertWriteValid(scenario, next);
+    await this.repository.saveBlockingBlocksAtomically(next, sourceSignature, scenario.id);
+    return updated;
+  }
+
   private async planBoundaryWrite(request: BulkBoundaryRequest) {
     const scenario = await this.repository.getBlockingScenario(request.blockingScenarioId); if (!scenario) throw new Error('Blocking Scenario not found.');
     const blocks = await this.repository.listBlockingBlocks(scenario.id);
@@ -216,6 +254,23 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
 
   async listBlockingScenarios(scenarioId: string): Promise<BlockingScenario[]> { return this.repository.listBlockingScenarios(scenarioId); }
   async listBlockingBlocks(blockingScenarioId: string, serviceDayId?: string): Promise<BlockingBlock[]> { return this.repository.listBlockingBlocks(blockingScenarioId, serviceDayId); }
+  async listUnassignedTrips(blockingScenarioId: string, serviceDayId: string, routeId: string): Promise<Trip[]> {
+    const scenario = await this.repository.getBlockingScenario(blockingScenarioId); if (!scenario) return [];
+    const [blocks, trips] = await Promise.all([this.repository.listBlockingBlocks(scenario.id, serviceDayId), this.context.listTrips(scenario.scenarioId, scenario.tripProfileId)]);
+    return unassignedRouteTrips(trips, blocks, serviceDayId, routeId);
+  }
+  async proposeBlockLabel(blockingScenarioId: string, serviceDayId: string): Promise<string> { return proposeBlockLabel(await this.repository.listBlockingBlocks(blockingScenarioId, serviceDayId)); }
+  async previewDeleteBlock(blockingScenarioId: string, blockId: string): Promise<BlockDeletionImpact> {
+    const scenario = await this.repository.getBlockingScenario(blockingScenarioId); if (!scenario) throw new Error('Blocking Scenario not found.');
+    const impact = calculateBlockDeletionImpact(scenario, await this.repository.listBlockingBlocks(scenario.id), blockId); if (!impact) throw new Error('Block not found.');
+    return impact;
+  }
+  async previewDeleteBlockingScenario(blockingScenarioId: string): Promise<BlockingScenarioDeletionImpact> {
+    const scenario = await this.repository.getBlockingScenario(blockingScenarioId); if (!scenario) throw new Error('Blocking Scenario not found.');
+    return calculateBlockingScenarioDeletionImpact(scenario, await this.repository.listBlockingBlocks(scenario.id));
+  }
+  parseActivityInput(input: ActivityTextInput): ParsedActivityInput { return parseActivityInput(input); }
+  parseMinimumLayover(mode: 'none' | MinimumLayoverRule['mode'], amount: string): ParsedMinimumLayover { return parseMinimumLayoverRule(mode, amount); }
   async getBlockSummary(blockingScenarioId: string, blockId: string): Promise<BlockSummary | undefined> { const [scenario, block] = await Promise.all([this.repository.getBlockingScenario(blockingScenarioId), this.repository.getBlockingBlock(blockId)]); if (!scenario || !block) return undefined; const trips = await this.context.listTrips(scenario.scenarioId, scenario.tripProfileId); return summarizeBlock(block, { scenario: { id: scenario.scenarioId }, blockingScenario: scenario, trips, patterns: await this.context.listPatterns(scenario.scenarioId) }); }
   async getScenarioSummary(blockingScenarioId: string, serviceDayId?: string): Promise<BlockingSummary | undefined> { const scenario = await this.repository.getBlockingScenario(blockingScenarioId); if (!scenario) return undefined; const blocks = await this.repository.listBlockingBlocks(blockingScenarioId, serviceDayId); return summarizeBlockingScenario(scenario, blocks, { trips: await this.context.listTrips(scenario.scenarioId, scenario.tripProfileId), patterns: await this.context.listPatterns(scenario.scenarioId) }); }
   async classifyInsertion(blockingScenarioId: string, blockId: string, tripId: string, insertAt?: number, minimumLayover?: MinimumLayoverRule): Promise<BlockingCompatibility> { const [scenario, block, trip] = await Promise.all([this.repository.getBlockingScenario(blockingScenarioId), this.repository.getBlockingBlock(blockId), this.context.getTrip(tripId)]); if (!scenario || !block || !trip) return { status: 'incomplete', findings: [] }; return classifyBlockingInsertion({ block, insertAt, trip, trips: await this.context.listTrips(scenario.scenarioId, scenario.tripProfileId), patterns: await this.context.listPatterns(scenario.scenarioId), minimumLayover }); }

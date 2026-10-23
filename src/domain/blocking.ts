@@ -122,7 +122,7 @@ export function assertStructurallyValidBlock(block: BlockingBlock, context: Bloc
 export function validateBlockingAssignments(scenario: BlockingScenario, blocks: BlockingBlock[], trips: Trip[] | Map<EntityId, Trip>): ValidationFinding[] { const findings: ValidationFinding[] = []; const map = tripMap(trips); const seen = new Map<string, EntityId>(); blocks.filter((block) => block.blockingScenarioId === scenario.id).forEach((block) => block.activities.forEach((activity) => { if (activity.type !== 'revenueTrip') return; const trip = map.get(activity.tripId); if (!trip) return; const key = `${trip.serviceDayId}:${trip.id}`; const previous = seen.get(key); if (previous) findings.push(finding('block', block.id, 'block.duplicateTripAssignment', 'block.duplicateTripAssignment', 'structural', 'error', undefined, { tripId: trip.id, sourceBlockId: previous })); else seen.set(key, block.id); })); return findings; }
 export interface BlockConnection { previousTripId: EntityId; nextTripId: EntityId; rawGapSeconds?: number; deadhead?: DeadheadActivity; usableLayoverSeconds?: number; status: 'valid' | 'incomplete' | 'conflict'; findings: ValidationFinding[]; }
 export interface ResolvedActivityTiming { activityId: EntityId; startTime?: ServiceSeconds; endTime?: ServiceSeconds; }
-export interface BlockSummary { blockId: EntityId; revenueHours: number; runningHours: number; platformHours?: number; deadheadHours: number; layoverHours: number; revenueMiles?: Miles; platformMiles?: Miles; status: BlockingStatus; complete: boolean; valid: boolean; findings: ValidationFinding[]; connections: BlockConnection[]; activityTimings: ResolvedActivityTiming[]; }
+export interface BlockSummary { blockId: EntityId; revenueHours: number; runningHours: number; platformHours?: number; deadheadHours: number; layoverHours: number; layoverPercent?: number; revenueMiles?: Miles; platformMiles?: Miles; status: BlockingStatus; complete: boolean; valid: boolean; findings: ValidationFinding[]; connections: BlockConnection[]; activityTimings: ResolvedActivityTiming[]; }
 export function summarizeBlock(block: BlockingBlock, context: BlockingValidationContext): BlockSummary {
   const trips = tripMap(context.trips); const patterns = patternMap(context.patterns); const activities = sortedActivities(block.activities); const structural = validateBlockingBlock(block, context); const operational: ValidationFinding[] = []; const revenue = activities.filter((activity) => activity.type === 'revenueTrip').map((activity) => ({ activity, trip: trips.get(activity.tripId) })).filter((item): item is { activity: Extract<BlockActivity, { type: 'revenueTrip' }>; trip: Trip } => Boolean(item.trip)); let runningSeconds = 0; let deadheadSeconds = 0; let layoverSeconds = 0; const connections: BlockConnection[] = [];
   const activityTimings: ResolvedActivityTiming[] = activities.map((activity, activityIndex) => {
@@ -149,21 +149,23 @@ export function summarizeBlock(block: BlockingBlock, context: BlockingValidation
   else if (pullOutTiming?.startTime === undefined || pullInTiming?.endTime === undefined) operational.push(finding('block', block.id, 'block.platformBoundaryTripMissing', 'block.platformBoundaryTripMissing', 'operational'));
   else if (pullOutTiming.startTime < 0 || pullInTiming.endTime < 0 || pullInTiming.endTime < pullOutTiming.startTime) operational.push(finding('block', block.id, 'block.platformBoundaryTimeInvalid', 'block.platformBoundaryTimeInvalid', 'operational'));
   else platformSeconds = pullInTiming.endTime - pullOutTiming.startTime;
-  const revenueMilesValues = revenue.map(({ trip }) => revenueDistance(trip, patterns)); const revenueMiles = revenueMilesValues.every((value) => value !== undefined) ? revenueMilesValues.reduce((sum, value) => sum + (value ?? 0), 0) : undefined; if (revenue.length && revenueMiles === undefined) operational.push(finding('block', block.id, 'block.revenueMilesIncomplete', 'block.revenueMilesIncomplete', 'operational')); const nonRevenue = activities.filter((activity) => activity.type === 'pullOut' || activity.type === 'pullIn' || activity.type === 'deadhead'); const nonRevenueMiles = nonRevenue.map((activity) => activity.miles); const platformMiles = revenueMiles !== undefined && nonRevenueMiles.every((value) => value !== undefined) ? revenueMiles + nonRevenueMiles.reduce((sum, value) => sum + (value ?? 0), 0) : undefined; if (platformMiles === undefined && (revenue.length > 0 || nonRevenue.length > 0)) operational.push(finding('block', block.id, 'block.platformMilesIncomplete', 'block.platformMilesIncomplete', 'operational')); const allFindings = [...structural, ...operational]; const valid = !allFindings.some((item) => item.severity === 'error' || INVALIDATING_RULES.has(item.ruleId)); const complete = !operational.some((item) => item.ruleId.includes('Missing') || item.ruleId.includes('Incomplete') || item.ruleId.includes('Invalid')) && platformSeconds !== undefined && platformMiles !== undefined; return { blockId: block.id, revenueHours: (runningSeconds + layoverSeconds) / 3600, runningHours: runningSeconds / 3600, platformHours: platformSeconds === undefined ? undefined : platformSeconds / 3600, deadheadHours: deadheadSeconds / 3600, layoverHours: layoverSeconds / 3600, ...(revenueMiles !== undefined ? { revenueMiles } : {}), ...(platformMiles !== undefined ? { platformMiles } : {}), status: !valid ? 'invalid' : !complete ? 'incomplete' : 'complete', complete, valid, findings: allFindings, connections, activityTimings }; }
-export interface BlockingSummary { blockingScenarioId: EntityId; blockSummaries: BlockSummary[]; revenueHours: number; runningHours: number; platformHours?: number; deadheadHours: number; layoverHours: number; revenueMiles?: Miles; platformMiles?: Miles; validBlockCount: number; invalidBlockCount: number; incompleteBlockCount: number; complete: boolean; }
+  const revenueMilesValues = revenue.map(({ trip }) => revenueDistance(trip, patterns)); const revenueMiles = revenueMilesValues.every((value) => value !== undefined) ? revenueMilesValues.reduce((sum, value) => sum + (value ?? 0), 0) : undefined; if (revenue.length && revenueMiles === undefined) operational.push(finding('block', block.id, 'block.revenueMilesIncomplete', 'block.revenueMilesIncomplete', 'operational')); const nonRevenue = activities.filter((activity) => activity.type === 'pullOut' || activity.type === 'pullIn' || activity.type === 'deadhead'); const nonRevenueMiles = nonRevenue.map((activity) => activity.miles); const platformMiles = revenueMiles !== undefined && nonRevenueMiles.every((value) => value !== undefined) ? revenueMiles + nonRevenueMiles.reduce((sum, value) => sum + (value ?? 0), 0) : undefined; if (platformMiles === undefined && (revenue.length > 0 || nonRevenue.length > 0)) operational.push(finding('block', block.id, 'block.platformMilesIncomplete', 'block.platformMilesIncomplete', 'operational')); const allFindings = [...structural, ...operational]; const valid = !allFindings.some((item) => item.severity === 'error' || INVALIDATING_RULES.has(item.ruleId)); const complete = !operational.some((item) => item.ruleId.includes('Missing') || item.ruleId.includes('Incomplete') || item.ruleId.includes('Invalid')) && platformSeconds !== undefined && platformMiles !== undefined; return { blockId: block.id, revenueHours: (runningSeconds + layoverSeconds) / 3600, runningHours: runningSeconds / 3600, platformHours: platformSeconds === undefined ? undefined : platformSeconds / 3600, deadheadHours: deadheadSeconds / 3600, layoverHours: layoverSeconds / 3600, layoverPercent: layoverPercent(layoverSeconds / 3600, (runningSeconds + layoverSeconds) / 3600), ...(revenueMiles !== undefined ? { revenueMiles } : {}), ...(platformMiles !== undefined ? { platformMiles } : {}), status: !valid ? 'invalid' : !complete ? 'incomplete' : 'complete', complete, valid, findings: allFindings, connections, activityTimings }; }
+export interface BlockingSummary { blockingScenarioId: EntityId; blockSummaries: BlockSummary[]; revenueHours: number; runningHours: number; platformHours?: number; deadheadHours: number; layoverHours: number; layoverPercent?: number; revenueMiles?: Miles; platformMiles?: Miles; validBlockCount: number; invalidBlockCount: number; incompleteBlockCount: number; complete: boolean; }
 export function summarizeBlockingScenario(scenario: BlockingScenario, blocks: BlockingBlock[], context: Omit<BlockingValidationContext, 'blockingScenario'>): BlockingSummary {
   const blockSummaries = blocks.filter((block) => block.blockingScenarioId === scenario.id).map((block) => summarizeBlock(block, { ...context, blockingScenario: scenario }));
   const valid = blockSummaries.filter((summary) => summary.valid);
   const completeValid = valid.filter((summary) => summary.complete);
+  const revenueHours = valid.reduce((sum, summary) => sum + summary.revenueHours, 0); const layoverHours = valid.reduce((sum, summary) => sum + summary.layoverHours, 0);
   const sumWhenKnown = (select: (summary: BlockSummary) => number | undefined) => valid.length === 0 ? 0 : valid.every((summary) => select(summary) !== undefined) ? valid.reduce((sum, summary) => sum + select(summary)!, 0) : undefined;
   return {
     blockingScenarioId: scenario.id,
     blockSummaries,
-    revenueHours: valid.reduce((sum, summary) => sum + summary.revenueHours, 0),
+    revenueHours,
     runningHours: valid.reduce((sum, summary) => sum + summary.runningHours, 0),
     platformHours: sumWhenKnown((summary) => summary.platformHours),
     deadheadHours: valid.reduce((sum, summary) => sum + summary.deadheadHours, 0),
-    layoverHours: valid.reduce((sum, summary) => sum + summary.layoverHours, 0),
+    layoverHours,
+    layoverPercent: layoverPercent(layoverHours, revenueHours),
     revenueMiles: sumWhenKnown((summary) => summary.revenueMiles),
     platformMiles: sumWhenKnown((summary) => summary.platformMiles),
     validBlockCount: completeValid.length,
@@ -190,6 +192,104 @@ export function suggestChronologicalInsertionIndex(block: BlockingBlock, candida
     return start !== undefined && start > candidateStart;
   });
   return laterTripIndex < 0 ? revenue.length : laterTripIndex;
+}
+
+/** Layover as a share of Revenue hours, in percent. Unknown when there are no Revenue hours. */
+export function layoverPercent(layoverHours: number, revenueHours: number): number | undefined { return revenueHours > 0 ? layoverHours / revenueHours * 100 : undefined; }
+
+function inputFinding(ruleId: string, field: string): ValidationFinding { return finding('blockActivity', 'new-activity', ruleId, ruleId, 'structural', 'error', field); }
+export interface ActivityTextInput { minutes: string; miles: string }
+export interface ParsedActivityInput { minutes?: number; miles?: number; findings: ValidationFinding[] }
+/**
+ * Reads the minutes and miles a planner typed for a pull-out, pull-in, or deadhead. A blank minutes field is refused: it is not 0
+ * (review finding 4-018). Miles are optional, so a blank miles field means "not entered".
+ */
+export function parseActivityInput(input: ActivityTextInput): ParsedActivityInput {
+  const findings: ValidationFinding[] = []; const minutesText = input.minutes.trim(); const milesText = input.miles.trim(); let minutes: number | undefined; let miles: number | undefined;
+  if (!minutesText) findings.push(inputFinding('block.minutesRequired', 'minutes'));
+  else { const value = Number(minutesText); if (Number.isInteger(value) && value >= 0) minutes = value; else findings.push(inputFinding('block.minutesInvalid', 'minutes')); }
+  if (milesText) { const value = Number(milesText); if (Number.isFinite(value) && value >= 0) miles = value; else findings.push(inputFinding('block.invalidMiles', 'miles')); }
+  return { ...(minutes === undefined ? {} : { minutes }), ...(miles === undefined ? {} : { miles }), findings };
+}
+export interface ParsedMinimumLayover { rule?: MinimumLayoverRule; findings: ValidationFinding[] }
+/** Reads the minimum-layover rule a planner typed. A blank amount is refused; it is not a 0-minute rule. "No minimum" has no amount. */
+export function parseMinimumLayoverRule(mode: 'none' | MinimumLayoverRule['mode'], amount: string): ParsedMinimumLayover {
+  if (mode === 'none') return { findings: [] };
+  const text = amount.trim();
+  if (!text) return { findings: [finding('minimumLayover', 'minimum-layover', 'block.minimumLayoverAmountRequired', 'block.minimumLayoverAmountRequired', 'structural', 'error', 'amount')] };
+  const value = Number(text);
+  if (!Number.isFinite(value) || value < 0 || (mode === 'percent' && value > 100)) return { findings: [finding('minimumLayover', 'minimum-layover', 'block.minimumLayoverAmountInvalid', 'block.minimumLayoverAmountInvalid', 'structural', 'error', 'amount')] };
+  return { rule: { mode, value }, findings: [] };
+}
+
+function renumbered(block: BlockingBlock, activities: BlockActivity[]): BlockingBlock { return { ...block, activities: activities.map((activity, sequence) => ({ ...activity, sequence })) }; }
+/**
+ * Puts a new pull-out first, a new pull-in last, or a new deadhead directly after the Trip `afterTripId`, and numbers every activity
+ * again, so the order does not depend on activity ids. A deadhead needs a preceding Trip of the Block.
+ */
+export function insertBlockActivity(block: BlockingBlock, activity: Exclude<BlockActivity, { type: 'revenueTrip' }>, afterTripId?: EntityId): BlockingBlock {
+  const activities = sortedActivities(block.activities);
+  const index = activity.type === 'pullOut' ? 0 : activity.type === 'pullIn' ? activities.length : activities.findIndex((item) => item.type === 'revenueTrip' && item.tripId === afterTripId) + 1;
+  if (index <= 0 && activity.type === 'deadhead') reject('Select a preceding Trip for the deadhead.', 'block.deadheadPlacement', 'block', block.id);
+  return renumbered(block, [...activities.slice(0, index), activity, ...activities.slice(index)]);
+}
+/**
+ * The activity order after moving one revenue Trip, with the activities that follow it (its deadhead), one Trip earlier or later.
+ * A pull-out stays first and a pull-in stays last. Undefined when the activity is not a Trip of the Block or cannot move that way.
+ */
+export function moveRevenueTripGroup(block: BlockingBlock, activityId: EntityId, movement: -1 | 1): EntityId[] | undefined {
+  const activities = sortedActivities(block.activities);
+  const starts = activities.map((activity, index) => activity.type === 'revenueTrip' ? index : -1).filter((index) => index >= 0);
+  const groupIndex = starts.findIndex((index) => activities[index].id === activityId); const target = groupIndex + movement;
+  if (groupIndex < 0 || target < 0 || target >= starts.length) return undefined;
+  const pullIn = activities.findIndex((activity) => activity.type === 'pullIn'); const centralEnd = pullIn >= 0 ? pullIn : activities.length;
+  const groups = starts.map((start, index) => activities.slice(start, index + 1 < starts.length ? starts[index + 1] : centralEnd));
+  [groups[groupIndex], groups[target]] = [groups[target], groups[groupIndex]];
+  return [...activities.slice(0, starts[0]), ...groups.flat(), ...activities.slice(centralEnd)].map((activity) => activity.id);
+}
+/**
+ * Gives every connection between two consecutive revenue Trips that ends at the deadhead's From Node and starts at its To Node a
+ * deadhead with the same values. A deadhead already on such a connection keeps its id and takes the new values. The count is the
+ * number of connections changed (review finding 4-007).
+ */
+export function applyDeadheadToMatchingConnections(block: BlockingBlock, deadhead: DeadheadActivity, tripsValue: Trip[] | Map<EntityId, Trip>, patternsValue: RoutePattern[] | Map<EntityId, RoutePattern> | undefined): { block: BlockingBlock; appliedCount: number } {
+  const trips = tripMap(tripsValue); const patterns = patternMap(patternsValue); const activities = sortedActivities(block.activities);
+  const revenueIndices = activities.map((activity, index) => activity.type === 'revenueTrip' ? index : -1).filter((index) => index >= 0);
+  const replacements = new Map<EntityId, DeadheadActivity>(); const insertions = new Map<number, DeadheadActivity>();
+  for (let position = 0; position < revenueIndices.length - 1; position += 1) {
+    const previousIndex = revenueIndices[position]; const nextIndex = revenueIndices[position + 1];
+    const previous = activities[previousIndex]; const next = activities[nextIndex];
+    if (previous.type !== 'revenueTrip' || next.type !== 'revenueTrip') continue;
+    const previousTrip = trips.get(previous.tripId); const nextTrip = trips.get(next.tripId);
+    if (!previousTrip || !nextTrip || patternEndNode(previousTrip, patterns) !== deadhead.fromNodeId || patternStartNode(nextTrip, patterns) !== deadhead.toNodeId) continue;
+    const existing = activities.slice(previousIndex + 1, nextIndex).find((activity) => activity.type === 'deadhead');
+    if (existing) replacements.set(existing.id, { ...deadhead, id: existing.id, sequence: existing.sequence }); else insertions.set(previousIndex, { ...deadhead, id: newId() });
+  }
+  const appliedCount = replacements.size + insertions.size;
+  if (!appliedCount) reject('No consecutive Trips use the selected From and To Nodes.', 'block.deadheadNoMatch', 'block', block.id);
+  return { block: renumbered(block, activities.flatMap((activity, index) => [replacements.get(activity.id) ?? activity, ...(insertions.has(index) ? [insertions.get(index)!] : [])])), appliedCount };
+}
+/** The Trips of one Route and service day that none of the given Blocks holds. The Blocks are those of one Blocking Scenario. */
+export function unassignedRouteTrips(trips: Trip[], blocks: BlockingBlock[], serviceDayId: EntityId, routeId: EntityId): Trip[] {
+  const assigned = new Set(blocks.filter((block) => block.serviceDayId === serviceDayId).flatMap((block) => block.activities.flatMap((activity) => activity.type === 'revenueTrip' ? [activity.tripId] : [])));
+  return trips.filter((trip) => trip.serviceDayId === serviceDayId && trip.routeId === routeId && !assigned.has(trip.id));
+}
+/** A Block label must be filled in and used by no other Block of the same service day in its Blocking Scenario, compared after trimming (Decision 0039). */
+export function validateBlockLabel(label: string, serviceDayId: EntityId, blocks: BlockingBlock[], currentBlockId?: EntityId): ValidationFinding[] {
+  const subject = currentBlockId ?? 'new-block'; const trimmed = label.trim();
+  if (!trimmed) return [finding('block', subject, 'block.labelRequired', 'block.labelRequired', 'structural', 'error', 'label')];
+  return blocks.some((block) => block.id !== currentBlockId && block.serviceDayId === serviceDayId && block.label.trim() === trimmed) ? [finding('block', subject, 'block.labelUnique', 'block.labelUnique', 'structural', 'error', 'label')] : [];
+}
+/** Throws `BlockingValidationError` when the label is blank or used by another Block of the service day. */
+export function assertBlockLabelAvailable(label: string, serviceDayId: EntityId, blocks: BlockingBlock[], currentBlockId?: EntityId): void {
+  const findings = validateBlockLabel(label, serviceDayId, blocks, currentBlockId);
+  if (findings.length) throw new BlockingValidationError(findings[0].ruleId === 'block.labelRequired' ? 'Block label is required' : 'Another Block on this service day already uses that label.', findings);
+}
+/** The first free "Block <n>" among the labels of the given Blocks (those of one service day of one Blocking Scenario). */
+export function proposeBlockLabel(blocks: BlockingBlock[]): string {
+  const used = new Set(blocks.map((block) => block.label.trim()));
+  let number = 1; while (used.has(`Block ${number}`)) number += 1;
+  return `Block ${number}`;
 }
 
 export interface BlockingInsertionContext { block: BlockingBlock; insertAt?: number; trip: Trip; trips: Trip[] | Map<EntityId, Trip>; patterns?: RoutePattern[] | Map<EntityId, RoutePattern>; minimumLayover?: MinimumLayoverRule; }
@@ -259,6 +359,14 @@ export function classifyBlockingInsertion(input: BlockingInsertionContext): Bloc
 export interface BlockingAssignmentRequest { blockingScenarioId: EntityId; serviceDayId: EntityId; tripId: EntityId; destinationBlockId: EntityId; destinationIndex?: number; sourceBlockId?: EntityId; sourceSignature: string; }
 export interface BlockingBulkAssignmentRequest { blockingScenarioId: EntityId; serviceDayId: EntityId; tripIds: EntityId[]; destinationBlockId: EntityId; sourceBlockId: EntityId; sourceSignature: string; }
 export interface BlockingTripsAssignmentRequest { blockingScenarioId: EntityId; serviceDayId: EntityId; tripIds: EntityId[]; destinationBlockId: EntityId; sourceSignature: string; }
+export interface BulkDeadheadRequest { blockingScenarioId: EntityId; blockId: EntityId; deadhead: DeadheadActivity; sourceSignature: string; }
+export interface BlockingActivityAddRequest { blockingScenarioId: EntityId; blockId: EntityId; activity: Exclude<BlockActivity, { type: 'revenueTrip' }>; afterTripId?: EntityId; sourceSignature: string; }
+export interface BlockDeletionImpact { blockId: EntityId; label: string; serviceDayId: EntityId; activityCount: number; tripCount: number; deadheadCount: number; sourceSignature: string; }
+/** What deleting one Block removes, with the source signature the deletion must carry. Undefined when the Block is not one of the Blocking Scenario's. */
+export function calculateBlockDeletionImpact(scenario: BlockingScenario, blocks: BlockingBlock[], blockId: EntityId): BlockDeletionImpact | undefined {
+  const block = blocks.find((candidate) => candidate.id === blockId && candidate.blockingScenarioId === scenario.id); if (!block) return undefined;
+  return { blockId: block.id, label: block.label, serviceDayId: block.serviceDayId, activityCount: block.activities.length, tripCount: block.activities.filter((activity) => activity.type === 'revenueTrip').length, deadheadCount: block.activities.filter((activity) => activity.type === 'deadhead').length, sourceSignature: createBlockingScenarioSourceSignature(scenario, blocks) };
+}
 export interface BlockingActivityEditRequest { blockingScenarioId: EntityId; blockId: EntityId; activity: BlockActivity; sourceSignature: string; }
 export interface BlockingScenarioCreateRequest extends BlockingScenarioInput { duplicateScenarioId?: EntityId; }
 

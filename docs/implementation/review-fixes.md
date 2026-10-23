@@ -41,7 +41,7 @@
 Items that the user assigned to later packages. They are added to those packages' acceptance criteria and stay here, unchanged, until the owning package lands. The bullets above that describe them are carried forward verbatim.
 
 - **P09 (sitting 4E), the service part of the Runtime first-visit race. DONE in P09 (commit `fd1e65b`).** `ensureDefaultRuntimeProfile` is a check-then-write that is not atomic, and two overlapping calls can store duplicate Runtime assignments. Make it idempotent: one check-and-write in a single transaction, so two calls at once leave one Default profile and one assignment per standard Service day, and "Duplicate runtime assignment" cannot appear. Add a test that runs two calls at the same time against both repositories. P09 does not change `App.tsx`. Do not remove the up-front Default Runtime profile step or the reload after the Runtime save in `tests/ui/support/tripsWorkspace.ts`; U07 removes them.
-- **P14 (sitting 4F):** enforce Block label uniqueness when a Block is created or renamed (Decision 0039), with a proposed default label of the first free "Block <n>".
+- **P14 (sitting 4F), DONE in P14 (commit `P14_HASH`):** enforce Block label uniqueness when a Block is created or renamed (Decision 0039), with a proposed default label of the first free "Block <n>".
 - **U07 (sitting 4I):**
   - the single-flight Runtime load in `App.tsx` (the other half of the race above), then remove the two test-helper steps named above;
   - the Trips table must reload Runtime profiles after a Runtime profile is saved, so Show runtime bands shades without a page reload (the second behavior in the 4C decision bullet);
@@ -1170,3 +1170,90 @@ User decisions implemented: decision 5 (prefix `'` on free-text cells, strip it 
 - A spreadsheet program that does not hide the leading apostrophe will show it. This is the cost of decision 5.
 - A tab or carriage return at the start of a cell can also be read as a formula by some spreadsheet programs (a known OWASP addition). Decision 5 names only `=`, `+`, `-`, and `@`, so only those are protected.
 - A label with a bare CR is quoted on export, but the Trips CSV importer reads a CR inside quotes as LF, so such a label does not round-trip byte for byte. Out of scope (the Trips CSV reader is unchanged).
+
+## P14: Blocking rules into `blockingService`
+
+- Date: 2026-10-23. Sitting 4F. Model: Sonnet (main session). No sub-agents: P14 is S2, so no Opus review.
+- Type: structural. Severity: S2.
+- Commit: `P14_HASH`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-024 | 4-007 | S2 | "Apply to all similar Trips" in the deadhead dialog skipped every second matching connection: the loop computed Trip positions once and then inserted deadheads, so later positions pointed one activity early. 5 matching Trips gave 2 deadheads instead of 4 (reproduced in the browser on the unfixed code). |
+| I-074a | 4-014 (Blocking items) | S3 | `BlockingWorkspace.tsx` grouped Trips for reordering, inserted new activities, filtered the unassigned Trips by Route and assignment, and computed Layover % twice. |
+| I-077 | 4-018 | S3 | A blank minutes field saved a 0-minute deadhead in the single path and was refused in the bulk path; a blank minimum-layover amount became a 0-minute rule. |
+
+Also found while testing, and fixed with the insertion move: adding a pull-out, pull-in, or deadhead gave the new activity the same `sequence` as the activity it displaced, and `normalizeBlockActivities` breaks ties by random activity id, so the order could come out wrong (the unfixed browser run showed "A deadhead must be placed between two revenue Trips" after a blank-minutes deadhead). The service now numbers every activity again.
+
+Added acceptance criterion from the 4B note, done here: Block label uniqueness when a Block is created or renamed (Decision 0039), with the first free "Block <n>" as the proposed label. Marked done in "Added acceptance criteria" below.
+
+### What changed
+
+- `src/domain/blocking.ts`: `layoverPercent` (also a field of `BlockSummary` and `BlockingSummary`); `parseActivityInput` and `parseMinimumLayoverRule` (blank is refused; new rules `block.minutesRequired`, `block.minutesInvalid`, `block.minimumLayoverAmountRequired`, `block.minimumLayoverAmountInvalid`); `insertBlockActivity`; `moveRevenueTripGroup`; `applyDeadheadToMatchingConnections`; `unassignedRouteTrips`; `validateBlockLabel`, `assertBlockLabelAvailable`, `proposeBlockLabel`; `calculateBlockDeletionImpact`; request types.
+- `src/application/ports.ts` and `blockingService.ts`. Commands: `addActivity`, `applyDeadheadToMatchingConnections`, `moveTripGroup`. Queries: `listUnassignedTrips`, `proposeBlockLabel`, `previewDeleteBlock`, `previewDeleteBlockingScenario`, and the synchronous `parseActivityInput` and `parseMinimumLayover`. `createBlock` and a renaming `updateBlock` check the label. No repository method was added, so `BLOCKING_WRITE_METHODS` is unchanged.
+- `src/ui/BlockingWorkspace.tsx` (no layout or interaction change): the dialog save, the bulk pull-out review, the Trip order arrows, the Unassigned Trips list (loaded with the Blocks, and reloaded when the Route changes), the Layover % cells, the New Block dialog default, and the Minimum layover dialog now call the service. Two message entries were added to its message table (`block.minutesRequired`, `block.minutesInvalid`: "Enter a non-negative whole-minute duration."). The unused `useMemo` import was removed.
+- Deletion previews: `previewDeleteBlock` returns the label, service day, activity, Trip, and deadhead counts; `previewDeleteBlockingScenario` returns the existing `BlockingScenarioDeletionImpact`. Both return `sourceSignature`, which is the review token of the existing deletions (`deleteBlock` and `deleteBlockingScenario` already refuse a different signature). No new fingerprint was needed. Nothing calls the previews yet; U05 shows them.
+- Documentation: `architecture_overview.md` (Blocking Model), `docs/decisions/0039-backup-import-normalization-and-validation.md` (label rule implemented).
+
+### Behavior before and after (what you will see)
+
+- Apply to all similar Trips adds a deadhead to every matching connection.
+- A blank minutes field is refused with "Enter a non-negative whole-minute duration." in both the single and bulk paths; a blank minimum-layover amount disables Apply and shows the existing alert.
+- Creating or renaming a Block to a label that another Block of the same service day uses is refused with "Another Block on this service day already uses that label." The New Block dialog opens with the first free "Block <n>" (after deleting Block 2 of three, "Block 2" instead of "Block 3").
+- Adding a pull-out, pull-in, or deadhead always lands in its place.
+- Nothing else changes on screen. Layover % values are the same numbers (same formula).
+
+### Tests added
+
+- `src/domain/blockingEditing.test.ts` (34 tests): Layover %; activity and minimum-layover input; bulk deadhead (5 Trips give 4 deadheads, replaced deadheads keep their id, non-matching connections are skipped, no match is refused); insertion order independent of ids; Trip-group moves; the unassigned filter; label rule and proposal.
+- `src/application/blockingRules.test.ts` (16 tests): the same rules through the service against the in-memory repository, including stale-source refusal, atomic label checks, a legacy repeated label staying editable, previews, and that previews write nothing.
+- `tests/ui/blocking-rules.spec.ts` (3 browser tests): 5 Trips give 4 deadheads through the dialog; blank minutes refused for a deadhead, a bulk pull-out, and the minimum layover; label uniqueness, the proposed label after a deletion, and a refused rename.
+
+### Tests first: what failed on the current code
+
+- The browser spec was run in a clean worktree of the P13 commit: all 3 failed (2 deadheads instead of 4; a blank minutes field accepted, then "A deadhead must be placed between two revenue Trips."; no label rule).
+- The unit tests failed because the functions did not exist (the first run of the domain file failed to import them). What each one guards is shown by the breaks.
+
+### Deliberate breaks (each applied, run, and restored from a saved copy)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| Bulk deadhead | every second insertion skipped (the original defect) | 2 fail |
+| Activity input | blank minutes read as 0 | 5 fail |
+| Minimum layover | blank amount read as 0 | 3 fail |
+| Insertion | new activity keeps `sequence: index` | 3 fail |
+| Labels | create does not check | 1 fails |
+| Labels | rename does not check | 1 fails |
+| Labels | proposal is count plus 1 | 2 fail |
+| Previews | activity count off by one | 1 fails |
+| Layover % | divided by running hours only | 2 fail |
+| Unassigned | Route ignored | 2 fail |
+| Trip-group move | deadhead not kept with its Trip | 2 fail |
+
+(The first attempt at these runs was cut off by a restart of the session's worker; one source file was left in its broken state, found by comparing it with the saved copy, and restored before the runs were repeated in full.)
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 41 files, 637 tests passed (587 before; 50 new).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 80 passed, 0 failed on the last full run. No `test.fail`, `test.skip`, or `test.fixme`. The first full run had 79 passed and 1 failed: `unified-action-layer.spec.ts:139`, the same step as in the P13 entry (`tests/ui/support/tripsWorkspace.ts:95`, the Trip actions menu has no items after `ArrowDown`). See "Intermittent browser failure" below.
+- New spec stress run, `--repeat-each=10 --workers=8`: 30 of 30.
+- `pnpm build`: succeeds (existing chunk-size warning only). Bundle `index-BdF3r0BO.js` 790.12 kB (785.31 kB after P13).
+
+### Intermittent browser failure (open, not fixed)
+
+`unified-action-layer.spec.ts:139` failed at the same setup step in 2 of the 6 full runs on this branch (P13, first run; P14, first run) and in 0 of 3 full runs on `origin/main` (the 4E report, and two runs for this sitting). It passed in every isolated run: 16 of 16 and 40 of 40 on this branch, 40 of 40 on `origin/main`, and in each re-run of the full suite. The failing step runs no code that P12 to P14 changed. The cause is not found; the P05 hand-off about overlapping Runtime reloads that close an open menu is the candidate. The samples are too small to say whether this branch makes it more likely.
+
+### Hand-offs
+
+- U05: wording for `block.deadheadOutsideGap` and `block.boundaryOverlap` (P12); show `previewDeleteBlock` and `previewDeleteBlockingScenario` before deleting and pass the preview's `sourceSignature` to the deletion (I-035); the Block-label message uses the thrown text.
+- `BlockingWorkspace.tsx` keeps its in-component rule for "Delete similar deadheads" (selects deadheads by From and To Node in the Block) and `boundaryNode`. They are not on the 4-014 Blocking list for P14.
+- Clean-up of repeated Block labels already stored (no owner yet).
+
+### Residual risks
+
+- `listUnassignedTrips` adds one read of the Trips when the Blocking tab opens (the capacity spec still passes: its limit is 16 reads).
+- The Unassigned Trips list is refreshed with the Blocks and on a Route change. Trips edited on the Trips tab reach it when the Blocking tab is opened again, as before.
+- The bulk deadhead now considers every Route's Trips in the Block (it used the selected Route's Patterns only). For a single-Route Block the result is the same.

@@ -1,7 +1,7 @@
 import type { Block, BlockingBlock, BlockingScenario, CostingAssumptions, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, Trip, TripGenerationSet, TripProfile, ValidationFinding } from '../domain/types';
 import type { RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
 import type { ScenarioRecords } from '../domain/project';
-import type { BlockSummary, BlockingAssignmentRequest, BlockingCompatibility, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingActivityEditRequest, BlockingTripsAssignmentRequest } from '../domain/blocking';
+import type { ActivityTextInput, BlockDeletionImpact, BlockSummary, BlockingActivityAddRequest, BlockingAssignmentRequest, BlockingCompatibility, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingActivityEditRequest, BlockingTripsAssignmentRequest, BulkDeadheadRequest, MinimumLayoverRule, ParsedActivityInput, ParsedMinimumLayover } from '../domain/blocking';
 import type { CostingAssumptionsInput, CostingCalculationContext, CostingCalculationResult, CostingFinding } from '../domain/costing';
 
 export interface RouteDefinitionRepository {
@@ -163,6 +163,12 @@ export interface BlockingCommands {
   removeTrip(blockingScenarioId: string, serviceDayId: string, tripId: string, sourceSignature: string): Promise<{ blocks: BlockingBlock[] }>;
   removeTrips(blockingScenarioId: string, serviceDayId: string, tripIds: string[], sourceSignature: string): Promise<{ blocks: BlockingBlock[] }>;
   editActivity(request: BlockingActivityEditRequest): Promise<BlockingBlock>;
+  /** Adds a pull-out (first), a pull-in (last), or a deadhead (after `afterTripId`) to a Block. */
+  addActivity(request: BlockingActivityAddRequest): Promise<BlockingBlock>;
+  /** Gives every connection that ends at the deadhead's From Node and starts at its To Node the same deadhead. Refuses when no connection matches. */
+  applyDeadheadToMatchingConnections(request: BulkDeadheadRequest): Promise<{ block: BlockingBlock; appliedCount: number }>;
+  /** Moves a revenue Trip, with the deadhead after it, one Trip earlier (-1) or later (1). A move past either end changes nothing. */
+  moveTripGroup(blockingScenarioId: string, blockId: string, activityId: string, movement: -1 | 1, sourceSignature: string): Promise<BlockingBlock>;
   previewBulkBoundaryActivities(request: import('../domain/blocking').BulkBoundaryRequest): Promise<import('../domain/blocking').BulkBoundaryPreview>;
   applyBulkBoundaryActivities(request: import('../domain/blocking').BulkBoundaryRequest): Promise<import('../domain/blocking').BulkBoundaryPreview>;
   reorderActivities(blockingScenarioId: string, blockId: string, activityIds: string[], sourceSignature: string): Promise<BlockingBlock>;
@@ -177,6 +183,18 @@ export interface BlockingQueries {
   classifyInsertion(blockingScenarioId: string, blockId: string, tripId: string, insertAt?: number, minimumLayover?: import('../domain/blocking').MinimumLayoverRule): Promise<BlockingCompatibility>;
   /** The compatibility of every listed Trip with one Block, from one read of the Trips and Patterns. Keyed by Trip id. */
   classifyInsertions(blockingScenarioId: string, blockId: string, tripIds: string[], insertAt?: number, minimumLayover?: import('../domain/blocking').MinimumLayoverRule): Promise<Map<string, BlockingCompatibility>>;
+  /** The Trips of the Route and service day that no Block of the Blocking Scenario holds. */
+  listUnassignedTrips(blockingScenarioId: string, serviceDayId: string, routeId: string): Promise<Trip[]>;
+  /** The first free "Block <n>" on the service day of the Blocking Scenario. */
+  proposeBlockLabel(blockingScenarioId: string, serviceDayId: string): Promise<string>;
+  /** What deleting the Block would remove. `sourceSignature` is the review token that `deleteBlock` takes. */
+  previewDeleteBlock(blockingScenarioId: string, blockId: string): Promise<BlockDeletionImpact>;
+  /** What deleting the Blocking Scenario would remove. `sourceSignature` is the review token that `deleteBlockingScenario` takes. */
+  previewDeleteBlockingScenario(blockingScenarioId: string): Promise<BlockingScenarioDeletionImpact>;
+  /** Reads the minutes and miles typed for a pull-out, pull-in, or deadhead. Blank minutes are refused, not read as 0. */
+  parseActivityInput(input: ActivityTextInput): ParsedActivityInput;
+  /** Reads the minimum-layover rule typed in the dialog. A blank amount is refused, not read as 0. */
+  parseMinimumLayover(mode: 'none' | MinimumLayoverRule['mode'], amount: string): ParsedMinimumLayover;
   exportBlockingScenarioCsv(blockingScenarioId: string): Promise<Array<{ suffix: 'blocking-scenarios' | 'blocking-blocks' | 'blocking-activities' | 'blocking-summaries'; contents: string }>>;
 }
 
