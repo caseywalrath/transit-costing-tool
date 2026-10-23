@@ -4,7 +4,7 @@
 
 **Sitting 4I and 4J combined (U06, U07, P15, P17) is finished on the branch `claude/stage-4i-4j-review-fixes`, from `origin/main` after the merge of PR #21 (U01 to U05, P16). The user must review the branch, open and merge the pull request, and read the first CI run. The next sitting is 4K: U08 on Opus, then D01 on Sonnet, then P18 (Sonnet). Start it only after this branch is merged; create `claude/stage-4k-review-fixes` from the new `origin/main`. Standing rules 1 to 10 below apply unchanged.**
 
-- Done on this branch: U06 (`88a40a6`), U07 (`4d270c1`), P15 (`b920627`), P17 (`P17HASH`). Each package has its own hash-record commit after it.
+- Done on this branch: U06 (`88a40a6`), U07 (`4d270c1`), P15 (`b920627`), P17 (`87359e0`). Each package has its own hash-record commit after it.
 - Not started: U08, D01, P18.
 - Sequence for 4K (user, 2026-10-23): **U08 on Opus**, then **D01 on Sonnet**, then **P18** (the Vitest major upgrade, its own package, not mixed with feature work). Sitting 4K rules (the Sonnet-only, no-sub-agent, waived-gate exceptions of this sitting) are not carried over; the user states the exceptions for each sitting.
 - **Blocked: decision needed (U07, details and options in its fix log entry).** (1) How the open Shift drawer and the Runtime Save and Discard buttons coexist at 1024 to 1900 px (options: reserve room beside the drawer, move Save and Discard left, dock the drawer at the bottom, leave it). (2) Where to show why a Trip cannot be recalculated (`inspectStaleTrips` findings; the text exists, no screen shows it). The user decides; then a small UI package finishes them.
@@ -15,10 +15,10 @@
   - **U07 (done, `4d270c1`, except two blocked items):** the Runtime totals read `:61` by design (the Decision 0010 duration format; no change); the single-flight load, the reload after a Runtime save, the Recalculate band picker, the error boundary, the shared-profile line, and the message texts are done. Blocked: the Shift drawer covering the Runtime Save button, and where to show the `inspectStaleTrips` findings.
   - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead; the Add-trip row drafts are not kept across a scope change; 24 dialogs were converted (the finding counted 28, four were removed by X01).
   - **P15 (done, `b920627`):** the Pattern editor shows "incomplete" for a Pattern with no distance (the literal "0.0 miles" was on no screen; the Trips screen shows no distance); `calculateTimepointHeadways` has a unit test; display rounding is in the domain. Still open: a CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
-  - **P17 (done, `P17HASH`):** `deletePattern` takes a review token (Decision 0041 addendum); the 14 legacy route mutators are deleted and the test setups use `src/testSupport/routeFixtures.ts`; a backup with a repeated Block label is refused with the cause and the way out. `makePatternPoint` has no caller left (harmless).
+  - **P17 (done, `87359e0`):** `deletePattern` takes a review token (Decision 0041 addendum); the 14 legacy route mutators are deleted and the test setups use `src/testSupport/routeFixtures.ts`; a backup with a repeated Block label is refused with the cause and the way out. `makePatternPoint` has no caller left (harmless).
   - **P16 leftovers:** `resetPatternService` (legacy mutator) still stamps wall-clock `now`; about 40 other domain signatures still default `now` to the wall clock.
 - Decisions made by the user on 2026-10-23 (all follow the recommended option). `docs/review/fix-packages.md` is on the review branch and is not edited; this note is the record.
-  1. `deletePattern` gets a review token (Decision 0041 pattern). **DONE in P17 (`P17HASH`).**
+  1. `deletePattern` gets a review token (Decision 0041 pattern). **DONE in P17 (`87359e0`).**
   2. The legacy per-field route mutators (`updatePattern`, `addNode`, and the others in the P09 entry) are deleted, and the unit-test setups that use them move to preview and commit. **DONE in P17.**
   3. Repeated Block labels already stored: the backup import refusal message explains the cause and the way out (rename the repeated labels in the source project, then export again). No repair on load. **DONE in P17** (the text is built in `src/persistence/backup.ts` and shown by the U02 error display).
   4. Branch protection: the user will require the two CI checks on `main` after the first CI run passes. User action only; no package. (Done by the user before this sitting.) The check names in the GitHub list are the job names "Typecheck, unit tests, build" (job `verify`) and "Browser tests" (job `browser`).
@@ -43,7 +43,7 @@ Items that the user assigned to later packages. They are added to those packages
   - the Trips table must reload Runtime profiles after a Runtime profile is saved, so Show runtime bands shades without a page reload (the second behavior in the 4C decision bullet);
   - the Recalculate dialog hides the band picker for segment-start and blended Trips (Option B, decided 2026-10-23).
 
-- **P17 (sitting 4I/4J), defined 2026-10-23. DONE in P17 (commit `P17HASH`).** Items 1 to 3 of the decisions above: a review token for `deletePattern`; the legacy mutators deleted with the unit-test setups moved to preview and commit; the backup import refusal message for repeated Block labels.
+- **P17 (sitting 4I/4J), defined 2026-10-23. DONE in P17 (commit `87359e0`).** Items 1 to 3 of the decisions above: a review token for `deletePattern`; the legacy mutators deleted with the unit-test setups moved to preview and commit; the backup import refusal message for repeated Block labels.
 
 - **P15 (sitting 4I/4J), added 2026-10-23. DONE in P15 (commit `b920627`).** A Pattern with no distance entered shows "incomplete" instead of "0.0 miles" on the Trips and Pattern screens, using the same rule as Blocking (a total of 0 is incomplete mileage, P12). This is the one intended display change in P15; every other displayed value stays unchanged, and the user-visible text is recorded in the P15 entry.
 
@@ -1984,7 +1984,7 @@ One break was not a break and was replaced: removing the "not the destination Bl
 
 - Date: 2026-10-23. Sitting 4I/4J (combined). Model: Sonnet (main session). No sub-agents.
 - Type: structural. Severity: S3. Defined by the user's decisions of 2026-10-23, items 1 to 3 (the Next sitting note); `docs/review/fix-packages.md` has no P17 entry.
-- Commit: `P17HASH`.
+- Commit: `87359e0`.
 
 ### Issues fixed
 
