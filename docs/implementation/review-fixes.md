@@ -4,7 +4,7 @@
 
 **Sitting 4K part 2 (D01, then U09, then P18) is in progress on the branch `claude/stage-4k-review-fixes`, restarted from `origin/main` after the merge of PR #24 (U08). D01 is done on this branch. The user must review the branch, open and merge the pull request, and read the first CI run when the sitting ends. U10 (Opus) stays a sitting of its own afterwards. Standing rules 1 to 10 below apply unchanged.**
 
-- Done on this branch: D01 (hash recorded in the hash-record commit that follows each package). U08 landed earlier (`ac0bded`, PR #24).
+- Done on this branch: D01 (`daec5d5`). U08 landed earlier (`ac0bded`, PR #24).
 - Not started: U09, P18, U10.
 - U08 result: "Regenerate selected" on 480 Trips at the capacity fixture, production build, 5 runs: review 407 to 461 ms (before: 1,043 to 1,300 ms), apply 556 to 587 ms (before: 918 to 1,072 ms). Anchor selection stays available for every Trip. Two layout defects of the dialog that predate U08 are fixed (details in the U08 entry). No decision was blocked.
 - Exceptions of the 4K part 2 sitting (user, 2026-10-23), not carried over: Sonnet main session, no sub-agents and no Opus review, the Decision 0005 gate waived, U09 inspected at 1024 and 1440 px, P18 a dependency upgrade only. The user states the exceptions for each sitting.
@@ -2133,7 +2133,7 @@ The review's own measurement (2.47 s and 2.54 s) was taken in quirks mode before
 
 - Date: 2026-10-23. Sitting 4K part 2. Model: Sonnet (main session). No sub-agents (the plan allowed Haiku for the decision-record status lines; it was not used).
 - Type: docs. Severity: S3. Luna-class.
-- Commit: see "Commit hashes" in the last entry of this sitting (the hash-record commit).
+- Commit: `daec5d5`.
 
 ### Issues fixed
 
@@ -2240,18 +2240,18 @@ Added by D01 (sitting 4K part 2). It maps every issue of the review register to 
 | I-045 | S2 | No persistent-storage request, no backup reminder, and raw text on quota failure (UD 16) | P10 (`2eb3439`) |
 | I-046 | S2 | Deployment publishes every push to `main` without tests; no workflow runs on pull requests | B01 (`e6bf12e`) |
 | I-047 | S3 | The `segmentStart` calculation tests exist only in the review golden suite, not in `pnpm test` | P06 (`1f9e64a`) |
-| I-048 | S3 | The overview describes a bounded Trips scroll viewport that D0035-05 forbids | D01 (this entry) |
-| I-049 | S3 | Roadmap constraints and deletion rules contradict Decisions 0011, 0019, 0033, 0035 | D01 (this entry) |
-| I-050 | S3 | Overview, schema, glossary, and roadmap omit the Number of Trips limit | D01 (this entry) |
-| I-051 | S3 | Decision status lines are missing, stale, or omit supersession | D01 (this entry) |
+| I-048 | S3 | The overview describes a bounded Trips scroll viewport that D0035-05 forbids | D01 (`daec5d5`) |
+| I-049 | S3 | Roadmap constraints and deletion rules contradict Decisions 0011, 0019, 0033, 0035 | D01 (`daec5d5`) |
+| I-050 | S3 | Overview, schema, glossary, and roadmap omit the Number of Trips limit | D01 (`daec5d5`) |
+| I-051 | S3 | Decision status lines are missing, stale, or omit supersession | D01 (`daec5d5`) |
 | I-052 | S3 | The overview says service-day counts are "capped at 365"; the code treats more than 365 as an error | P09 (`fd1e65b`) |
-| I-053 | S3 | `codex.md` and the overview repeat status paragraphs; `codex.md` makes false repository claims (UD 9) | D01 (this entry) |
-| I-054 | S3 | `data-schema.md` index table, migration history, and entity shapes drift from the code | D01 (this entry) |
-| I-055 | S3 | The minimum-layover preference has no decision record and contradicts D0020-19 | D01 (this entry) |
-| I-056 | S3 | Decisions 0017 and 0018 were overtaken by `ui-conventions.md` without an amendment | D01 (this entry) |
+| I-053 | S3 | `codex.md` and the overview repeat status paragraphs; `codex.md` makes false repository claims (UD 9) | D01 (`daec5d5`) |
+| I-054 | S3 | `data-schema.md` index table, migration history, and entity shapes drift from the code | D01 (`daec5d5`) |
+| I-055 | S3 | The minimum-layover preference has no decision record and contradicts D0020-19 | D01 (`daec5d5`) |
+| I-056 | S3 | Decisions 0017 and 0018 were overtaken by `ui-conventions.md` without an amendment | D01 (`daec5d5`) |
 | I-057 | S3 | Trips labels "Scenario" (UD 7: "Blocking Scenario") and "Run Time" are not glossary terms | U07 (`4d270c1`) |
 | I-058 | S3 | The Phase 5 plan's Costing column list does not match the implemented table (UD 2) | U06 (`88a40a6`) |
-| I-059 | S3 | `ui-conventions.md` mixes current and historical rules, including the modal Node-removal rule | D01 (this entry) |
+| I-059 | S3 | `ui-conventions.md` mixes current and historical rules, including the modal Node-removal rule | D01 (`daec5d5`) |
 | I-060 | S3 | The validation-finding shape differs between documents, `ValidationFinding`, `CostingFinding`, and Blocking string errors | P12 (`ce5852d`) |
 | I-061 | S3 | At an exact gap midpoint, `segmentStart` picks the earlier band and the blend picks the later band | P16 (`cf2d189`) |
 | I-062 | S3 | Half-second decimal-minute runtime entries round inconsistently | P16 (`cf2d189`) |
