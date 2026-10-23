@@ -4,10 +4,10 @@
 
 **Combined sitting 4G + 4H, in progress on the branch `claude/stage-4g-4h-review-fixes` (created from `origin/main` after the 4F merge, PR #19).** The user directed one overnight sitting on Sonnet: U01, U02, U03, U04, U05 in that order, then P16 as the last package. No sub-agents and no Opus review (none of these is S0 or S1). The user waived the Decision 0005 verification gate between the structural and UI packages, pushes to the work branch after every package, and does not want to be asked: a package that needs a decision its text does not settle is recorded here as "blocked: decision needed" and the next independent package continues (U05 depends on U04, U04 on U03).
 
-- Done on the branch: U01 (`8e347e4`), U02 (`dea5288`), U03 (`215ec5c`).
-- Next package: U04.
+- Done on the branch: U01 (`8e347e4`), U02 (`dea5288`), U03 (`215ec5c`), U04 (fix log entry; hash recorded in the entry).
+- Next package: U05.
 - Blocked: none.
-- Known failures: none.
+- Known failures: none. The intermittent `unified-action-layer.spec.ts:139` failure is explained and fixed in the U04 entry (a deferred menu refocus); watch the next full runs to confirm it does not return.
 - Not started in this sitting: U06, U07, P15, U08, D01 (and every package not named above).
 
 - State at the start of this sitting (after 4F): the browser suite had 80 tests, 80 passed; unit tests 41 files, 637 tests; bundle `index-BdF3r0BO.js` 790.12 kB. The user must still read the first CI run (the B01 workflows have not run).
@@ -1536,3 +1536,59 @@ User decision implemented: 14 (guard the Runtime editor draft and the staged Shi
 - **U07 (layout, Sol if redesigned):** at 1024 to 1900 px the docked Shift drawer covers the Runtime Save and Discard buttons, so with a staged Shift open the planner can reach Runtime Save only by keyboard (the new test presses it with the keyboard). Not fixed here; no package owns it.
 - The Runtime leave dialog says "Save Runtime changes before leaving?" for a Runtime Pattern or Profile change as well as for leaving the tab; the wording fits all of them, and no separate title was added.
 - A Pattern draft that is dirty when a Node save changes that Pattern (a deleted Node) is still replaced; the planner already saw the impact dialog.
+
+## U04: Dialogs, focus, and keyboard
+
+- Date: 2026-10-23. Sitting 4G/4H (combined). Model: Sonnet (main session). No sub-agents.
+- Type: UI. Severity: S2.
+- Commit: see "Commit" at the end of this entry.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-036 | 5-010 | S2 | No modal dialog trapped Tab; a dialog opened from a menu lost its focus to the trigger (so Escape did nothing and focus fell to the page on close); 10 dialogs ignored Escape; two Runtime dialogs had no accessible name. |
+| I-037 | 5-012 | S2 | Focus dropped to the page after Shift drawer steps and after Block pill moves, Unassign, Delete trips, Runtime Discard, and Node Discard. |
+| I-086 | 5-018 | S3 | The independent Display toggles had the radio role; an open menu stayed open on Tab. |
+| I-090 | 5-023 | S3 | Missing `aria-invalid` and `aria-describedby` on fields with errors; no `h1` on Trips, Blocking, or Costing; a nested `main`; an unlabelled JSON file input; table headers without `scope`; a `form` carrying the dialog role. |
+
+### What changed
+
+- **`src/ui/ModalDialog.tsx` (new).** One wrapper for every modal dialog: initial focus (the `autoFocus` control, else the first focusable control, else the dialog), Tab and Shift+Tab wrap inside it, focus that escapes is pulled back (only the innermost open dialog does this), Escape cancels (`onClose`, ignored while `busy`), and focus returns to the invoking control when the dialog closes, unless other code has already placed it. A menu item records its trigger as the invoker, because the menu is gone by the time the dialog mounts. The role is `dialog` or `alertdialog`; the name comes from `labelledBy` or `label`. A dialog that submits is a dialog section holding a `<form class="dialog-form">` with `display: contents` (a `form` may not carry the dialog role; four CSS selectors gained a `.dialog-form` variant, so the layout is unchanged).
+- **All 24 modal dialogs use it** (App 17, Blocking 6, Costing 1). The count in the finding was 28; four were dialogs of the legacy screens that X01 removed. The two Runtime dialogs now have names (`runtime-profile-dialog-title`, `delete-runtime-profile-title`). The dialogs' own `Escape` handlers were removed, and the 10 that had none now close on Escape. Existing specs pass unchanged.
+- **`MenuButton`.** An item that opens a dialog records the trigger and no longer refocuses it (it refocuses the trigger only when focus was lost). Independent toggles use `kind: 'checkbox'` (`menuitemcheckbox`): Show runtime bands, Show headways, Round displayed times. Tab closes an open menu and the browser moves on from the trigger. Escape returns focus to the trigger at once (see "Intermittent browser failure" below).
+- **Focus after common actions.** Shift drawer steps restore focus to the pressed button, or to the next enabled control when that button stays disabled. Block pill moves, Unassign, and Delete trips return focus through the dialog's invoker rule. Runtime Discard and Save return focus to Runtime actions; Node Discard to New node; Pattern Discard to Add node.
+- **Fields and landmarks.** `Field` marks its control `aria-invalid` and `aria-describedby` its messages when it has errors. The Build Trips drawer marks the fields it cannot use (Pattern, First Trip, Headway, Number of Trips, Last Trip) and points at its alert; the Runtime profile dialog marks Name or Pattern; Costing inputs named by a finding point at the alert (`CostingFinding.field`). Trips, Blocking, and Costing each get one visually hidden `h1` ("Trips and runtimes", "Blocking", "Cost estimate"; Costing's must not be "Costing", which `costing-workspace.spec.ts` forbids); the early-return states use `h1.box-heading`. The Costing `main` is a `div` (the App owns the one `main`). The JSON file input is labelled "Restore project JSON file" and, like the other two hidden file inputs, is out of the Tab order. Every column header has `scope="col"` (76 headers).
+- **Dependency.** `axe-core` 4.13.0 (exact; released 2026-08-05) added as a dev dependency for the accessibility scan. It is used only by `tests/ui/keyboard.spec.ts`. `package.json` and `pnpm-lock.yaml` are not on U04's owned list (recorded hand-off).
+- **Docs.** `docs/ui-conventions.md` (dialogs, menus, accessibility baseline).
+
+### Intermittent browser failure (cause found, fixed here)
+
+`unified-action-layer.spec.ts:139` failed at `tripsWorkspace.ts:95` in some full runs (the Trip actions menu had no items after `ArrowDown`). The cause: when a menu closed, `MenuButton.dismiss()` returned focus to its trigger in a `setTimeout`. The helper presses Escape on the Runtime actions menu and immediately focuses Trip actions; under load the timer fired after that, pulled focus back to the Runtime trigger, and the next `ArrowDown` opened the Runtime menu. `keyboard.spec.ts` "Escape returns focus to the menu trigger at once" reproduces the mechanism deterministically: with the timer the focus ends on "Runtime actions" instead of "Trip actions". `dismiss()` now focuses the trigger synchronously. The failure had been seen in 2 of 6 full runs on the 4F branch, so the real fix is confirmed by the deterministic test rather than by absence: the full suite ran green here (117 of 117). The first 140 runs of the new spec hit the symptom once, before the fix was complete.
+
+### Tests added
+
+- `src/ui/modalDialogs.test.ts` (3 tests): `modal-backdrop` and `aria-modal` appear only in `ModalDialog.tsx`; 24 `ModalDialog` uses in the three workspaces; each has `labelledBy` or `label`.
+- `tests/ui/keyboard.spec.ts` (15 tests; the B4 reproductions ported as normal tests plus new ones): a name dialog opened from a menu by keyboard takes focus, closes on Escape, and returns focus; a menu item that opens a dialog never gives its trigger focus (a focus counter, with the mouse); Tab and Shift+Tab stay inside and stray focus is pulled back; the Runtime profile dialog has a name and closes on Escape; Delete trips closes on Escape and, after confirming, returns focus to Trip actions; axe (dialog name, label, landmark, heading, role, document rules) on the four screens and on four open dialogs; Shift drawer steps keep focus; focus after a Block pill assignment and after Unassign; Runtime Discard and Node Discard; Escape returns focus at once; Display toggles are checkboxes and Tab closes a menu; `aria-invalid` on Route name, Build Trips, the Runtime dialog, and Costing; one `h1` and one `main` per workspace, a labelled file input, `scope` on every header.
+- All 14 specs written before the Escape one failed on the unfixed code (the U03 commit; axe reported the unlabelled input there). `--repeat-each=10 --workers=8`: 150 of 150 passed.
+- Deliberate breaks, each restored: removing the Tab trap (the trap test failed: "Tab press 2 left the dialog; focus on BODY"); the menu always refocusing its trigger (the focus-counter test failed); a Display toggle back to radio; `Field` without `aria-invalid`; no focus restore in the Shift drawer; the deferred `dismiss()` (focus ended on Runtime actions); a column header without `scope` in Blocking.
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 44 files, 672 tests passed (669 before; +3).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 117 passed, 0 failed (4.2 minutes); 102 before plus the 15 new tests. No existing spec was changed. `unified-action-layer.spec.ts:139` passed.
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-Jh7TRu9e.js` 799.22 kB (796.30 kB before).
+- Visual check at 1024 px (scratchpad, not committed): `/tmp/claude-0/-home-user-transit-costing-tool/97a11f95-8195-5c0d-bed4-917d1a55f2e0/scratchpad/shots/u04-after/{name-dialog,activity-dialog,notes-dialog}.png` against `.../shots/u04-before/name-dialog.png`: the dialogs are laid out as before; the input now shows its focus ring because it has focus.
+
+### Not done, or only partly
+
+- "Compatible only" in the Blocking menu is a single filter toggle but keeps the radio role: it is in the Compatibility group, not a Display option, and `blocking-workspace.spec.ts` asserts `menuitemradio` for it. Changing it needs that spec to change; left for a later package.
+- Typeahead in menus (finding 5-018) is not implemented; the acceptance criteria do not ask for it.
+- The Add-trip row, the Blocking dialogs that open inside other dialogs, and the frozen-column row headers (Sol-class) are unchanged.
+- Initial focus in a dialog without an `autoFocus` control is its first focusable control, which for a confirmation is the Cancel or Close button in some dialogs and a destructive button in none that was checked; each alert dialog already marks Cancel `autoFocus`.
+
+### Residual risks
+
+- `ModalDialog` pulls focus back with a document-level `focusin` listener. Another feature that focuses a control outside an open dialog on purpose would be overridden; none exists today.
+- Focus return trusts that the invoking control is still on the page; when a row is re-created (a Trips reload) the new control does not receive focus. The tests cover the Block pill and Trip actions flows.

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
+import { rememberDialogInvoker } from './ModalDialog';
 
-export type MenuItem = { id: string; label: string; onSelect: () => void; disabled?: boolean; title?: string; checked?: boolean; destructive?: boolean; restoreFocus?: boolean; wrapLabel?: boolean; /** Plain text shown under the item and read as its description (for example the time of the last backup). */ note?: string };
+export type MenuItem = { id: string; label: string; onSelect: () => void; disabled?: boolean; title?: string; checked?: boolean; /** With `checked`: `checkbox` for a toggle that is independent of the other items; the default `radio` marks one choice of a group. */ kind?: 'radio' | 'checkbox'; destructive?: boolean; restoreFocus?: boolean; wrapLabel?: boolean; /** Plain text shown under the item and read as its description (for example the time of the last backup). */ note?: string };
 export type MenuGroup = { label?: string; items: MenuItem[] };
 
 /** Compact, keyboard-operable action menu used by workspace headers. */
@@ -14,7 +15,9 @@ export function MenuButton({ label, menuLabel, groups, disabled = false, fieldLa
     const focusable = [...rootRef.current?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)') ?? []];
     focusable[Math.max(0, Math.min(index, focusable.length - 1))]?.focus();
   });
-  const dismiss = (returnFocus = true) => { setOpen(false); if (returnFocus) window.setTimeout(() => triggerRef.current?.focus()); };
+  // Focus goes back to the trigger at once, not in a later timer. A timer could fire after the next control had been focused, pull the focus
+  // back to this trigger, and make the next ArrowDown open this menu instead of the one the planner (or a test) meant.
+  const dismiss = (returnFocus = true) => { if (returnFocus) triggerRef.current?.focus(); setOpen(false); };
   const iconOnly = label === 'Actions';
   const accessibleLabel = triggerAriaLabel ?? (iconOnly ? menuLabel : undefined);
 
@@ -30,11 +33,14 @@ export function MenuButton({ label, menuLabel, groups, disabled = false, fieldLa
     <button ref={(node) => { triggerRef.current = node; if (externalTriggerRef) externalTriggerRef.current = node; }} type="button" className={['menu-trigger', iconOnly && 'menu-trigger--icon', triggerClassName].filter(Boolean).join(' ')} aria-label={accessibleLabel} title={iconOnly ? accessibleLabel : undefined} aria-haspopup="menu" aria-expanded={open} aria-controls={menuId} disabled={disabled} onClick={() => setOpen((current) => !current)} onKeyDown={(event) => {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); setOpen(true); focusItem(event.key === 'ArrowDown' ? 0 : items.length - 1); }
       if (event.key === 'Escape' && open) { event.preventDefault(); dismiss(); }
+      if (event.key === 'Tab' && open) setOpen(false);
     }}>{iconOnly ? <EllipsisIcon /> : <>{label}<span aria-hidden="true"> ▾</span></>}</button>
     {open && <div id={menuId} className="action-menu" role="menu" aria-label={menuLabel} onKeyDown={(event) => {
       const menuItems = [...rootRef.current?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)') ?? []];
       const current = menuItems.indexOf(document.activeElement as HTMLButtonElement);
       if (event.key === 'Escape') { event.preventDefault(); dismiss(); }
+      // Tab leaves the menu: close it and let the browser move on from the trigger (WAI-ARIA menu button pattern).
+      if (event.key === 'Tab') { triggerRef.current?.focus(); setOpen(false); }
       if (event.key === 'Home') { event.preventDefault(); menuItems[0]?.focus(); }
       if (event.key === 'End') { event.preventDefault(); menuItems.at(-1)?.focus(); }
       if (event.key === 'ArrowDown') { event.preventDefault(); menuItems[(current + 1 + menuItems.length) % menuItems.length]?.focus(); }
@@ -42,7 +48,13 @@ export function MenuButton({ label, menuLabel, groups, disabled = false, fieldLa
     }}>{groups.map((group, groupIndex) => <div className="action-menu-group" key={`${group.label ?? 'commands'}-${groupIndex}`}>
       {groupIndex > 0 && <div className="action-menu-separator" role="separator" />}
       {group.label && <div className="action-menu-label" role="presentation">{group.label}</div>}
-      {group.items.map((item) => <Fragment key={item.id}><button type="button" role={item.checked !== undefined ? 'menuitemradio' : 'menuitem'} aria-checked={item.checked} aria-describedby={item.note ? `${menuId}-${item.id}-note` : undefined} className={[item.destructive && 'subtle-danger', item.checked && selectionStyle === 'highlight' && 'menu-item-selected'].filter(Boolean).join(' ') || undefined} disabled={item.disabled} title={item.title} onClick={() => { if (item.disabled) return; dismiss(false); item.onSelect(); if (item.restoreFocus !== false) window.setTimeout(() => triggerRef.current?.focus()); }}>{item.checked && selectionStyle === 'check' && <span className="menu-check" aria-hidden="true">✓</span>}<span className={item.wrapLabel ? 'menu-item-label menu-item-label--wrap' : 'menu-item-label'}>{item.label}</span></button>{item.note && <div className="action-menu-note" role="presentation" id={`${menuId}-${item.id}-note`}>{item.note}</div>}</Fragment>)}
+      {group.items.map((item) => <Fragment key={item.id}><button type="button" role={item.checked === undefined ? 'menuitem' : item.kind === 'checkbox' ? 'menuitemcheckbox' : 'menuitemradio'} aria-checked={item.checked} aria-describedby={item.note ? `${menuId}-${item.id}-note` : undefined} className={[item.destructive && 'subtle-danger', item.checked && selectionStyle === 'highlight' && 'menu-item-selected'].filter(Boolean).join(' ') || undefined} disabled={item.disabled} title={item.title} onClick={() => {
+        if (item.disabled) return;
+        // A dialog that the item opens must keep the focus it takes, and return it to this trigger when it closes.
+        rememberDialogInvoker(triggerRef.current);
+        dismiss(false); item.onSelect();
+        if (item.restoreFocus !== false) window.setTimeout(() => { const active = document.activeElement; if (!active || active === document.body || rootRef.current?.contains(active)) triggerRef.current?.focus(); });
+      }}>{item.checked && selectionStyle === 'check' && <span className="menu-check" aria-hidden="true">✓</span>}<span className={item.wrapLabel ? 'menu-item-label menu-item-label--wrap' : 'menu-item-label'}>{item.label}</span></button>{item.note && <div className="action-menu-note" role="presentation" id={`${menuId}-${item.id}-note`}>{item.note}</div>}</Fragment>)}
     </div>)}</div>}
   </div>;
 }
