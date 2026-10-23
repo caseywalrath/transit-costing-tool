@@ -1,7 +1,8 @@
 # Decision 0003: Pattern-Specific Runtime Profiles
 
-- Status: Accepted for the initial runtime build; review required after user testing
+- Status: Accepted for the initial runtime build; review required after user testing. Partly superseded: the last sentence of the Decision (one band for the full trip) holds only for the single-band method; see below
 - Date: 2026-09-10
+- Superseded in part by: Decision 0032 (blend method), Decision 0033 (`segmentStart` method), and Decision 0035 item 1 (`segmentStart` is the default for new profiles). A profile saved without a method keeps the single-band method.
 
 ## Context
 
@@ -15,7 +16,7 @@ Runtime assignments allow several service days to use the same profile for that 
 
 Provide copy and reverse-copy commands to create a new independent profile from an existing pattern.
 
-The trip departure time selects one runtime band. That band applies to the full trip.
+The trip departure time selects one runtime band. That band applies to the full trip. (Superseded for `segmentStart` and blended profiles; see the header.)
 
 ## Consequences
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the planned TypeScript entity shapes and IndexedDB table boundaries. Phase 1A implements these entity shapes in `src/domain/types.ts`. Exact syntax may change during scaffolding, but changes to relationships or ownership require an architectural review.
+This document defines the TypeScript entity shapes and IndexedDB table boundaries. They are implemented in `src/domain/types.ts` (entities) and `src/persistence/database.ts` (tables and indexes). The code is authoritative where the two differ in syntax; a change to relationships or ownership requires an architectural review and an update to this document.
 
 ## Schema conventions
 
@@ -254,13 +254,16 @@ interface TripGenerationSet extends EntityMetadata {
 
 interface GenerateTripsRequest {
   scenarioId: EntityId;
-  tripProfileId: EntityId;
+  /** Required in practice; a legacy request without it is normalized to the Scenario's Default Trip profile. */
+  tripProfileId?: EntityId;
   routeId: EntityId;
   serviceDayId: EntityId;
   patternId: EntityId;
   firstTrip: ServiceSeconds;
   headwaySeconds: DurationSeconds;
-  lastTrip: ServiceSeconds;
+  /** Exactly one of `lastTrip` (inclusive) and `tripCount` is required (Decision 0010). */
+  lastTrip?: ServiceSeconds;
+  tripCount?: number;
 }
 
 interface AddTripRequest extends Omit<GenerateTripsRequest, "headwaySeconds" | "lastTrip"> {
@@ -293,7 +296,8 @@ interface TripProvenance {
 interface Trip extends EntityMetadata {
   id: EntityId;
   scenarioId: EntityId;
-  tripProfileId: EntityId;
+  /** Optional in the stored type only: records from before Phase 2TP are normalized by the version 3 upgrade and by import. */
+  tripProfileId?: EntityId;
   routeId: EntityId;
   serviceDayId: EntityId;
   patternId: EntityId;
@@ -371,7 +375,7 @@ type BlockActivity =
   | DeadheadActivity
   | PullInActivity;
 
-interface Block extends EntityMetadata {
+interface BlockingBlock extends EntityMetadata {
   id: EntityId;
   scenarioId: EntityId;
   blockingScenarioId: EntityId;
@@ -382,7 +386,7 @@ interface Block extends EntityMetadata {
 }
 ```
 
-Blocks do not contain a Route ID or duplicate Trip Profile ID. The Block derives its immutable source Trip Profile through its Blocking Scenario. This preserves one ownership authority and permits later interlining. The initial Phase 4 UI filters candidate Trips to one Route and prevents intentional cross-route assignment. Pull-out, pull-in, and deadhead use one timing mode for new and edited records: a non-negative whole-minute offset from their adjacent revenue Trip. Pull-out and pull-in anchor to the first and last revenue Trips; a deadhead anchors to its preceding Trip and must occupy a connection before a successor Trip. Legacy or imported records may retain paired explicit service times. Resolved activity times, layover, compatibility, summaries, validity, and completeness are derived and are not persisted. Revenue hours and Running Time are derived summary measures; Revenue equals Running Time plus usable Layover. The additive nested offset fields are backward compatible and require no database or backup-schema migration.
+`BlockingBlock` is the normalized shape that every current command reads and writes. The stored `Block` type keeps `blockingScenarioId` and the historical `tripProfileId` optional so that records from before Phase 4 stay readable until the version 4 upgrade or an import normalizes them (placeholder Blocks are discarded). Blocks do not contain a Route ID or duplicate Trip Profile ID. The Block derives its immutable source Trip Profile through its Blocking Scenario. This preserves one ownership authority and permits later interlining. The initial Phase 4 UI filters candidate Trips to one Route and prevents intentional cross-route assignment. Pull-out, pull-in, and deadhead use one timing mode for new and edited records: a non-negative whole-minute offset from their adjacent revenue Trip. Pull-out and pull-in anchor to the first and last revenue Trips; a deadhead anchors to its preceding Trip and must occupy a connection before a successor Trip. Legacy or imported records may retain paired explicit service times. Resolved activity times, layover, compatibility, summaries, validity, and completeness are derived and are not persisted. Revenue hours and Running Time are derived summary measures; Revenue equals Running Time plus usable Layover. The additive nested offset fields are backward compatible and require no database or backup-schema migration.
 
 Blocking Scenario names are unique within a Scenario after trimming and case normalization. Block labels are unique within one Blocking Scenario and service day. A Trip ID may occur once across that complete Blocking Scenario/day but may be assigned differently in another Blocking Scenario.
 
@@ -432,7 +436,7 @@ interface ValidationFinding {
 
 ## IndexedDB tables and indexes
 
-The initial Dexie database should use a unique application-specific name. Proposed tables are:
+The Dexie database uses the application-specific name `transit-costing-tool`. Its tables and indexes at version 7 are:
 
 | Table | Primary key and useful indexes |
 | --- | --- |
@@ -444,15 +448,16 @@ The initial Dexie database should use a unique application-specific name. Propos
 | `patterns` | `id`, `scenarioId`, `routeId`, `[routeId+name]` |
 | `directions` | `id`, `scenarioId`, `routeId`, `[routeId+name]` |
 | `runtimeProfiles` | `id`, `scenarioId`, `routeId`, `patternId` |
-| `runtimeAssignments` | `id`, `scenarioId`, `patternId`, `serviceDayId`, `[patternId+serviceDayId]` |
+| `runtimeAssignments` | `id`, `scenarioId`, `patternId`, `runtimeProfileId`, `[patternId+serviceDayId]` |
 | `generationSets` | historical Phase 2 table; no new authoritative writes |
 | `tripProfiles` | `id`, `scenarioId`, `[scenarioId+name]`, `updatedAt` |
-| `trips` | `id`, `scenarioId`, `tripProfileId`, `routeId`, `serviceDayId`, `patternId`, `[tripProfileId+routeId]`, `[tripProfileId+serviceDayId]`, `provenance.runtimeProfileId` |
-| `blockingScenarios` | Implemented in database version 4: `id`, `scenarioId`, `tripProfileId`, `[scenarioId+name]`, `[tripProfileId+name]`, `updatedAt` |
-| `blocks` | Implemented in database version 4: `id`, `scenarioId`, `blockingScenarioId`, `serviceDayId`, `[blockingScenarioId+serviceDayId]`, `[serviceDayId+label]` |
+| `trips` | `id`, `scenarioId`, `tripProfileId`, `routeId`, `serviceDayId`, `patternId`, `[tripProfileId+routeId]`, `[tripProfileId+serviceDayId]`, `provenance.generationSetId`, `provenance.runtimeProfileId` |
+| `blockingScenarios` | Added in database version 4: `id`, `scenarioId`, `tripProfileId`, `[scenarioId+name]`, `[tripProfileId+name]`, `updatedAt` |
+| `blocks` | Reshaped in database version 4: `id`, `scenarioId`, `blockingScenarioId`, `serviceDayId`, `[blockingScenarioId+serviceDayId]`, `[serviceDayId+label]` |
 | `costingAssumptions` | Added in database version 5: `id`, `scenarioId` |
+| `tripRegenerationUndo` | Added in database version 6: `id`, `scenarioId`, `tripProfileId`; one local, one-step undo record, not backed up (Decision 0035) |
 | `costPlans` | Inert legacy table retained for data preservation; no active domain type or reads/writes |
-| `appMetadata` | `key` |
+| `appMetadata` | `key`; declared and created, but no code reads or writes it yet |
 
 Dexie index syntax must be verified during implementation. Compound uniqueness that IndexedDB cannot enforce directly must be checked in domain or repository commands.
 
@@ -518,7 +523,7 @@ The first implementation starts at database version 1. Version 2 adds a non-uniq
 4. include a migration test;
 5. update this document when entity meaning or ownership changes.
 
-`appMetadata` should include the application data-schema version used by JSON exports. Database version and export-schema version are related but distinct.
+Database version and export-schema version are related but distinct: the export-schema version (6) is written into every JSON export by `exportProjectJson`, and no code stores it in `appMetadata`. The optional `applicationVersion` field of an export is accepted on import but no caller supplies it yet.
 
 ## Backup schema
 

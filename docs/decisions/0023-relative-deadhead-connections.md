@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-21
-- Supersedes: Decision 0020 item 5 for new and edited deadhead activities
+- Supersedes: Decision 0020 item 5 for new and edited deadhead activities, and Decision 0022 item 3
 
 ## Decision
 

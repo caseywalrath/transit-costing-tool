@@ -104,7 +104,11 @@ The integer version of a runtime profile's calculation method, band bounds, and 
 
 ### Trip generation set (historical)
 
-The former saved instruction used to generate a sequence of trips. Phase 2R replaces it with a transient Generate Trips request containing Pattern, First Trip, Headway, and Last Trip; the request is not authoritative saved data.
+The former saved instruction used to generate a sequence of trips. Phase 2R replaces it with a transient Generate Trips request containing Pattern, First Trip, Headway, and exactly one limit, Number of Trips or Last Trip; the request is not authoritative saved data.
+
+### Number of Trips
+
+One of the two mutually exclusive limits of a Build Trips request: the count of Trips to generate, from the First Trip at each Headway. The other limit is Last Trip, the inclusive final departure. A request may not generate more than 500 Trips under either limit.
 
 ### Trip
 
@@ -183,6 +187,10 @@ The sum of pull-out, pull-in, and between-Trip deadhead durations. Layover is re
 ### Layover
 
 Unallocated time remaining between connected block activities after any required deadhead. Layover is derived and is not stored as authoritative data.
+
+### Minimum layover (display preference)
+
+A planner's threshold, entered in the Unassigned Trips list as fixed minutes per connection or as a percentage of the preceding Trip's revenue runtime. It changes only which candidate Trips are classified as compatible. It is a browser preference, not Block data, and it does not change a Block's layover or validity (Decision 0042).
 
 ### Revenue hours
 

@@ -1,6 +1,6 @@
 # Decision 0005: Structural and UI/UX Work Separation
 
-- Status: Accepted
+- Status: Accepted (model recommendation updated 2026-09-22)
 - Date: 2026-09-10
 
 ### Model recommendation update — 2026-09-22
@@ -31,7 +31,7 @@ Structural work defines domain behavior, application commands, repository interf
 
 UI/UX work defines presentation and interaction while consuming the approved structural ports. It must not duplicate scheduling or validation rules.
 
-A structural integration change may wire approved ports without altering the accepted design. If it requires a new layout or interaction decision, return it to a Terra package.
+A structural integration change may wire approved ports without altering the accepted design. If it requires a new layout or interaction decision, return it to a Sol package when it needs novel or complex judgment, or to a precisely specified Luna package when it reuses established patterns (see the model recommendation update above).
 
 ## Consequences
 

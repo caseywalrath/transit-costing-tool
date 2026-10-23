@@ -2,6 +2,7 @@
 
 - Status: Accepted; implementation and user verification complete
 - Date: 2026-09-14
+- Superseded in part by: Decision 0019 item 9 (item 7 below: a Block references a Blocking Scenario, not a Trip profile)
 
 ## Context
 
@@ -9,7 +10,7 @@ The current Scenario contains one authoritative trip collection. Runtime profile
 
 Planners need to compare timetable alternatives inside one Scenario without duplicating Route definitions or treating a runtime profile as a timetable. Future blocking must use one internally consistent timetable and must not combine trips from competing alternatives.
 
-## Proposed decision
+## Decision
 
 1. Add a scenario-owned `TripProfile`. A Trip profile is one complete timetable alternative spanning every Route and service day in the Scenario.
 2. Every Scenario has at least one Trip profile. New and migrated Scenarios receive one named `Default`; it may be renamed.
@@ -17,7 +18,7 @@ Planners need to compare timetable alternatives inside one Scenario without dupl
 4. Runtime profiles and runtime assignments remain independent of Trip profiles. Building or recalculating a Trip resolves the currently applicable runtime assignment. Each Trip continues to retain the runtime profile ID and calculation revision that produced its current times.
 5. Copying a Trip profile creates new Trip IDs and copies all Trips across Routes and service days. It preserves trip times, manual adjustments, and runtime calculation provenance. It does not copy Blocks or future Blocking scenarios.
 6. Deleting a Trip profile deletes its Trips after an impact review. The last Trip profile in a Scenario cannot be deleted.
-7. A Block belongs to one Trip profile and may reference only Trips from that profile. This keeps current placeholder Block data on a single schedule tree before a formal Blocking-scenario entity is introduced.
+7. (Superseded by Decision 0019 item 9.) A Block belongs to one Trip profile and may reference only Trips from that profile. This keeps current placeholder Block data on a single schedule tree before a formal Blocking-scenario entity is introduced.
 8. A future Blocking scenario will reference exactly one Trip profile. Multiple Blocking scenarios may be created from one Trip profile, but one Blocking scenario cannot combine multiple Trip profiles.
 9. Interlining remains possible because a Trip profile is scenario-wide rather than Route-owned. A Block may contain Trips from multiple Routes when all belong to its selected Trip profile.
 

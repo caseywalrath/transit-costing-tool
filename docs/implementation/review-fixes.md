@@ -2,22 +2,25 @@
 
 ## Next sitting
 
-**Sitting 4K part 1 (U08 only) is finished on the branch `claude/stage-4k-review-fixes`, from `origin/main` after the merge of PR #23 (U06, U07, P15, P17). The user must review the branch, open and merge the pull request, and read the first CI run. The next sitting is 4K part 2: D01 on Sonnet, then U09 on Sonnet (recommended placement), then P18 (Sonnet, the Vitest major upgrade, its own package). Start it only after this branch is merged; create a new work branch from the new `origin/main` (the user names it). Standing rules 1 to 10 below apply unchanged. U10 (Opus) stays a sitting of its own after 4K.**
+**Sitting 4K part 2 (D01, U09, P18) is finished on the branch `claude/stage-4k-review-fixes`, restarted from `origin/main` after the merge of PR #24 (U08). The user must review the branch, open and merge the pull request, and read the first CI run. The next sitting is U10, on Opus, in a sitting of its own: the Shift drawer redesign (the user's brief is below). Start it only after this branch is merged; create a new work branch from the new `origin/main` (the user names it). Standing rules 1 to 10 below apply unchanged. With U10 done, Stage 4 is complete.**
 
-- Done on this branch: U08 (`ac0bded`). The hash-record commit follows it.
-- Not started: D01, U09, U10, P18.
-- U08 result: "Regenerate selected" on 480 Trips at the capacity fixture, production build, 5 runs: review 407 to 461 ms (before: 1,043 to 1,300 ms), apply 556 to 587 ms (before: 918 to 1,072 ms). Anchor selection stays available for every Trip. Two layout defects of the dialog that predate U08 are fixed (details in the U08 entry). No decision was blocked.
-- Exceptions of the 4K part 1 sitting (user, 2026-10-23), not carried over: Opus main session, no sub-agents, the Decision 0005 gate waived. The user states the exceptions for each sitting.
-- **U09 and U10: DECIDED by the user on 2026-10-23. Not started.**
-  - **U09 (Sonnet, small UI): why a Trip cannot be recalculated** (option A). One status line under the "Run Times Have Changed" indicator lists the distinct reasons from `inspectStaleTrips` (the message texts exist from P07). Reuse the existing notice/status line styling; no new component. Acceptance: when at least one Trip is flagged and its profile cannot calculate it, the line names each distinct reason once; with no such Trip nothing is shown; a browser test covers both; keyboard and screen-reader behavior as the other status lines (plain text, no focus trap). Verification: UI rules, visual check at 1024 and 1440 px.
+- Done on this branch: D01 (`daec5d5`), U09 (`ef57f58`), and P18 (`9395d2c`). U08 landed earlier (`ac0bded`, PR #24).
+- Not started: U10.
+- Results of 4K part 2: D01 resolved ten documentation contradictions and added the register map at the end of this log (every register issue to its package and commit). U09: a status line under "Run Times Have Changed" names the count of Trips that their Runtime profile cannot calculate and each distinct reason once; `inspectStaleTrips` now also reports the reason for a Trip that is stale by revision. P18: Vitest 3.2.7 to 4.1.12, `pnpm audit` from 5 advisories to none, no test or config change. No decision was blocked.
+- Exceptions of the 4K part 2 sitting (user, 2026-10-23), not carried over: Sonnet main session, no sub-agents and no Opus review, the Decision 0005 gate waived, U09 inspected at 1024 and 1440 px, P18 a dependency upgrade only. The user states the exceptions for each sitting.
+- **U09 and U10: DECIDED by the user on 2026-10-23. U09 is done; U10 is not started and is the next sitting (Opus).**
+  - **U09 (Sonnet, small UI): why a Trip cannot be recalculated** (option A). **DONE in U09 (`ef57f58`).** One status line under the "Run Times Have Changed" indicator lists the distinct reasons from `inspectStaleTrips` (the message texts exist from P07). Reuse the existing notice/status line styling; no new component. Acceptance: when at least one Trip is flagged and its profile cannot calculate it, the line names each distinct reason once; with no such Trip nothing is shown; a browser test covers both; keyboard and screen-reader behavior as the other status lines (plain text, no focus trap). Verification: UI rules, visual check at 1024 and 1440 px.
   - **U10 (Opus, UI design, beyond the scope of a fix; user will review the result afterward): redesign the Shift drawer.** The overlap of the open drawer with the Runtime Save and Discard buttons is **accepted as is** (option D); do not solve it as a goal of U10 unless the redesign does so as a side effect. The user's brief: the drawer wastes white space; the shifting control (left and right buttons and an up/down minute selector) is confusing; the drawer is valuable because the planner sees the effect of a shift on the Trips table, and that must stay. Wanted: a much more discreet control and a more intuitive increment selector. The agent decides the design and records the options it rejected. Constraints: the preview-then-apply behavior, Undo and Redo (U07), the net-shift label (`formatNetShift`, `formatStagedShift`), the minute parsing rules (`parseShiftSeconds`), keyboard and screen-reader operation, and the existing specs (`workflow-section-layout.spec.ts` asserts the right-docked drawer; it may change only with a recorded reason). Verification: UI rules plus screenshots at 1024 and 1440 px before and after, and the interaction written up so the user can review it.
-- **P18 (Vitest major upgrade, 5 advisories in the `vitest` chain):** its own package, not mixed with feature work (user decision 5 below). Not started.
-- Known failures: none. `unified-action-layer.spec.ts:139` passed in every full run of this sitting. If it returns, diagnose it as a package failure and fix the code.
-- State after U08: unit tests 51 files, 747 tests; browser suite 151 tests, all passing; bundle `index--t3h4Nml.js` 806.22 kB. The user must still read the first CI run (branch protection and CI are the user's to watch).
-- Carried forward (details in the U06, U07, P15, P17, and U08 entries):
+- **P18 (Vitest major upgrade, 5 advisories in the `vitest` chain): DONE in P18 (`9395d2c`).** Its own package, not mixed with feature work (user decision 5 below).
+- Known failures: `tests/ui/route-editing.spec.ts:6` failed once in the D01 full run (150 passed, 1 failed): after "Save nodes" for Node B, the click on "Add pattern" opened no draft ("New Pattern — not saved" never appeared). It passed 100 of 100 times alone (`--repeat-each=20 --workers=8` and `--repeat-each=80 --workers=16`) and in the full runs of U09 and P18. The probable cause is the L-16 race that `tests/ui/support/tripsWorkspace.ts` already works around (a save's reload lands after the next step starts); that helper retries the click, and this spec does not. If it returns, apply the same retry or find the application-side cause (a planner who clicks Add pattern right after Save nodes might lose the draft too). `unified-action-layer.spec.ts:139` passed in every full run of this sitting. If it returns, diagnose it as a package failure and fix the code.
+- State after P18: unit tests 52 files, 752 tests; browser suite 153 tests, all passing; bundle `index-Be19ICCN.js` 807.23 kB; `pnpm audit` clean. The user must still read the first CI run (branch protection and CI are the user's to watch).
+- Carried forward (details in the D01, U06, U07, U09, P15, P17, and U08 entries):
+  - **D01:** the Route draft editor bullets of `ui-conventions.md` were checked only against the contradictions the findings quote, not rewritten; Decisions 0011 and 0012 have no recorded day (their Date lines say so); historical plans (`phase-02-*.md`) were not edited.
+  - **U09:** the line gives a count and the reasons, not the affected rows; only the two band findings have wording written for the line, and other findings use the existing `userMessage` text; not checked with a screen reader; the extra calculation in `inspectStaleTrips` was not timed at 2,000 Trips.
+  - **P18:** other major versions exist and carry no advisory (Vite 8, `@vitejs/plugin-react` 6, TypeScript 7, `@types/node` 26, Vitest 5); no owner.
   - **U08:** an anchor list holds one option until it is focused or pressed; a screen reader may announce "1 of 1" on the first focus before the list fills (not verified with a screen reader). The Shift drawer, the bulk anchor row, and the band picker are unchanged.
   - **U06:** the persistence answer of `getLocalDataProtection()` is still not shown (no criterion asks for it), and the assumptions alert keeps its single sentence.
-  - **U07:** the Runtime totals read `:61` by design (the Decision 0010 duration format). The Shift drawer over the Runtime Save button is accepted as is (U10 redesigns the drawer); the `inspectStaleTrips` findings get a status line in U09.
+  - **U07:** the Runtime totals read `:61` by design (the Decision 0010 duration format). The Shift drawer over the Runtime Save button is accepted as is (U10 redesigns the drawer); the `inspectStaleTrips` findings now have their status line (U09).
   - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead; the Add-trip row drafts are not kept across a scope change.
   - **P15:** a CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
   - **P17:** `makePatternPoint` has no caller left (harmless).
@@ -27,10 +30,10 @@
   2. The legacy per-field route mutators are deleted, and the unit-test setups move to preview and commit. **DONE in P17.**
   3. Repeated Block labels already stored: the backup import refusal message explains the cause and the way out. No repair on load. **DONE in P17.**
   4. Branch protection: the user requires the two CI checks on `main`. User action only. The check names are "Typecheck, unit tests, build" (job `verify`) and "Browser tests" (job `browser`).
-  5. Vitest major upgrade: its own package, **P18**, after D01, or in a separate maintenance sitting. Not mixed with feature work. **Not started.**
+  5. Vitest major upgrade: its own package, **P18**, after D01, or in a separate maintenance sitting. Not mixed with feature work. **DONE in P18.**
   6. Defaults accepted: Runtime band totals use the duration format; a Pattern with no distance shows "incomplete"; menu typeahead is not built.
   7. U07 blocked item 1: the Shift drawer overlap is accepted (option D); the drawer is redesigned in package **U10**.
-  8. U07 blocked item 2: option A, a status line under the "Run Times Have Changed" indicator: package **U09**.
+  8. U07 blocked item 2: option A, a status line under the "Run Times Have Changed" indicator: package **U09**. **DONE in U09.**
 - Other hand-offs still open from earlier sittings:
   - **Decided by the user on 2026-10-23 (Option B), done in U07.** Under a segment-start or blended profile, an anchor that fits two first departures is rejected and the candidates are listed (Decision 0031 addendum).
   - **CSV.** The Trips CSV and ZIP writer live in `src/application`. A free-text cell that begins with `=`, `+`, `-`, or `@` is written with a leading apostrophe; the Trips CSV import and Runtime paste remove it (`restoreFormulaText`). A new CSV importer must do the same for the same columns.
@@ -2128,3 +2131,274 @@ The review's own measurement (2.47 s and 2.54 s) was taken in quirks mode before
 - A screen reader may announce a closed anchor list as "1 of 1" on its first focus, before React fills it; the list is full when the planner opens it or moves with the arrows. Not verified with a screen reader.
 - A list stays full after it was opened once; at most the lists the planner touched hold all their points.
 - The apply still runs the review a second time to check that nothing changed (P04/P07 design); that is about half of the apply time.
+
+## D01: Documentation-only remainder
+
+- Date: 2026-10-23. Sitting 4K part 2. Model: Sonnet (main session). No sub-agents (the plan allowed Haiku for the decision-record status lines; it was not used).
+- Type: docs. Severity: S3. Luna-class.
+- Commit: `daec5d5`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong, and what the document says now |
+| --- | --- | --- | --- |
+| I-048 | 1-001 | S3 | `architecture_overview.md` said the Trips table scrolls in a bounded viewport. It now says Trips scrolls as a normal page, shows a fixed duplicate heading row while the grid headings are above the viewport, and has no nested vertical scroll area (Decision 0035 item 5). The browser spec that followed the old text was repaired in P05. |
+| I-049 | 1-002 | S3 | The roadmap's confirmed constraints contradicted Decisions 0011, 0019, 0033, and 0035. It now states the `segmentStart` default and the legacy methods; two managed Directions with no user-managed columns; the minimum-layover display preference (Decision 0042); Number of Trips in Build Trips; archiving as deferred (Decision 0019 item 14); and Directions that cannot be deleted. |
+| I-050 | 1-003 | S3 | The overview, the data schema (`GenerateTripsRequest`), the glossary, and the roadmap omitted Number of Trips. All four now say that a request has exactly one limit, Number of Trips or an inclusive Last Trip, and a limit of 500 Trips. The glossary has a new Number of Trips entry. |
+| I-051 | 1-004 | S3 | Decision status lines were missing, stale, or silent about supersession. Every record now has `- Status:` and `- Date:` lines (checked by a loop over `docs/decisions/*.md`); stale words ("planning", "in progress", "for implementation") are replaced; supersessions are annotated in both records (list below). |
+| I-053 | 1-007 | S3 | `codex.md` and the overview repeated their status paragraphs, and `codex.md` made false repository claims. The overview Status section is one non-repeating section. The `codex.md` status is now three paragraphs and points to this log for the sitting history. The "no Git, no remote" claims are replaced by the verified facts (remote, `main`, pnpm scripts, deployment). The Documentation Map lists `ui-conventions.md` and this log. `phase-02r-trip-table-interchange-undo.md` has a Status and Date section. |
+| I-054 | 1-008 | S3 | `data-schema.md` drifted from the code. The index table now matches `database.ts` (the `runtimeAssignments` index, `provenance.generationSetId`, the `tripRegenerationUndo` row, `appMetadata` as declared but unused). "Proposed" and "planned" wording is gone. `Trip.tripProfileId` and the Block shape are described as the code has them (optional in the stored type, normalized by upgrade and import). The `appMetadata` sentence no longer claims a write that does not exist. The migration history already reached version 7. |
+| I-055 | 1-011 | S3 | The minimum-layover preference had no decision record and seemed to contradict Decision 0020 item 19. New Decision 0042 (user decision C1) records it as a display preference that changes candidate classification only; Decision 0020 item 19 points to it; the glossary, the overview, and the roadmap cite it. No code change. |
+| I-056 | 1-012 | S3 | Decisions 0017 and 0018 were overtaken by `ui-conventions.md`. Both records now carry an "Amended by" line, and the three overtaken items (the copy label, `Add` visible in Runtimes, the menu consolidation) are annotated in place. |
+| I-059 | 1-015, 5-022 | S3 | `ui-conventions.md` mixed historical and current rules under a blanket "historical" note. The note is replaced by a reading guide: every bullet is current unless it starts with **Superseded:**. The generation-set editor bullets are marked superseded, the read-only Block column is corrected (Decision 0025), "Future-phase tabs are disabled" now describes the real prerequisite-based disabling, and the Node and Pattern point removal bullet (5-022) describes the draft removal with Undo and Discard instead of a modal confirmation. |
+
+Also done (D01 text in `fix-packages.md`): `phase-05-costing.md` and `phase-05-costing-planning.md` record that the review replaces Package 5D except user acceptance (user decision 1) and that the 5C review is complete, accepted on 2026-10-22 (user decision 2). Per user decision 9, `AGENTS.md` and `codex.md` use agent-neutral wording and capability classes (structural class (Luna), UI-design class (Sol)) and keep their file names; the "Codex" title of `codex.md` is now "Project Guide", with a note that the file keeps its name.
+
+### Supersessions annotated in the decision records
+
+| Record | Annotation |
+| --- | --- |
+| 0003 | Item 4 (one band for the full trip) is superseded by 0032, 0033, and 0035 item 1 for non-single-band profiles. |
+| 0004 | The "undo is not included" statement is superseded by 0035 item 3. |
+| 0005 | The Terra reference now points to the Sol and Luna classes. |
+| 0011, 0012, 0013, 0035 | Status and Date lines added or put in the common format. 0011 and 0012 have no recorded day; the Date line says so (between 0010, 2026-09-11, and 0013, 2026-09-13). 0035 uses the date of its first commit. |
+| 0016 | Heading "Proposed decision" is now "Decision"; item 7 is marked superseded by 0019 item 9. |
+| 0017, 0018 | "Amended by" lines for the label and menu changes. |
+| 0019, 0020, 0021, 0025, 0026, 0027 | Status words now say implemented and accepted. 0020 lists what 0022, 0023, 0026, and 0042 supersede or annotate; 0021 item 7 is superseded by 0025 item 1. |
+| 0022, 0023 | 0022 item 3 is superseded by 0023, and 0023 names it in its header. |
+| 0032, 0033 | 0032 attributes the new-profile default to 0035 item 1 (not to 0033); both say they supersede 0003 item 4 for their profiles. |
+
+### What changed
+
+- Documents only. Files: `AGENTS.md`, `codex.md`, `architecture_overview.md`, `docs/data-schema.md`, `docs/domain-glossary.md`, `docs/ui-conventions.md`, `docs/implementation/schedule-development-roadmap.md`, `docs/implementation/phase-05-costing.md`, `docs/implementation/phase-05-costing-planning.md`, `docs/implementation/phase-02r-trip-table-interchange-undo.md`, 20 files in `docs/decisions/`, and the new `docs/decisions/0042-minimum-layover-display-preference.md`. No file under `src/` or `tests/` changed.
+- `codex.md` "Checks and CI" no longer says the workflows have not run: they ran on pull requests #22 to #24.
+- The final map of every register issue to its package and commit is at the end of this log ("Register map").
+
+### Tests added
+
+- None. This package changes no code. A documentation package has no deliberate break.
+
+### Verification run
+
+- Proofread of every edited passage, and a cross-file check against the quoted contradictions of the ten issues: `grep` finds no "bounded viewport", "proposed TypeScript", "may not yet have Git", or "Proposed decision"; every file in `docs/decisions/` has `- Status:` and `- Date:` lines; each decision item cited in a new annotation was opened and checked.
+- Regression after the package (no code changed): `pnpm typecheck` clean; `pnpm test` 51 files, 747 tests passed; `pnpm build` succeeds (bundle `index--t3h4Nml.js` 806.22 kB, as in U08); `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 150 passed, 1 failed (4.7 minutes). The failure is `tests/ui/route-editing.spec.ts:6` (intermittent; see "Known failures" in the Next sitting note): the click on "Add pattern" right after the second "Save nodes" opened no Pattern draft. The spec then passed 100 of 100 times alone (`--repeat-each=20 --workers=8`, then `--repeat-each=80 --workers=16`). No code changed in D01, so the cause predates it; it is the L-16 race that the `createRouteWithPattern` helper already retries around. I did not change the spec: it is outside D01's files. No `test.fail`, `test.skip`, or `test.fixme`.
+
+### Residual risks and anything deferred
+
+- The `ui-conventions.md` bullets in the Phase 1 section that describe the Route draft editors were checked only for the contradictions the findings quote, not rewritten.
+- Decision 0011 and 0012 have no exact date in the repository; the Date lines say so rather than guess a day.
+- `docs/implementation/phase-02-*.md` and other historical plans were not edited; they are history.
+- The overview and glossary were not re-read line by line beyond the passages the ten findings cite.
+
+## U09: Why a Trip cannot be recalculated
+
+- Date: 2026-10-23. Sitting 4K part 2. Model: Sonnet (main session). No sub-agents.
+- Type: UI (small). Severity: S3. Defined by the user's decision of 2026-10-23 (item 8 of the user decisions in the Next sitting note; option A for U07 blocked item 2). `docs/review/fix-packages.md` has no U09 entry.
+- Commit: `ef57f58`.
+
+### What was wrong
+
+The "Run Times Have Changed" indicator said that Trips were stale but not why a Trip could not be recalculated. A planner who narrowed a Runtime band so that a departure no longer had a band saw the indicator, tried **Regenerate selected**, and had no explanation. `inspectStaleTrips` already reported such reasons, but only for legacy Trips that record no runtime source. Trips built by the current code record their source, so a changed revision marked them stale without trying to calculate them, and no reason was produced for the case that matters most.
+
+### Decision implemented
+
+Option A (user, 2026-10-23): one status line under the indicator lists the distinct reasons from `inspectStaleTrips`. No new component. With no such Trip, nothing is shown.
+
+### What changed
+
+- `src/application/tripGenerationService.ts` (`inspectStaleTrips`): a Trip that is stale because its profile, or its profile's calculation revision, differs from the runtime it was built from is now also tried against the current profile. If the profile cannot calculate it, the finding is reported, as for a Trip with no recorded source. The set of stale Trips is unchanged; only findings are added. This is the one application-layer change; U09 does not own the file, so it is a recorded hand-off (the minimum change the decision needs).
+- New `src/ui/staleTripReasons.ts` (pure): `staleTripNotice` collects, for the Trips shown in the selected Direction, the count of affected Trips and each distinct reason once, in the order the reasons first appear; `staleTripNoticeText` words it ("1 Trip cannot be recalculated. ..." or "N Trips cannot be recalculated. ..."). Both band findings (`trip.anchorNoRuntime`, `runtime.noApplicableBand`) read "No Runtime band covers its first departure. Add or extend a Runtime band." because the anchor wording of the existing message ("Choose another anchor") does not fit this status line. Every other finding uses the existing text of `userMessage`.
+- `src/ui/App.tsx`: `loadTrips` calls `inspectStaleTrips` instead of `listStaleTrips` and keeps the notice in state; one `<p className="section-status" role="status">` under the indicator shows it. The existing `section-status` style is reused; there is no new class and no new component.
+- `docs/ui-conventions.md`: the "Run Times Have Changed" bullet describes the line.
+
+### Behavior before and after
+
+- Before: indicator only. After, with a Runtime band narrowed so that two of three departures have no band: the indicator, then "2 Trips cannot be recalculated. No Runtime band covers its first departure. Add or extend a Runtime band." The third Trip is stale but calculable and is not counted.
+- With every stale Trip calculable (for example a longer segment runtime), nothing changes: the indicator alone.
+
+### Tests added
+
+- `src/ui/staleTripReasons.test.ts` (4 tests): empty when no shown Trip carries a finding; a Trip counts once and a reason is named once however many Trips and findings share it; distinct reasons appear in first-seen order and Trips that are not shown are ignored; singular and plural wording.
+- `src/application/tripGenerationService.test.ts` (+1 test): a Trip that records its source and that the narrowed profile cannot calculate carries a finding; a stale Trip that it can calculate carries none.
+- `tests/ui/stale-trip-reasons.spec.ts` (2 tests, real app and IndexedDB): the reason line appears with the exact text for two Trips and disappears when the band is extended; a Runtime change that every Trip can follow shows the indicator without a line.
+
+### Deliberate breaks (each applied, run, and restored from a saved copy)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| Reasons, unit | a reason is listed once per finding (no de-duplication) | 1 unit test fails; the browser test fails (the text repeats) |
+| Reasons, unit | findings of Trips that are not shown are counted | 2 unit tests fail |
+| Status line (browser) | the line is not rendered | the browser test fails |
+| Service finding | `inspectStaleTrips` as before (no finding for a Trip with a recorded source) | the new service unit test fails; the first browser run, made before the service change, failed at the same point |
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 52 files, 752 tests passed (747 before: +4 in `staleTripReasons.test.ts`, +1 in `tripGenerationService.test.ts`).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 153 passed, 0 failed (4.6 minutes); 151 before plus 2 new tests. No existing spec changed. No `test.fail`, `test.skip`, or `test.fixme`. `unified-action-layer.spec.ts:139` and `route-editing.spec.ts:6` passed.
+- New browser spec, stress run `--repeat-each=10 --workers=8`: 20 of 20 passed.
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-Be19ICCN.js` 807.23 kB (806.22 kB before).
+- Visual inspection at 1024 and 1440 px (images in the session scratchpad only, not committed):
+  - `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/u09-reason-line-1024.png`
+  - `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/u09-reason-line-1440.png`
+  - `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/u09-indicator-only-1024.png` and `u09-indicator-only-1440.png` (the unchanged state when every stale Trip can be calculated), in the same folder.
+  - What I saw: the line is one sentence of plain 14 px text on its own row between the amber indicator and the table grid, left aligned with the indicator and the grid. At 1024 and 1440 px it stays on one line, with no wrap and no horizontal scroll. The indicator, the row markers ("Run times changed"), and the grid are unchanged.
+
+### Hand-offs and residual risks
+
+- The line does not say which Trips are affected, only how many; the stale row marker is unchanged. A per-row reason was not requested.
+- Only the two band findings have wording written for this line. Any other finding that `inspectStaleTrips` can report (for example a Pattern whose points no longer match) shows its existing `userMessage` text, which is worded for other dialogs and may not read well here.
+- The line is announced as a status (`role="status"`) when it appears, like the other Trips status lines. It was not checked with a screen reader.
+- `inspectStaleTrips` now runs the calculation for every Trip that is stale by revision. The calculation is pure and cheap; no timing was measured at the 2,000-Trip capacity fixture.
+
+## P18: Vitest major upgrade
+
+- Date: 2026-10-23. Sitting 4K part 2. Model: Sonnet (main session). No sub-agents.
+- Type: dependency maintenance, no feature change. Severity: S3. Defined by the user's decision 5 of 2026-10-23 (the Next sitting note); `docs/review/fix-packages.md` has no P18 entry. B01 left the five advisories open on purpose (I-100).
+- Commit: `9395d2c`.
+
+### What was wrong
+
+`pnpm audit` reported five advisories, all in the `vitest` chain of version 3.2.7: two critical ones in `tinypool` (prototype pollution, fixed from 2.1.1 and 2.1.2), two moderate ones in `vitest` and `@vitest/mocker` (path traversal through a mock redirect; fixed from 4.1.11), and one moderate one in `@vitest/mocker` (code injection through manual mock registration; fixed from 4.1.12). All are dev-toolchain only: Vitest runs on the developer's machine and in CI, never in the deployed site.
+
+### What changed
+
+- `package.json`: `vitest` `^3.2.4` to `^4.1.12` (installed 4.1.12). `pnpm-lock.yaml` updated by `pnpm add -D vitest@^4.1.12` (15 packages added, 23 removed). Version 4.1.12 is the smallest major step that clears all five advisories; 5.0.5 exists and also works with Vite 7, but it is a second major step and was not needed.
+- No change to `vitest.config.ts`, to any test, or to any file under `src/` or `tests/`. No test-config change was needed.
+- `codex.md`: the audit line (now no known vulnerabilities), the Vitest version in "Unit tests that need IndexedDB", and the coverage tool version.
+- Peer ranges checked: Vitest 4.1.12 accepts `vite` `^6 || ^7 || ^8` and Node `^20 || ^22 || >=24`; the repository uses Vite 7.3.7 and Node 22 (`.nvmrc`, `engines`, CI).
+
+### Tests added
+
+- None. This package changes no test. The existing 752 unit tests are the check.
+
+### Deliberate break
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| The test environment under Vitest 4 | `setupFiles: ['fake-indexeddb/auto']` removed from `vitest.config.ts` | 48 tests in 5 files fail (every Dexie-backed test); the config was restored from a saved copy |
+
+### Verification run
+
+- `pnpm audit`: no known vulnerabilities (5 before).
+- `pnpm install --frozen-lockfile`: up to date.
+- `pnpm typecheck`: clean.
+- `pnpm test`: 52 files, 752 tests passed, the same count as before the upgrade, with no Vitest warning in the output (Vitest 4.1.12, 8.3 s).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 153 passed, 0 failed (4.4 minutes). No `test.fail`, `test.skip`, or `test.fixme`. `unified-action-layer.spec.ts:139` and `route-editing.spec.ts:6` passed.
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-Be19ICCN.js` 807.23 kB, identical to the U09 build (Vitest is a dev dependency).
+
+### Hand-offs and residual risks
+
+- `pnpm outdated` lists other newer majors (Vite 8, `@vitejs/plugin-react` 6, TypeScript 7, `@types/node` 26, Vitest 5). None carries an advisory. They are not part of P18 and have no owner.
+- CI has not run this lockfile. The user reads the first CI run of the branch. `@types/node` stays at 22 and Node at 22.
+
+## Register map
+
+Added by D01 (sitting 4K part 2). It maps every issue of the review register to the package that owns it and that package's commit. The package's entry above records what was fixed, deferred, or handed off; a package with two commits lists both. Checked mechanically: every issue except I-048 to I-051, I-053 to I-056, I-059 (this package) and I-102 (closed in Stage 3) appears in the "Issues fixed" table of the package named here. Packages with no register issue of their own: P17 (the user's decisions of 2026-10-23; it also finished I-027 and I-078), U09 and U10 (the user's decisions on two blocked U07 items), and P18 (the dependency upgrade that B01 left open).
+
+| Register | Severity | Issue | Package (commit) |
+| --- | --- | --- | --- |
+| I-001 | S0 | Service-day edits (and Scenario rename, New Route, Duplicate Route) write the App's startup Scenario snapshot over newer Trips, Blocks, and Runtime profiles | P01 (`b9df89d`) |
+| I-002 | S0 | A second tab silently deletes or reverts data saved in the other tab; stale checks run outside the write transaction (UD 10) | P02 (`4de45c9`) |
+| I-003 | S1 | A backup with two or more Trip Profiles cannot be restored; export → import is not stable with one profile | P04 (`83c057e`, `60c2477`) |
+| I-004 | S1 | Scenario duplication fails when a non-first Trip Profile's Blocking Scenario has Trips; otherwise it stamps every copied Block with the first profile | P03 (`d80d801`) |
+| I-005 | S1 | Scenario duplication leaves pull-out, pull-in, and deadhead Nodes pointing at the source Scenario; deadhead Blocks become ineligible for Costing (UD 4: recover on load) | P03 (`d80d801`) |
+| I-006 | S2 | Seven browser tests fail: a stale menu label, and two tests assert the nested scroller that D0035-05 forbids | P05 (`b588bcb`) |
+| I-007 | S2 | The production Dexie repository has no unit-test coverage | P06 (`1f9e64a`) |
+| I-008 | S2 | The migration unit test never runs and asserts version 5; the browser migration test seeds raw version 4, which is Dexie 0.4 | P06 (`1f9e64a`) |
+| I-009 | S2 | `updateServiceDay` saves annual counts above 365, negative, fractional, or NaN, and blank or untrimmed names | P09 (`fd1e65b`) |
+| I-010 | S2 | v3/v4 backup import keeps placeholder Blocks with no Blocking Scenario, against D0019-13; they inflate deletion counts | P04 (`83c057e`, `60c2477`) |
+| I-011 | S2 | A Last Trip generation request is not limited to 500 Trips | P08 (`2cdb883`) |
+| I-012 | S2 | Shifting Trips before 0:00 yields negative times; staging such a Shift crashes the app (no error boundary) | P08 (`2cdb883`) |
+| I-013 | S2 | `segmentStart` and blend anchored regeneration silently pick one of several valid departures (UD 3: reject and list) | P08 (`2cdb883`) |
+| I-014 | S2 | A deterministic route edit stamps the new runtime revision on every Trip, hiding stale Trips and `segmentStart` mismatches | P07 (`b5b2f3c`) |
+| I-015 | S2 | Legacy explicit-time deadheads and pull-outs are not checked against their placement; layover and Platform hours are wrong | P12 (`ce5852d`) |
+| I-016 | S2 | Runtime "Copy from day" always fails on IndexedDB: the transaction omits `patterns` and `serviceDays` (UD 6) | P01 (`b9df89d`) |
+| I-017 | S2 | Backup import accepts dangling, cross-Scenario, duplicate, and negative Block and Trip data; two inputs raise raw TypeErrors | P04 (`83c057e`, `60c2477`) |
+| I-018 | S2 | Node deletion in the Node editor leaves non-revenue activities pointing at the deleted Node, and the preview does not report them | P09 (`fd1e65b`) |
+| I-019 | S2 | CSV header cells are not escaped; a Pattern or Node name with a comma or quote breaks the Trips CSV round trip | P13 (`2463328`) |
+| I-020 | S2 | In-memory and Dexie repositories diverge on stale rejection, Scenario cascade, ordering, and error types | P06 (`1f9e64a`) |
+| I-021 | S2 | A single-Trip Pattern change commits without a stale check | P07 (`b5b2f3c`) |
+| I-022 | S2 | Trips CSV import moves a Trip from the other Direction onto this Direction's Pattern | P07 (`b5b2f3c`) |
+| I-023 | S2 | Only Route saves publish the save status (UD 11: every write) | P10 (`2eb3439`) |
+| I-024 | S2 | "Apply to all similar Trips" in the deadhead dialog skips every second matching connection | P14 (`3df50b6`) |
+| I-025 | S2 | Trip generation stores Trips for a Trip Profile that no longer exists | P01 (`b9df89d`) |
+| I-026 | S2 | A JSON `null` in either selection-preference key blanks the app on every load | U03 (`215ec5c`) |
+| I-027 | S2 | Deletion reviews are incomplete: Trip Profile token ignores Blocking Scenarios; `deleteTrips` removes unshown activities; Route, Scenario, Runtime profile, and Project deletes have no token | P09 (`fd1e65b`) |
+| I-028 | S2 | The Trips CSV review signature omits Patterns; a stale review saves a Trip with the wrong number of times | P07 (`b5b2f3c`) |
+| I-029 | S2 | Three layout tests assert hand-written fixture HTML that no longer matches the app | P05 (`b588bcb`) |
+| I-030 | S2 | Runtime editor drafts, Build Trips input, the Add-trip row, and Blocking dialog drafts are discarded silently; a staged Shift is lost on a profile change (UD 14) | U03 (`215ec5c`) |
+| I-031 | S2 | Costing shows an invalid estimate for a service-day total above 365 without listing the problem | U06 (`88a40a6`) |
+| I-032 | S2 | Saving Nodes discards an unsaved Pattern draft, and saving a Pattern discards unsaved Node edits | U03 (`215ec5c`) |
+| I-033 | S2 | The Costing results table overflows at 1024 px and hides Annual cost (AC7) | U06 (`88a40a6`) |
+| I-034 | S2 | Removing a Trip, Pull-out, or Pull-in from a Block is one click with no confirmation or undo | U05 (`25752ee`) |
+| I-035 | S2 | Delete Block and Delete Blocking Scenario show no impact counts; Delete Pattern's button reads "Confirm" | U05 (`25752ee`) |
+| I-036 | S2 | Modal dialogs have no focus trap, lose initial focus when opened from a menu, ignore Escape (10), or lack a name (2) | U04 (`d596125`) |
+| I-037 | S2 | Focus drops to the page body after Shift drawer steps and common confirms | U04 (`d596125`) |
+| I-038 | S2 | `index.html` has no doctype, charset, viewport, `lang`, or title; the app renders in quirks mode | U01 (`8e347e4`) |
+| I-039 | S2 | After a stale-source rejection, Blocking rejects every edit until the day changes or the page reloads | U02 (`dea5288`) |
+| I-040 | S2 | Blocks with Trips from another Route show "Missing pattern" and "—" (UD 15) | U05 (`25752ee`) |
+| I-041 | S2 | The shared Runtime-profile display names only the selected day (02R-AC18) | U07 (`4d270c1`) |
+| I-042 | S2 | Escape in numeric and runtime time inputs commits the typed value instead of cancelling | U03 (`215ec5c`) |
+| I-043 | S2 | The Blocking compatibility review takes about 22 s at 300 unassigned Trips and blocks Assign | P11 (`82bd08a`) |
+| I-044 | S2 | The Costing tab takes about 31 s at capacity and shows "Select a valid Blocking Scenario" while it waits | P11 (`82bd08a`) |
+| I-045 | S2 | No persistent-storage request, no backup reminder, and raw text on quota failure (UD 16) | P10 (`2eb3439`) |
+| I-046 | S2 | Deployment publishes every push to `main` without tests; no workflow runs on pull requests | B01 (`e6bf12e`) |
+| I-047 | S3 | The `segmentStart` calculation tests exist only in the review golden suite, not in `pnpm test` | P06 (`1f9e64a`) |
+| I-048 | S3 | The overview describes a bounded Trips scroll viewport that D0035-05 forbids | D01 (`daec5d5`) |
+| I-049 | S3 | Roadmap constraints and deletion rules contradict Decisions 0011, 0019, 0033, 0035 | D01 (`daec5d5`) |
+| I-050 | S3 | Overview, schema, glossary, and roadmap omit the Number of Trips limit | D01 (`daec5d5`) |
+| I-051 | S3 | Decision status lines are missing, stale, or omit supersession | D01 (`daec5d5`) |
+| I-052 | S3 | The overview says service-day counts are "capped at 365"; the code treats more than 365 as an error | P09 (`fd1e65b`) |
+| I-053 | S3 | `codex.md` and the overview repeat status paragraphs; `codex.md` makes false repository claims (UD 9) | D01 (`daec5d5`) |
+| I-054 | S3 | `data-schema.md` index table, migration history, and entity shapes drift from the code | D01 (`daec5d5`) |
+| I-055 | S3 | The minimum-layover preference has no decision record and contradicts D0020-19 | D01 (`daec5d5`) |
+| I-056 | S3 | Decisions 0017 and 0018 were overtaken by `ui-conventions.md` without an amendment | D01 (`daec5d5`) |
+| I-057 | S3 | Trips labels "Scenario" (UD 7: "Blocking Scenario") and "Run Time" are not glossary terms | U07 (`4d270c1`) |
+| I-058 | S3 | The Phase 5 plan's Costing column list does not match the implemented table (UD 2) | U06 (`88a40a6`) |
+| I-059 | S3 | `ui-conventions.md` mixes current and historical rules, including the modal Node-removal rule | D01 (`daec5d5`) |
+| I-060 | S3 | The validation-finding shape differs between documents, `ValidationFinding`, `CostingFinding`, and Blocking string errors | P12 (`ce5852d`) |
+| I-061 | S3 | At an exact gap midpoint, `segmentStart` picks the earlier band and the blend picks the later band | P16 (`cf2d189`) |
+| I-062 | S3 | Half-second decimal-minute runtime entries round inconsistently | P16 (`cf2d189`) |
+| I-063 | S3 | The direction-order conflict message does not name the Direction | P16 (`cf2d189`) |
+| I-064 | S3 | A zero-second Trip shift is accepted and marks Trips manually changed | P08 (`2cdb883`) |
+| I-065 | S3 | Renaming a runtime band label increments the revision and marks Trips stale | P07 (`b5b2f3c`) |
+| I-066 | S3 | A 0-mile Pattern is reported as complete (UD 8: treat as incomplete) | P12 (`ce5852d`) |
+| I-067 | S3 | Per-day hour totals accumulate in floating hours and can break the half-away-from-zero tie | P16 (`cf2d189`) |
+| I-068 | S3 | Domain ID generation and two timestamp paths are not injectable | P16 (`cf2d189`) |
+| I-069 | S3 | The unused `RouteDefinitionService.deleteNode` deletes other Routes' Nodes and commits in two transactions (S0 if wired) | X01 (`8a2d0d7`) |
+| I-070 | S3 | `csvEscape` does not quote a bare CR | P13 (`2463328`) |
+| I-071 | S3 | CSV exports write text beginning with `=`, `+`, `-`, `@` unescaped (UD 5) | P13 (`2463328`) |
+| I-072 | S3 | Twelve UI error paths bypass or defeat the technical-error filter; the filter misses some Dexie names | U02 (`dea5288`) |
+| I-073 | S3 | UI modules import persistence CSV serializers (UD 12: move to `src/application`) | P13 (`2463328`) |
+| I-074a | S3 | Business rules implemented in React: Blocking items (reorder grouping, activity insertion, ownership filter, Layover %) | P14 (`3df50b6`) |
+| I-074b | S3 | Business rules implemented in React: Costing items (`validateCostingAssumptions`, day total, 365 check, year list) | P11 (`82bd08a`) |
+| I-074c | S3 | Business rules implemented in React: Trips and Runtime items (band assembly, shift rules, duplicate departures, usable Pattern, ordering, Build Trips validation, render-time runtime calls) | P15 (`b920627`) |
+| I-075 | S3 | Dead legacy generation-set UI, App route handlers, service methods, and exports (UD 13) | X01 (`8a2d0d7`) |
+| I-076 | S3 | Startup, selection reloads, and JSON/CSV export have no error handling | U02 (`dea5288`) |
+| I-077 | S3 | A blank minutes field saves a 0-minute deadhead in a single save but is rejected in bulk | P14 (`3df50b6`) |
+| I-078 | S3 | `renameScenario` accepts a blank name; legacy route mutators bypass preview and Pattern validation | P09 (`fd1e65b`) |
+| I-079 | S3 | Nine `ports.ts` interfaces are unused; four no longer match their services | X01 (`8a2d0d7`) |
+| I-080 | S3 | The costing context assembly in `main.tsx` is untested | P11 (`82bd08a`) |
+| I-081 | S3 | `listStaleTrips` marks a Trip stale on any error, including programming errors | P07 (`b5b2f3c`) |
+| I-082 | S3 | Runtime paste replaces the calculation method, also in Append mode, without showing it | U07 (`4d270c1`) |
+| I-083 | S3 | Blocking loads have no request guard against out-of-order responses | U05 (`25752ee`) |
+| I-084 | S3 | No test covers Trips table rounding, headways, shading, duplicate header, overlaps, scroll restoration, or net-zero discard | P05 (`b588bcb`) |
+| I-085 | S3 | Weak browser assertions (no reload, unasserted screenshots, conditional branches) | P05 (`b588bcb`) |
+| I-086 | S3 | Menu semantics: `menuitemradio` for independent toggles, menus stay open on Tab, no typeahead | U04 (`d596125`) |
+| I-087 | S3 | Costing Total row is not the sum of displayed rows; cross-day-type hours total; two View year selectors; pluralization | U06 (`88a40a6`) |
+| I-088 | S3 | Blocking (`toFixed`) and Costing (half away from zero) round the same hours differently | U05 (`25752ee`) |
+| I-089 | S3 | Labels and names: truncated Pattern pills, warning style on "No current issues", off-by-one "Move Trip N", capitalization | U05 (`25752ee`) |
+| I-090 | S3 | Missing `aria-invalid`, headings, landmarks, labelled file inputs, and table header scope | U04 (`d596125`) |
+| I-091 | S3 | The remembered Blocking Scenario is overwritten after a Trip Profile change | U03 (`215ec5c`) |
+| I-092 | S3 | Shift drawer Undo and Redo update history before the preview resolves | U07 (`4d270c1`) |
+| I-093 | S3 | The Trips CSV import preview shows raw Trip and Pattern UUIDs | U07 (`4d270c1`) |
+| I-094 | S3 | Runtime band totals of 60 minutes or more display as ":61" or ":65" | U07 (`4d270c1`) |
+| I-095 | S3 | Message quality: missing next steps, technical terms, wrong text | U02 (`dea5288`) |
+| I-096 | S3 | "Regenerate selected" on 500 rows takes 2.5 s; capacity restore takes 1.9 s | U08 (`ac0bded`) |
+| I-097 | S3 | `pnpm typecheck` omits `tests/ui` and `playwright.config.ts`; `@types/node` is absent | B01 (`e6bf12e`) |
+| I-098 | S3 | Node and pnpm are not pinned; CI uses end-of-life Node 20 (UD 17) | B01 (`e6bf12e`) |
+| I-099 | S3 | `zod` and `@tanstack/react-table` are declared and never imported (UD 18; L-08; plan 8.4 item 6) | B01 (`e6bf12e`) |
+| I-100 | S3 | `pnpm audit`: 11 dev-toolchain advisories; five dependencies a major version behind | B01 (`e6bf12e`) |
+| I-101 | S3 | One 765 kB JavaScript chunk; every build warns | B01 (`e6bf12e`) |
+| I-102 | Closed | Costing applied rate in whole dollars; the documentation was corrected (A-006 resolution) | Closed in Stage 3 (no package) |

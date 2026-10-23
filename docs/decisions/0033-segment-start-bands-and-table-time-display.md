@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-21
+- Supersedes: Decision 0003 item 4 (one band for the full trip) for `segmentStart` profiles
 
 ## Decision
 

@@ -217,6 +217,14 @@ describe('stale-source checks on Pattern changes and Trips CSV imports, and the 
       expect((await service.listStaleTrips('weekday')).map((item) => item.id)).toEqual(['after-service']);
     });
 
+    it('reports why a Trip with a recorded source cannot be recalculated, and nothing for a Trip that can be (U09)', async () => {
+      const narrowed = profile('outbound-profile', 'outbound', 5, { calculationMethod: 'segmentStart', bands: [{ id: 'am', label: 'AM', sequence: 0, startTime: 0, endTime: 3600, segmentRuntimeSeconds: [600] }] });
+      const { service } = await setup({ profiles: [narrowed, profiles[1], profiles[2]], trips: [trip('fits', outbound, 1000), trip('outside', outbound, 5000)] });
+      const report = await service.inspectStaleTrips('weekday');
+      expect(report.trips.map((item) => item.id).sort()).toEqual(['fits', 'outside']);
+      expect(report.findings.map((finding) => [finding.ruleId, finding.entityType, finding.entityId])).toEqual([['trip.anchorNoRuntime', 'trip', 'outside']]);
+    });
+
     it('does not hide a programming error as a stale Trip', async () => {
       const { repository, service } = await setup({ profiles, trips: [legacyTrip('legacy', outbound, 1000, 1600)] });
       repository.runtimeProfiles.set('outbound-profile', { ...profiles[0], bands: undefined as never });

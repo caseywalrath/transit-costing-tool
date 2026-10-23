@@ -1,7 +1,8 @@
 # Decision 0020: Manual Block Activities, Validation, and Summaries
 
-- Status: Accepted for Phase 4 planning
+- Status: Accepted; implemented and user-accepted through Phase 4 Package 4D. Partly superseded; see below
 - Date: 2026-09-18
+- Superseded in part by: Decision 0022 (item 5 for boundary activities; item 16 in part), Decision 0023 (item 5 for deadheads), Decision 0026 (item 11, the Revenue-hours formula, and item 20, the summary tiles), and Decision 0042 (item 19, which records the minimum-layover display preference). Items not named here remain in force.
 
 ## Context
 
@@ -27,7 +28,7 @@ The architecture defines Blocks as ordered activity lists and treats layovers an
 16. Platform hours are elapsed time from pull-out start through pull-in end. They are incomplete without both activities or when either boundary is structurally invalid.
 17. Revenue miles are the sum of complete revenue Pattern distances.
 18. Platform miles equal revenue miles plus pull-out, deadhead, and pull-in miles. They are complete only when all required revenue and non-revenue distances are present.
-19. No minimum-layover policy is applied in Phase 4.
+19. No minimum-layover policy is applied in Phase 4. (Annotated by Decision 0042: no policy is applied to persisted Block data; a display preference classifies candidates.)
 20. Block and selected-day summaries return values with validity and completeness status. Selected-day totals show a known valid subtotal plus counts of invalid or incomplete Blocks. Valid but incomplete Blocks still contribute their known hours; missing mileage remains incomplete and is never treated as zero.
 21. Compatibility is read-only and evaluates both sides of the selected insertion point. It reports compatible, deadhead required, conflict, or incomplete and does not mutate Blocks.
 

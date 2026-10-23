@@ -552,8 +552,8 @@ export class TripGenerationService {
   }
 
   /**
-   * The stale Trips of a service day, and why a Trip could not be checked. A Trip that its assigned profile cannot calculate (no band
-   * for its departure, for example) is stale and carries the finding that says so. Any other error is a defect and is not reported
+   * The stale Trips of a service day, and why a Trip could not be checked. A stale Trip that its assigned profile cannot calculate (no band
+   * for its departure, for example) carries the finding that says so, whether or not it recorded the runtime it was built from. Any other error is a defect and is not reported
    * as a stale Trip: it surfaces to the caller.
    */
   async inspectStaleTrips(serviceDayId: string, tripProfileId?: string): Promise<{ trips: Trip[]; findings: ValidationFinding[] }> {
@@ -577,7 +577,22 @@ export class TripGenerationService {
       const profile = profilesById.get(assignment.runtimeProfileId);
 
       if (sourceProfileId && sourceRevision !== undefined) {
-        if (!profile || assignment.runtimeProfileId !== sourceProfileId || (profile.calculationRevision ?? 0) !== sourceRevision) stale.push(trip);
+        if (!profile || assignment.runtimeProfileId !== sourceProfileId || (profile.calculationRevision ?? 0) !== sourceRevision) {
+          stale.push(trip);
+          // A Trip that the profile cannot calculate cannot be recalculated either, and the planner is told why (U09).
+          if (profile) {
+            if (!patternsById.has(trip.patternId)) patternsById.set(trip.patternId, await this.repository.getPattern(trip.patternId));
+            const pattern = patternsById.get(trip.patternId);
+            if (pattern && profile.patternId === pattern.id && profile.routeId === pattern.routeId && profile.scenarioId === pattern.scenarioId) {
+              try {
+                markTripRecalculated(trip, pattern, profile, this.now());
+              } catch (error) {
+                if (!(error instanceof TripGenerationError)) throw error;
+                findings.push(...error.findings.map((finding): ValidationFinding => ({ ...finding, entityType: 'trip', entityId: trip.id })));
+              }
+            }
+          }
+        }
         continue;
       }
 

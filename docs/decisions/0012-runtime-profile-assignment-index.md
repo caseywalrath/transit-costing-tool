@@ -1,8 +1,8 @@
 # Decision 0012: Index runtime-profile assignments for lifecycle commands
 
-## Status
-
-Accepted.
+- Status: Accepted
+- Date: 2026-09-12 (the exact day is not recorded; the record was written between Decision 0010, 2026-09-11, and Decision 0013, 2026-09-13)
+- Completes: the index detail of Decision 0007 item 3
 
 ## Context
 
