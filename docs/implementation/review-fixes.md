@@ -2,22 +2,31 @@
 
 ## Next sitting
 
-**Sitting 4F: P12 (Blocking calculation rules and finding shape), P13 (CSV serializers), P14 (Blocking rules into `blockingService`), B01 (CI, typecheck scope, and dependencies).** Main session: Sonnet. Sub-agents: Haiku for the P13 file moves only (sitting table). None of these packages is S0 or S1, so there is no Opus review. Run them in this order: P12, P13, P14, B01. B01 turns on CI.
+**Sitting 4G: U01 (Standards-mode `index.html`), U02 (Data-safety and error presentation), U03 (Drafts, inputs, and preferences).** Main session: Sonnet. No sub-agents. None of these packages is S0 or S1, so there is no Opus review. Run them in this order. These are the first UI packages: `fix-packages.md` places a user-verification gate between the structural packages (4A to 4F) and the UI packages (Decision 0005), so the user reviews and merges the sitting 4F pull request, and confirms they want to start the UI packages, before 4G.
 
-- Work branch: the user names it in the prompt (suggested `claude/stage-4f-review-fixes`), created from current `origin/main`.
-- Prerequisite: the sitting 4E pull request (branch `claude/stage-4e-review-fixes`: P09 `fd1e65b`, P10 `2eb3439`, P11 `82bd08a`, and the closing commit that records the hashes) must be merged into `main`. If it is not, stop and ask the user. Start 4F from current `origin/main`.
-- State after 4E: the full browser suite is green and stays green. 77 tests, 77 passed; no `test.fail`, `test.skip`, or `test.fixme` (about 2.8 minutes). Every later package must keep 0 failures (`PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`). Unit tests: 36 files, 502 tests, about 9 s. Bundle after P11: `index-Xh7-lYti.js` 782.90 kB.
-- New in 4E that 4F relies on:
-  - **Findings (P12).** `ServiceDayValidationError` in `routeDefinitionService.ts` is a typed error that carries `ValidationFinding[]`; the Blocking error P12 adds can follow it. `CostingQueries.validateAssumptions` (P11) returns `CostingFinding[]`; when P12 gives `CostingFinding` the `ValidationFinding` shape, update that return type in `ports.ts` and `costingService.ts` (neither is on P12's owned list: make the minimum change and record the hand-off). `CostingWorkspace.tsx` only reads `validation.length`.
-  - **Save status (P14).** Each service names the repository methods it publishes: `ROUTE_DEFINITION_WRITE_METHODS`, `TRIP_GENERATION_WRITE_METHODS`, `BLOCKING_WRITE_METHODS`, `COSTING_WRITE_METHODS`. A guard test in `src/application/saveStatus.test.ts` fails for a repository method whose name starts with `save`, `delete`, `insert`, `replace`, `commit`, `update`, `restore`, or `copy` and is in no list. A new Blocking repository write must be listed in `BLOCKING_WRITE_METHODS`.
-  - **Deletion reviews (P14).** `src/application/reviewToken.ts` (`fingerprint`, `assertReviewCurrent`) and Decision 0041. The six deletions of P09 take a review token. P14's `previewDeleteBlock` and `previewDeleteBlockingScenario` return counts; if the deletion the planner confirms is meant to match that review, use the same helper.
-  - **Blocking (P14).** `BlockingQueries.classifyInsertions` (P11) is the one call `BlockingWorkspace.tsx` makes to review the unassigned Trips; keep it.
-  - **Costing (P12, P14).** The context builder is `src/application/costingContext.ts`. The Costing screen reads its rules from `CostingQueries` (`validateAssumptions`, `summarizeServiceDays`, `listServiceYears`, `normalizeFutureYearCount`).
-  - **B01 (typecheck scope).** The new specs and `tests/ui/support/capacityFixture.ts` (which uses explicit `any`) will be type-checked when B01 widens `pnpm typecheck` to `tests/ui`; fix any error there as B01's minimum change. In this environment the browser suite needs `PLAYWRIGHT_CHROMIUM_EXECUTABLE`; a GitHub runner does not (`codex.md`).
-  - Tests: `tests/ui/capacity-read-paths.spec.ts` asserts Trip-read counts and loose time limits on the development server; the 1 s and 2 s targets are met in the production build only (P11 entry, "Deviation from the criterion").
-- Open questions for the user (none blocks 4F). Both are in the P09 entry, "Residual risks":
-  1. `deletePattern` has no review token, though it deletes Runtime profiles, assignments, and Trips and changes Blocks. Suggested: add it to P14 or a small later package.
+- Work branch: the user names it in the prompt (suggested `claude/stage-4g-review-fixes`), created from current `origin/main`.
+- Prerequisite: the sitting 4F pull request (branch `claude/stage-4f-review-fixes`: P12 `ce5852d`, P13 `2463328`, P14 `3df50b6`, B01 `e6bf12e`, and the closing commit that records the hashes) must be merged into `main`. If it is not, stop and ask the user. Start 4G from current `origin/main`.
+- Before 4G starts, the user should open the 4F pull request and read its first CI run. The workflows added by B01 have not run (B01 entry, "What could not be verified"). If CI fails on the runner for a reason that is not a test defect, fix the workflow first; do not start U01 on a red CI.
+- State after 4F: the full browser suite has 80 tests, 80 passed on the last full run; no `test.fail`, `test.skip`, or `test.fixme` (about 2.6 minutes). Unit tests: 41 files, 637 tests, about 10 s. Bundle after B01: `index-BdF3r0BO.js` 790.12 kB, no chunk warning. `pnpm typecheck` now covers `tests` and `playwright.config.ts`.
+- **Known intermittent failure (open):** `tests/ui/unified-action-layer.spec.ts:139` failed at the same setup step (`tests/ui/support/tripsWorkspace.ts:95`, the Trip actions menu has no items after `ArrowDown`) in 2 of 6 full runs on the 4F branch and in 0 of 3 on `main`; it passes alone and on re-run. See the P14 entry, "Intermittent browser failure". A package that sees it should re-run the full suite once, say so in its report, and not change the spec to hide it. U04's keyboard work or U07's removal of the Runtime reload helper are the natural places to find the cause.
+- New in 4F that 4G relies on:
+  - **U01.** `index.html` is untouched. B01 widened `pnpm typecheck` to `tests`; U01's layout baselines are in `tests/ui/` and are type-checked now.
+  - **U02.** `showError` shows `error.message` unless it matches a technical pattern, so the typed `BlockingValidationError` messages (P12, P14) show as written. `blockingError` in `BlockingWorkspace.tsx` still inserts a space before each capital letter in a message that is not in `blockingMessages` (U02 criterion 4 removes it). Thrown by the Blocking service now: "Another Block on this service day already uses that label.", "No consecutive Trips use the selected From and To Nodes.", "Select a preceding Trip for the deadhead.".
+  - **U02/U05 wording.** `block.deadheadOutsideGap` and `block.boundaryOverlap` (P12) have no sentence; the screen shows "Deadhead outside gap" and "Boundary overlap" (fallback). `block.minutesRequired` and `block.minutesInvalid` (P14) use "Enter a non-negative whole-minute duration.".
+  - **U03.** The Blocking workspace now loads the unassigned Trips with the Blocks (`listUnassignedTrips`), not from the Trips tab's list; the New Block dialog value comes from `proposeBlockLabel`.
+  - **U05 (I-035).** `previewDeleteBlock` and `previewDeleteBlockingScenario` exist and nothing calls them. Their `sourceSignature` is the review token that `deleteBlock` and `deleteBlockingScenario` take. The Delete Block and Delete Blocking Scenario dialogs should show the counts and pass the preview's signature.
+  - **Costing (U06).** A `CostingFinding` is a `ValidationFinding` (`ruleId`, `entityType`, `entityId`, `field`); an assumption finding names the field, so the screen can show it beside its input. `CostingWorkspace.tsx` still reads only `validation.length` and severity.
+  - **CSV.** The Trips CSV and ZIP writer live in `src/application`. A free-text cell that begins with `=`, `+`, `-`, or `@` is written with a leading apostrophe; the Trips CSV import and Runtime paste remove it (`restoreFormulaText`). A new CSV importer must do the same for the same columns.
+- Open questions for the user (none blocks 4G). The first two are in the P09 entry, "Residual risks"; nothing in P12 to P14 required changing either, so both are unchanged:
+  1. `deletePattern` has no review token, though it deletes Runtime profiles, assignments, and Trips and changes Blocks. Suggested: add it to a small later package.
   2. The legacy per-field route mutators (`updatePattern`, `addNode`, and the others listed there) still bypass the preview and the Pattern validation (the second half of finding 4-020); only unit tests use them. Suggested: delete them and move those fixtures to preview and commit, or keep them as test helpers.
+  3. Repeated Block labels already stored (saved before the P14 rule): a backup of such a database is refused on import, and a Block with a repeated label can still be edited. No package owns clean-up. Suggested: say so in U02's import message, or add a repair on load.
+  4. Branch protection: require the `verify` and `browser` CI checks on `main`. This is a GitHub setting only the user can change.
+- Hand-offs from 4F for later sittings (details in the P12 to B01 entries):
+  - **P15/P16:** the Trips and Pattern screens still show 0.0 miles for a Pattern with no distance entered (only Blocking treats a 0 total as incomplete); showing incomplete mileage there is a presentation question.
+  - **P16:** a CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
+  - **Vitest major upgrade:** 5 `pnpm audit` advisories remain, all in the `vitest` chain (decision C4: a separate package, not scheduled). Decide with the user whether it joins 4K or a later maintenance sitting.
+  - **Persistence (no owner yet), unchanged:** a compound index on Scenario and Trip Profile for `listProfileTrips`.
 - Hand-offs from 4E for later sittings (details in the P09 to P11 entries):
   - **U02:** show `getLocalDataProtection()` ("Last backup: <date and time>" or "No backup exported yet"; the persistence answer if wanted); add `QuotaExceededError`, `VersionError`, and `UnknownError` to the `showError` filter; present the read-only status before the header's "Local save failed" that a rejected write now also sets.
   - **U05:** the Node editor's impact dialog does not list `nonRevenueImpact`; the Trip profile confirmation does not mention `blockingScenarioCount`; the Runtime profile and Trips delete dialogs stay open with the old review after a refusal.
@@ -31,7 +40,7 @@
   - P16: the golden "DEFECT 2-007" test (gap-midpoint tie between `segmentStart` and blend) was not ported with the `segmentStart` matrix.
   - Not covered by the contract suite: the legacy generation-set methods and `saveBlocks`.
 - Status of the 4C decision (two app behaviors, "Residual risks, hand-offs, and findings" in the P05 entry): the service part of the Runtime first-visit race is fixed (P09, below); its single-flight load in `App.tsx` is U07's. After a Runtime profile is saved, the Trips table keeps the profiles it loaded earlier, so Show runtime bands shades nothing until a reload: U07's or P15's.
-- Still carried forward from 4B, unchanged: enforce Block label uniqueness when a Block is created or renamed (Decision 0039), as an added acceptance criterion of Package P14 (this sitting), with a proposed default label of the first free "Block <n>"; clean-up of placeholder Blocks already stored in databases that imported version 3 and 4 files (no owner yet); presenting the import report and recovery findings (U02).
+- Still carried forward from 4B, unchanged: clean-up of placeholder Blocks already stored in databases that imported version 3 and 4 files (no owner yet); presenting the import report and recovery findings (U02).
 - Tests deferred to later packages (all recorded in the P05 entry): focus trap, Escape, and focus return (U04's `keyboard.spec.ts`); a unit test for `calculateTimepointHeadways` (P15); Annual cost visible without table scroll at 1024 px (U06).
 - Unit-test and browser-test conventions are in "Standing rules" below and in `codex.md`. Browser-test helpers (all in `tests/ui/support/`): `dexieEnv.ts` (`runInPage`, `seedSnapshot`), `goldenFixture.ts` (the Federal BRT project), `tripsWorkspace.ts` (`createRouteWithPattern`, `createShiftReadySchedule`, `openGoldenTrips`, `settleFrames`), and from 4E `capacityFixture.ts` (400 Blocks, 2,000 Trips).
 - Review documents: read them from the review branch with `git show origin/claude/upbeat-ritchie-51mpy5:docs/review/<file>`. Never copy `docs/review/` into the work branch.
@@ -41,7 +50,7 @@
 Items that the user assigned to later packages. They are added to those packages' acceptance criteria and stay here, unchanged, until the owning package lands. The bullets above that describe them are carried forward verbatim.
 
 - **P09 (sitting 4E), the service part of the Runtime first-visit race. DONE in P09 (commit `fd1e65b`).** `ensureDefaultRuntimeProfile` is a check-then-write that is not atomic, and two overlapping calls can store duplicate Runtime assignments. Make it idempotent: one check-and-write in a single transaction, so two calls at once leave one Default profile and one assignment per standard Service day, and "Duplicate runtime assignment" cannot appear. Add a test that runs two calls at the same time against both repositories. P09 does not change `App.tsx`. Do not remove the up-front Default Runtime profile step or the reload after the Runtime save in `tests/ui/support/tripsWorkspace.ts`; U07 removes them.
-- **P14 (sitting 4F), DONE in P14 (commit `P14_HASH`):** enforce Block label uniqueness when a Block is created or renamed (Decision 0039), with a proposed default label of the first free "Block <n>".
+- **P14 (sitting 4F), DONE in P14 (commit `3df50b6`):** enforce Block label uniqueness when a Block is created or renamed (Decision 0039), with a proposed default label of the first free "Block <n>".
 - **U07 (sitting 4I):**
   - the single-flight Runtime load in `App.tsx` (the other half of the race above), then remove the two test-helper steps named above;
   - the Trips table must reload Runtime profiles after a Runtime profile is saved, so Show runtime bands shades without a page reload (the second behavior in the 4C decision bullet);
@@ -1014,7 +1023,7 @@ Criterion 1 says Assign is enabled within 1 s. The built application meets it (0
 
 - Date: 2026-10-23. Sitting 4F. Model: Sonnet (main session). No sub-agents: P12 is S2, so no Opus review (sitting plan).
 - Type: structural. Severity: S2.
-- Commit: `P12_HASH`.
+- Commit: `ce5852d`.
 
 ### Issues fixed
 
@@ -1093,7 +1102,7 @@ The review's golden file (`p2-blocking.golden.test.ts`, copied temporarily into 
 
 - Date: 2026-10-23. Sitting 4F. Model: Sonnet (main session). The sitting plan allows Haiku for the file moves; the moves were four `git mv` commands plus six one-line import edits, so the main session did them and no sub-agent was used. No Opus review: P13 is S2.
 - Type: structural. Severity: S2.
-- Commit: `P13_HASH`.
+- Commit: `2463328`.
 
 ### Issues fixed
 
@@ -1175,7 +1184,7 @@ User decisions implemented: decision 5 (prefix `'` on free-text cells, strip it 
 
 - Date: 2026-10-23. Sitting 4F. Model: Sonnet (main session). No sub-agents: P14 is S2, so no Opus review.
 - Type: structural. Severity: S2.
-- Commit: `P14_HASH`.
+- Commit: `3df50b6`.
 
 ### Issues fixed
 
@@ -1262,7 +1271,7 @@ Added acceptance criterion from the 4B note, done here: Block label uniqueness w
 
 - Date: 2026-10-23. Sitting 4F. Model: Sonnet (main session). No sub-agents.
 - Type: build. Severity: S2.
-- Commit: `B01_HASH`.
+- Commit: `e6bf12e`.
 
 ### Issues fixed
 
