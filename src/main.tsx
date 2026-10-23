@@ -52,7 +52,7 @@ async function start() {
     listBlockingBlocks: (id) => blocking.listBlockingBlocks(id),
   }), repository, undefined, saveStatus);
 
-  createRoot(document.getElementById('root')!).render(<React.StrictMode><App service={routeDefinition} tripService={tripGeneration} blockingService={blocking} costingService={costing} /></React.StrictMode>);
+  createRoot(document.getElementById('root')!).render(<React.StrictMode><App service={routeDefinition} tripService={tripGeneration} blockingService={blocking} costingService={costing} session={tabGuard} /></React.StrictMode>);
 }
 
 void start();

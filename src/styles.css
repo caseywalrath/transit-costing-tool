@@ -36,6 +36,7 @@ nav { display: flex; gap: 2px; }
 .notice { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; border-left: 4px solid; padding: 8px 10px; }
 .notice.error { background: #fff0ee; border-color: #b43c31; }
 .notice.success { background: #edf8ef; border-color: #24763e; }
+.notice.info { background: #eaf2f7; border-color: #24485d; }
 .notice button { border: 0; background: transparent; font-size: 1.25rem; }
 
 .empty-state { max-width: 620px; margin: 72px auto; border: 1px solid #bfcbd2; background: #fff; padding: 24px; }
@@ -228,6 +229,7 @@ th:first-child { z-index: 2; background: #e8eef1; }
 .action-menu { position: absolute; z-index: 8; top: calc(100% + 3px); right: 0; display: grid; min-width: 210px; max-width: min(420px, calc(100vw - 24px)); border: 1px solid #9eafb8; background: #fff; box-shadow: 0 3px 10px rgb(0 0 0 / .15); padding: 4px; }
 .action-menu-group { display: grid; gap: 3px; }
 .action-menu-label { padding: 4px 5px 2px; color: #536a77; font-size: .75rem; font-weight: 700; text-transform: uppercase; }
+.action-menu-note { padding: 0 8px 5px; color: #536a77; font-size: .75rem; }
 .action-menu-separator { height: 1px; margin: 3px 0; background: #c6d0d5; }
 .action-menu button { display: flex; align-items: center; min-width: 0; text-align: left; white-space: nowrap; }
 .action-menu .menu-item-label { min-width: 0; }

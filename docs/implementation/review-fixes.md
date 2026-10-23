@@ -4,8 +4,8 @@
 
 **Combined sitting 4G + 4H, in progress on the branch `claude/stage-4g-4h-review-fixes` (created from `origin/main` after the 4F merge, PR #19).** The user directed one overnight sitting on Sonnet: U01, U02, U03, U04, U05 in that order, then P16 as the last package. No sub-agents and no Opus review (none of these is S0 or S1). The user waived the Decision 0005 verification gate between the structural and UI packages, pushes to the work branch after every package, and does not want to be asked: a package that needs a decision its text does not settle is recorded here as "blocked: decision needed" and the next independent package continues (U05 depends on U04, U04 on U03).
 
-- Done on the branch: U01 (`8e347e4`).
-- Next package: U02.
+- Done on the branch: U01 (`8e347e4`), U02 (fix log entry; hash recorded in the entry).
+- Next package: U03.
 - Blocked: none.
 - Known failures: none.
 - Not started in this sitting: U06, U07, P15, U08, D01 (and every package not named above).
@@ -13,8 +13,8 @@
 - State at the start of this sitting (after 4F): the browser suite had 80 tests, 80 passed; unit tests 41 files, 637 tests; bundle `index-BdF3r0BO.js` 790.12 kB. The user must still read the first CI run (the B01 workflows have not run).
 - New in 4F that 4G relies on:
   - **U01. DONE** (U01 entry). `index.html` is a standards-mode document; no layout baseline changed. Layout problems seen in the screenshots are listed in the U01 entry, each with its owner.
-  - **U02.** `showError` shows `error.message` unless it matches a technical pattern, so the typed `BlockingValidationError` messages (P12, P14) show as written. `blockingError` in `BlockingWorkspace.tsx` still inserts a space before each capital letter in a message that is not in `blockingMessages` (U02 criterion 4 removes it). Thrown by the Blocking service now: "Another Block on this service day already uses that label.", "No consecutive Trips use the selected From and To Nodes.", "Select a preceding Trip for the deadhead.".
-  - **U02/U05 wording.** `block.deadheadOutsideGap` and `block.boundaryOverlap` (P12) have no sentence; the screen shows "Deadhead outside gap" and "Boundary overlap" (fallback). `block.minutesRequired` and `block.minutesInvalid` (P14) use "Enter a non-negative whole-minute duration.".
+  - **U02. DONE** (U02 entry). `showError` and every catch site use `userFacingError`; `blockingError` no longer splits words. Thrown by the Blocking service now (shown as written): "Another Block on this service day already uses that label.", "No consecutive Trips use the selected From and To Nodes.", "Select a preceding Trip for the deadhead.".
+  - **U05 wording.** `block.deadheadOutsideGap` and `block.boundaryOverlap` (P12) have no sentence; the screen shows "Deadhead outside gap" and "Boundary overlap" (fallback). `block.minutesRequired` and `block.minutesInvalid` (P14) use "Enter a non-negative whole-minute duration.".
   - **U03.** The Blocking workspace now loads the unassigned Trips with the Blocks (`listUnassignedTrips`), not from the Trips tab's list; the New Block dialog value comes from `proposeBlockLabel`.
   - **U05 (I-035).** `previewDeleteBlock` and `previewDeleteBlockingScenario` exist and nothing calls them. Their `sourceSignature` is the review token that `deleteBlock` and `deleteBlockingScenario` take. The Delete Block and Delete Blocking Scenario dialogs should show the counts and pass the preview's signature.
   - **Costing (U06).** A `CostingFinding` is a `ValidationFinding` (`ruleId`, `entityType`, `entityId`, `field`); an assumption finding names the field, so the screen can show it beside its input. `CostingWorkspace.tsx` still reads only `validation.length` and severity.
@@ -1412,3 +1412,67 @@ No architecture or decision record changes: no structure, data flow, or persiste
 
 - Any CSS that relied on a quirks-mode measurement would show it only in a layout the specs do not cover (the specs cover Trips, Runtime, and Costing; Route and Blocking were inspected by screenshot at 1024 and 1440 px, and no regression was seen).
 - Screenshots were taken in headless Chromium 141 only.
+
+## U02: Data-safety and error presentation
+
+- Date: 2026-10-23. Sitting 4G/4H (combined). Model: Sonnet (main session). No sub-agents.
+- Type: UI. Severity: S2.
+- Commit: see "Commit" at the end of this entry.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-039 | 5-014 | S2 | After a stale-source refusal Blocking kept its old data and refused every later edit until the planner changed day or reloaded the page. |
+| I-072 | 3-015, 4-017 | S3 | UI error paths showed `error.message` directly or lost it: Trips Block assignment, the Shift preview, the Trips CSV preview, Build Trips, Recalculation, and the copy and batch dialogs. The filter missed `QuotaExceededError`, `VersionError`, "not part of transaction", `TypeError`, and Dexie's "Database has been closed". `blockingError` inserted a space before every capital letter of a typed message, and raw message-key lists reached the screen. |
+| I-076 | 4-016 | S3 | A failed startup, a failed selection reload, and a failed JSON or CSV export had no error handling: the empty "Start a local planning project" screen appeared, or nothing happened. |
+| I-095 | 5-029 | S3 | Messages with no next step, technical terms, inconsistent Trip and Block capitalization, and wrong text. |
+
+User decisions implemented: none new. This package presents the P02 read-only status and the P10 last-backup time (hand-offs from 4A and 4E).
+
+### What changed
+
+- **Read-only tab.** `App` takes the P02 `SessionStatusQueries` (`main.tsx` passes the tab guard). A read-only tab shows the notice banner "This project is open in another tab. This tab is read-only." (a new `notice info` variant in `styles.css`; a tab whose database was upgraded elsewhere shows "The saved data was upgraded in another tab. This tab is read-only. Reload this page to edit."). The header shows "Read-only" instead of "Saving locally…" or "Local save failed", which a rejected write also set. Edit controls stay visible; writes are still rejected by P02.
+- **Last backup.** The Project menu shows "Last backup: <date and time>" or "No backup exported yet" under "Backup project JSON", from `getLocalDataProtection()`. `MenuButton` gained an optional `note` on an item (shown under the item and read as its accessible description; the item's name is unchanged).
+- **One error filter.** New `src/ui/errorMessages.ts` (`userFacingError`). It shows application text as written and returns the fallback for browser, Dexie, or JavaScript wording (`QuotaExceededError`, `VersionError`, `UnknownError`, "not part of transaction", `TypeError`, Dexie error names, "Database has been closed", and others) and for a raw message-key list. It also checks the error name, because a `DOMException` keeps its technical name there. `showError` and every catch site use it.
+- **Catch sites.** Trips Block assignment and unassignment, Shift preview and save, Trips CSV preview and import, Runtime profile CSV, pasted Runtime rows, Build Trips (a Headway such as "abc" now reads "Enter a Headway in minutes, such as 10, or as minutes and seconds, such as 7:30."), Recalculation review and apply, and the Runtime copy, Trip copy, and batch Pattern change dialogs show filtered text with a next step. The copy and batch dialogs no longer also post a second banner.
+- **Blocking.** `blockingError` returns the mapped sentence for a list of message keys (each once), the message as written for any other text (commas kept), and the fallback for technical text. Every Blocking write goes through `failed()`. After a stale-source refusal (`blockingScenario.sourceChanged` or `block.endpointsChanged`) it shows the refusal once and reloads the Blocking Scenarios and Blocks, so the next edit uses the current source. Message: "Blocking Scenario changed since the operation was reviewed. Nothing was saved, and the latest Blocks are loaded. Review them and try again." (it keeps the earlier sentence, so `single-tab.spec.ts:248` passes unchanged).
+- **Startup, selection, export.** A failed startup shows the error banner ("Unable to open your saved projects. Reload this page and try again.") and not the start screen. The Project, Scenario, Route, and Blocking Route selectors catch a failed reload ("Unable to load that selection. Reload this page and try again."). JSON and Route CSV export failures show the banner ("Unable to export the project backup. Your data was not changed. Try again.").
+- **Messages (5-029).** Next steps added to `node.referencedBeforeDelete`, `pattern.sequenceNormalized`, `block.missingTrip` (both lists), `runtime.noApplicableBand`, the "Review this item." fallback, the staged Shift save, Trips CSV and Runtime CSV imports, the pasted rows, and every "Unable to …" fallback in the copy and batch dialogs. "The Trip shift request is invalid." is replaced in the UI (the domain wording stays). Trip, Block, Pattern, Node, Route, Scenario, Direction, and Runtime capitalization follows the glossary in the validation messages and the Build Trips messages. The Runtime profile dialog says "Enter a name." or "Select a Pattern." for the field that is missing.
+- **Docs.** `architecture_overview.md` (tab model paragraph) and `docs/ui-conventions.md` (error text and read-only rules).
+
+### Files outside the package's owned list (recorded hand-offs)
+
+- `src/ui/MenuButton.tsx`: the optional item `note` (minimum change for criterion 2; U04 owns this file next and keeps it).
+- `src/ui/errorMessages.ts` (new) and its test: the shared filter. `App.tsx` imports it, and `BlockingWorkspace.tsx` cannot import `App.tsx` (circular).
+- `src/main.tsx`: passes the tab guard to `App`.
+- `src/ui/BlockingWorkspace.test.ts`: tests for `blockingError`.
+- `tests/ui/trip-bounds.spec.ts:60`: "Enter 500 trips or fewer." became "Enter 500 Trips or fewer." Same assertion (the Build Trips limit message is shown), new capitalization.
+
+### Tests added
+
+- `src/ui/errorMessages.test.ts` (16 tests): application text and `StorageFullError` pass through; 14 technical or key-list texts become the fallback; the error name is checked; non-Error values use the fallback. The old inline filter let 5 of 8 sample technical texts through (`QuotaExceededError`, `VersionError`, "not part of transaction", `TypeError`, "is not a function").
+- `src/ui/BlockingWorkspace.test.ts`, "blockingError" (4 tests): typed messages as written, commas kept, key lists once each with the fallback for an unknown key, technical text hidden. Against the old function all 4 failed (it returned " Another  Block on this service day already uses that label." and repeated "A Block can have only one pull-in.").
+- `tests/ui/data-safety.spec.ts` (6 tests, real IndexedDB): a read-only tab shows the banner and header, keeps its controls, and does not say "Local save failed" after a rejected write; the Project menu shows "No backup exported yet" and then "Last backup: <time>" after a download; a stale-source refusal reloads Blocking, shows the message once, and the retry in the same dialog saves; a duplicate Block label shows its typed message once, as written; a failed startup shows the banner and not the start screen, with no browser error text; after the database is removed under the page, a selection reload and a JSON export each show their plain banner message with no Dexie or "closed" text. On the unfixed code 5 of the 6 failed; the sixth (typed message) is a control, because that path never used `blockingError` (the unit test covers the old defect).
+- Proof they are stable: `--repeat-each=10 --workers=8` on `data-safety.spec.ts`: 60 of 60 passed.
+- Deliberate break: removing the reload in `failed()` made the stale-source test fail ("Expected substring: Renamed elsewhere, Received 26 ▾"); restored.
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 42 files, 657 tests passed (637 before; +16 and +4).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 88 passed, 0 failed (3.3 minutes); 82 before plus the 6 new tests. A first full run showed one failure, `single-tab.spec.ts:248`, because its assertion read the old stale-source sentence; the new message keeps that sentence, and the spec passes unchanged. The intermittent `unified-action-layer.spec.ts:139` passed in both full runs.
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-BntBzvlk.js` 793.57 kB (790.12 kB before).
+- Visual check at 1024 px (scratchpad, not committed): `/tmp/claude-0/-home-user-transit-costing-tool/97a11f95-8195-5c0d-bed4-917d1a55f2e0/scratchpad/shots/u02-readonly.png` (banner between the context bar and the Route bar; "Read-only" in the header) and `.../shots/u02-menu.png` (the note under "Backup project JSON"). Both read well.
+
+### Not done, or only partly
+
+- The persistence answer of `getLocalDataProtection()` ("kept" or "may be cleared") is not shown. The hand-off said "if wanted"; no acceptance criterion asks for it.
+- Repeated Block labels saved before P14 (open question 3): not addressed here; the import message is unchanged.
+- `RuntimeProfileDialog2` and the other name dialogs still close on submit before the write finishes, as before.
+- Messages listed in 5-029 under terminology that belong to U07 ("Run Time" as a term) are left for U07.
+
+### Residual risks
+
+- A notice banner stays until dismissed, so a stale-source message from an earlier refusal remains on screen after a successful retry (the test pins this). Auto-clearing notices is a UX decision no package owns.
+- Errors from `RuntimeDurationError` and similar domain classes are matched by class in one place only (Build Trips); other inputs still show the filter's fallback or the domain sentence.
