@@ -2,18 +2,16 @@
 
 ## Next sitting
 
-**Next sitting: 4I and 4J combined (U06, U07, P15, in that order), on Sonnet, then 4K as the plan says.** The combined sitting 4G + 4H is finished on the branch `claude/stage-4g-4h-review-fixes` (created from `origin/main` after the 4F merge, PR #19): U01, U02, U03, U04, U05, and P16 are done. The user did not ask for a pull request.
+**Sitting 4I and 4J combined (U06, U07, P15, then P17) is in progress on the branch `claude/stage-4i-4j-review-fixes`, from `origin/main` after the merge of PR #21 (U01 to U05, P16). If a later session reads this note, the sitting stopped early: continue from the first package under "Not started", on Sonnet, on this branch. Standing rules 1 to 10 below apply unchanged.** The user did not ask for a pull request.
 
-- Prerequisite: the pull request for `claude/stage-4g-4h-review-fixes` is merged into `main`. The user must open and merge it. Start sitting 4I from the new `origin/main` on a new branch, for example `claude/stage-4i-review-fixes`. Standing rules 1 to 8 below apply unchanged.
-- Done on the branch: U01 (`8e347e4`), U02 (`dea5288`), U03 (`215ec5c`), U04 (`d596125`), U05 (`25752ee`), P16 (`cf2d189`).
-- Packages for 4I: **U06** (Costing and Service day presentation: show each `ServiceDayValidationError` finding beside its field, Annual cost visible without table scroll at 1024 px, the Costing findings display) and **U07** (Runtime and Trips presentation, with the added acceptance criteria below). Both on Sonnet. U07 may need a UX decision that the package text does not settle; record it as "blocked: decision needed" and continue.
-- Decided by the user on 2026-10-23: sittings 4I and 4J are combined. Order: U06, U07, P15 (P16 already landed). The Decision 0005 gate between UI and structural work is waived again for this sitting, as it was for 4G/4H. The standing rules (push after every package, no questions, "blocked: decision needed" for an unsettled decision) apply as in the 4G/4H sitting; a prompt can restate them. After it: **4K** is U08 on Opus, then D01 on Sonnet, then the Vitest package below if time allows.
-- Blocked: none. No package of this sitting needed a user decision.
-- Known failures: none. The intermittent `unified-action-layer.spec.ts:139` failure is explained and fixed in the U04 entry (a deferred menu refocus); full runs after U04 (U04, U05, P16: three runs) did not show it. If it returns, diagnose it as a package failure.
-- Not started: U06, U07, P15, U08, D01.
-- State at the end of this sitting: unit tests 47 files, 696 tests; browser suite 125 tests, all passing; bundle `index-D0zj91Yn.js` 801.78 kB. The user must still read the first CI run (the B01 workflows have not run).
+- Done on this branch: U06 (`U06HASH`).
+- Packages left: **U07** (Runtime and Trips presentation, with the added acceptance criteria below), **P15** (Trips and Runtime rules out of `App.tsx`; the one display change is "incomplete" instead of "0.0 miles" for a Pattern with no distance), then **P17** (below) only if the first three are committed and pushed. Not started: U07, P15, P17, U08, D01, P18.
+- This sitting's rules (user, 2026-10-23): Sonnet main session, no sub-agents, no Opus review; the Decision 0005 gate is waived and each package is pushed after its commit and fix log entry; a design or UX decision that no package text, added criterion, or decision below settles is recorded in the fix log as "blocked: decision needed" with the exact question and options, and the next independent package goes on; branch protection and CI are the user's to watch, and the workflows are not edited.
+- Blocked: none so far.
+- Known failures: none. If the intermittent `unified-action-layer.spec.ts:139` failure returns, diagnose it as a package failure and fix the code.
+- State after U06: unit tests 48 files, 700 tests; browser suite 132 tests, all passing; bundle `index-sdD2Whrb.js` 805.01 kB. The user must still read the first CI run.
 - Carried forward for U06 and U07 from this sitting (details in the U01 to U05 entries):
-  - **U06:** Costing at 1024 px clips the Annual Cost column (U01 screenshots); the Costing screen reads only `validation.length` and severity; the persistence answer of `getLocalDataProtection()` is not shown.
+  - **U06 (done, `U06HASH`):** the Annual Cost column fits at 768, 1024, and 1440 px; an invalid estimate lists its findings; the persistence answer of `getLocalDataProtection()` is still not shown (no criterion asks for it), and the assumptions alert keeps its single sentence.
   - **U07:** Runtime totals show ":61"/":65" (U01 screenshots); the Shift drawer covers the Runtime Save button at some widths; the Runtime profile single-flight load, Runtime reload after save, and the Recalculate band picker (added criteria below); the React error boundary; user-facing text for `tripShift.timeBeforeServiceDay` and `inspectStaleTrips` findings; the shared-profile line should call `listRuntimeProfileServiceDays` (I-041).
   - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead; the Add-trip row drafts are not kept across a scope change; 24 dialogs were converted (the finding counted 28, four were removed by X01).
   - **P15:** the Trips and Pattern screens still show 0.0 miles for a Pattern with no distance (only Blocking treats a 0 total as incomplete); `calculateTimepointHeadways` has no unit test; display rounding in the Trips table. A CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
@@ -1701,3 +1699,85 @@ User decisions implemented: none new (finding 2-007 was marked "either rule acce
 
 - A `BlockSummary` built by hand without `revenueSeconds` has its seconds recovered with `Math.round(hours * 3600)`, which is exact for hours that come from whole seconds and moves a fractional-second value to the nearest second.
 - The later-band tie rule changes the Trip times of a Runtime profile only for a segment that starts at the exact midpoint of a gap, an event of one second in a gap; no stored data is rewritten, and a Trip keeps its stored times until recalculated.
+
+## U06: Costing and service-day presentation
+
+- Date: 2026-10-23. Sitting 4I/4J (combined). Model: Sonnet (main session). No sub-agents.
+- Type: UI. Severity: S2.
+- Commit: `COMMIT`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-031 | 5-005 | S2 | A refused Service day edit (a total above 365, a count that is not a whole number, a blank name) showed only in the error banner, away from its field. Costing then showed "Invalid inputs" and an alert that pointed at "listed problems" without listing any. |
+| I-033 | 5-007 | S2 | The Cost Breakdown table had a minimum width of 1,120 px, so at 1024 px it scrolled inside its frame and hid the Annual Cost column (acceptance criterion 7). |
+| I-058 | 1-014 | S3 | The Phase 5 plan listed the columns of the 5C design, not the implemented table. |
+| I-087 | 5-019 | S3 | The Total row summed daily hours across day types and its figures were not labelled as unrounded; "1 excluded Blocks" was not singular; View year appeared twice (toolbar and table header); dead Costing CSS. |
+| I-044 (loading state) | 6-002 | S2 | While the estimate loaded, the workspace said "Select a valid Blocking Scenario to calculate an estimate." and "Enter a rate to calculate costs." |
+
+User decisions implemented: C3 (the Total row leaves the daily columns blank, keeps the annual totals, and a note says totals are computed before rounding), decision 2 (5C is accepted, so the plan lists the implemented columns).
+
+### What changed
+
+- **Service days table (criterion 1).** `App.updateServiceDay` now returns the findings of a refused edit (`ServiceDayValidationError`) instead of showing the error banner; any other failure still goes to the banner. `RouteWorkspace` maps the findings of the edited field to text with the new `serviceDayFindingMessage` (`routeDefinitionService.ts`; `ServiceDayValidationError` uses the same function, so the banner text of earlier sittings is unchanged). The annual count (`NumericCommit`, which already had a field error with `aria-invalid`, `aria-describedby`, and "Saved value remains N.") takes the refusal as a returned string; a new `ServiceDayNameInput` does the same for the name ("Enter a service day name. Saved name remains Weekday."). Each message is a `field-error` under its input, in the same table row, and is announced as an alert. A later valid commit clears it. The saved value is unchanged until a valid edit.
+- **Costing findings (criterion 2).** An invalid estimate lists each of its findings as a bullet under the alert, in plain language with a next step (new `costingFindingMessage` in `CostingWorkspace.tsx`; 19 rules; a service day named by id is shown by name; an unknown rule shows "Review this item and correct it before trying again.").
+- **Annual cost at 1024 px (criterion 3).** The results table no longer has a minimum width; its header cells wrap and its cells keep their digits on one line, with 6 px side padding. At 1024 px the table is 960 px wide in a 960 px frame (before: 1,120 px in 960 px) and all nine columns show; at 768 px it also fits (704 in 704; before 1,120 in 704); at 1440 px it is unchanged.
+- **Loading (criterion 4).** The effect that calculates the estimate sets `calculating`. While it is true and there is no result, the workspace says "Calculating estimate…" (a status) in place of the old text, and the Cost Breakdown subtitle is not shown. "Select a valid Blocking Scenario to calculate an estimate." appears only when no calculation is running.
+- **Decision C3 (criterion 5).** The Total row shows Days, Blocks, and the three annual columns; Daily Revenue Hours, Daily Platform Hours, and Daily Cost are blank (the daily cost was already a dash). A note under the table reads "Totals are computed before rounding, so a total can differ by 1 from the sum of the rounded rows." "1 excluded Block" and "1 unassigned Trip" are singular. The View year selector in the table header is removed; View year stays in the toolbar (Decision 0028). The dead rules `.costing-setup-grid`, `.costing-context-fields`, `.costing-source-note`, and `.costing-year-selector` are deleted.
+- **Plan (criterion 6).** `docs/implementation/phase-05-costing.md` lists the implemented nine columns, the Total row rule, the note, and the 1024 px fit.
+
+### Behavior before and after (what you will see)
+
+- Route tab, Service days: typing 300 for the Weekday count when the others total 163 shows "Annual service days cannot total more than 365. This change would make the total 418. Saved value remains 255." under the field; before, only the red banner at the top of the page. A blank name shows "Enter a service day name. Saved name remains Weekday."
+- Costing, at 1024 and 768 px: the Annual Cost column is visible without scrolling the table.
+- Costing, invalid estimate: the red alert lists each problem, for example "Annual service days total more than 365. Correct the counts in the Service days table on the Route screen."
+- Costing: "Calculating estimate…" while it loads; the Total row has no daily figures and a note below the table; one View year selector; "0 excluded Blocks · 1 unassigned Trip".
+
+### Files outside the package's owned list (recorded hand-offs)
+
+- `src/application/routeDefinitionService.ts`: the exported `serviceDayFindingMessage` (the message table already existed there). No behavior change.
+- `tests/ui/costing-rules-from-service.spec.ts` (P11's spec): `yearOptions` read the year list from the table header selector (`getByLabel('Cost breakdown year')`), which no longer exists; it reads the toolbar selector (`getByLabel('View year')` inside `.module-toolbar`). Every assertion is unchanged.
+- `tests/ui/costing-workspace.spec.ts`: the existing assertion `0 excluded Blocks · 1 unassigned Trips` became `... 1 unassigned Trip` because the criterion makes the count singular. The same test's `getByLabel('View year')` still finds the one toolbar selector.
+- New `tests/ui/support/costingFixture.ts` (the small project that `costing-workspace.spec.ts` seeded inline, moved out so more tests can use it) and `src/ui/CostingWorkspace.test.ts`.
+
+### Tests added
+
+- `src/ui/CostingWorkspace.test.ts` (4 tests): the 365-day finding text; a service day named by id (and "a service day" when unknown); no message key or id appears in any of the 19 rules; the fallback.
+- `tests/ui/costing-workspace.spec.ts` (7 new tests, real IndexedDB): a total above 365 shows its message beside the field with `aria-invalid` and a description, not in the banner, keeps the stored value, and clears on a valid edit; a blank name does the same; an invalid estimate lists its finding; "Calculating estimate…" shows while the estimate's reads are held back (a raw IndexedDB write transaction on `trips`, `blocks`, and `patterns` keeps the estimate's reads waiting while the Blocking Scenarios and the assumptions load) and the old text never shows; the Total row, the note, and the singular counts; View year appears once and the Cost Breakdown section has no selector; the table does not scroll, and Annual Cost stays inside the viewport, at 1024 and 1440 px with an eight-digit cost, and the page does not scroll sideways at 768 px.
+- On the unfixed code 6 of the 7 new tests failed (the seventh, "View year appears once", passed because the table's selector had an `aria-label`; it now also asserts that the section has no combobox, which fails on the old page). The first failure of the Calculating test was a missing page reload in the test itself; its break below shows that it fails for its own reason.
+
+### Deliberate breaks (each applied, run, and restored)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| Service day field errors | the refusal text dropped (`serviceDayRefusal` returns nothing) | 2 fail |
+| Estimate findings | the list renders no items | 1 fails |
+| Calculating | `setCalculating(true)` removed | 1 fails |
+| Total row | the daily cells filled again | 1 fails |
+| AC7 width | `min-width: 1120px` restored | 1 fails |
+| Singular counts | the plural helper always adds "s" | 1 fails |
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 48 files, 700 tests passed (696 before; +4).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 132 passed, 0 failed (4.3 minutes); 125 before plus the 7 new tests. No `test.fail`, `test.skip`, or `test.fixme`. `unified-action-layer.spec.ts:139` passed.
+- New spec stress run, `--repeat-each=10 --workers=8` over `costing-workspace.spec.ts` and `costing-rules-from-service.spec.ts` (12 tests): 120 of 120 passed.
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-sdD2Whrb.js` 805.01 kB (801.78 kB before).
+- Visual inspection (scratchpad, not committed). Costing at 768, 1024, and 1440 px, before and after: `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/costing-{before,after}-{768,1024,1440}.png`. Route Service days with two refused edits at 1024 px: `.../shots/route-service-days-errors-1024.png`. Costing with an invalid estimate at 1024 px: `.../shots/costing-invalid-findings-1024.png`. Seen: before, at 1024 px the table is cut after "Annual Platform Hours"; after, all nine columns show, the header cells wrap on two lines at 768 px, the Total row is blank under the daily columns, and the note sits under the table. The field messages are red 12 px text under the input, as the Node editor's.
+
+### Documentation
+
+`docs/implementation/phase-05-costing.md` (columns, Total row, note, width). No architecture or decision record changed: no structure, data flow, or persistence changed.
+
+### Not done, or only partly
+
+- The recorded answer of `getLocalDataProtection()` ("kept" or "may be cleared") is not shown on the Costing screen; no acceptance criterion asks for it.
+- The assumptions alert ("Review the rate, years, horizon, and escalation…") keeps its single sentence; only the estimate's findings are listed.
+- At 768 px the Save button of Costing Assumptions wraps below the title (unchanged).
+
+### Residual risks
+
+- The estimate findings that name a Trip or a Block cannot say which one: the finding holds an id and the screen holds no Trips. The text says what to review.
+- `ServiceDayNameInput` is uncontrolled (`defaultValue`), as the field was; a refused name stays typed in the field with the message beside it until the planner corrects it or reloads.

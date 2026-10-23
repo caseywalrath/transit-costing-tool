@@ -126,10 +126,15 @@ const SERVICE_DAY_MESSAGES: Record<string, (finding: ValidationFinding) => strin
   'serviceDay.annualServiceDaysExceed365': (finding) => `Annual service days cannot total more than ${finding.parameters?.maximum ?? MAX_ANNUAL_SERVICE_DAYS}. This change would make the total ${finding.parameters?.total}.`,
 };
 
+/** The plain-language text for one Service day finding, so a screen can show it beside the field the finding names. */
+export function serviceDayFindingMessage(finding: ValidationFinding): string {
+  return SERVICE_DAY_MESSAGES[finding.messageKey]?.(finding) ?? 'Review this service day.';
+}
+
 /** A Service day edit was refused. `findings` name the Service day and the field, so a screen can show each message beside its field. */
 export class ServiceDayValidationError extends Error {
   constructor(readonly findings: ValidationFinding[]) {
-    super(findings.map((finding) => SERVICE_DAY_MESSAGES[finding.messageKey]?.(finding) ?? 'Review this service day.').join(' '));
+    super(findings.map(serviceDayFindingMessage).join(' '));
     this.name = 'ServiceDayValidationError';
   }
 }
