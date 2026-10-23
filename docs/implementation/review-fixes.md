@@ -5,7 +5,7 @@
 **Next sitting: 4I (U06, U07), on Sonnet, then 4J and 4K as the plan says.** The combined sitting 4G + 4H is finished on the branch `claude/stage-4g-4h-review-fixes` (created from `origin/main` after the 4F merge, PR #19): U01, U02, U03, U04, U05, and P16 are done. The user did not ask for a pull request.
 
 - Prerequisite: the pull request for `claude/stage-4g-4h-review-fixes` is merged into `main`. The user must open and merge it. Start sitting 4I from the new `origin/main` on a new branch, for example `claude/stage-4i-review-fixes`. Standing rules 1 to 8 below apply unchanged.
-- Done on the branch: U01 (`8e347e4`), U02 (`dea5288`), U03 (`215ec5c`), U04 (`d596125`), U05 (`25752ee`), P16 (fix log entry; hash recorded in the entry).
+- Done on the branch: U01 (`8e347e4`), U02 (`dea5288`), U03 (`215ec5c`), U04 (`d596125`), U05 (`25752ee`), P16 (`cf2d189`).
 - Packages for 4I: **U06** (Costing and Service day presentation: show each `ServiceDayValidationError` finding beside its field, Annual cost visible without table scroll at 1024 px, the Costing findings display) and **U07** (Runtime and Trips presentation, with the added acceptance criteria below). Both on Sonnet. U07 may need a UX decision that the package text does not settle; record it as "blocked: decision needed" and continue.
 - After 4I: **4J is now P15 only** (P16 landed in the combined sitting). **4K** is U08 on Opus, then D01 on Sonnet.
 - Blocked: none. No package of this sitting needed a user decision.
@@ -1646,7 +1646,7 @@ User decision implemented: 15 (the Route short name in the Pattern pill, only fo
 
 - Date: 2026-10-23. Sitting 4G/4H (combined; the last package). Model: Sonnet (main session). No sub-agents.
 - Type: structural. Severity: S3.
-- Commit: see "Commit" at the end of this entry.
+- Commit: `cf2d189`.
 
 ### Issues fixed
 
