@@ -57,7 +57,7 @@ function tripTableImportSignature(trips: Trip[], patterns: Map<string, RoutePatt
 
 /** The `TripGenerationRepository` methods that write. Every call to one is published through the save-status publisher. */
 export const TRIP_GENERATION_WRITE_METHODS: readonly string[] = [
-  'saveGenerationSet', 'saveTrips', 'saveBlocks', 'replaceGenerationSet', 'insertTripsAtomically', 'saveTripChangesAtomically',
+  'saveGenerationSet', 'saveTrips', 'replaceGenerationSet', 'insertTripsAtomically', 'saveTripChangesAtomically',
   'saveRegeneratedTripsWithUndo', 'restoreLastTripRegenerationUndo', 'deleteTripsAtomically', 'saveTripProfile', 'copyTripProfileAtomically',
   'deleteTripProfile', 'commitRuntimeCopyAtomically', 'replaceTripsForDayAtomically',
 ];

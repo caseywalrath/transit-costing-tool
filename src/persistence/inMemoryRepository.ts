@@ -387,11 +387,11 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
   }
   async listBlocks(serviceDayId: string, tripProfileId?: string): Promise<Block[]> { return inKeyOrder(this.blocks.values()).filter((block) => block.serviceDayId === serviceDayId && (!tripProfileId || block.tripProfileId === tripProfileId)); }
   async listTripsForProfile(tripProfileId: string): Promise<Trip[]> { return inKeyOrder(this.trips.values()).filter((trip) => trip.tripProfileId === tripProfileId); }
+  async listTripsForScenarioProfile(scenarioId: string, tripProfileId: string): Promise<Trip[]> { return inKeyOrder(this.trips.values()).filter((trip) => trip.scenarioId === scenarioId && trip.tripProfileId === tripProfileId); }
   async listBlocksForProfile(tripProfileId: string): Promise<Block[]> {
     const scenarioIds = new Set(inKeyOrder(this.blockingScenarios.values()).filter((scenario) => scenario.tripProfileId === tripProfileId).map((scenario) => scenario.id));
     return inKeyOrder(this.blocks.values()).filter((block) => block.tripProfileId === tripProfileId || (block.blockingScenarioId !== undefined && scenarioIds.has(block.blockingScenarioId)));
   }
-  async saveBlocks(blocks: Block[]): Promise<void> { assertTripProfileReferences(inKeyOrder(this.trips.values()), blocks); for (const block of blocks) this.blocks.set(block.id, block); }
   async replaceTripsForDayAtomically(preview: TripCopyPreview): Promise<void> {
     const previousTrips = new Map(this.trips);
     const previousBlocks = new Map(this.blocks);

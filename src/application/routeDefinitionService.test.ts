@@ -8,6 +8,7 @@ import { RouteDefinitionService, ServiceDayValidationError } from './routeDefini
 import type { RouteDefinitionRepository, TripGenerationRepository } from './ports';
 import { metadata, newId } from '../domain/ids';
 import type { Block, ProjectSnapshot, Trip } from '../domain/types';
+import { addBlocks } from '../testSupport/addBlocks';
 import { addRouteNodes, addTwoStopPattern, savePattern, savePatternDraft } from '../testSupport/routeFixtures';
 
 function createService(repository = new InMemoryRouteDefinitionRepository()) {
@@ -265,7 +266,7 @@ describe('Scenario-wide writes re-read stored records', () => {
     const stale = (await repository.getScenarioRecords(scenario.id))!;
     // Work saved by another part of the app after the caller took its copy.
     await repository.saveTrips([{ ...makeTrip('trip-1', 1000), stopTimes: makeTrip('trip-1', 1060).stopTimes }, makeTrip('trip-2', 5000)]);
-    await repository.saveBlocks([{ id: 'block-1', scenarioId: scenario.id, serviceDayId: weekday.id, tripProfileId: 'trip-profile', label: 'NEW', activities: [], ...metadata(at) }]);
+    await addBlocks(repository, [{ id: 'block-1', scenarioId: scenario.id, serviceDayId: weekday.id, tripProfileId: 'trip-profile', label: 'NEW', activities: [], ...metadata(at) }]);
     await repository.saveRuntimeProfile({ ...runtimeProfile, name: 'EDITED-NAME' });
     return { repository, service, stale };
   }
@@ -410,7 +411,7 @@ describe('Service day and Scenario validation', () => {
 
 // The P09 tests that need real storage run against the in-memory repository and the Dexie repository on fake-indexeddb.
 let databaseCounter = 0;
-type TestRepository = RouteDefinitionRepository & Pick<TripGenerationRepository, 'saveBlocks' | 'listBlocks'>;
+type TestRepository = RouteDefinitionRepository & Pick<TripGenerationRepository, 'listBlocks'>;
 const implementations: { name: string; create(): Promise<{ repository: TestRepository; close(): Promise<void> }> }[] = [
   { name: 'in-memory', create: async () => ({ repository: new InMemoryRouteDefinitionRepository(), close: async () => {} }) },
   {
@@ -447,7 +448,7 @@ describe.each(implementations)('Node deletion removes the non-revenue activities
     const [a, b, garage] = withNodes.nodes;
     const base = { scenarioId: created.records.scenario.id, serviceDayId: created.records.serviceDays[0].id, ...metadata() };
     const block = (value: Block) => value;
-    await repository.saveBlocks([block({ id: 'b1', ...base, label: '1', activities: [
+    await addBlocks(repository, [block({ id: 'b1', ...base, label: '1', activities: [
       { id: 'b1-out', type: 'pullOut', sequence: 0, minutesBeforeFirstTrip: 5, fromNodeId: garage.id, toNodeId: a.id },
       { id: 'b1-dh', type: 'deadhead', sequence: 1, minutesAfterPreviousTrip: 4, fromNodeId: a.id, toNodeId: b.id },
       { id: 'b1-in', type: 'pullIn', sequence: 2, minutesAfterLastTrip: 5, fromNodeId: b.id, toNodeId: garage.id },
@@ -481,7 +482,7 @@ describe.each(implementations)('Node deletion removes the non-revenue activities
     const { repository, service, routeId, nodes, garage, dayId } = await setup();
     const preview = await service.previewNodeChanges(routeId, nodes.filter((node) => node.id !== garage.id));
     const b3 = (await blocksOf(repository, dayId)).get('b3')!;
-    await repository.saveBlocks([{ ...b3, activities: [...b3.activities, { id: 'b3-in', type: 'pullIn', sequence: 1, minutesAfterLastTrip: 5, fromNodeId: nodes[1].id, toNodeId: garage.id }] }]);
+    await addBlocks(repository, [{ ...b3, activities: [...b3.activities, { id: 'b3-in', type: 'pullIn', sequence: 1, minutesAfterLastTrip: 5, fromNodeId: nodes[1].id, toNodeId: garage.id }] }]);
     await expect(service.commitNodeChanges(preview.previewToken)).rejects.toThrow('changed after this review');
     expect((await blocksOf(repository, dayId)).get('b3')!.activities.map((activity) => activity.id)).toEqual(['b3-dh', 'b3-in']);
     expect((await repository.getRouteDefinition(routeId))!.nodes.map((node) => node.id)).toContain(garage.id);

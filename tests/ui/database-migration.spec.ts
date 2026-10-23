@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 // IndexedDB stores Dexie's version times ten, so Dexie version 4 is IndexedDB version 40. Seeding version 4 would be Dexie 0.4, which
 // runs every upgrade from version 1 (review finding 3-014): the Default Trip profile would be created and the Block discarded.
-test('database version 7 preserves a Dexie version 4 project and adds operational stores', async ({ page }) => {
+test('database version 8 preserves a Dexie version 4 project and adds operational stores', async ({ page }) => {
   await page.goto('/src/styles.css');
   await page.evaluate(async () => {
     await new Promise<void>((resolve, reject) => {
@@ -65,7 +65,7 @@ test('database version 7 preserves a Dexie version 4 project and adds operationa
     request.onerror = () => reject(request.error);
   }));
 
-  expect(migrated.version).toBe(70);
+  expect(migrated.version).toBe(80);
   expect(migrated.stores).toContain('costingAssumptions');
   expect(migrated.stores).toContain('costPlans');
   expect(migrated.stores).toContain('tripRegenerationUndo');

@@ -2,11 +2,11 @@
 
 ## Next sitting
 
-**F1 (UI follow-up fixes, Sonnet) is finished on the branch `claude/stage-4k-review-fixes` (hand-offs 1, 2, 4, 5, and 7; fix log entry "F1: UI follow-up fixes"). Every Stage 4 package and F1 are done. Next: package F2 (structural follow-up and maintenance, Sonnet) in its own session on the same branch. Its instructions are `docs/implementation/followup/F2-structural-maintenance.md`. The user approved the recommendation for every hand-off on 2026-10-23 (list below).**
+**F1 (UI follow-up fixes) and F2 (structural follow-up and maintenance), both Sonnet, are finished on the branch `claude/stage-4k-review-fixes` (fix log entries "F1: UI follow-up fixes" and "F2: Structural follow-up and maintenance"). Every Stage 4 package and both follow-up packages are done; no work package is open. What remains is the deferred list below (3, 8, 14, 15, 19), which has no owner until the user assigns one, and the user's own steps: read the first CI run of the branch and merge it.**
 
 - Post-Stage-4 hand-offs, as approved by the user on 2026-10-23:
   - F1 (fix), **DONE in F1 (commit: see `git log`)**: 1 Add-trip row draft dropped on a scope change; 2 Pattern draft lost right after Save nodes (app cause, then the spec; the loss itself was not reproduced, "Add pattern" is now disabled during a save); 4 Runtime profile and Trips delete dialogs stay open after a refusal; 5 Node impact omits non-revenue activities, Trip profile delete omits Blocking Scenarios; 7 storage protection answer not shown.
-  - F2 (fix): 10 Trip Profile index; 11 placeholder Block clean-up (both in Dexie version 8); 12 time the U09 calculation; 13 contract tests for `saveBlocks` (or delete it) and the generation-set methods; 16 delete `makePatternPoint`; 18 document the CSV importer rule.
+  - F2 (fix), **DONE in F2 (commit: see `git log`)**: 10 Trip Profile index and 11 placeholder Block clean-up (Dexie version 8, Decision 0043); 12 time the U09 calculation (measured; no code change, see the F2 entry); 13 `saveBlocks` deleted (no production caller) and contract tests for the generation-set methods; 16 `makePatternPoint` deleted; 18 the CSV importer rule is in `architecture_overview.md`.
   - Deferred, no work: 3 Shift panel covers bottom rows (decide after the U10 review; option: a collapse button); 8 screen-reader check (needs a person); 14 one unexplained timeout in `local-data-protection.spec.ts`; 15 wall-clock defaults in about 40 domain functions; 19 newer dependency majors without advisories.
   - Closed: 6 U09 line does not name rows; 9 menu typeahead and the radio role of Compatible only; 17 bare CR in a CSV label; 20 Route draft bullets and historical plans left as they are.
 
@@ -29,7 +29,7 @@
   - **U07:** the Runtime totals read `:61` by design (the Decision 0010 duration format). The Shift drawer over the Runtime Save button is accepted as is (U10 redesigns the drawer); the `inspectStaleTrips` findings now have their status line (U09).
   - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead. (The Add-trip row draft now asks before a scope change: done in F1.)
   - **P15:** a CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
-  - **P17:** `makePatternPoint` has no caller left (harmless).
+  - **P17:** `makePatternPoint` deleted in F2.
   - **P16 leftovers:** `resetPatternService` (legacy mutator) still stamps wall-clock `now`; about 40 other domain signatures still default `now` to the wall clock.
 - Decisions made by the user on 2026-10-23 (all follow the recommended option). `docs/review/fix-packages.md` is on the review branch and is not edited; this note is the record.
   1. `deletePattern` gets a review token (Decision 0041 pattern). **DONE in P17 (`87359e0`).**
@@ -42,9 +42,9 @@
   8. U07 blocked item 2: option A, a status line under the "Run Times Have Changed" indicator: package **U09**. **DONE in U09.**
 - Other hand-offs still open from earlier sittings:
   - **Decided by the user on 2026-10-23 (Option B), done in U07.** Under a segment-start or blended profile, an anchor that fits two first departures is rejected and the candidates are listed (Decision 0031 addendum).
-  - **CSV.** The Trips CSV and ZIP writer live in `src/application`. A free-text cell that begins with `=`, `+`, `-`, or `@` is written with a leading apostrophe; the Trips CSV import and Runtime paste remove it (`restoreFormulaText`). A new CSV importer must do the same for the same columns.
+  - **CSV.** The Trips CSV and ZIP writer live in `src/application`. A free-text cell that begins with `=`, `+`, `-`, or `@` is written with a leading apostrophe; the Trips CSV import and Runtime paste remove it (`restoreFormulaText`). A new CSV importer must do the same for the same columns (also written in `architecture_overview.md`, F2).
   - **U05 hand-offs from 4E: all three done in F1** (the Node editor's impact dialog lists `nonRevenueImpact`; the Trip profile confirmation states `blockingScenarioCount`; the Runtime profile and Trips delete dialogs close after a refusal).
-  - **Persistence (no owner yet):** `listProfileTrips` in `main.tsx` loads every Trip of the Scenario and filters by Trip Profile in memory; a compound index on Scenario and Trip Profile would avoid reading Trips of other profiles. Placeholder Blocks already stored in databases that imported version 3 and 4 files have no clean-up. Not covered by the contract suite: the legacy generation-set methods and `saveBlocks`. One timeout in 50 runs of `local-data-protection.spec.ts` (P10 entry) is unexplained; it did not return in 100 later runs.
+  - **Persistence:** the Trip Profile index, the placeholder Block clean-up, the generation-set contract tests, and `saveBlocks` are done in F2 (Dexie version 8). Still open: one timeout in 50 runs of `local-data-protection.spec.ts` (P10 entry) is unexplained; it did not return in 100 later runs.
 - Unit-test and browser-test conventions are in "Standing rules" below and in `codex.md`. Browser-test helpers (all in `tests/ui/support/`): `dexieEnv.ts` (`runInPage`, `seedSnapshot`), `goldenFixture.ts` (the Federal BRT project), `tripsWorkspace.ts` (`createRouteWithPattern`, `createShiftReadySchedule`, `openGoldenTrips`, `settleFrames`), and `capacityFixture.ts` (400 Blocks, 2,000 Trips).
 - Review documents: read them from the review branch with `git show origin/claude/upbeat-ritchie-51mpy5:docs/review/<file>`. Never copy `docs/review/` into the work branch.
 
@@ -2411,6 +2411,56 @@ Keyboard: Tab order is ×, earlier, later, the Step radios (one Tab stop; arrow 
 - "Duplicate" and "Reverse" on a saved Pattern also open a draft and stay enabled during a save (the same window, not asked for).
 - A Node impact line can undercount against the commit when removing a revenue Trip also removes the connection activities after it.
 - No screen-reader check of the two-line Project menu note or of the new question dialog.
+
+## F2: Structural follow-up and maintenance
+
+- Date: 2026-10-23. Model: Sonnet (main session). No sub-agents. Expedited verification as approved by the user (`docs/implementation/followup/F2-structural-maintenance.md`).
+- Type: structural; no layout or interaction change. Hand-offs 10, 11, 12, 13, 16, and 18.
+- Commit: see `git log`.
+
+### Issues and what changed
+
+- **10 and 11. Dexie version 8** (Decision 0043). `trips` gains `[scenarioId+tripProfileId]` (every earlier index kept). The upgrade deletes Blocks whose `blockingScenarioId` is absent, null, or empty, writes nothing else, and on an error logs a warning and leaves the data as it was. `listProfileTrips` in `src/main.tsx` is now `repository.listTripsForScenarioProfile` (Dexie through the index; in-memory by filter; in the contract suite). The export schema stays 6. Tests that named version 7 now name 8 (`repository.test.ts`, `database.test.ts`, `database-migration.spec.ts`, `scenario-copy-recovery.spec.ts`); the assertions are the same apart from the version number.
+- **12. U09 timing.** Measured, no code change (below).
+- **13. `saveBlocks`.** No production code called it (only the `*_WRITE_METHODS` list named it, and tests used it for setup), so it is deleted from the port, both repositories, and the list. The tests that used it call `addBlocks` (`src/testSupport/addBlocks.ts`, through the project snapshot). `listGenerationSets`, `saveGenerationSet`, and `getGenerationSet` stay (decision 13) and are in the contract suite.
+- **16.** `makePatternPoint` deleted from `src/domain/commands.ts`; typecheck shows no caller.
+- **18.** The CSV importer rule is in `architecture_overview.md` (CSV rules) and the open hand-off is closed.
+- Documents: `docs/data-schema.md` (index table, migration history), `architecture_overview.md`, Decision 0043, `codex.md`.
+
+### Item 12: timing the U09 calculation
+
+Capacity fixture (500 Trips on the day, `allOutbound`, blend-segments profile), every Trip stamped with revision 0 of its profile; "stale" sets the profile's `calculationRevision` to 1 so every Trip is revision-stale and U09 calculates each one to find its reason.
+
+| Measure | Not stale (ms) | All stale (ms) |
+| --- | --- | --- |
+| `inspectStaleTrips`, in-memory repository under Node (V8), 6 runs | 2, 1, 1, 1, 1, 1 | 120 (first run), 62, 65, 58, 58, 59 |
+| Production build served by `vite preview`, Chromium 141, 1600 x 1000: click on Trips until 400 or more rows are shown (and the "Run Times Have Changed" indicator, when stale), 5 runs each, fresh browser each time | 1,516 (first run); 612; 761; 691; 703 | 873; 880; 1,072; 816; 822 |
+
+The calculation adds about 60 ms once warm and about 120 ms on a cold first call. The browser difference (about 170 ms by medians) also contains drawing the flagged rows and the indicator, which a stale Trip needs whether or not U09 calculates a reason. That is under the 100 ms warm threshold and the first call is at it, so no cache was added. If the Trips load at 2,000 Trips is ever read as slow, cache `markTripRecalculated` per Pattern and departure first.
+
+### Tests added
+
+- `database.test.ts`: version 7 added to the upgrade test for every earlier version (7 cases, was 6) with the new index checked; two tests for version 8 (placeholder Blocks with an absent, null, and empty `blockingScenarioId` are deleted, the two normal Blocks come back byte-identical, every Trip is byte-identical, every other table keeps its count, the index returns only that profile's Trips of that Scenario; a database without placeholders opens and changes no Block).
+- `repositoryContract.test.ts` (both repositories, +6 cases): `listTripsForScenarioProfile` (profile, Scenario, key order); generation sets (save, get, list with route and Pattern filters, replace); JSON backup at schema 6 exported, restored with `replace` unchanged, and imported as a `copy`.
+- Fail-first: the version 8 tests failed on the code before the upgrade (11 failed: the version number, the index, the clean-up); the Trip Profile read failed to compile before the method existed; the generation-set test was shown to catch a broken Pattern filter in either repository (the methods existed, so it could not fail on old code).
+
+### Deliberate break
+
+| Test | Break | Result |
+| --- | --- | --- |
+| The version 8 upgrade test (the riskiest) | the clean-up filter changed from "no `blockingScenarioId`" to every Block | 6 tests fail (the version 4 to 7 seeded upgrades and both version 8 tests); restored from a saved copy |
+
+### Verification run
+
+- `pnpm typecheck`: clean. `pnpm test`: 52 files, 761 tests passed (752 before, +9: 2 version 8, 1 version 7 case, 6 contract).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 171 passed, 0 failed (5.0 minutes). No `test.fail`, `test.skip`, or `test.fixme`. No browser spec added (no stress run needed).
+- `pnpm build`: succeeds, bundle `index-RgqV9lg4.js` 809.63 kB (809.21 kB after F1).
+
+### Deferred and residual risks
+
+- The version 8 upgrade's "on error, leave the data" path is not exercised by a test: an error inside an IndexedDB upgrade transaction can abort the whole upgrade in some engines, so a simulated failure would test the engine, not the code. It follows the version 7 pattern.
+- Placeholder Blocks are deleted without a report (the version 4 upgrade reports its count in the unit test only). They never appeared in Blocking.
+- The Trips load figure for 2,000 Trips was not measured.
 
 ## Register map
 

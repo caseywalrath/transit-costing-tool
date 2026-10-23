@@ -33,7 +33,7 @@ async function start() {
   );
   const routeDefinition = new RouteDefinitionService(repository, backup, undefined, saveStatus, protection);
   const tripGeneration = new TripGenerationService(repository, undefined, saveStatus);
-  const listProfileTrips = async (scenarioId: string, tripProfileId: string) => (await repository.db.trips.where('scenarioId').equals(scenarioId).toArray()).filter((trip) => trip.tripProfileId === tripProfileId);
+  const listProfileTrips = (scenarioId: string, tripProfileId: string) => repository.listTripsForScenarioProfile(scenarioId, tripProfileId);
   const listScenarioPatterns = (scenarioId: string) => repository.db.patterns.where('scenarioId').equals(scenarioId).toArray();
   const blocking = new BlockingApplicationService(new DexieBlockingRepository(repository.db), {
     getTrip: (id) => repository.getTrip(id),

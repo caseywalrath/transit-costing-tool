@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouteDefinitionService } from '../application/routeDefinitionService';
 import { duplicateScenario, projectSnapshotWithScenario, snapshotForScenario } from '../domain/project';
 import type { RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
-import type { CostingAssumptions, ProjectSnapshot, Trip, TripRegenerationUndo } from '../domain/types';
+import type { CostingAssumptions, ProjectSnapshot, Trip, TripGenerationSet, TripRegenerationUndo } from '../domain/types';
 import { asSnapshot, goldenWithAltBlocking } from '../testSupport/goldenBackup';
 import { ProjectBackupService } from './backupRepository';
 import { TransitDatabase } from './database';
@@ -146,6 +146,21 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       expect(normalize((await repository.getProjectSnapshot(snapshot.project.id))!)).toEqual(normalize(snapshot));
     });
 
+    it('exports a JSON backup at schema 6 and restores it unchanged (Dexie version 8 changes no backup format)', async () => {
+      const { snapshot } = fixture();
+      await repository.saveProjectSnapshot(snapshot);
+      const backup = new ProjectBackupService((id) => repository.getProjectSnapshot(id), (value) => repository.saveProjectSnapshot(value));
+      const payload = await backup.exportProject(snapshot.project.id);
+      expect(JSON.parse(payload).exportSchemaVersion).toBe(6);
+      const before = JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value);
+      await backup.importProject(payload, 'replace');
+      expect(JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value)).toBe(before);
+      // A copy import is a second, independent project with the same number of Trips.
+      const copy = await backup.importProject(payload, 'copy');
+      expect(copy.id).not.toBe(snapshot.project.id);
+      expect((await repository.getProjectSnapshot(copy.id))!.trips).toHaveLength(snapshot.trips.length);
+    });
+
     it('reads and writes a Route definition, and removes the Patterns and Directions a write no longer contains', async () => {
       const { snapshot } = fixture();
       await repository.saveProjectSnapshot(snapshot);
@@ -169,6 +184,43 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       await repository.saveProjectSnapshot({ ...snapshot, directions: [] });
       expect('directions' in (await repository.getScenarioRecords(scenarioId))!).toBe(false);
       expect('directions' in (await repository.getProjectSnapshot(snapshot.project.id))!).toBe(false);
+    });
+  });
+
+  describe('Trip Profile reads and the historical generation-set methods', () => {
+    it('lists the Trips of one Trip Profile of one Scenario, in key order, and nothing for another Scenario or profile', async () => {
+      const { snapshot, scenarioId, defaultProfile, altProfile } = fixture();
+      await repository.saveProjectSnapshot(snapshot);
+      for (const profile of [defaultProfile, altProfile]) {
+        const expected = snapshot.trips.filter((trip) => trip.scenarioId === scenarioId && trip.tripProfileId === profile.id).map((trip) => trip.id).sort();
+        expect(expected.length).toBeGreaterThan(1);
+        expect((await repository.listTripsForScenarioProfile(scenarioId, profile.id)).map((trip) => trip.id)).toEqual(expected);
+      }
+      expect(await repository.listTripsForScenarioProfile('another-scenario', defaultProfile.id)).toEqual([]);
+      expect(await repository.listTripsForScenarioProfile(scenarioId, 'another-profile')).toEqual([]);
+    });
+
+    it('saves, reads, and filters generation sets (old backups still carry them, decision 13)', async () => {
+      const { snapshot, scenarioId, weekday } = fixture();
+      await repository.saveProjectSnapshot(snapshot);
+      const route = snapshot.routes[0];
+      const [patternA, patternB] = snapshot.patterns;
+      const stamp = '2026-10-22T00:00:00.000Z';
+      const set = (id: string, patternId: string, serviceDayId = weekday): TripGenerationSet => ({ id, scenarioId, routeId: route.id, serviceDayId, patternId, name: id, firstDeparture: 21600, headwaySeconds: 600, limit: { mode: 'tripCount', tripCount: 3 }, generationRevision: 0, createdAt: stamp, updatedAt: stamp });
+      const otherDay = snapshot.serviceDays.find((day) => day.id !== weekday)!.id;
+      await repository.saveGenerationSet(set('set-b', patternB.id));
+      await repository.saveGenerationSet(set('set-a', patternA.id));
+      await repository.saveGenerationSet(set('set-other-day', patternA.id, otherDay));
+      expect(await repository.getGenerationSet('set-a')).toEqual(set('set-a', patternA.id));
+      expect(await repository.getGenerationSet('missing')).toBeUndefined();
+      expect((await repository.listGenerationSets(weekday)).map((item) => item.id)).toEqual(['set-a', 'set-b']);
+      expect((await repository.listGenerationSets(weekday, route.id, patternA.id)).map((item) => item.id)).toEqual(['set-a']);
+      expect(await repository.listGenerationSets(weekday, 'another-route')).toEqual([]);
+      expect((await repository.listGenerationSets(otherDay)).map((item) => item.id)).toEqual(['set-other-day']);
+      // Saving again with the same id replaces the set.
+      await repository.saveGenerationSet({ ...set('set-a', patternA.id), name: 'renamed' });
+      expect((await repository.getGenerationSet('set-a'))!.name).toBe('renamed');
+      expect(await repository.listGenerationSets(weekday)).toHaveLength(2);
     });
   });
 
