@@ -1,6 +1,6 @@
 # Decision 0004: Trip Regeneration and Manual Changes
 
-- Status: Superseded for Phase 2R by Decision 0010
+- Status: Superseded for Phase 2R by Decision 0010. The statement that undo is not included was superseded by Decision 0035 item 3 (one-step regeneration undo)
 - Date: 2026-09-10
 
 ## Context
@@ -31,7 +31,7 @@ Generated trips use a stable logical key consisting of generation-set ID and gen
 - Regeneration does not silently discard manual work.
 - Stable IDs reduce unnecessary loss of block assignments.
 - A regenerated schedule can invalidate a previously valid block, so validation must run after the transaction.
-- Undo is not included by this decision; complete project backup remains the recovery mechanism until undo is designed.
+- Undo is not included by this decision (superseded by Decision 0035 item 3); complete project backup remains the recovery mechanism until undo is designed.
 
 ## Deferred items
 

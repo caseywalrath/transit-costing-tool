@@ -1,7 +1,8 @@
 # Decision 0021: Initial Blocking Workspace Scope and Exports
 
-- Status: Accepted for Phase 4 planning
+- Status: Accepted; implemented and user-accepted through Phase 4 Package 4D. Item 7 is partly superseded
 - Date: 2026-09-18
+- Superseded in part by: Decision 0025 item 1 (item 7: the Block column is an assignment control, not read-only)
 
 ## Context
 
@@ -17,7 +18,7 @@ Route-scoped CSV cannot safely represent a future multi-route Block without trun
 4. Existing or imported multi-route Blocks remain fully visible and reviewable. The Route filter never hides or truncates activities in the selected Block.
 5. Unassigned Trips and revenue activities display their Route wherever Route identity is needed to avoid ambiguity.
 6. Dedicated interlining behavior, shared cross-route location identity, and cross-route compatibility assistance remain deferred.
-7. The Trips workspace adds a Blocking Scenario selector filtered to the selected Trip Profile. The read-only Block column reflects only that selected Blocking Scenario.
+7. The Trips workspace adds a Blocking Scenario selector filtered to the selected Trip Profile. The Block column reflects only that selected Blocking Scenario. (Superseded by Decision 0025 item 1: the column is an assignment control.)
 8. Blocking Scenario selection is non-authoritative UI context. It resets or falls back safely when the Project, Scenario, or Trip Profile changes.
 9. The new Trips selector must use the accepted Phase 3R action-layer, menu, focus, discard-guard, and responsive conventions. It must not change Runtime or Trip command scope.
 10. Phase 4 CSV output is scoped to a Blocking Scenario rather than to one Route.

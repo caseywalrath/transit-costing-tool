@@ -1,5 +1,9 @@
 # Decision 0035: Trip Interchange, Regeneration Undo, and Display Defaults
 
+- Status: Accepted and implemented
+- Date: 2026-10-21 (the date of the first commit of this record)
+- Supersedes: Decision 0004's statement that undo is not included (item 3 adds a one-step regeneration undo); Decision 0032's default for new profiles (item 1)
+
 ## Context
 
 Users need spreadsheet interchange for runtime profiles and scheduled Trips, a way to reverse an accidental runtime recalculation, and a clear default for runtime bands. Trips also needs to keep its headings visible in long schedules and preserve the user's position after a staged shift.

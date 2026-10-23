@@ -2,6 +2,7 @@
 
 - Status: Implemented and accepted through Phase 3
 - Date: 2026-09-14
+- Amended by: `docs/ui-conventions.md` (the label of the copy action); the Decision text below keeps the original wording
 
 ## Context
 
@@ -10,7 +11,7 @@ Runtime profiles are Pattern-owned calculation inputs, while Trips are authorita
 ## Decision
 
 1. Provide separate Runtime and Trip copy commands. Do not provide a combined service-day copy command in the initial Phase 3 implementation.
-2. Use a target-first workflow. The currently selected Day is the default and fixed target; the user selects a source Day through `Copy day…`.
+2. Use a target-first workflow. The currently selected Day is the default and fixed target; the user selects a source Day through `Copy day…`. (The Runtime menu item is now labelled **Copy from day**, and the Trips item **Copy Trips from day**; see `docs/ui-conventions.md`.)
 3. Runtime copy applies to all usable Patterns on the selected Route and is independent of Direction and Trip profile.
 4. Runtime copy defaults to creating independent Runtime profiles and target-Day assignments. The user may explicitly choose to share the source profiles instead.
 5. Runtime copy replaces target assignments after impact review but does not alter or recalculate existing Trips.

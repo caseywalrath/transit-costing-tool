@@ -1,6 +1,6 @@
 # Decision 0027: Phase 5 Cost Basis, Assumptions, and Forecast
 
-- Status: Accepted for implementation planning
+- Status: Accepted and implemented (Phase 5 Packages 5A through 5C)
 - Date: 2026-09-22
 
 ## Context

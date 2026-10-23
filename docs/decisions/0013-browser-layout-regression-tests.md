@@ -1,8 +1,7 @@
 # Decision 0013: Browser layout regression tests
 
-## Status
-
-Accepted on 2026-09-13.
+- Status: Accepted
+- Date: 2026-09-13
 
 ## Context
 

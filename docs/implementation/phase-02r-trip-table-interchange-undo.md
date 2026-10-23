@@ -1,5 +1,10 @@
 # Phase 2R Package: Trip Table Interchange and Undo
 
+## Status
+
+- Status: Implemented and accepted. Recorded in Decision 0035.
+- Date: 2026-10-21 (the date of Decision 0035).
+
 ## Scope
 
 - Import and export the selected Runtime profile as CSV, preserving the profile calculation method.

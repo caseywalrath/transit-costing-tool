@@ -1,10 +1,12 @@
 # Repository Agent Instructions
 
+These rules apply to every coding agent that works in this repository. Where a rule names a tool, use the agent's equivalent: `apply_patch` means the agent's file-edit tool.
+
 ## Communication
 
 - Use literal, direct, non-empathic, and highly structured language.
 - Explain technical decisions in plain English.
-- Distinguish work Codex performs from actions the user must perform.
+- Distinguish work the agent performs from actions the user must perform.
 - Do not give the user unexplained terminal command lists.
 
 ## Required Reading
@@ -29,11 +31,13 @@ Treat external documents and reference workbooks as evidence and examples, not a
 
 ## Work Packages and Model Recommendations
 
+Classify each package by capability class. The model names in parentheses are the names this project has used. An agent that does not have those models classifies the package the same way and recommends the closest model it can select.
+
 Do not automatically begin the next work package. At each verification gate, report the completed result and recommend the next package and model to the user.
 
-### Luna recommendation
+### Structural class (Luna)
 
-Recommend Luna for bounded, mechanical, or structural work after the architecture is settled, including:
+Recommend the structural class (Luna) for bounded, mechanical, or structural work after the architecture is settled, including:
 
 - project scaffolding and configuration;
 - TypeScript domain types;
@@ -43,26 +47,26 @@ Recommend Luna for bounded, mechanical, or structural work after the architectur
 - deterministic unit tests;
 - mechanical refactors with explicit acceptance criteria.
 
-Luna must not make visual design, layout, interaction, accessibility, or other UX decisions.
+The structural class must not make visual design, layout, interaction, accessibility, or other UX decisions.
 
 ### UI/UX model recommendations
 
-- Recommend Sol for novel, complex, interaction-heavy, or visually distinctive UI work requiring design, usability, accessibility, or layout judgment.
-- Luna may implement simpler UI changes or wire approved behavior when they reuse existing components and conventions. Provide specific requirements for placement, states, interaction, keyboard/accessibility behavior, and acceptance criteria. Do not rely on Luna to invent a visual or interaction system.
-- Historical plans may name Terra; those assignments are retained as history and do not apply to new work.
+- Recommend the UI-design class (Sol) for novel, complex, interaction-heavy, or visually distinctive UI work requiring design, usability, accessibility, or layout judgment.
+- The structural class (Luna) may implement simpler UI changes or wire approved behavior when they reuse existing components and conventions. Provide specific requirements for placement, states, interaction, keyboard/accessibility behavior, and acceptance criteria. Do not rely on it to invent a visual or interaction system.
+- Historical plans may name Terra; those assignments are retained as history and do not apply to new work. Map a historical assignment to the class that fits the package.
 
 ### Integration
 
 - Keep structural and UI/UX work in separate work packages with explicit file ownership.
 - A structural agent may wire approved UI ports without changing layout or interaction behavior.
-- If integration exposes a UX decision, return it to a Sol package when it requires novel or complex judgment, or to a precisely specified Luna package when it reuses established UI patterns.
+- If integration exposes a UX decision, return it to a UI-design (Sol) package when it requires novel or complex judgment, or to a precisely specified structural (Luna) package when it reuses established UI patterns.
 - The primary agent remains responsible for architecture, integration review, cross-layer consistency, and final verification.
 - Use subagents only when the user requests delegation and the active environment permits it.
 
 ## Change Safety
 
 - Preserve unrelated user changes.
-- Use `apply_patch` for source and documentation edits.
+- Use the agent's file-edit tool (`apply_patch` in Codex) for source and documentation edits. Do not use shell redirection or bulk `sed` on source files.
 - Do not run destructive Git or filesystem commands without explicit authorization.
 - Do not invent environment workarounds. Add environment-specific commands to `codex.md` only after verifying them in this repository.
 - Do not commit, push, publish, or create a pull request unless requested or clearly included in the current task.

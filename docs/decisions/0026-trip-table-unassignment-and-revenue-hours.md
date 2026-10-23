@@ -1,7 +1,8 @@
 # Decision 0026: Trips-Table Unassignment and Revenue-Hour Semantics
 
-- Status: Accepted for implementation
+- Status: Accepted and implemented
 - Date: 2026-09-22
+- Supersedes: Decision 0020 item 11 (the Revenue-hours formula) and item 20 (the Selected-day summary tiles, by item 7 below)
 
 ## Context
 

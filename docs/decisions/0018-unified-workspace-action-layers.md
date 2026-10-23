@@ -2,6 +2,7 @@
 
 - Status: Implemented
 - Date: 2026-09-14
+- Amended by: `docs/ui-conventions.md` (item 4: Add Time Band is a Runtime **Actions** menu item and no separate Runtime `Add` button exists) and Decision 0028 (item 10: the Project and Scenario Actions menus)
 
 ## Context
 
@@ -12,13 +13,13 @@ The Runtimes and Trips workflow sections currently divide related controls betwe
 1. Consolidate each section's context and commands into one action layer in the section header, aligned to the right of the section title.
 2. Use a sectioned Profile menu for profile selection and profile lifecycle commands. Saved profiles appear first with the current profile checked; a separator precedes lifecycle commands.
 3. Keep the Runtime Pattern selector separate from the Runtime Profile menu because Runtime profiles are Pattern-owned.
-4. Keep `Add` visible in Runtimes. Show `Discard` and `Save` immediately after `Add` only while the Runtime editor has unsaved changes.
+4. (Amended: Add Time Band is now a Runtime **Actions** menu item.) Keep `Add` visible in Runtimes. Show `Discard` and `Save` immediately after `Add` only while the Runtime editor has unsaved changes.
 5. Place Route-wide Runtime Day copy in a Runtime `Actions` menu. Do not place it in the Pattern-owned Profile menu.
 6. Place Trip schedule commands in one Trips `Actions` menu. Keep Trip-profile selection and lifecycle commands in a separate Profile menu.
 7. Replace the inline Trip Shift tool with a non-modal drawer docked to the right side of the application window. The timetable remains visible and displays a transient preview.
 8. Stage Shift changes while the drawer is open. `Undo` and `Redo` affect only the staged sequence, `Discard` performs no write, and `Done` commits the net shift atomically after a stale-source check.
 9. Use the established workflow-section, button, field, focus, warning, confirmation, and data-grid styles. Do not introduce a second visual system.
-10. Treat top-level Scenario/Data menu consolidation and Route-tab Node/Pattern action consolidation as separate follow-on decisions.
+10. (Done in Decision 0028.) Treat top-level Scenario/Data menu consolidation and Route-tab Node/Pattern action consolidation as separate follow-on decisions.
 
 ## Consequences
 

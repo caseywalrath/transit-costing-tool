@@ -1,7 +1,8 @@
 # Decision 0019: Blocking Scenario Ownership and Lifecycle
 
-- Status: Accepted for Phase 4 planning
+- Status: Accepted; implemented and user-accepted through Phase 4 Package 4D
 - Date: 2026-09-18
+- Supersedes: Decision 0016 item 7
 
 ## Context
 

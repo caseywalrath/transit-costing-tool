@@ -1,7 +1,8 @@
 # Decision 0025: Trip-Table Block Assignment
 
-- Status: Accepted; implementation in progress
+- Status: Accepted and implemented
 - Date: 2026-09-22
+- Supersedes: Decision 0021 item 7 (the Trips Block column is an assignment control)
 
 ## Context
 
