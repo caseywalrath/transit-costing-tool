@@ -4,7 +4,7 @@
 
 **Sitting 4K part 1 (U08 only) is finished on the branch `claude/stage-4k-review-fixes`, from `origin/main` after the merge of PR #23 (U06, U07, P15, P17). The user must review the branch, open and merge the pull request, and read the first CI run. The next sitting is 4K part 2: D01 on Sonnet, then U09 on Sonnet (recommended placement), then P18 (Sonnet, the Vitest major upgrade, its own package). Start it only after this branch is merged; create a new work branch from the new `origin/main` (the user names it). Standing rules 1 to 10 below apply unchanged. U10 (Opus) stays a sitting of its own after 4K.**
 
-- Done on this branch: U08 (`U08_HASH`). The hash-record commit follows it.
+- Done on this branch: U08 (`ac0bded`). The hash-record commit follows it.
 - Not started: D01, U09, U10, P18.
 - U08 result: "Regenerate selected" on 480 Trips at the capacity fixture, production build, 5 runs: review 407 to 461 ms (before: 1,043 to 1,300 ms), apply 556 to 587 ms (before: 918 to 1,072 ms). Anchor selection stays available for every Trip. Two layout defects of the dialog that predate U08 are fixed (details in the U08 entry). No decision was blocked.
 - Exceptions of the 4K part 1 sitting (user, 2026-10-23), not carried over: Opus main session, no sub-agents, the Decision 0005 gate waived. The user states the exceptions for each sitting.
@@ -2056,7 +2056,7 @@ One break was not a break and was replaced: removing the "not the destination Bl
 
 - Date: 2026-10-23. Sitting 4K part 1. Model: Opus (main session). No sub-agents.
 - Type: UI. Severity: S3. Sol-class.
-- Commit: `U08_HASH`.
+- Commit: `ac0bded`.
 
 ### Issues fixed
 
