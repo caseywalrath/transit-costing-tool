@@ -4,7 +4,7 @@
 
 **Sitting 4I and 4J combined (U06, U07, P15, then P17) is in progress on the branch `claude/stage-4i-4j-review-fixes`, from `origin/main` after the merge of PR #21 (U01 to U05, P16). If a later session reads this note, the sitting stopped early: continue from the first package under "Not started", on Sonnet, on this branch. Standing rules 1 to 10 below apply unchanged.** The user did not ask for a pull request.
 
-- Done on this branch: U06 (`U06HASH`), U07 (`U07HASH`).
+- Done on this branch: U06 (`U06HASH`), U07 (`4d270c1`).
 - Packages left: **P15** (Trips and Runtime rules out of `App.tsx`; the one display change is "incomplete" instead of "0.0 miles" for a Pattern with no distance), then **P17** (below) only if P15 is committed and pushed. Not started: P15, P17, U08, D01, P18.
 - This sitting's rules (user, 2026-10-23): Sonnet main session, no sub-agents, no Opus review; the Decision 0005 gate is waived and each package is pushed after its commit and fix log entry; a design or UX decision that no package text, added criterion, or decision below settles is recorded in the fix log as "blocked: decision needed" with the exact question and options, and the next independent package goes on; branch protection and CI are the user's to watch, and the workflows are not edited.
 - **Blocked: decision needed (U07, details and options in its fix log entry).** (1) How the open Shift drawer and the Runtime Save and Discard buttons coexist at 1024 to 1900 px (options: reserve room beside the drawer, move Save and Discard left, dock the drawer at the bottom, leave it). (2) Where to show why a Trip cannot be recalculated (`inspectStaleTrips` findings; the text exists, no screen shows it).
@@ -12,7 +12,7 @@
 - State after U07: unit tests 49 files, 704 tests; browser suite 145 tests, all passing; bundle `index-CUKH2aRs.js` 808.96 kB. The user must still read the first CI run.
 - Carried forward for U06 and U07 from this sitting (details in the U01 to U05 entries):
   - **U06 (done, `U06HASH`):** the Annual Cost column fits at 768, 1024, and 1440 px; an invalid estimate lists its findings; the persistence answer of `getLocalDataProtection()` is still not shown (no criterion asks for it), and the assumptions alert keeps its single sentence.
-  - **U07 (done, `U07HASH`, except two blocked items):** the Runtime totals read `:61` by design (the Decision 0010 duration format; no change); the single-flight load, the reload after a Runtime save, the Recalculate band picker, the error boundary, the shared-profile line, and the message texts are done. Blocked: the Shift drawer covering the Runtime Save button, and where to show the `inspectStaleTrips` findings.
+  - **U07 (done, `4d270c1`, except two blocked items):** the Runtime totals read `:61` by design (the Decision 0010 duration format; no change); the single-flight load, the reload after a Runtime save, the Recalculate band picker, the error boundary, the shared-profile line, and the message texts are done. Blocked: the Shift drawer covering the Runtime Save button, and where to show the `inspectStaleTrips` findings.
   - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead; the Add-trip row drafts are not kept across a scope change; 24 dialogs were converted (the finding counted 28, four were removed by X01).
   - **P15:** the Trips and Pattern screens still show 0.0 miles for a Pattern with no distance (only Blocking treats a 0 total as incomplete); `calculateTimepointHeadways` has no unit test; display rounding in the Trips table. A CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
   - **P16 leftovers:** `resetPatternService` (legacy mutator) still stamps wall-clock `now`; about 40 other domain signatures still default `now` to the wall clock.
@@ -37,7 +37,7 @@ Items that the user assigned to later packages. They are added to those packages
 
 - **P09 (sitting 4E), the service part of the Runtime first-visit race. DONE in P09 (commit `fd1e65b`).** `ensureDefaultRuntimeProfile` is a check-then-write that is not atomic, and two overlapping calls can store duplicate Runtime assignments. Make it idempotent: one check-and-write in a single transaction, so two calls at once leave one Default profile and one assignment per standard Service day, and "Duplicate runtime assignment" cannot appear. Add a test that runs two calls at the same time against both repositories. P09 does not change `App.tsx`. Do not remove the up-front Default Runtime profile step or the reload after the Runtime save in `tests/ui/support/tripsWorkspace.ts`; U07 removes them.
 - **P14 (sitting 4F), DONE in P14 (commit `3df50b6`):** enforce Block label uniqueness when a Block is created or renamed (Decision 0039), with a proposed default label of the first free "Block <n>".
-- **U07 (sitting 4I). DONE in U07 (commit `U07HASH`):**
+- **U07 (sitting 4I). DONE in U07 (commit `4d270c1`):**
   - the single-flight Runtime load in `App.tsx` (the other half of the race above), then remove the two test-helper steps named above;
   - the Trips table must reload Runtime profiles after a Runtime profile is saved, so Show runtime bands shades without a page reload (the second behavior in the 4C decision bullet);
   - the Recalculate dialog hides the band picker for segment-start and blended Trips (Option B, decided 2026-10-23).
@@ -1786,7 +1786,7 @@ User decisions implemented: C3 (the Total row leaves the daily columns blank, ke
 
 - Date: 2026-10-23. Sitting 4I/4J (combined). Model: Sonnet (main session). No sub-agents.
 - Type: UI. Severity: S2.
-- Commit: `COMMIT`.
+- Commit: `4d270c1`.
 
 ### Issues fixed
 
