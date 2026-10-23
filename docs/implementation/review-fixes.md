@@ -1088,3 +1088,85 @@ The review's golden file (`p2-blocking.golden.test.ts`, copied temporarily into 
 - Other code that treats a Pattern's 0 total as a valid distance is untouched: the Trips and Pattern screens still show 0.0 miles for such a Pattern. Only Blocking's mileage is incomplete now.
 - `block.deadheadOutsideGap` and `block.boundaryOverlap` invalidate the Block, which excludes it from subtotals and from the Costing estimate. That matches how the other timing contradictions (`connectionOverlap`, `deadheadDoesNotFit`) are treated; a planner who disagrees would change `INVALIDATING_RULES`.
 - An explicit pull-out or pull-in with no Trips in the Block is not checked (nothing to overlap).
+
+## P13: CSV serializers
+
+- Date: 2026-10-23. Sitting 4F. Model: Sonnet (main session). The sitting plan allows Haiku for the file moves; the moves were four `git mv` commands plus six one-line import edits, so the main session did them and no sub-agent was used. No Opus review: P13 is S2.
+- Type: structural. Severity: S2.
+- Commit: `P13_HASH`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-019 | 3-012 | S2 | `toCsv` did not escape header cells. The Trips CSV puts the Pattern name and Node name in its time-column headers, so a name with a comma or a double quote made an export that the Trips CSV import rejected. |
+| I-070 | 3-010 | S3 | `csvEscape` did not quote a field with a bare CR, and the Runtime profile CSV had its own, different escaper. |
+| I-071 | 3-011 | S3 | A name, label, or note beginning with `=`, `+`, `-`, or `@` was exported as written, so a spreadsheet ran it as a formula. |
+| I-073 | 4-013 | S3 | `src/ui/tripTableCsv.ts` and `src/ui/csvDownload.ts` imported the serializers from `src/persistence`. |
+
+User decisions implemented: decision 5 (prefix `'` on free-text cells, strip it on import, free-text columns only) and decision 12 (move the two files to `src/application`; OV-TECH-03 not amended).
+
+### What changed
+
+- `src/persistence/csv.ts`
+  - `csvEscape` quotes CR as well as comma, double quote, and LF.
+  - `toCsv` escapes header cells with `csvEscape`, and takes an optional list of free-text column names.
+  - New `neutralizeFormulaText` and `restoreFormulaText`. A value that begins with a trigger character, or with apostrophes before one, gets one more apostrophe; import removes one apostrophe in front of a trigger character. The pair is exact for every string, including `'=x` (becomes `''=x`) and ordinary text with an apostrophe (`'Til midnight` is unchanged).
+  - Each serializer lists its free-text columns: Route (name, short name, description); Nodes (name, short name, notes); Patterns (name, direction label, notes); Directions (name); direction columns (label override); Runtime bands (profile name, band label); generation sets (name); Trips and authoritative Trips (Trip profile name, public label); Blocks (Trip profile name, label, notes); Blocking Scenarios (Trip profile name, name, description); Blocking Blocks (label, notes); the three Costing files (Scenario, Blocking Scenario, Trip profile, and Service day names, the source note, and the Block label). Identifiers, times, numbers, and fixed words are not changed.
+- Moved (history kept with `git mv`): `src/ui/tripTableCsv.ts`, `src/ui/csvDownload.ts`, and their tests to `src/application/`.
+- `src/application/tripTableCsv.ts`: the Trips CSV protects the public label and the importer restores it.
+- New `src/application/csvText.ts`: re-exports `csvEscape`, `neutralizeFormulaText`, and `restoreFormulaText`, the one route by which `src/ui` reaches them.
+- `src/ui/runtimePaste.ts`: its private escaper is gone; the Runtime profile CSV uses `csvEscape` and protects the band label, and the paste importer restores it.
+- `src/ui/App.tsx`: import paths only.
+- Documentation: `architecture_overview.md` ("Persistence, Backup, and Export": the CSV rules).
+
+### Behavior before and after (what you will see)
+
+- A Pattern or Node name with a comma or a double quote no longer breaks the Trips CSV: export and re-import work.
+- A name, label, or note such as `-5 stops` or `=Peak` opens in a spreadsheet as text with a leading apostrophe (`'-5 stops`). Importing the Trips CSV or a Runtime CSV gives back the original text. Spreadsheet programs that show the apostrophe in the cell will show it; Excel hides a leading apostrophe in the cell view and keeps it in the file.
+- No screen changes.
+
+### Tests added
+
+- `src/persistence/csvText.test.ts` (42 tests): the escaping rule for comma, quote, LF, CR, and CRLF; a Block note with a bare CR stays in one row; header cells; the pair `neutralizeFormulaText`/`restoreFormulaText` for the four trigger characters, strings that must not change, and strings that already start with apostrophes; one test per serializer (20) that fills every string field with `=1+1` and checks that exactly its free-text columns come out as `'=1+1` and no other column changes; numbers, times, negative miles, and identifiers beginning with `-` are never prefixed.
+- `src/application/tripTableCsv.test.ts` (13 new tests beside the 1 moved): Pattern and Node names with a comma, a double quote, a line break, a colon round-trip through export and import; labels `=1+1`, `+1+1`, `-2+3`, `@SUM(1,1)`, `'=1+1`, and `-5 stops` are written protected and read back unchanged; identifiers and ordinary labels are untouched.
+- `src/ui/runtimePaste.test.ts` (7 new tests beside the 1 existing): the same label round trip for the Runtime profile CSV; an ordinary label with an apostrophe is untouched; a label with a bare CR is quoted.
+- `src/ui/importGraph.test.ts` (2 tests): no file in `src/ui` imports from `src/persistence` (static, re-export, dynamic, and bare import forms), with a self-check of the pattern. Vite's `import.meta.glob` reads the files, because Node types are not in the project yet (B01 adds them).
+
+### Tests first: what failed on the current code
+
+- `csvText.test.ts`: on the unfixed `csv.ts`, 37 of 42 tests failed (the CR, header, and helper tests, and all 20 serializer tests); the 5 that passed are controls (strings that must not change).
+- Importer tests, run against the unfixed `tripTableCsv.ts` and `runtimePaste.ts` (with the fixed `csv.ts`): 12 of the 22 tests in the two files failed (the label protection and restore tests).
+- Import graph: it listed `csvDownload.ts` and `tripTableCsv.ts` before the move, and a probe file with an import from `../persistence/csv` makes it fail after the move.
+
+### Deliberate breaks (each applied, run, and restored from a saved copy)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| Formula round trip | `restoreFormulaText` returns its input | 20 fail |
+| Header escaping | header cells not escaped | 6 fail |
+| CR rule | `csvEscape` ignores CR | 4 fail |
+| Serializer coverage | `nodesCsv` does not protect `notes` | 1 fails (the Nodes serializer test) |
+| Trips CSV | label not protected on export | 6 fail |
+| Runtime CSV | band label not protected on export | 5 fail |
+| Runtime CSV | band label not restored on import | 5 fail |
+| Import graph | a file in `src/ui` imports `../persistence/csv` | 1 fails |
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 39 files, 587 tests passed (523 before; 64 new).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 77 passed, 0 failed (2.3 minutes) on the second full run. The first full run had 76 passed and 1 failed: `unified-action-layer.spec.ts:139` failed inside the shared setup helper `createShiftReadySchedule` (`tests/ui/support/tripsWorkspace.ts:95`): the Trip actions menu did not appear within 5 s after `ArrowDown`, with 0 menu items. That step runs no CSV code. The same test then passed 16 of 16 (`--repeat-each=16 --workers=8`) and the second full run passed. The cause is not proven; the likely candidate is the Runtime section's overlapping reloads after the page reload, which the P05 hand-offs describe and which U07 removes. No `test.fail`, `test.skip`, or `test.fixme`.
+- `pnpm build`: succeeds (existing chunk-size warning only). Bundle `index-VpKnYSaf.js` 785.31 kB (782.90 kB after P11; P12 and P13 add 2.4 kB).
+- Round trip: the Trips CSV and Runtime CSV round trips are the tests above (no schema version changes; CSV carries none).
+
+### Hand-offs
+
+- `src/ui/CostingWorkspace.tsx` and `src/ui/BlockingWorkspace.tsx` (not owned): one import path each (`./csvDownload` to `../application/csvDownload`).
+- `src/persistence/csv.ts` serializers that have no importer (Route, Nodes, Patterns, Blocks, Costing, and the rest) are report output only. Their protection is one-way; if a CSV import is ever built for one, it must call `restoreFormulaText` on the same columns. The per-serializer test lists those columns.
+
+### Residual risks
+
+- A spreadsheet program that does not hide the leading apostrophe will show it. This is the cost of decision 5.
+- A tab or carriage return at the start of a cell can also be read as a formula by some spreadsheet programs (a known OWASP addition). Decision 5 names only `=`, `+`, `-`, and `@`, so only those are protected.
+- A label with a bare CR is quoted on export, but the Trips CSV importer reads a CR inside quotes as LF, so such a label does not round-trip byte for byte. Out of scope (the Trips CSV reader is unchanged).

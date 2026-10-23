@@ -8,7 +8,7 @@ import { sortServiceDays } from '../domain/serviceDays';
 import type { BlockActivity, BlockingBlock, BlockingScenario, Node, Route, RouteDefinitionAggregate, RoutePattern, Trip, ValidationFinding } from '../domain/types';
 import type { ScenarioRecords } from '../domain/project';
 import { MenuButton, type MenuGroup } from './MenuButton';
-import { createCsvArchive } from './csvDownload';
+import { createCsvArchive } from '../application/csvDownload';
 
 type BlockingApplication = BlockingCommands & BlockingQueries;
 type Props = { blockingService: BlockingApplication; tripService: TripGenerationApplication; aggregate: RouteDefinitionAggregate; records: ScenarioRecords; routes: Route[]; routeId: string; onRouteChange: (routeId: string) => void; onReload: () => Promise<void>; onError: (error: unknown, fallback?: string) => void };

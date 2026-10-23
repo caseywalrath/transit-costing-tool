@@ -1,6 +1,6 @@
 import type { RoutePattern, Trip, TripTableImportRow } from '../domain/types';
 import { parseServiceTime, formatServiceTime } from '../domain/time';
-import { toCsv } from '../persistence/csv';
+import { restoreFormulaText, toCsv } from '../persistence/csv';
 
 export interface TripTableCsvParseResult { rows: TripTableImportRow[]; issues: string[]; }
 
@@ -14,7 +14,7 @@ export function tripTableCsv(trips: Trip[], patterns: RoutePattern[], nodeName: 
       ['tripId', trip.id], ['patternId', trip.patternId], ['publicLabel', trip.publicLabel ?? ''],
       ...pointColumns.map((point) => [`point:${point.id}:${point.label}`, times.has(point.id) ? formatServiceTime(times.get(point.id)!, times.get(point.id)! % 60 !== 0) : '']),
     ]);
-  }));
+  }), ['publicLabel']);
 }
 
 function parseCsv(source: string): string[][] {
@@ -74,7 +74,7 @@ export function parseTripTableCsv(source: string): TripTableCsvParseResult {
       rows.push({
         ...(cells[tripIdIndex]?.trim() ? { tripId: cells[tripIdIndex].trim() } : {}),
         patternId,
-        ...(labelIndex >= 0 && cells[labelIndex]?.trim() ? { publicLabel: cells[labelIndex].trim() } : {}),
+        ...(labelIndex >= 0 && cells[labelIndex]?.trim() ? { publicLabel: restoreFormulaText(cells[labelIndex].trim()) } : {}),
         stopTimes,
       });
     }
