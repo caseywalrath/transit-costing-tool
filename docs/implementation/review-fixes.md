@@ -2,38 +2,41 @@
 
 ## Next sitting
 
-**Sitting 4I and 4J combined (U06, U07, P15, P17) is finished on the branch `claude/stage-4i-4j-review-fixes`, from `origin/main` after the merge of PR #21 (U01 to U05, P16). The user must review the branch, open and merge the pull request, and read the first CI run. The next sitting is 4K: U08 on Opus, then D01 on Sonnet, then P18 (Sonnet). Start it only after this branch is merged; create `claude/stage-4k-review-fixes` from the new `origin/main`. Standing rules 1 to 10 below apply unchanged.**
+**Sitting 4K part 1 (U08 only) is finished on the branch `claude/stage-4k-review-fixes`, from `origin/main` after the merge of PR #23 (U06, U07, P15, P17). The user must review the branch, open and merge the pull request, and read the first CI run. The next sitting is 4K part 2: D01 on Sonnet, then U09 on Sonnet (recommended placement), then P18 (Sonnet, the Vitest major upgrade, its own package). Start it only after this branch is merged; create a new work branch from the new `origin/main` (the user names it). Standing rules 1 to 10 below apply unchanged. U10 (Opus) stays a sitting of its own after 4K.**
 
-- Done on this branch: U06 (`88a40a6`), U07 (`4d270c1`), P15 (`b920627`), P17 (`87359e0`). Each package has its own hash-record commit after it.
-- Not started: U08, D01, P18.
-- Sequence for 4K (user, 2026-10-23): **U08 on Opus**, then **D01 on Sonnet**, then **P18** (the Vitest major upgrade, its own package, not mixed with feature work). Recommended placement of the two new packages below (the user has not set it): **U09 on Sonnet** in 4K after D01 and before P18; **U10 on Opus** in its own sitting after 4K, because it is design work the user will review afterward. The Sonnet-only, no-sub-agent, waived-gate exceptions of the 4I/4J sitting are not carried over; the user states the exceptions for each sitting.
-- **U07 blocked items: DECIDED by the user on 2026-10-23. Two new packages, not started.**
+- Done on this branch: U08 (`U08_HASH`). The hash-record commit follows it.
+- Not started: D01, U09, U10, P18.
+- U08 result: "Regenerate selected" on 480 Trips at the capacity fixture, production build, 5 runs: review 407 to 461 ms (before: 1,043 to 1,300 ms), apply 556 to 587 ms (before: 918 to 1,072 ms). Anchor selection stays available for every Trip. Two layout defects of the dialog that predate U08 are fixed (details in the U08 entry). No decision was blocked.
+- Exceptions of the 4K part 1 sitting (user, 2026-10-23), not carried over: Opus main session, no sub-agents, the Decision 0005 gate waived. The user states the exceptions for each sitting.
+- **U09 and U10: DECIDED by the user on 2026-10-23. Not started.**
   - **U09 (Sonnet, small UI): why a Trip cannot be recalculated** (option A). One status line under the "Run Times Have Changed" indicator lists the distinct reasons from `inspectStaleTrips` (the message texts exist from P07). Reuse the existing notice/status line styling; no new component. Acceptance: when at least one Trip is flagged and its profile cannot calculate it, the line names each distinct reason once; with no such Trip nothing is shown; a browser test covers both; keyboard and screen-reader behavior as the other status lines (plain text, no focus trap). Verification: UI rules, visual check at 1024 and 1440 px.
   - **U10 (Opus, UI design, beyond the scope of a fix; user will review the result afterward): redesign the Shift drawer.** The overlap of the open drawer with the Runtime Save and Discard buttons is **accepted as is** (option D); do not solve it as a goal of U10 unless the redesign does so as a side effect. The user's brief: the drawer wastes white space; the shifting control (left and right buttons and an up/down minute selector) is confusing; the drawer is valuable because the planner sees the effect of a shift on the Trips table, and that must stay. Wanted: a much more discreet control and a more intuitive increment selector. The agent decides the design and records the options it rejected. Constraints: the preview-then-apply behavior, Undo and Redo (U07), the net-shift label (`formatNetShift`, `formatStagedShift`), the minute parsing rules (`parseShiftSeconds`), keyboard and screen-reader operation, and the existing specs (`workflow-section-layout.spec.ts` asserts the right-docked drawer; it may change only with a recorded reason). Verification: UI rules plus screenshots at 1024 and 1440 px before and after, and the interaction written up so the user can review it.
-- Known failures: none. If the intermittent `unified-action-layer.spec.ts:139` failure returns, diagnose it as a package failure and fix the code.
-- State after P17: unit tests 51 files, 746 tests; browser suite 148 tests, all passing; bundle `index-DO8O5EIH.js` 805.44 kB. The user must still read the first CI run (branch protection and CI are the user's to watch).
-- Carried forward from this sitting (details in the U06, U07, P15, and P17 entries):
-  - **U06 (done, `88a40a6`):** the Annual Cost column fits at 768, 1024, and 1440 px; an invalid estimate lists its findings; the persistence answer of `getLocalDataProtection()` is still not shown (no criterion asks for it), and the assumptions alert keeps its single sentence.
-  - **U07 (done, `4d270c1`; the two items that were blocked are decided and are packages U09 and U10):** the Runtime totals read `:61` by design (the Decision 0010 duration format; no change); the single-flight load, the reload after a Runtime save, the Recalculate band picker, the error boundary, the shared-profile line, and the message texts are done. The Shift drawer over the Runtime Save button is accepted as is (U10 redesigns the drawer); the `inspectStaleTrips` findings get a status line in U09.
-  - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead; the Add-trip row drafts are not kept across a scope change; 24 dialogs were converted (the finding counted 28, four were removed by X01).
-  - **P15 (done, `b920627`):** the Pattern editor shows "incomplete" for a Pattern with no distance (the literal "0.0 miles" was on no screen; the Trips screen shows no distance); `calculateTimepointHeadways` has a unit test; display rounding is in the domain. Still open: a CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
-  - **P17 (done, `87359e0`):** `deletePattern` takes a review token (Decision 0041 addendum); the 14 legacy route mutators are deleted and the test setups use `src/testSupport/routeFixtures.ts`; a backup with a repeated Block label is refused with the cause and the way out. `makePatternPoint` has no caller left (harmless).
+- **P18 (Vitest major upgrade, 5 advisories in the `vitest` chain):** its own package, not mixed with feature work (user decision 5 below). Not started.
+- Known failures: none. `unified-action-layer.spec.ts:139` passed in every full run of this sitting. If it returns, diagnose it as a package failure and fix the code.
+- State after U08: unit tests 51 files, 747 tests; browser suite 151 tests, all passing; bundle `index--t3h4Nml.js` 806.22 kB. The user must still read the first CI run (branch protection and CI are the user's to watch).
+- Carried forward (details in the U06, U07, P15, P17, and U08 entries):
+  - **U08:** an anchor list holds one option until it is focused or pressed; a screen reader may announce "1 of 1" on the first focus before the list fills (not verified with a screen reader). The Shift drawer, the bulk anchor row, and the band picker are unchanged.
+  - **U06:** the persistence answer of `getLocalDataProtection()` is still not shown (no criterion asks for it), and the assumptions alert keeps its single sentence.
+  - **U07:** the Runtime totals read `:61` by design (the Decision 0010 duration format). The Shift drawer over the Runtime Save button is accepted as is (U10 redesigns the drawer); the `inspectStaleTrips` findings get a status line in U09.
+  - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead; the Add-trip row drafts are not kept across a scope change.
+  - **P15:** a CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
+  - **P17:** `makePatternPoint` has no caller left (harmless).
   - **P16 leftovers:** `resetPatternService` (legacy mutator) still stamps wall-clock `now`; about 40 other domain signatures still default `now` to the wall clock.
 - Decisions made by the user on 2026-10-23 (all follow the recommended option). `docs/review/fix-packages.md` is on the review branch and is not edited; this note is the record.
   1. `deletePattern` gets a review token (Decision 0041 pattern). **DONE in P17 (`87359e0`).**
-  2. The legacy per-field route mutators (`updatePattern`, `addNode`, and the others in the P09 entry) are deleted, and the unit-test setups that use them move to preview and commit. **DONE in P17.**
-  3. Repeated Block labels already stored: the backup import refusal message explains the cause and the way out (rename the repeated labels in the source project, then export again). No repair on load. **DONE in P17** (the text is built in `src/persistence/backup.ts` and shown by the U02 error display).
-  4. Branch protection: the user will require the two CI checks on `main` after the first CI run passes. User action only; no package. (Done by the user before this sitting.) The check names in the GitHub list are the job names "Typecheck, unit tests, build" (job `verify`) and "Browser tests" (job `browser`).
-  5. Vitest major upgrade (5 advisories in the `vitest` chain): its own package, **P18**, in sitting 4K after U08 and D01, or in a separate maintenance sitting. Not mixed with feature work. **Not started.**
-  6. Defaults accepted: Runtime band totals use the duration format (U07 criterion 6 first checks what the screen shows); a Pattern with no distance shows "incomplete" instead of 0.0 miles on the Trips and Pattern screens (added criterion to P15, below); menu typeahead is not built.
-  7. U07 blocked item 1 (Shift drawer over Runtime Save and Discard): the overlap is accepted (option D). Separately, the Shift drawer is to be redesigned (more discreet, less white space, a more intuitive increment selector) by an Opus agent, which the user reviews afterward: package **U10**, outside the scope of a fix, accepted by the user.
-  8. U07 blocked item 2 (reason a Trip cannot be recalculated): option A, a status line under the "Run Times Have Changed" indicator listing the distinct reasons: package **U09**.
+  2. The legacy per-field route mutators are deleted, and the unit-test setups move to preview and commit. **DONE in P17.**
+  3. Repeated Block labels already stored: the backup import refusal message explains the cause and the way out. No repair on load. **DONE in P17.**
+  4. Branch protection: the user requires the two CI checks on `main`. User action only. The check names are "Typecheck, unit tests, build" (job `verify`) and "Browser tests" (job `browser`).
+  5. Vitest major upgrade: its own package, **P18**, after D01, or in a separate maintenance sitting. Not mixed with feature work. **Not started.**
+  6. Defaults accepted: Runtime band totals use the duration format; a Pattern with no distance shows "incomplete"; menu typeahead is not built.
+  7. U07 blocked item 1: the Shift drawer overlap is accepted (option D); the drawer is redesigned in package **U10**.
+  8. U07 blocked item 2: option A, a status line under the "Run Times Have Changed" indicator: package **U09**.
 - Other hand-offs still open from earlier sittings:
-  - **Decided by the user on 2026-10-23 (Option B), for U07.** Under a segment-start or blended profile, an anchor that fits two first departures is rejected and the candidates are listed (user decision 3). The Recalculate dialog must hide its band picker for segment-start and blended Trips, say plainly that the fixed time can be reached two ways, and rely on the options it already has: "Use first departure for this trip", choosing another anchor, or revising the bands. No domain change is needed. See the Decision 0031 addendum.
+  - **Decided by the user on 2026-10-23 (Option B), done in U07.** Under a segment-start or blended profile, an anchor that fits two first departures is rejected and the candidates are listed (Decision 0031 addendum).
   - **CSV.** The Trips CSV and ZIP writer live in `src/application`. A free-text cell that begins with `=`, `+`, `-`, or `@` is written with a leading apostrophe; the Trips CSV import and Runtime paste remove it (`restoreFormulaText`). A new CSV importer must do the same for the same columns.
   - **U05 hand-offs from 4E (not done in U05; see its entry):** the Node editor's impact dialog does not list `nonRevenueImpact`; the Trip profile confirmation does not mention `blockingScenarioCount`; the Runtime profile and Trips delete dialogs stay open with the old review after a refusal.
   - **Persistence (no owner yet):** `listProfileTrips` in `main.tsx` loads every Trip of the Scenario and filters by Trip Profile in memory; a compound index on Scenario and Trip Profile would avoid reading Trips of other profiles. Placeholder Blocks already stored in databases that imported version 3 and 4 files have no clean-up. Not covered by the contract suite: the legacy generation-set methods and `saveBlocks`. One timeout in 50 runs of `local-data-protection.spec.ts` (P10 entry) is unexplained; it did not return in 100 later runs.
-- Unit-test and browser-test conventions are in "Standing rules" below and in `codex.md`. Browser-test helpers (all in `tests/ui/support/`): `dexieEnv.ts` (`runInPage`, `seedSnapshot`), `goldenFixture.ts` (the Federal BRT project), `tripsWorkspace.ts` (`createRouteWithPattern`, `createShiftReadySchedule`, `openGoldenTrips`, `settleFrames`), and from 4E `capacityFixture.ts` (400 Blocks, 2,000 Trips).
+- Unit-test and browser-test conventions are in "Standing rules" below and in `codex.md`. Browser-test helpers (all in `tests/ui/support/`): `dexieEnv.ts` (`runInPage`, `seedSnapshot`), `goldenFixture.ts` (the Federal BRT project), `tripsWorkspace.ts` (`createRouteWithPattern`, `createShiftReadySchedule`, `openGoldenTrips`, `settleFrames`), and `capacityFixture.ts` (400 Blocks, 2,000 Trips).
 - Review documents: read them from the review branch with `git show origin/claude/upbeat-ritchie-51mpy5:docs/review/<file>`. Never copy `docs/review/` into the work branch.
 
 ### Added acceptance criteria
@@ -2048,3 +2051,80 @@ One break was not a break and was replaced: removing the "not the destination Bl
 - A Pattern deletion dialog that was open when the data changed closes and shows the error banner, like the Route, Scenario, and Project dialogs. The Runtime profile and Trips dialogs keep their old review (U05 hand-off); not changed here.
 - `makePatternPoint` (`src/domain/commands.ts`) has no caller left outside its own re-export. It is domain code and harmless; remove it in a later cleanup if wanted.
 - The fix log entries above (P09, 4G) still describe the mutators as present; they are history and are not edited.
+
+## U08: Recalculation dialog at capacity
+
+- Date: 2026-10-23. Sitting 4K part 1. Model: Opus (main session). No sub-agents.
+- Type: UI. Severity: S3. Sol-class.
+- Commit: `U08_HASH`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-096 | 6-005 | S3 | "Regenerate selected" on a 500-row Direction table took about 2.5 s to show its review and as long to apply it (review measurement, quirks mode). The dialog built one anchor list per Trip holding every point of its Pattern (14,431 options, 20,217 elements at 480 rows), and the review read the Pattern, the Runtime assignment, and the Runtime profile from IndexedDB once per Trip, one after another; the apply runs the review again. |
+| (none) | found in this package's visual check | S3 | Two layout defects of the dialog, present before U08 (screenshots below): at 1024 px the dialog stayed 1,320 px wide, so Cancel and "Regenerate trips" were off the screen; and the table area inherited the dialogs' `display: flex; justify-content: end`, so the 1,300 px table overflowed 18 px to the left, where it cannot be scrolled to (the Anchor header read "chor" and the lists were cut). |
+
+Capacity restore (1.9 s, one-time) is out of scope, as the package states.
+
+### Decisions
+
+- No user decision was needed. The anchor control stays a native select with the same label, the same choices, and the same keyboard behavior; only the moment its options are built changes. No interaction or visual design was invented: the alternatives considered (a virtualized table, rendering the select only on the rows in view, or a separate "change anchor" button per row) change what the planner sees or does and were rejected for that reason.
+- The capacity fixture is `capacityBackup({ allOutbound: true, calculationMethod: 'blendSegments' })`: one Direction table of 500 Trips per service day, of which 480 have changed runtimes and are offered for regeneration. This is the fixture of the review's measurement.
+
+### What changed
+
+- `src/ui/App.tsx` (Regenerate dialog only):
+  - New `AnchorSelect`: a native select that renders only its chosen option until the planner focuses it or presses on it, then every point of the Trip's Pattern. React adds the options inside the pointer-down or focus event, before the browser opens the list. Before: 30 options in each of 480 lists. After: one option per list until it is opened.
+  - The rows read their Trip, Pattern, node names, revised times, band selection, nearest connection, and findings from maps keyed by id, built once per review, instead of scanning the arrays once per row.
+- `src/application/tripGenerationService.ts` (hand-off: not an owned file; the minimum change): `previewRecalculateTrips` resolves the Pattern, assignment, and profile once per Scenario, service day, and Pattern, not once per Trip. A failed resolution still fails each of its Trips with the same finding. The source signature is unchanged (the same records are signed).
+- `src/styles.css` (Regenerate dialog only): `max-width: calc(100vw - 32px)` on the dialog, and `display: block` on its table area.
+- `architecture_overview.md`: one sentence on how the regeneration review stays fast at 500 Trips.
+
+### Timing (production build, capacity fixture, 480 Trips, 1600 x 1000 window, 5 runs each)
+
+Measured in the page, from the menu click until "Regenerate trips" is enabled (review), and from its click until the dialog is gone after the Trips table reloaded (apply). Built with `pnpm exec vite build` into the scratchpad and served by `vite preview`.
+
+| | Review (ms) | Apply (ms) | Options in the dialog | Elements in the dialog |
+| --- | --- | --- | --- | --- |
+| Before (`origin/main` 3179991) | 1,071; 1,109; 1,043; 1,300; 1,109 | 1,034; 918; 954; 1,072; 1,019 | 14,431 | 20,217 |
+| After | 431; 407; 461; 410; 417 | 556; 580; 562; 566; 587 | 511 | 6,297 |
+
+The review's own measurement (2.47 s and 2.54 s) was taken in quirks mode before U01 and the earlier packages; on today's `main` the same path took about 1.0 to 1.6 s. A phase split of the after build: the service review takes about 165 to 220 ms, the apply's service call (which reviews again, then writes) about 410 to 670 ms, and the Trips reload about 170 to 190 ms. Both now meet the 1 s criterion with margin.
+
+### Tests added
+
+- `src/application/authoritativeTripService.test.ts`: "reads the Pattern, assignment, and profile once per Pattern and service day when many Trips are reviewed (U08, I-096)". 50 Trips; the review reads the Pattern twice (one resolution, one connection review), the assignments once, and the profile once; the apply doubles each. Failed on the old code (51, 50, 50 reads).
+- New `tests/ui/recalculation-capacity.spec.ts` (real app, capacity fixture, 3 tests):
+  - 480 rows: one option per anchor list, at most 8 Pattern reads in IndexedDB during the review (481 before), a coarse 10 s limit on the development server, and the apply closes the dialog. Failed on the old code (14,400 options).
+  - Anchor selection for every Trip: at the first, middle, and last rows a real mouse click fills the list with all 30 points ("First departure" first, "Last timepoint" last); focusing a list by keyboard fills it and ArrowDown picks "Stop 1"; the changed anchor starts a new review that can be applied; choosing "Last timepoint" on the last row and the bulk "Last timepoint" button reach every Trip. Failed on the old code (30 options on a closed list).
+  - At 1024 px: the dialog lies inside the window, Cancel and "Regenerate trips" are fully visible, and the table starts at the left edge of its scrolling area. Failed on the old styles (dialog right edge 1,346 px).
+- No existing assertion was changed.
+
+### Deliberate breaks (each applied, run, and restored from a saved copy)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| Service reads | the per-Pattern cache removed (old `tripGenerationService.ts`) | the new unit test fails (51, 50, 50 reads) |
+| Anchor lists | `onFocus` and `onPointerDown` removed from `AnchorSelect` (lists never fill) | the anchor-selection browser test fails (expected 30 options, received 1) |
+| Dialog width | the `max-width` and `display: block` rules removed (old `styles.css`) | the 1024 px test fails (right edge 1,346) |
+| Table edge | only `display: block` removed | the 1024 px test fails (table left edge -312 against 35) |
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 51 files, 747 tests passed (746 before; +1).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 151 passed, 0 failed (3.5 minutes); 148 before plus 3 new tests. No `test.fail`, `test.skip`, or `test.fixme`. `unified-action-layer.spec.ts:139` passed.
+- New browser tests, stress run `--repeat-each=10 --workers=8`: 30 of 30 passed.
+- `pnpm build`: succeeds. Bundle `index--t3h4Nml.js` 806.22 kB (805.44 kB before).
+- Visual check (production build, capacity fixture), images in the session scratchpad only, not committed:
+  - `/tmp/claude-0/-home-user-transit-costing-tool/78c7fbd5-e401-5ce8-811b-ff376540b588/scratchpad/u08-recalculate-1024.png` and `/tmp/claude-0/-home-user-transit-costing-tool/78c7fbd5-e401-5ce8-811b-ff376540b588/scratchpad/u08-recalculate-1024-anchor-changed.png`: the dialog fits the window; the full bulk row, the Trip and Anchor columns, and Cancel and "Regenerate trips" are visible; the table scrolls sideways for the later columns; after ArrowDown the second row reads "Stop 1" with a focus ring and its fixed time 5:26.
+  - `/tmp/claude-0/-home-user-transit-costing-tool/78c7fbd5-e401-5ce8-811b-ff376540b588/scratchpad/u08-recalculate-1440.png` and `/tmp/claude-0/-home-user-transit-costing-tool/78c7fbd5-e401-5ce8-811b-ff376540b588/scratchpad/u08-recalculate-1440-anchor-changed.png`: all ten columns visible, the Anchor header and lists no longer cut at the left.
+  - Before, for comparison: `/tmp/claude-0/-home-user-transit-costing-tool/78c7fbd5-e401-5ce8-811b-ff376540b588/scratchpad/before/u08-recalculate-1024.png` (dialog wider than the window, no buttons visible, "chor" header) and `/tmp/claude-0/-home-user-transit-costing-tool/78c7fbd5-e401-5ce8-811b-ff376540b588/scratchpad/before/u08-recalculate-1440.png`.
+
+### Hand-offs and residual risks
+
+- `tripGenerationService.ts` is not owned by U08; the change is limited to `previewRecalculateTrips` and is recorded here.
+- A screen reader may announce a closed anchor list as "1 of 1" on its first focus, before React fills it; the list is full when the planner opens it or moves with the arrows. Not verified with a screen reader.
+- A list stays full after it was opened once; at most the lists the planner touched hold all their points.
+- The apply still runs the review a second time to check that nothing changed (P04/P07 design); that is about half of the apply time.
