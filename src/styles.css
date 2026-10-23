@@ -129,8 +129,10 @@ nav { display: flex; gap: 2px; }
 .recalculation-bulk select { max-width: 14rem; }
 .recalculation-bulk span { font-weight: 600; margin-right: 0.25rem; }
 .recalculation-bulk .is-selected { background: #e9f3f8; border-color: #79abc4; color: #214c62; }
-.preview-dialog:has(.recalculation-bulk) { width: min(1320px, 100%); }
-.preview-dialog:has(.recalculation-bulk) .preview-times { max-height: min(48vh, 480px); }
+/* U08: the dialog stays inside the viewport (its 1,300 px table made the backdrop's grid track wider than the screen), and the table area
+   scrolls as a block (the generic dialog flex rule aligned it to the right, so the table's left edge overflowed where it could not be scrolled to). */
+.preview-dialog:has(.recalculation-bulk) { width: min(1320px, 100%); max-width: calc(100vw - 32px); }
+.preview-dialog:has(.recalculation-bulk) .preview-times { display: block; max-height: min(48vh, 480px); }
 .preview-dialog:has(.recalculation-bulk) .preview-times table { min-width: 1300px; }
 .preview-dialog:has(.recalculation-bulk) .preview-times td { white-space: nowrap; }
 .preview-dialog:has(.recalculation-bulk) .preview-times select { max-width: 190px; }

@@ -171,6 +171,26 @@ describe('authoritative trip workflow', () => {
     await expect(service.applyRecalculationPreview(reviewed)).rejects.toThrow('Review regeneration again');
   });
 
+  it('reads the Pattern, assignment, and profile once per Pattern and service day when many Trips are reviewed (U08, I-096)', async () => {
+    const p = pattern('p1', 'Southbound 1', 0); const repository = new AuthoritativeFake([p], [profile('rp1', 'p1', 100000, 1)]);
+    repository.assignments.push({ ...metadata(), id: 'a1', scenarioId: 'scenario', patternId: 'p1', serviceDayId: 'weekday', runtimeProfileId: 'rp1' });
+    const service = new TripGenerationService(repository);
+    const generated = await service.generateTrips(request('p1', 0, 300 * 49));
+    const ids = generated.trips.map((trip) => trip.id);
+    expect(ids).toHaveLength(50);
+    const reads = { pattern: 0, assignments: 0, profile: 0 };
+    const { getPattern, listRuntimeAssignments, getRuntimeProfile } = repository;
+    repository.getPattern = async (id) => { reads.pattern += 1; return getPattern.call(repository, id); };
+    repository.listRuntimeAssignments = async (...args) => { reads.assignments += 1; return listRuntimeAssignments.apply(repository, args); };
+    repository.getRuntimeProfile = async (id) => { reads.profile += 1; return getRuntimeProfile.call(repository, id); };
+    const reviewed = await service.previewRecalculateTrips(ids);
+    expect(reviewed.trips).toHaveLength(50);
+    // One resolution of the profile, plus one read of the Pattern for the connection review.
+    expect(reads).toEqual({ pattern: 2, assignments: 1, profile: 1 });
+    await service.applyRecalculationPreview(reviewed);
+    expect(reads).toEqual({ pattern: 4, assignments: 2, profile: 2 });
+  });
+
   it('stores one-step regeneration undo and expires it when an affected Trip is edited', async () => {
     const p = pattern('p1', 'Southbound 1', 0); const runtime = profile('rp1', 'p1', 10000, 1);
     const repository = new AuthoritativeFake([p], [runtime]);

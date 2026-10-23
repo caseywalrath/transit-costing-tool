@@ -367,9 +367,14 @@ export class TripGenerationService {
     const bandSelections: RecalculationBandSelection[] = [];
     const sources: unknown[] = [];
     const findings: TripGenerationError['findings'] = [];
+    // One read of the Pattern, assignment, and profile per Pattern and service day, not per Trip: at 500 Trips the reads one after another
+    // took most of a second (U08, I-096). A failed read fails each of its Trips as before.
+    const resolved = new Map<string, ReturnType<TripGenerationService['resolveAuthoritativeProfile']>>();
     for (const trip of trips) {
       try {
-        const { pattern, profile, assignment } = await this.resolveAuthoritativeProfile({ scenarioId: trip.scenarioId, serviceDayId: trip.serviceDayId, patternId: trip.patternId });
+        const key = JSON.stringify([trip.scenarioId, trip.serviceDayId, trip.patternId]);
+        if (!resolved.has(key)) resolved.set(key, this.resolveAuthoritativeProfile({ scenarioId: trip.scenarioId, serviceDayId: trip.serviceDayId, patternId: trip.patternId }));
+        const { pattern, profile, assignment } = await resolved.get(key)!;
         sources.push([trip, pattern, profile, assignment]);
         const result = recalculateTripWithAnchor(trip, pattern, profile, this.now(), anchorByTripId[trip.id], bandOverrideByTripId[trip.id]);
         recalculated.push(result.trip);
