@@ -4,7 +4,7 @@
 
 **Sitting 4I and 4J combined (U06, U07, P15, then P17) is in progress on the branch `claude/stage-4i-4j-review-fixes`, from `origin/main` after the merge of PR #21 (U01 to U05, P16). If a later session reads this note, the sitting stopped early: continue from the first package under "Not started", on Sonnet, on this branch. Standing rules 1 to 10 below apply unchanged.** The user did not ask for a pull request.
 
-- Done on this branch: U06 (`U06HASH`), U07 (`U07HASH`), P15 (`P15HASH`).
+- Done on this branch: U06 (`U06HASH`), U07 (`U07HASH`), P15 (`b920627`).
 - Package left: **P17** (the small structural package defined in the decisions below, items 1 to 3), done only because U06, U07, and P15 are committed and pushed. Not started: P17, U08, D01, P18.
 - This sitting's rules (user, 2026-10-23): Sonnet main session, no sub-agents, no Opus review; the Decision 0005 gate is waived and each package is pushed after its commit and fix log entry; a design or UX decision that no package text, added criterion, or decision below settles is recorded in the fix log as "blocked: decision needed" with the exact question and options, and the next independent package goes on; branch protection and CI are the user's to watch, and the workflows are not edited.
 - **Blocked: decision needed (U07, details and options in its fix log entry).** (1) How the open Shift drawer and the Runtime Save and Discard buttons coexist at 1024 to 1900 px (options: reserve room beside the drawer, move Save and Discard left, dock the drawer at the bottom, leave it). (2) Where to show why a Trip cannot be recalculated (`inspectStaleTrips` findings; the text exists, no screen shows it).
@@ -14,7 +14,7 @@
   - **U06 (done, `U06HASH`):** the Annual Cost column fits at 768, 1024, and 1440 px; an invalid estimate lists its findings; the persistence answer of `getLocalDataProtection()` is still not shown (no criterion asks for it), and the assumptions alert keeps its single sentence.
   - **U07 (done, `U07HASH`, except two blocked items):** the Runtime totals read `:61` by design (the Decision 0010 duration format; no change); the single-flight load, the reload after a Runtime save, the Recalculate band picker, the error boundary, the shared-profile line, and the message texts are done. Blocked: the Shift drawer covering the Runtime Save button, and where to show the `inspectStaleTrips` findings.
   - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead; the Add-trip row drafts are not kept across a scope change; 24 dialogs were converted (the finding counted 28, four were removed by X01).
-  - **P15 (done, `P15HASH`):** the Pattern editor shows "incomplete" for a Pattern with no distance (the literal "0.0 miles" was on no screen; the Trips screen shows no distance); `calculateTimepointHeadways` has a unit test; display rounding is in the domain. Still open: a CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
+  - **P15 (done, `b920627`):** the Pattern editor shows "incomplete" for a Pattern with no distance (the literal "0.0 miles" was on no screen; the Trips screen shows no distance); `calculateTimepointHeadways` has a unit test; display rounding is in the domain. Still open: a CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
   - **P16 leftovers:** `resetPatternService` (legacy mutator) still stamps wall-clock `now`; about 40 other domain signatures still default `now` to the wall clock.
 - Decisions made by the user on 2026-10-23 (all follow the recommended option). `docs/review/fix-packages.md` is on the review branch and is not edited; this note is the record.
   1. `deletePattern` gets a review token (Decision 0041 pattern). **Approved, unscheduled:** new small structural package **P17**, with items 2 and 3. Place it after P15 in the combined sitting if time allows, otherwise in its own sitting before 4K.
@@ -42,7 +42,7 @@ Items that the user assigned to later packages. They are added to those packages
   - the Trips table must reload Runtime profiles after a Runtime profile is saved, so Show runtime bands shades without a page reload (the second behavior in the 4C decision bullet);
   - the Recalculate dialog hides the band picker for segment-start and blended Trips (Option B, decided 2026-10-23).
 
-- **P15 (sitting 4I/4J), added 2026-10-23. DONE in P15 (commit `P15HASH`).** A Pattern with no distance entered shows "incomplete" instead of "0.0 miles" on the Trips and Pattern screens, using the same rule as Blocking (a total of 0 is incomplete mileage, P12). This is the one intended display change in P15; every other displayed value stays unchanged, and the user-visible text is recorded in the P15 entry.
+- **P15 (sitting 4I/4J), added 2026-10-23. DONE in P15 (commit `b920627`).** A Pattern with no distance entered shows "incomplete" instead of "0.0 miles" on the Trips and Pattern screens, using the same rule as Blocking (a total of 0 is incomplete mileage, P12). This is the one intended display change in P15; every other displayed value stays unchanged, and the user-visible text is recorded in the P15 entry.
 
 ### Standing rules for every sitting
 
@@ -1881,7 +1881,7 @@ Each break was applied to the source, the spec (or the unit test) run, and the s
 
 - Date: 2026-10-23. Sitting 4I/4J (combined). Model: Sonnet (main session). No sub-agents.
 - Type: structural. Severity: S3.
-- Commit: `COMMIT`.
+- Commit: `b920627`.
 
 ### Issues fixed
 
