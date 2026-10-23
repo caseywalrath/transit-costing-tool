@@ -126,6 +126,17 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm exec playwright te
 
 Assert counts (reads of a store, rows written) rather than elapsed time when a spec measures speed on the Vite development server: eight parallel browsers stretch times two to five times, and React `StrictMode` doubles every effect.
 
+## Checks and CI
+
+Verified on 2026-10-23 in a Claude Code cloud session (Node 22.22.0, pnpm 10.28.0):
+
+- `pnpm typecheck` covers `src`, `tests` (including `tests/ui`), `vite.config.ts`, `vitest.config.ts`, and `playwright.config.ts`. `@types/node` 22 supplies the Node types.
+- `pnpm test`, `pnpm build`, and `pnpm test:ui` as above. `pnpm build` runs `tsc -b`, which uses the same configuration.
+- Node 22 LTS is pinned in `.nvmrc`, in `engines` (`>=22.12.0 <23`), and in CI (`node-version-file: .nvmrc`). pnpm 10.28.0 is pinned by `packageManager`; CI reads it from there.
+- `.github/workflows/ci.yml` runs on pull requests and on pushes to `main`: a `verify` job (install with the frozen lockfile, typecheck, unit tests, build) and a `browser` job (`pnpm exec playwright install --with-deps chromium`, then `pnpm test:ui`; do not set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` on a GitHub runner). `.github/workflows/deploy-pages.yml` runs only after a successful CI run for a push to `main`.
+- The workflows have not run yet: they were validated locally (YAML parse, and every command they run) but no pull request existed when they were written. The first pull request is their first run (`docs/implementation/review-fixes.md`, B01 entry).
+- `pnpm audit` reports 5 advisories, all in the `vitest` chain. A Vitest major upgrade is follow-up work.
+
 ## Unit tests that need IndexedDB
 
 `pnpm test` runs in a Node environment with `fake-indexeddb/auto` loaded before every test file (`vitest.config.ts`), so a unit test can open a real Dexie database, run its upgrades, and run `DexieRouteDefinitionRepository`. Verified on 2026-10-22 with `fake-indexeddb` 6.2.6 and Vitest 3.2.7.

@@ -56,15 +56,16 @@ The expected application stack is:
 - React and TypeScript for the application;
 - Vite for development and static builds;
 - Dexie as the IndexedDB access layer;
-- a headless table library for dense tabular behavior;
-- a runtime schema validator for imported data and migrations;
+- hand-written table components for dense tabular behavior, with no table library (decision 18 of the code review);
+- hand-written validation of imported data and migrations, with no schema library (decision 18);
 - Vitest for domain and persistence tests, run on `fake-indexeddb` so the Dexie repository and database upgrades are tested in `pnpm test` (Decision 0040), with Playwright for browser-rendered layout regression tests;
 - plain CSS or CSS Modules for a compact interface;
-- GitHub Actions for GitHub Pages deployment.
+- GitHub Actions: a CI workflow (`.github/workflows/ci.yml`) runs on every pull request and every push to `main`: typecheck (which covers `src`, `tests`, and the tool configs), unit tests, the production build, and the Playwright browser suite. The Pages deployment (`deploy-pages.yml`) starts only after the CI run for a push to `main` has succeeded and builds the commit that CI checked;
+- Node 22 LTS, pinned in `.nvmrc`, `engines`, and CI, and pnpm 10, pinned by the `packageManager` field.
 
 Exact dependencies and versions must be selected during scaffolding and recorded in the Phase 1 implementation result.
 
-Phase 1A selected dependencies: React 19, TypeScript 5.9, Vite 7, Dexie 4, Zod 4 (reserved for import/migration validation), TanStack Table 8 (headless table capability), and Vitest 3. The package manifest is authoritative for exact ranges. Vite is configured with a relative (`./`) base for GitHub Pages project hosting.
+Phase 1A selected dependencies: React 19, TypeScript 5.9, Vite 7, Dexie 4, and Vitest 3. Zod and TanStack Table were selected at scaffolding and removed in the code review (Package B01) because nothing imported them. The package manifest is authoritative for exact ranges. A major upgrade of Vitest (the remaining `pnpm audit` findings are all in its chain) is follow-up work, not done. Vite is configured with a relative (`./`) base for GitHub Pages project hosting.
 
 The implemented file boundaries are:
 

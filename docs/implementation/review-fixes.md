@@ -1257,3 +1257,77 @@ Added acceptance criterion from the 4B note, done here: Block label uniqueness w
 - `listUnassignedTrips` adds one read of the Trips when the Blocking tab opens (the capacity spec still passes: its limit is 16 reads).
 - The Unassigned Trips list is refreshed with the Blocks and on a Route change. Trips edited on the Trips tab reach it when the Blocking tab is opened again, as before.
 - The bulk deadhead now considers every Route's Trips in the Block (it used the selected Route's Patterns only). For a single-Route Block the result is the same.
+
+## B01: CI, typecheck scope, and dependencies
+
+- Date: 2026-10-23. Sitting 4F. Model: Sonnet (main session). No sub-agents.
+- Type: build. Severity: S2.
+- Commit: `B01_HASH`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-046 | 6-004 | S2 | The deploy workflow published every push to `main` after only `pnpm build`, and no workflow ran on pull requests. |
+| I-097 | 6-006, A-008 | S3 | `pnpm typecheck` left out `tests/ui` and `playwright.config.ts`, and `@types/node` was absent. |
+| I-098 | 6-007 | S3 | Node and pnpm were not pinned, and CI used Node 20, which is past end of life. |
+| I-099 | 6-009 | S3 | `zod` and `@tanstack/react-table` were declared and never imported. |
+| I-100 | 6-010 | S3 | `pnpm audit` reported 11 advisories (2 critical, 2 high). |
+| I-101 | 6-011 | S3 | Every build warned that the one chunk was over 500 kB. |
+
+User decisions implemented: 17 (Node 22 LTS in CI, `engines`, `packageManager`, `.nvmrc`), 18 (remove both libraries and amend OV-TECH-01 and OV-TECH-02), C4 (update `vite` within its range, raise `chunkSizeWarningLimit` with a recorded reason, leave the `vitest` major upgrade as follow-up).
+
+### What changed
+
+- New `.github/workflows/ci.yml`: on pull requests and pushes to `main`. Job `verify`: install with the frozen lockfile, typecheck, unit tests, build. Job `browser` (required, because P05 made the suite green): install Chromium with its system packages, run `pnpm test:ui`, keep `test-results` as an artifact on failure. Node from `.nvmrc`, pnpm from `packageManager`. Concurrent runs for one ref cancel the older one.
+- `.github/workflows/deploy-pages.yml`: now triggered by `workflow_run` of `CI` on `main`. It builds and deploys only when that run succeeded for a push, and it checks out the commit CI checked. The manual `workflow_dispatch` trigger is removed, because it was a way to publish without CI; a deployment is repeated by re-running the workflow run. Node 22, pnpm from `packageManager`.
+- `package.json`: `packageManager` `pnpm@10.28.0`; `engines.node` `>=22.12.0 <23`; `zod` and `@tanstack/react-table` removed; `@types/node` `^22.20.5` added; `vite` range raised to `^7.3.7` (resolves to 7.3.7 from 7.3.6). `pnpm-lock.yaml` updated; `source-map-js` refreshed to the patched 1.2.x inside `postcss`'s own range.
+- `tsconfig.json`: `include` now has `tests` and `playwright.config.ts`.
+- `tests/ui/support/capacityFixture.ts`: one non-null assertion (`lastPat.points.at(-1)!`), the only type error that the wider scope exposed (the minimum change the 4E note expected).
+- `.nvmrc`: `22`.
+- `vite.config.ts`: `build.chunkSizeWarningLimit` 900 with a comment that gives the reason (about 790 kB, 218 kB gzip, works offline once loaded; split the chunk if it grows well beyond).
+- Documentation: `architecture_overview.md` (OV-TECH-01 and OV-TECH-02 list: hand-written tables and validation, CI, Node and pnpm pins; the dependency sentence), `codex.md` ("Checks and CI", the verified commands).
+
+### Behavior before and after
+
+- Pull requests and pushes to `main` now run typecheck, unit tests, build, and the browser suite. A push to `main` is published only if they pass.
+- No change in the application. The built bundle is byte-identical in name (`index-BdF3r0BO.js`, 790.12 kB), because the two removed packages were never imported. The 500 kB warning is gone.
+
+### `pnpm audit`
+
+| | Before | After |
+| --- | --- | --- |
+| Total | 11 (1 low, 6 moderate, 2 high, 2 critical) | 5 (3 moderate, 2 critical) |
+| `vite` advisories | 5 | 0 |
+| `source-map-js` (through `vite > postcss`) | 1 high | 0 |
+| `vitest`, `@vitest/mocker`, `tinypool` | 5 | 5 (need the Vitest major upgrade) |
+
+The remaining 5 are dev-toolchain packages only; none is in the shipped bundle. Follow-up (not done, by decision C4): upgrade `vitest` to the 4.1 or 5 line in a separate package, with its own regression run. Other majors behind (Vite 8, `@vitejs/plugin-react` 6, TypeScript 7) are not part of this package.
+
+### Tests
+
+B01 adds no test file; its checks are the commands themselves. One deliberate break: a type error added to a Playwright spec and, separately, to `playwright.config.ts`, each made `pnpm typecheck` fail (before B01 neither was checked); both removed.
+
+### Verification run
+
+- `pnpm install --frozen-lockfile`: up to date. `pnpm typecheck`: clean (now over `src`, `tests`, and the three config files). `pnpm test`: 41 files, 637 tests passed. `pnpm build`: succeeds with no chunk-size warning.
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 80 passed, 0 failed (2.6 minutes).
+- Workflow files: both parse as YAML and every step has a `uses` or `run`. `actionlint` is not installed here.
+- `pnpm audit` before and after: table above (saved outputs in the session scratchpad only).
+
+### What could not be verified
+
+The acceptance criteria ask for a CI run on the package branch. No pull request was opened (the user did not authorize one), and the new `ci.yml` runs only on a pull request or a push to `main`, so no run exists. Not verified:
+
+- that GitHub accepts the workflow syntax and the `workflow_run` link between `CI` and `Deploy to GitHub Pages` (the deploy workflow only starts once it is on the default branch);
+- that `pnpm/action-setup@v4` with no `version` takes pnpm from `packageManager`, and that `actions/setup-node@v4` accepts `node-version-file: .nvmrc` with the pnpm cache;
+- that `playwright install --with-deps chromium` works on the runner, and that the browser suite passes there (it passes here on a different Chromium build, 141, and on this machine's load);
+- the one intermittent failure in `unified-action-layer.spec.ts:139` (see the P14 entry) could fail a CI run. A re-run clears it; the cause is open.
+
+Before the first deployment, open the pull request and read the CI run; then merge, and read the first Deploy run.
+
+### Hand-offs and residual risks
+
+- The first deployment after merge is the first real use of the `workflow_run` trigger. If the Deploy workflow does not start, the fallback is to restore `on: push` and make the build job `needs` a call to `ci.yml` through `workflow_call`.
+- The repository's branch protection (requiring the `verify` and `browser` checks) is a GitHub setting for the user; this package cannot set it.
+- The `engines` range is `>=22.12.0 <23`; pnpm warns, but does not fail, outside it unless `engine-strict` is set.
