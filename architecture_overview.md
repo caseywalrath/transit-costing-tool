@@ -155,6 +155,8 @@ Implements repositories, database migrations, backup, restore, and CSV serializa
 
 Implements pages, forms, grids, table interactions, selection, warnings, accessibility, and visual styling.
 
+Two rules keep the screens predictable (review package U07). A render error inside a screen is caught by one error boundary below the header and tabs, which shows a recoverable message instead of an empty page and resets when the tab, Scenario, or Route changes. The Trips workspace loads its Runtime data one read at a time (`src/ui/singleFlight.ts`): every Runtime change bumps one version number and reloads once, and the Trips table shades from what that read returned, not from the records the page loaded at the start.
+
 ## Domain Hierarchy
 
 ```text

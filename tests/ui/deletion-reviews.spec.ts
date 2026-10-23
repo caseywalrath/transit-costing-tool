@@ -101,7 +101,7 @@ test('Delete selected removes the selected Trips after the review and is refused
 
 test('Delete runtime profile replaces the assignments after the review and is refused when the profile changed after it', async ({ page }) => {
   await createRouteWithPattern(page, 'Runtime profile deletion reviews');
-  await runInPage(page, "const [pattern] = await e.db.patterns.toArray(); await e.service.createDefaultRuntimeProfile(pattern, 'Alternative');");
+  await runInPage(page, "const [pattern] = await e.db.patterns.toArray(); await e.service.ensureDefaultRuntimeProfile(pattern); await e.service.createDefaultRuntimeProfile(pattern, 'Alternative');");
   await page.reload();
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   const runtimeSection = page.locator('[aria-label="Runtimes section"]');

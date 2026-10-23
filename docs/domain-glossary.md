@@ -78,7 +78,7 @@ An integer number of seconds between two events. A duration is not a time of day
 
 ### Operating span
 
-The interval between the first and last scheduled service events for a route, pattern, or service day. Initial operating spans are derived from generated trips.
+The interval between the first and last scheduled service events for a route, pattern, or service day. Operating spans are derived from the authoritative Trips; the application does not store them.
 
 ### Headway
 
@@ -191,6 +191,10 @@ Running time plus usable layover time between revenue Trips. Pull-out, pull-in, 
 ### Running time
 
 The sum of scheduled revenue-Trip durations, excluding layover and non-revenue movements.
+
+### Run Time
+
+The elapsed time of one Trip from its first to its last timepoint. It is shown in the Trips table and in the regeneration review as `:MM` or `:MM:SS` (minutes are not capped at 59). The sum of the Run Times of a Block's revenue Trips is its Running time.
 
 ### Platform hours
 

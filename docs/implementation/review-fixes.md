@@ -4,15 +4,15 @@
 
 **Sitting 4I and 4J combined (U06, U07, P15, then P17) is in progress on the branch `claude/stage-4i-4j-review-fixes`, from `origin/main` after the merge of PR #21 (U01 to U05, P16). If a later session reads this note, the sitting stopped early: continue from the first package under "Not started", on Sonnet, on this branch. Standing rules 1 to 10 below apply unchanged.** The user did not ask for a pull request.
 
-- Done on this branch: U06 (`88a40a6`).
-- Packages left: **U07** (Runtime and Trips presentation, with the added acceptance criteria below), **P15** (Trips and Runtime rules out of `App.tsx`; the one display change is "incomplete" instead of "0.0 miles" for a Pattern with no distance), then **P17** (below) only if the first three are committed and pushed. Not started: U07, P15, P17, U08, D01, P18.
+- Done on this branch: U06 (`U06HASH`), U07 (`U07HASH`).
+- Packages left: **P15** (Trips and Runtime rules out of `App.tsx`; the one display change is "incomplete" instead of "0.0 miles" for a Pattern with no distance), then **P17** (below) only if P15 is committed and pushed. Not started: P15, P17, U08, D01, P18.
 - This sitting's rules (user, 2026-10-23): Sonnet main session, no sub-agents, no Opus review; the Decision 0005 gate is waived and each package is pushed after its commit and fix log entry; a design or UX decision that no package text, added criterion, or decision below settles is recorded in the fix log as "blocked: decision needed" with the exact question and options, and the next independent package goes on; branch protection and CI are the user's to watch, and the workflows are not edited.
-- Blocked: none so far.
+- **Blocked: decision needed (U07, details and options in its fix log entry).** (1) How the open Shift drawer and the Runtime Save and Discard buttons coexist at 1024 to 1900 px (options: reserve room beside the drawer, move Save and Discard left, dock the drawer at the bottom, leave it). (2) Where to show why a Trip cannot be recalculated (`inspectStaleTrips` findings; the text exists, no screen shows it).
 - Known failures: none. If the intermittent `unified-action-layer.spec.ts:139` failure returns, diagnose it as a package failure and fix the code.
-- State after U06: unit tests 48 files, 700 tests; browser suite 132 tests, all passing; bundle `index-sdD2Whrb.js` 805.01 kB. The user must still read the first CI run.
+- State after U07: unit tests 49 files, 704 tests; browser suite 145 tests, all passing; bundle `index-CUKH2aRs.js` 808.96 kB. The user must still read the first CI run.
 - Carried forward for U06 and U07 from this sitting (details in the U01 to U05 entries):
-  - **U06 (done, `88a40a6`):** the Annual Cost column fits at 768, 1024, and 1440 px; an invalid estimate lists its findings; the persistence answer of `getLocalDataProtection()` is still not shown (no criterion asks for it), and the assumptions alert keeps its single sentence.
-  - **U07:** Runtime totals show ":61"/":65" (U01 screenshots); the Shift drawer covers the Runtime Save button at some widths; the Runtime profile single-flight load, Runtime reload after save, and the Recalculate band picker (added criteria below); the React error boundary; user-facing text for `tripShift.timeBeforeServiceDay` and `inspectStaleTrips` findings; the shared-profile line should call `listRuntimeProfileServiceDays` (I-041).
+  - **U06 (done, `U06HASH`):** the Annual Cost column fits at 768, 1024, and 1440 px; an invalid estimate lists its findings; the persistence answer of `getLocalDataProtection()` is still not shown (no criterion asks for it), and the assumptions alert keeps its single sentence.
+  - **U07 (done, `U07HASH`, except two blocked items):** the Runtime totals read `:61` by design (the Decision 0010 duration format; no change); the single-flight load, the reload after a Runtime save, the Recalculate band picker, the error boundary, the shared-profile line, and the message texts are done. Blocked: the Shift drawer covering the Runtime Save button, and where to show the `inspectStaleTrips` findings.
   - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead; the Add-trip row drafts are not kept across a scope change; 24 dialogs were converted (the finding counted 28, four were removed by X01).
   - **P15:** the Trips and Pattern screens still show 0.0 miles for a Pattern with no distance (only Blocking treats a 0 total as incomplete); `calculateTimepointHeadways` has no unit test; display rounding in the Trips table. A CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
   - **P16 leftovers:** `resetPatternService` (legacy mutator) still stamps wall-clock `now`; about 40 other domain signatures still default `now` to the wall clock.
@@ -37,7 +37,7 @@ Items that the user assigned to later packages. They are added to those packages
 
 - **P09 (sitting 4E), the service part of the Runtime first-visit race. DONE in P09 (commit `fd1e65b`).** `ensureDefaultRuntimeProfile` is a check-then-write that is not atomic, and two overlapping calls can store duplicate Runtime assignments. Make it idempotent: one check-and-write in a single transaction, so two calls at once leave one Default profile and one assignment per standard Service day, and "Duplicate runtime assignment" cannot appear. Add a test that runs two calls at the same time against both repositories. P09 does not change `App.tsx`. Do not remove the up-front Default Runtime profile step or the reload after the Runtime save in `tests/ui/support/tripsWorkspace.ts`; U07 removes them.
 - **P14 (sitting 4F), DONE in P14 (commit `3df50b6`):** enforce Block label uniqueness when a Block is created or renamed (Decision 0039), with a proposed default label of the first free "Block <n>".
-- **U07 (sitting 4I):**
+- **U07 (sitting 4I). DONE in U07 (commit `U07HASH`):**
   - the single-flight Runtime load in `App.tsx` (the other half of the race above), then remove the two test-helper steps named above;
   - the Trips table must reload Runtime profiles after a Runtime profile is saved, so Show runtime bands shades without a page reload (the second behavior in the 4C decision bullet);
   - the Recalculate dialog hides the band picker for segment-start and blended Trips (Option B, decided 2026-10-23).
@@ -1781,3 +1781,98 @@ User decisions implemented: C3 (the Total row leaves the daily columns blank, ke
 
 - The estimate findings that name a Trip or a Block cannot say which one: the finding holds an id and the screen holds no Trips. The text says what to review.
 - `ServiceDayNameInput` is uncontrolled (`defaultValue`), as the field was; a refused name stays typed in the field with the message beside it until the planner corrects it or reloads.
+
+## U07: Trips and Runtime presentation
+
+- Date: 2026-10-23. Sitting 4I/4J (combined). Model: Sonnet (main session). No sub-agents.
+- Type: UI. Severity: S2.
+- Commit: `COMMIT`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-041 | 5-016 | S2 | The Runtime profile line named only the selected Service day ("Used by Weekday for ...") even when other days share the profile (02R-AC18). |
+| I-057 | 1-013 | S3 | The Trips selector for a Blocking Scenario read "Scenario", the label of the global Scenario selector; "Run Time" and the operating-span line were not in the glossary or contradicted the overview. |
+| I-082 | 4-025 | S3 | Runtime paste replaced the profile's calculation method, also in Append mode, without showing it. |
+| I-092 | 5-026 | S3 | Shift drawer Undo, Redo, and the step buttons changed the Redo history before the preview resolved; a refused preview left the history out of step with the preview. |
+| I-093 | 5-027 | S3 | The Trips CSV import preview showed Trip and Pattern UUIDs; finding keys could collide. |
+| I-094 | 5-028 | S3 | Runtime band totals of 60 minutes or more read ":61" and ":65". **Checked first, as the user directed: see "What criterion 6 found".** |
+| I-012 (UI part) | 5-011 | S2 | Any error while drawing a screen blanked the whole page (no error boundary). |
+
+User decisions implemented: decision 7 (the Trips selector reads "Blocking Scenario"); the 2026-10-23 decision, Option B, for the Recalculate dialog (Decision 0031 addendum, item 5).
+
+Added acceptance criteria done in this package (the Added acceptance criteria section records the hash): the single-flight Runtime load and the removal of the two test-helper steps; the Trips table follows a Runtime profile saved in the same session; the Recalculate dialog hides the band picker for segment-start and blended Trips.
+
+### What changed
+
+- **Single-flight Runtime load (`App.tsx`, new `src/ui/singleFlight.ts`).** `loadRuntime` used to start a new read each time it was called: the effect, StrictMode's second effect run, and every change (a save, an assignment, a copy, a method change) that called it and then bumped `runtimeVersion` made two or three reads in a row or at once, each disabling the Runtime menus and closing an open one. Now a change only calls `onRuntimeChanged`, which bumps the version and reloads once through the effect, and loads that overlap (StrictMode's second effect run, a change that lands during a load) run one after another and share the last result (`singleFlight`: a call made while a read runs asks for one more read and every caller waits for it). The section sets `loading` once and applies one result. A read is also where the Default profile is ensured, as before (the service half was P09's).
+- **Runtime reload after a save.** The Runtime section's read now includes every profile of the Route and the day's assignments (`routeRuntime`), and the Trips table shades from those, not from the records the page loaded at the start. After a Runtime save, "Show runtime bands" shades from the saved profile with no page reload (the legend shows the new band times).
+- **Test helpers.** `tests/ui/support/tripsWorkspace.ts` no longer creates the Default Runtime profile before Trips mounts, and no longer reloads the page after the Runtime save (it waits for the Runtime menu to be enabled instead). `trips-table-display.spec.ts` no longer reloads before "Show runtime bands".
+- **Shared Runtime profile line (criterion 1).** "Used by Weekday, Saturday, and Sunday for Southbound: Wagon Road to Evans." The days come from `listRuntimeProfileServiceDays` (P09), in the canonical order, in the same read.
+- **Label (criterion 2).** The Trips selector reads "Blocking Scenario". `docs/ui-conventions.md` (the Trips selector line) and `docs/domain-glossary.md` (new "Run Time" entry; the operating-span line says spans are derived from the authoritative Trips and not stored) are updated.
+- **Runtime paste (criterion 3).** The preview shows "Calculation method: Band at segment start (from the pasted rows, replacing Single band for trip)." or "Single band for trip (unchanged)." Append keeps the profile's own method and says so, naming the pasted method when it differs ("kept; Append does not change the method, and the pasted rows name Band at segment start"). Before, Append applied the method the pasted rows named. **Reading of "unless the preview says otherwise":** Append never changes the method; the preview says so. If the planner wants a way to change the method while appending, that is a new control and was not added.
+- **Shift history (criterion 4).** `reviewStagedShift` returns whether the preview resolved. `appendStagedShift`, `undoStagedShift`, and `redoStagedShift` change the Redo history only after it did.
+- **CSV import preview (criterion 5).** The Trip column shows the label, or "Trip departing 6:10" when there is none; the Pattern column shows the Pattern's name. The error list keys include the position.
+- **Runtime band totals (criterion 6).** See below.
+- **Error boundary (criterion 7).** `WorkspaceErrorBoundary` wraps the screen below the header and the tabs. A render error shows "This screen could not be shown" with what to do ("Your saved data is still in this browser; edits you had not saved on this screen are lost. Choose another tab, or try again. If it happens again, export a backup from the Project menu and reload the page."), a Try again button, and a Reload page button. It resets when the tab, Scenario, or Route changes. The error is written to the console.
+- **Recalculate dialog (Option B).** For a Trip whose Pattern uses the segment-start or the blended method, an ambiguous anchor no longer offers the Runtime band picker. It lists the candidates ("Early: 5:55 departure (within band)") and says "The fixed time can be reached from two first departures, and a band cannot be chosen for a Band at segment start profile", then "Use the first departure for this trip, choose another anchor, or adjust the runtime bands." The "Use first departure for this trip" button is unchanged. A single-band profile keeps the picker.
+- **Messages (carried forward from P07 and P08).** `USER_FACING_VALIDATION_MESSAGES` has text for `tripShift.timeBeforeServiceDay`, `trip.timeBeforeServiceDay`, `trip.anchorNoRuntime`, and `trip.anchorAmbiguous`.
+
+### What criterion 6 found
+
+The totals show `:53`, `:61`, `:65`, and `:57` for the golden Weekday profile (the sums of eight segments of 5 to 15 minutes). They are not wrong and not a different format: `formatRuntimeDuration` prints minutes without a cap at 59 (Decision 0010: "display as `:MM` or `:MM:SS`"), so `:61` is 61 minutes, in the same format as the segment cells (`:06`) and the Trips table's Run Time column. Decision 0033 defines no other duration format. Finding 5-028 is therefore a readability question, not a defect, and the user's default (the totals use the duration format) already holds. **No change was made;** a test pins the display (`Runtime band totals of 60 minutes or more use the same duration format as the segments and the Run Time column`). If the planner would rather read totals of an hour or more as `1:01`, that is a decision for all duration cells, not for the totals alone.
+
+### Blocked: decision needed
+
+1. **Shift drawer covers the Runtime Save and Discard buttons (carried forward from U03).** At 1024 to 1900 px the docked Shift drawer (380 px or 40% of the width, fixed to the right edge from 72 px down) covers the right end of the Runtimes header, where Save and Discard sit. With a staged Shift open the planner reaches Runtime Save only by keyboard. No package text, added criterion, or decision says how the two should coexist. **Question:** how should the open Shift drawer and the Runtime Save and Discard buttons coexist? **Options:** (A) reserve the room: while the drawer is open the Trips workspace gets a right margin equal to the drawer width, so nothing is covered and the schedule table narrows (smallest change to the header; recommended); (B) move Save and Discard to the left of the Runtimes header, next to the title, so the drawer never covers them (changes the header convention in `docs/ui-conventions.md`); (C) dock the drawer at the bottom of the window (new layout; Sol-class judgment); (D) leave it, since the keyboard reaches Save. Not done.
+2. **Where to show why a Trip cannot be recalculated (`inspectStaleTrips` findings, from P07).** The text for the findings exists now (messages above) but no screen shows them. **Question:** where should the reason appear when "Run Times Have Changed" and a Trip's profile cannot calculate it? **Options:** (A) one status line under the "Run Times Have Changed" indicator listing the distinct reasons (recommended); (B) the reason in the row's "Run times changed" note; (C) leave it unshown. Not done.
+
+### Files outside the package's owned list (recorded hand-offs)
+
+- New `src/ui/singleFlight.ts` and `src/ui/singleFlight.test.ts` (the screen's one-at-a-time rule, tested without a browser).
+- `tests/ui/support/tripsWorkspace.ts` and `tests/ui/trips-table-display.spec.ts`: the helper steps and the reload that the added criterion says U07 removes. Their assertions are unchanged.
+- `architecture_overview.md` (UI layer paragraph). `tests/ui/deletion-reviews.spec.ts`: one call added to its fixture (see Verification). Assertions unchanged.
+
+### Tests added
+
+- `src/ui/singleFlight.test.ts` (4 tests): one call runs once; overlapping calls never run together, run once more, and all get the last result; a call after the end starts a fresh run and a failure does not stick; the second run reads the newest inputs.
+- `tests/ui/trips-runtime-presentation.spec.ts` (13 tests, real IndexedDB): the shared-profile line (three days; two days; one day); the "Blocking Scenario" label; the band totals pin; the paste preview text for unchanged, pasted-method, and Append, and the stored method after an Append of rows that name another method; Undo and Redo after a refused preview; the CSV preview names (and no ids); the error boundary (message, tabs still work, recovers on another tab) and Try again; "Show runtime bands" after a Runtime save with no reload; the Recalculate dialog with no picker for segment-start and the picker kept for single-band; the first visit to Trips (one profile, four assignments, no notice).
+- On the unfixed code 10 of the first 12 failed; the totals pin and the single-band picker control passed because they pin behavior that was already right. The first-visit test was added after that run and was not run on the old code.
+
+### Deliberate breaks (each applied, run, and restored)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| Shared profile line | the line names only the selected day again | 3 fail (both line tests and the first-visit test) |
+| Label | the selector reads "Scenario" again | 1 fails |
+| Paste preview | Append applies the pasted method | 1 fails |
+| Shift history | the step buttons clear the Redo history before the preview resolves | 1 fails |
+| CSV preview | the Pattern cell shows the id | 1 fails |
+| Error boundary | the boundary renders its children after an error | 2 fail (the render-error test and Try again) |
+| Show runtime bands | the table reads the records loaded at the start | 1 fails |
+| Recalculate dialog | the band picker is always offered | 1 fails |
+| Single flight (`singleFlight.test.ts`) | a call made while a run works starts a second run | 1 fails |
+
+Each break was applied to the source, the spec (or the unit test) run, and the source restored from a saved copy. No browser test fails when the single-flight wrapper is removed: the service half (P09) already keeps the first visit correct, and the browser specs no longer need the old helper steps either way. The unit test is the proof of the rule; the saved profile reaching the Trips table and the one-time load are covered as behavior, not as timing.
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 49 files, 704 tests passed (700 before; +4 in `singleFlight.test.ts`).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 145 passed, 0 failed (4.8 minutes); 132 before plus the 13 new tests. No `test.fail`, `test.skip`, or `test.fixme`. `unified-action-layer.spec.ts:139` passed. An earlier run of this package's code failed two specs and the cause was in the package: `deletion-reviews.spec.ts` created its second profile before the app had created the Default one (the removed helper step used to do that; it now calls `ensureDefaultRuntimeProfile` first, assertions unchanged), and the paste test, rewritten, waited on a menu that a second Runtime load closed (the explicit `loadRuntime()` calls after each change were removed, so a change reloads once through `onRuntimeChanged`).
+- New spec stress run, `--repeat-each=10 --workers=8`: `trips-runtime-presentation.spec.ts` 130 of 130 passed (13 tests).
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-CUKH2aRs.js` 808.96 kB (805.01 kB before).
+- Visual inspection (scratchpad, not committed), Federal BRT Trips (Weekday, Southbound) at 1024 and 1440 px, before and after: `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/trips-{before,after}-{1024,1440}.png` and `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/runtime-{before,after}-{1024,1440}.png`. Seen: the Runtime and Trips layout is unchanged; the Trips header reads "Profile" and "Blocking Scenario" and fits at 1024 px; the totals read `:53`, `:61`, `:65`, `:57`. Also: the Shift drawer over a Runtime draft at 1024 and 1440 px (`/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/shift-drawer-over-runtime-save-after-{1024,1440}.png`), which shows the right end of the Runtimes header, where Save and Discard sit, under the drawer (blocked item 1); the Recalculate dialog for a segment-start Trip (`/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/recalculate-segment-start-after-1024.png`), which lists the two candidates and has no band picker; and the error message (`/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/error-boundary-after-1024.png`). Seen and left alone: at 1024 px the Recalculate dialog is wider than the window, so its right-hand columns and its buttons are cut off (it was before this package).
+
+### Not done, or only partly
+
+- The two blocked items above.
+- The Runtime paste dialog loses keyboard focus when "Review rows" is pressed (the button is disabled while it reviews), so Escape does not close it until focus is moved back into the dialog. Seen while writing the test (it clicks Cancel). Not owned by this package; U04's focus work did not cover it.
+- The Recalculate dialog is wider than a 1024 px window (seen in the screenshot above); it was before this package, and no package owns it.
+- The finding-key change in the CSV preview is not covered by a test (a duplicate key needs two findings with one message for one Trip, which the CSV reader does not produce).
+
+### Residual risks
+
+- `routeRuntime` adds two reads (the Route's profiles and the day's assignments) to each Runtime section load.
+- The error boundary cannot catch an error thrown while drawing the header or the tabs, in an event handler, or in an asynchronous callback.
