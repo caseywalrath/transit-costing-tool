@@ -180,7 +180,7 @@ test('Shift drawer steps keep keyboard focus inside the drawer', async ({ page }
   await page.getByRole('button', { name: 'Trip actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Shift selected…' }).click();
   const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
-  const forward = drawer.getByRole('button', { name: '+ Forward' });
+  const forward = drawer.getByRole('button', { name: /min later/ });
   await forward.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByText(/Staged 1 minute later/)).toBeVisible();

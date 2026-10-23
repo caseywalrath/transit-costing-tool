@@ -483,12 +483,13 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
   }
   async listBlocks(serviceDayId: string, tripProfileId?: string): Promise<Block[]> { const blocks = await this.db.blocks.where('serviceDayId').equals(serviceDayId).toArray(); return tripProfileId ? blocks.filter((block) => block.tripProfileId === tripProfileId) : blocks; }
   async listTripsForProfile(tripProfileId: string): Promise<Trip[]> { return this.db.trips.where('tripProfileId').equals(tripProfileId).toArray(); }
+  /** The Trips of one Trip Profile of one Scenario, read through the `[scenarioId+tripProfileId]` index (Dexie version 8). */
+  async listTripsForScenarioProfile(scenarioId: string, tripProfileId: string): Promise<Trip[]> { return this.db.trips.where('[scenarioId+tripProfileId]').equals([scenarioId, tripProfileId]).toArray(); }
   async listBlocksForProfile(tripProfileId: string): Promise<Block[]> {
     const [blocks, blockingScenarios] = await Promise.all([this.db.blocks.toArray(), this.db.blockingScenarios.where('tripProfileId').equals(tripProfileId).toArray()]);
     const scenarioIds = new Set(blockingScenarios.map((scenario) => scenario.id));
     return blocks.filter((block) => block.tripProfileId === tripProfileId || (block.blockingScenarioId !== undefined && scenarioIds.has(block.blockingScenarioId)));
   }
-  async saveBlocks(blocks: Block[]): Promise<void> { assertTripProfileReferences(await this.db.trips.toArray(), blocks); await this.db.blocks.bulkPut(blocks); }
   async getPattern(id: string) { return this.db.patterns.get(id); }
   /** Replace one generation set and related trips/blocks in one IndexedDB transaction. */
   async replaceGenerationSet(set: TripGenerationSet, trips: Trip[], blocks: Block[]): Promise<void> {

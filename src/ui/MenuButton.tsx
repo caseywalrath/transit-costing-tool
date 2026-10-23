@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { rememberDialogInvoker } from './ModalDialog';
 
-export type MenuItem = { id: string; label: string; onSelect: () => void; disabled?: boolean; title?: string; checked?: boolean; /** With `checked`: `checkbox` for a toggle that is independent of the other items; the default `radio` marks one choice of a group. */ kind?: 'radio' | 'checkbox'; destructive?: boolean; restoreFocus?: boolean; wrapLabel?: boolean; /** Plain text shown under the item and read as its description (for example the time of the last backup). */ note?: string };
+export type MenuItem = { id: string; label: string; onSelect: () => void; disabled?: boolean; title?: string; checked?: boolean; /** With `checked`: `checkbox` for a toggle that is independent of the other items; the default `radio` marks one choice of a group. */ kind?: 'radio' | 'checkbox'; destructive?: boolean; restoreFocus?: boolean; wrapLabel?: boolean; /** Plain text shown under the item and read as its description (for example the time of the last backup). An array shows one line each. */ note?: string | string[] };
 export type MenuGroup = { label?: string; items: MenuItem[] };
 
 /** Compact, keyboard-operable action menu used by workspace headers. */
@@ -48,13 +48,13 @@ export function MenuButton({ label, menuLabel, groups, disabled = false, fieldLa
     }}>{groups.map((group, groupIndex) => <div className="action-menu-group" key={`${group.label ?? 'commands'}-${groupIndex}`}>
       {groupIndex > 0 && <div className="action-menu-separator" role="separator" />}
       {group.label && <div className="action-menu-label" role="presentation">{group.label}</div>}
-      {group.items.map((item) => <Fragment key={item.id}><button type="button" role={item.checked === undefined ? 'menuitem' : item.kind === 'checkbox' ? 'menuitemcheckbox' : 'menuitemradio'} aria-checked={item.checked} aria-describedby={item.note ? `${menuId}-${item.id}-note` : undefined} className={[item.destructive && 'subtle-danger', item.checked && selectionStyle === 'highlight' && 'menu-item-selected'].filter(Boolean).join(' ') || undefined} disabled={item.disabled} title={item.title} onClick={() => {
+      {group.items.map((item) => { const notes = ([] as string[]).concat(item.note ?? []).filter(Boolean); const noteId = (index: number) => `${menuId}-${item.id}-note${index ? `-${index}` : ''}`; return <Fragment key={item.id}><button type="button" role={item.checked === undefined ? 'menuitem' : item.kind === 'checkbox' ? 'menuitemcheckbox' : 'menuitemradio'} aria-checked={item.checked} aria-describedby={notes.length ? notes.map((_, index) => noteId(index)).join(' ') : undefined} className={[item.destructive && 'subtle-danger', item.checked && selectionStyle === 'highlight' && 'menu-item-selected'].filter(Boolean).join(' ') || undefined} disabled={item.disabled} title={item.title} onClick={() => {
         if (item.disabled) return;
         // A dialog that the item opens must keep the focus it takes, and return it to this trigger when it closes.
         rememberDialogInvoker(triggerRef.current);
         dismiss(false); item.onSelect();
         if (item.restoreFocus !== false) window.setTimeout(() => { const active = document.activeElement; if (!active || active === document.body || rootRef.current?.contains(active)) triggerRef.current?.focus(); });
-      }}>{item.checked && selectionStyle === 'check' && <span className="menu-check" aria-hidden="true">✓</span>}<span className={item.wrapLabel ? 'menu-item-label menu-item-label--wrap' : 'menu-item-label'}>{item.label}</span></button>{item.note && <div className="action-menu-note" role="presentation" id={`${menuId}-${item.id}-note`}>{item.note}</div>}</Fragment>)}
+      }}>{item.checked && selectionStyle === 'check' && <span className="menu-check" aria-hidden="true">✓</span>}<span className={item.wrapLabel ? 'menu-item-label menu-item-label--wrap' : 'menu-item-label'}>{item.label}</span></button>{notes.map((note, index) => <div className="action-menu-note" role="presentation" id={noteId(index)} key={index}>{note}</div>)}</Fragment>; })}
     </div>)}</div>}
   </div>;
 }

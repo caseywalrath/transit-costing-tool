@@ -106,7 +106,6 @@ export interface TripGenerationRepository {
   getTrip(id: string): Promise<Trip | undefined>;
   saveTrips(trips: Trip[]): Promise<void>;
   listBlocks(serviceDayId: string): Promise<Block[]>;
-  saveBlocks(blocks: Block[]): Promise<void>;
   /** Historical atomic generation-set replacement. */
   replaceGenerationSet(set: TripGenerationSet, trips: Trip[], blocks: Block[]): Promise<void>;
   listRuntimeAssignments(scenarioId: string, serviceDayId?: string, patternId?: string): Promise<RuntimeAssignment[]>;

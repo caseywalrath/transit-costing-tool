@@ -26,8 +26,11 @@ test('uses one header action layer and a right-docked Shift drawer', async ({ pa
   await expect(tripActions.getByRole('button')).toHaveText(['Default ▾', 'No Blocking Scenario ▾', '']);
   await expect(runtimeSection.locator('.runtime-editor-toolbar')).toHaveCount(0);
   await expect(tripsSection.locator('.trip-shift-tool')).toHaveCount(0);
-  await expect(drawer.getByRole('button')).toHaveText(['×', '− Back', '+ Forward', 'Undo', 'Redo', 'Discard', 'Done']);
-  await expect(drawer.getByLabel('Shift minutes')).toHaveValue('1');
+  // U10: the drawer became a compact panel with step buttons that name their size and direction, and one-press step sizes.
+  await expect(drawer.getByRole('button')).toHaveText(['×', '← 1 min earlier', '1 min later →', 'Undo', 'Redo', 'Discard', 'Done']);
+  await expect(drawer.getByRole('radio')).toHaveCount(4);
+  await expect(drawer.getByRole('radio', { name: '1', exact: true })).toBeChecked();
+  await expect(drawer.getByLabel('Step minutes')).toHaveValue('1');
 
   const [runtimeSectionBox, runtimeTitleBox, runtimeActionsBox, tripsSectionBox, tripsTitleBox, tripActionsBox, drawerBox] = await Promise.all([
     runtimeSection.boundingBox(),
@@ -49,6 +52,9 @@ test('uses one header action layer and a right-docked Shift drawer', async ({ pa
   expect(runtimeActionsBox!.x + runtimeActionsBox!.width).toBeLessThanOrEqual(runtimeSectionBox!.x + runtimeSectionBox!.width - 12);
   expect(tripActionsBox!.y).toBeLessThanOrEqual(tripsTitleBox!.y + tripsTitleBox!.height);
   expect(tripActionsBox!.x + tripActionsBox!.width).toBeLessThanOrEqual(tripsSectionBox!.x + tripsSectionBox!.width - 12);
-  expect(drawerBox!.width).toBe(380);
-  expect(drawerBox!.x + drawerBox!.width).toBe(1280);
+  // U10: still docked to the right edge, now 16 px in from the edge and the bottom, and short enough to leave the table visible.
+  expect(drawerBox!.width).toBe(320);
+  expect(drawerBox!.x + drawerBox!.width).toBe(1280 - 16);
+  expect(drawerBox!.y + drawerBox!.height).toBe(800 - 16);
+  expect(drawerBox!.height).toBeLessThan(260);
 });

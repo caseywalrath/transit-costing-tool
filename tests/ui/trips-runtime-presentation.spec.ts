@@ -126,15 +126,15 @@ test('Undo and Redo change the Shift history only after the preview resolves', a
   const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
   const redo = drawer.getByRole('button', { name: 'Redo', exact: true });
   const undo = drawer.getByRole('button', { name: 'Undo', exact: true });
-  await drawer.getByRole('button', { name: '+ Forward' }).click();
+  await drawer.getByRole('button', { name: /min later/ }).click();
   await expect(page.getByText('Staged 1 minute later')).toBeVisible();
   await undo.click();
   await expect(page.getByText('Staged 1 minute later')).toHaveCount(0);
   await expect(redo).toBeEnabled();
 
   // A Shift that cannot be previewed (the 6:00 Trip would move before 0:00) must not clear the Redo history.
-  await drawer.getByLabel('Shift minutes').fill('9999');
-  await drawer.getByRole('button', { name: '− Back' }).click();
+  await drawer.getByLabel('Step minutes').fill('9999');
+  await drawer.getByRole('button', { name: /min earlier/ }).click();
   await expect(drawer.getByRole('alert')).toContainText('before 0:00');
   await expect(redo).toBeEnabled();
 

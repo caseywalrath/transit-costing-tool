@@ -66,6 +66,21 @@ export class TransitDatabase extends Dexie {
         await tx.table('blocks').bulkPut(recovery.blocks.filter((block) => changed.has(block.id)));
       }
     });
+    // Version 8 adds the compound index `[scenarioId+tripProfileId]` to `trips` (every earlier index stays), so the Trips of one Trip
+    // Profile are read without loading the Scenario's other Trips, and deletes the placeholder Blocks that imports of version 3 and 4
+    // backup files stored without a Blocking Scenario before package P04. A Block that belongs to a Blocking Scenario always has
+    // `blockingScenarioId`. Nothing else is written, and a failure leaves the data as it was (as in version 7).
+    this.version(8).stores({
+      trips: 'id,scenarioId,tripProfileId,routeId,serviceDayId,patternId,[tripProfileId+routeId],[tripProfileId+serviceDayId],provenance.generationSetId,provenance.runtimeProfileId,[scenarioId+tripProfileId]',
+    }).upgrade(async (tx) => {
+      try {
+        const blocks: Array<{ id: string; blockingScenarioId?: string | null }> = await tx.table('blocks').toArray();
+        const placeholderIds = blocks.filter((block) => !block.blockingScenarioId).map((block) => block.id);
+        if (placeholderIds.length) await tx.table('blocks').bulkDelete(placeholderIds);
+      } catch (error) {
+        console.warn('Placeholder Block clean-up was skipped.', error);
+      }
+    });
   }
 
   private installWriteGuard(guard: WriteGuard): void {

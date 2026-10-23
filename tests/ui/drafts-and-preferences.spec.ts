@@ -32,7 +32,7 @@ async function startStagedShift(page: Page) {
   await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
   await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
   const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
-  await drawer.getByRole('button', { name: '− Back' }).click();
+  await drawer.getByRole('button', { name: /min earlier/ }).click();
   await expect(page.getByText('Staged 1 minute earlier')).toBeVisible();
   return drawer;
 }

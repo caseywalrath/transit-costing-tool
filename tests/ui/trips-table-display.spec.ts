@@ -140,9 +140,9 @@ test('discards a Shift whose net offset is zero without writing any Trip', async
   };
   await rows(page).first().getByRole('checkbox').check();
   const drawer = await openShift();
-  await drawer.getByRole('button', { name: '+ Forward' }).click();
+  await drawer.getByRole('button', { name: /min later/ }).click();
   await expect(page.getByText('Staged 1 minute later')).toBeVisible();
-  await drawer.getByRole('button', { name: '− Back' }).click();
+  await drawer.getByRole('button', { name: /min earlier/ }).click();
   await expect(page.getByText('Staged 1 minute later')).toHaveCount(0);
   await expect(page.getByText('Staged 1 minute earlier')).toHaveCount(0);
   await drawer.getByRole('button', { name: 'Done', exact: true }).click();
@@ -155,7 +155,7 @@ test('discards a Shift whose net offset is zero without writing any Trip', async
   // Control: a Shift with a real net offset does write.
   await rows(page).first().getByRole('checkbox').check();
   const second = await openShift();
-  await second.getByRole('button', { name: '+ Forward' }).click();
+  await second.getByRole('button', { name: /min later/ }).click();
   await second.getByRole('button', { name: 'Done', exact: true }).click();
   await expect.poll(() => columnTexts(page, 0)).toEqual(['6:01', '6:10', '6:20']);
   expect(await stored()).not.toEqual(before);

@@ -3,6 +3,7 @@ import { metadata } from '../domain/ids';
 import type { Block, ProjectSnapshot, Trip, TripProfile } from '../domain/types';
 import { TripGenerationService } from './tripGenerationService';
 import { InMemoryRouteDefinitionRepository } from '../persistence/inMemoryRepository';
+import { addBlocks } from '../testSupport/addBlocks';
 import { assertTripProfileReferences } from '../domain/trips';
 
 const project = { id: 'project', name: 'Project', distanceUnit: 'miles' as const, currencyCode: 'USD', ...metadata('2026-01-01T00:00:00.000Z') };
@@ -76,7 +77,7 @@ describe('Trip profile lifecycle', () => {
     const service = new TripGenerationService(repository);
     const copied = await service.copyTripProfile(sourceProfile.id, 'Alternative');
     const copiedBlock: Block = { ...block, id: 'copied-block', tripProfileId: copied.id };
-    await repository.saveBlocks([copiedBlock]);
+    await addBlocks(repository, [copiedBlock]);
     const impact = await service.previewTripProfileDeletion(copied.id);
     expect(impact.tripCount).toBe(2);
     expect(impact.blockCount).toBe(1);

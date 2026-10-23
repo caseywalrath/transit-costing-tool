@@ -5,7 +5,7 @@ import { TransitDatabase } from './database';
 describe('application database schema', () => {
   it('includes scenario assumptions and local regeneration undo', () => {
     const db = new TransitDatabase('transit-costing-schema-contract');
-    expect(db.verno).toBe(7);
+    expect(db.verno).toBe(8);
     expect(db.tables.map((table) => table.name)).toContain('costingAssumptions');
     expect(db.tables.map((table) => table.name)).toContain('tripRegenerationUndo');
     expect(db.tables.map((table) => table.name)).toContain('costPlans');
@@ -22,6 +22,7 @@ const HISTORY: Record<string, string>[] = [
   { blockingScenarios: 'id,scenarioId,tripProfileId,[scenarioId+name],[tripProfileId+name],updatedAt', blocks: 'id,scenarioId,blockingScenarioId,serviceDayId,[blockingScenarioId+serviceDayId],[serviceDayId+label]' },
   { costingAssumptions: 'id,scenarioId' },
   { tripRegenerationUndo: 'id,scenarioId,tripProfileId' },
+  {},
 ];
 
 const stamp = { createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' };
@@ -64,7 +65,7 @@ async function seed(name: string, seedVersion: number) {
 }
 
 describe('database upgrades from every earlier schema version', () => {
-  it.each([1, 2, 3, 4, 5, 6])('upgrades a Dexie version %i database to version 7 and keeps every record', async (seedVersion) => {
+  it.each([1, 2, 3, 4, 5, 6, 7])('upgrades a Dexie version %i database to version 8 and keeps every record', async (seedVersion) => {
     const name = `transit-costing-upgrade-v${seedVersion}-${Date.now()}`;
     const { before, seededIdbVersion } = await seed(name, seedVersion);
     expect(seededIdbVersion).toBe(seedVersion * 10);
@@ -73,8 +74,8 @@ describe('database upgrades from every earlier schema version', () => {
       await db.open();
       const after: Record<string, number> = {};
       for (const table of db.tables) after[table.name] = await table.count();
-      expect(db.verno).toBe(7);
-      expect((await indexedDB.databases()).find((database) => database.name === name)?.version).toBe(70);
+      expect(db.verno).toBe(8);
+      expect((await indexedDB.databases()).find((database) => database.name === name)?.version).toBe(80);
 
       // Scheduling records are untouched.
       for (const kept of ['projects', 'scenarios', 'serviceDays', 'routes', 'nodes', 'patterns', 'runtimeProfiles', 'runtimeAssignments', 'trips', 'generationSets', 'costPlans', 'appMetadata'] as const) expect(after[kept]).toBe(before[kept]);
@@ -92,6 +93,7 @@ describe('database upgrades from every earlier schema version', () => {
       expect(await db.runtimeAssignments.where('runtimeProfileId').equals('s1-rp').count()).toBe(1);
       const s1Profile = profiles.find((profile) => profile.scenarioId === 's1')!;
       expect(await db.trips.where('[tripProfileId+serviceDayId]').equals([s1Profile.id, 's1-wd']).count()).toBe(2);
+      expect(await db.trips.where('[scenarioId+tripProfileId]').equals(['s1', s1Profile.id]).count()).toBe(2);
 
       // Version 4 discards the placeholder Blocks of earlier versions and reports how many (Decision 0019 item 12).
       const discardedPlaceholderBlocks = before.blocks - after.blocks;
@@ -109,6 +111,59 @@ describe('database upgrades from every earlier schema version', () => {
       // Versions 5 and 6 add stores. Existing assumptions and the stored undo record are kept; new stores start empty.
       expect(after.costingAssumptions).toBe(seedVersion >= 5 ? 2 : 0);
       expect(after.tripRegenerationUndo).toBe(seedVersion >= 6 ? 1 : 0);
+    } finally {
+      db.close();
+      await Dexie.delete(name);
+    }
+  });
+});
+
+describe('database version 8: Trip Profile index and placeholder Block clean-up', () => {
+  const placeholder = (id: string, extra: Record<string, unknown> = {}) => ({ id, scenarioId: 's1', serviceDayId: 's1-wd', label: id, activities: [{ id: `${id}-act`, type: 'revenueTrip', sequence: 0, tripId: 's1-t0' }], ...extra, ...stamp });
+
+  it('deletes Blocks without a Blocking Scenario, keeps every other record byte for byte, and makes the new index usable', async () => {
+    const name = `transit-costing-upgrade-v8-${Date.now()}`;
+    await seed(name, 7);
+    // A version 7 database can hold placeholder Blocks that an import of a version 3 or 4 backup stored before package P04.
+    const legacy = new Dexie(name);
+    for (let version = 1; version <= 7; version += 1) legacy.version(version).stores(HISTORY[version - 1]);
+    await legacy.open();
+    await legacy.table('blocks').bulkPut([placeholder('ph-absent'), placeholder('ph-null', { blockingScenarioId: null }), placeholder('ph-empty', { blockingScenarioId: '' })]);
+    const kept = await legacy.table('blocks').where('blockingScenarioId').anyOf(['s1-bs', 's2-bs']).toArray();
+    const keptJson = JSON.stringify(kept.sort((a, b) => a.id.localeCompare(b.id)));
+    const tripsJson = JSON.stringify((await legacy.table('trips').toArray()).sort((a, b) => a.id.localeCompare(b.id)));
+    const counts: Record<string, number> = {};
+    for (const table of legacy.tables) counts[table.name] = await table.count();
+    legacy.close();
+    expect(kept).toHaveLength(2);
+    expect(counts.blocks).toBe(5);
+
+    const db = new TransitDatabase(name);
+    try {
+      await db.open();
+      expect(db.verno).toBe(8);
+      expect((await db.blocks.toArray()).map((block) => block.id).sort()).toEqual(['s1-blk', 's2-blk']);
+      expect(JSON.stringify((await db.blocks.toArray()).sort((a, b) => a.id.localeCompare(b.id)))).toBe(keptJson);
+      expect(JSON.stringify((await db.trips.toArray()).sort((a, b) => a.id.localeCompare(b.id)))).toBe(tripsJson);
+      for (const table of db.tables) if (table.name !== 'blocks') expect(await table.count()).toBe(counts[table.name]);
+
+      // The index returns only the Trips of that Trip Profile of that Scenario.
+      expect(db.trips.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['tripProfileId', 'routeId', 'serviceDayId', 'patternId', '[tripProfileId+routeId]', '[tripProfileId+serviceDayId]', '[scenarioId+tripProfileId]']));
+      expect((await db.trips.where('[scenarioId+tripProfileId]').equals(['s1', 's1-tp']).toArray()).map((trip) => trip.id).sort()).toEqual(['s1-t0', 's1-t1']);
+      expect(await db.trips.where('[scenarioId+tripProfileId]').equals(['s1', 's2-tp']).count()).toBe(0);
+    } finally {
+      db.close();
+      await Dexie.delete(name);
+    }
+  });
+
+  it('opens a database that has no placeholder Block and changes no Block', async () => {
+    const name = `transit-costing-upgrade-v8-clean-${Date.now()}`;
+    await seed(name, 7);
+    const db = new TransitDatabase(name);
+    try {
+      await db.open();
+      expect(await db.blocks.count()).toBe(2);
     } finally {
       db.close();
       await Dexie.delete(name);

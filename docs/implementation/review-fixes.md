@@ -2,28 +2,34 @@
 
 ## Next sitting
 
-**Sitting 4K part 2 (D01, U09, P18) is finished on the branch `claude/stage-4k-review-fixes`, restarted from `origin/main` after the merge of PR #24 (U08). The user must review the branch, open and merge the pull request, and read the first CI run. The next sitting is U10, on Opus, in a sitting of its own: the Shift drawer redesign (the user's brief is below). Start it only after this branch is merged; create a new work branch from the new `origin/main` (the user names it). Standing rules 1 to 10 below apply unchanged. With U10 done, Stage 4 is complete.**
+**F1 (UI follow-up fixes) and F2 (structural follow-up and maintenance), both Sonnet, are finished on the branch `claude/stage-4k-review-fixes` (fix log entries "F1: UI follow-up fixes" and "F2: Structural follow-up and maintenance"). Every Stage 4 package and both follow-up packages are done; no work package is open. What remains is the deferred list below (3, 8, 14, 15, 19), which has no owner until the user assigns one, and the user's own steps: read the first CI run of the branch and merge it.**
+
+- Post-Stage-4 hand-offs, as approved by the user on 2026-10-23:
+  - F1 (fix), **DONE in F1 (commit: see `git log`)**: 1 Add-trip row draft dropped on a scope change; 2 Pattern draft lost right after Save nodes (app cause, then the spec; the loss itself was not reproduced, "Add pattern" is now disabled during a save); 4 Runtime profile and Trips delete dialogs stay open after a refusal; 5 Node impact omits non-revenue activities, Trip profile delete omits Blocking Scenarios; 7 storage protection answer not shown.
+  - F2 (fix), **DONE in F2 (commit: see `git log`)**: 10 Trip Profile index and 11 placeholder Block clean-up (Dexie version 8, Decision 0043); 12 time the U09 calculation (measured; no code change, see the F2 entry); 13 `saveBlocks` deleted (no production caller) and contract tests for the generation-set methods; 16 `makePatternPoint` deleted; 18 the CSV importer rule is in `architecture_overview.md`.
+  - Deferred, no work: 3 Shift panel covers bottom rows (decide after the U10 review; option: a collapse button); 8 screen-reader check (needs a person); 14 one unexplained timeout in `local-data-protection.spec.ts`; 15 wall-clock defaults in about 40 domain functions; 19 newer dependency majors without advisories.
+  - Closed: 6 U09 line does not name rows; 9 menu typeahead and the radio role of Compatible only; 17 bare CR in a CSV label; 20 Route draft bullets and historical plans left as they are.
 
 - Done on this branch: D01 (`daec5d5`), U09 (`ef57f58`), and P18 (`9395d2c`). U08 landed earlier (`ac0bded`, PR #24).
-- Not started: U10.
+- U10 done on this branch (`c1a6177`). Earlier on `main`: D01 (`daec5d5`), U09 (`ef57f58`), P18 (`9395d2c`).
 - Results of 4K part 2: D01 resolved ten documentation contradictions and added the register map at the end of this log (every register issue to its package and commit). U09: a status line under "Run Times Have Changed" names the count of Trips that their Runtime profile cannot calculate and each distinct reason once; `inspectStaleTrips` now also reports the reason for a Trip that is stale by revision. P18: Vitest 3.2.7 to 4.1.12, `pnpm audit` from 5 advisories to none, no test or config change. No decision was blocked.
 - Exceptions of the 4K part 2 sitting (user, 2026-10-23), not carried over: Sonnet main session, no sub-agents and no Opus review, the Decision 0005 gate waived, U09 inspected at 1024 and 1440 px, P18 a dependency upgrade only. The user states the exceptions for each sitting.
-- **U09 and U10: DECIDED by the user on 2026-10-23. U09 is done; U10 is not started and is the next sitting (Opus).**
+- **U09 and U10: DECIDED by the user on 2026-10-23. U09 and U10 are done.**
   - **U09 (Sonnet, small UI): why a Trip cannot be recalculated** (option A). **DONE in U09 (`ef57f58`).** One status line under the "Run Times Have Changed" indicator lists the distinct reasons from `inspectStaleTrips` (the message texts exist from P07). Reuse the existing notice/status line styling; no new component. Acceptance: when at least one Trip is flagged and its profile cannot calculate it, the line names each distinct reason once; with no such Trip nothing is shown; a browser test covers both; keyboard and screen-reader behavior as the other status lines (plain text, no focus trap). Verification: UI rules, visual check at 1024 and 1440 px.
-  - **U10 (Opus, UI design, beyond the scope of a fix; user will review the result afterward): redesign the Shift drawer.** The overlap of the open drawer with the Runtime Save and Discard buttons is **accepted as is** (option D); do not solve it as a goal of U10 unless the redesign does so as a side effect. The user's brief: the drawer wastes white space; the shifting control (left and right buttons and an up/down minute selector) is confusing; the drawer is valuable because the planner sees the effect of a shift on the Trips table, and that must stay. Wanted: a much more discreet control and a more intuitive increment selector. The agent decides the design and records the options it rejected. Constraints: the preview-then-apply behavior, Undo and Redo (U07), the net-shift label (`formatNetShift`, `formatStagedShift`), the minute parsing rules (`parseShiftSeconds`), keyboard and screen-reader operation, and the existing specs (`workflow-section-layout.spec.ts` asserts the right-docked drawer; it may change only with a recorded reason). Verification: UI rules plus screenshots at 1024 and 1440 px before and after, and the interaction written up so the user can review it.
+  - **U10 (Opus, UI design, beyond the scope of a fix; user will review the result afterward): redesign the Shift drawer.** **DONE in U10 (`c1a6177`); awaiting the user's review.** The overlap of the open drawer with the Runtime Save and Discard buttons is **accepted as is** (option D); do not solve it as a goal of U10 unless the redesign does so as a side effect. The user's brief: the drawer wastes white space; the shifting control (left and right buttons and an up/down minute selector) is confusing; the drawer is valuable because the planner sees the effect of a shift on the Trips table, and that must stay. Wanted: a much more discreet control and a more intuitive increment selector. The agent decides the design and records the options it rejected. Constraints: the preview-then-apply behavior, Undo and Redo (U07), the net-shift label (`formatNetShift`, `formatStagedShift`), the minute parsing rules (`parseShiftSeconds`), keyboard and screen-reader operation, and the existing specs (`workflow-section-layout.spec.ts` asserts the right-docked drawer; it may change only with a recorded reason). Verification: UI rules plus screenshots at 1024 and 1440 px before and after, and the interaction written up so the user can review it.
 - **P18 (Vitest major upgrade, 5 advisories in the `vitest` chain): DONE in P18 (`9395d2c`).** Its own package, not mixed with feature work (user decision 5 below).
-- Known failures: `tests/ui/route-editing.spec.ts:6` failed once in the D01 full run (150 passed, 1 failed): after "Save nodes" for Node B, the click on "Add pattern" opened no draft ("New Pattern — not saved" never appeared). It passed 100 of 100 times alone (`--repeat-each=20 --workers=8` and `--repeat-each=80 --workers=16`) and in the full runs of U09 and P18. The probable cause is the L-16 race that `tests/ui/support/tripsWorkspace.ts` already works around (a save's reload lands after the next step starts); that helper retries the click, and this spec does not. If it returns, apply the same retry or find the application-side cause (a planner who clicks Add pattern right after Save nodes might lose the draft too). `unified-action-layer.spec.ts:139` passed in every full run of this sitting. If it returns, diagnose it as a package failure and fix the code.
+- Known failures: none open. (`tests/ui/route-editing.spec.ts:6` failed once in the D01 full run and was not reproduced; F1 disabled "Add pattern" while a save runs and made the spec wait for the stored rows; 200 of 200 at `--repeat-each=100 --workers=16`. If it returns, capture the page state at the failure.) The D01 record follows. `route-editing.spec.ts:6` failed once in the D01 full run (150 passed, 1 failed): after "Save nodes" for Node B, the click on "Add pattern" opened no draft ("New Pattern — not saved" never appeared). It passed 100 of 100 times alone (`--repeat-each=20 --workers=8` and `--repeat-each=80 --workers=16`) and in the full runs of U09 and P18. The probable cause is the L-16 race that `tests/ui/support/tripsWorkspace.ts` already works around (a save's reload lands after the next step starts); that helper retries the click, and this spec does not. If it returns, apply the same retry or find the application-side cause (a planner who clicks Add pattern right after Save nodes might lose the draft too). `unified-action-layer.spec.ts:139` passed in every full run of this sitting. If it returns, diagnose it as a package failure and fix the code.
 - State after P18: unit tests 52 files, 752 tests; browser suite 153 tests, all passing; bundle `index-Be19ICCN.js` 807.23 kB; `pnpm audit` clean. The user must still read the first CI run (branch protection and CI are the user's to watch).
 - Carried forward (details in the D01, U06, U07, U09, P15, P17, and U08 entries):
   - **D01:** the Route draft editor bullets of `ui-conventions.md` were checked only against the contradictions the findings quote, not rewritten; Decisions 0011 and 0012 have no recorded day (their Date lines say so); historical plans (`phase-02-*.md`) were not edited.
   - **U09:** the line gives a count and the reasons, not the affected rows; only the two band findings have wording written for the line, and other findings use the existing `userMessage` text; not checked with a screen reader; the extra calculation in `inspectStaleTrips` was not timed at 2,000 Trips.
   - **P18:** other major versions exist and carry no advisory (Vite 8, `@vitejs/plugin-react` 6, TypeScript 7, `@types/node` 26, Vitest 5); no owner.
   - **U08:** an anchor list holds one option until it is focused or pressed; a screen reader may announce "1 of 1" on the first focus before the list fills (not verified with a screen reader). The Shift drawer, the bulk anchor row, and the band picker are unchanged.
-  - **U06:** the persistence answer of `getLocalDataProtection()` is still not shown (no criterion asks for it), and the assumptions alert keeps its single sentence.
+  - **U06:** the persistence answer of `getLocalDataProtection()` is now shown in the Project menu (F1, item 7); the assumptions alert keeps its single sentence.
   - **U07:** the Runtime totals read `:61` by design (the Decision 0010 duration format). The Shift drawer over the Runtime Save button is accepted as is (U10 redesigns the drawer); the `inspectStaleTrips` findings now have their status line (U09).
-  - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead; the Add-trip row drafts are not kept across a scope change.
+  - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead. (The Add-trip row draft now asks before a scope change: done in F1.)
   - **P15:** a CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
-  - **P17:** `makePatternPoint` has no caller left (harmless).
+  - **P17:** `makePatternPoint` deleted in F2.
   - **P16 leftovers:** `resetPatternService` (legacy mutator) still stamps wall-clock `now`; about 40 other domain signatures still default `now` to the wall clock.
 - Decisions made by the user on 2026-10-23 (all follow the recommended option). `docs/review/fix-packages.md` is on the review branch and is not edited; this note is the record.
   1. `deletePattern` gets a review token (Decision 0041 pattern). **DONE in P17 (`87359e0`).**
@@ -32,13 +38,13 @@
   4. Branch protection: the user requires the two CI checks on `main`. User action only. The check names are "Typecheck, unit tests, build" (job `verify`) and "Browser tests" (job `browser`).
   5. Vitest major upgrade: its own package, **P18**, after D01, or in a separate maintenance sitting. Not mixed with feature work. **DONE in P18.**
   6. Defaults accepted: Runtime band totals use the duration format; a Pattern with no distance shows "incomplete"; menu typeahead is not built.
-  7. U07 blocked item 1: the Shift drawer overlap is accepted (option D); the drawer is redesigned in package **U10**.
+  7. U07 blocked item 1: the Shift drawer overlap is accepted (option D); the drawer is redesigned in package **U10**. **DONE in U10.**
   8. U07 blocked item 2: option A, a status line under the "Run Times Have Changed" indicator: package **U09**. **DONE in U09.**
 - Other hand-offs still open from earlier sittings:
   - **Decided by the user on 2026-10-23 (Option B), done in U07.** Under a segment-start or blended profile, an anchor that fits two first departures is rejected and the candidates are listed (Decision 0031 addendum).
-  - **CSV.** The Trips CSV and ZIP writer live in `src/application`. A free-text cell that begins with `=`, `+`, `-`, or `@` is written with a leading apostrophe; the Trips CSV import and Runtime paste remove it (`restoreFormulaText`). A new CSV importer must do the same for the same columns.
-  - **U05 hand-offs from 4E (not done in U05; see its entry):** the Node editor's impact dialog does not list `nonRevenueImpact`; the Trip profile confirmation does not mention `blockingScenarioCount`; the Runtime profile and Trips delete dialogs stay open with the old review after a refusal.
-  - **Persistence (no owner yet):** `listProfileTrips` in `main.tsx` loads every Trip of the Scenario and filters by Trip Profile in memory; a compound index on Scenario and Trip Profile would avoid reading Trips of other profiles. Placeholder Blocks already stored in databases that imported version 3 and 4 files have no clean-up. Not covered by the contract suite: the legacy generation-set methods and `saveBlocks`. One timeout in 50 runs of `local-data-protection.spec.ts` (P10 entry) is unexplained; it did not return in 100 later runs.
+  - **CSV.** The Trips CSV and ZIP writer live in `src/application`. A free-text cell that begins with `=`, `+`, `-`, or `@` is written with a leading apostrophe; the Trips CSV import and Runtime paste remove it (`restoreFormulaText`). A new CSV importer must do the same for the same columns (also written in `architecture_overview.md`, F2).
+  - **U05 hand-offs from 4E: all three done in F1** (the Node editor's impact dialog lists `nonRevenueImpact`; the Trip profile confirmation states `blockingScenarioCount`; the Runtime profile and Trips delete dialogs close after a refusal).
+  - **Persistence:** the Trip Profile index, the placeholder Block clean-up, the generation-set contract tests, and `saveBlocks` are done in F2 (Dexie version 8). Still open: one timeout in 50 runs of `local-data-protection.spec.ts` (P10 entry) is unexplained; it did not return in 100 later runs.
 - Unit-test and browser-test conventions are in "Standing rules" below and in `codex.md`. Browser-test helpers (all in `tests/ui/support/`): `dexieEnv.ts` (`runInPage`, `seedSnapshot`), `goldenFixture.ts` (the Federal BRT project), `tripsWorkspace.ts` (`createRouteWithPattern`, `createShiftReadySchedule`, `openGoldenTrips`, `settleFrames`), and `capacityFixture.ts` (400 Blocks, 2,000 Trips).
 - Review documents: read them from the review branch with `git show origin/claude/upbeat-ritchie-51mpy5:docs/review/<file>`. Never copy `docs/review/` into the work branch.
 
@@ -2291,6 +2297,170 @@ Option A (user, 2026-10-23): one status line under the indicator lists the disti
 
 - `pnpm outdated` lists other newer majors (Vite 8, `@vitejs/plugin-react` 6, TypeScript 7, `@types/node` 26, Vitest 5). None carries an advisory. They are not part of P18 and have no owner.
 - CI has not run this lockfile. The user reads the first CI run of the branch. `@types/node` stays at 22 and Node at 22.
+
+## U10: Shift drawer redesign
+
+- Date: 2026-10-23. Sitting after 4K part 2 (the user asked to continue on the same branch after PR #25 was merged). Model: Opus (main session). No sub-agents.
+- Type: UI design, beyond the scope of a fix (user decision 7 of 2026-10-23). Severity: S3. Sol-class. `docs/review/fix-packages.md` has no U10 entry; the brief is in the Next sitting note.
+- Commit: `c1a6177`.
+
+### The user's brief
+
+The drawer wasted white space; the shifting control (Back and Forward buttons around an up/down minute field) was confusing; seeing the effect on the Trips table must stay. Wanted: a much more discreet control and a more intuitive increment selector. The overlap with the Runtime Save and Discard buttons was accepted and was not a goal.
+
+### Design chosen
+
+- **Compact panel, lower right.** The full-height 380 px drawer (about 650 px of it empty at 900 px height) is now a 320 px panel 16 px in from the right edge and the bottom, about 220 px tall. The table to its left and above it stays visible, so the staged rows ("Staged 2 minutes later") stay in view. It is still right-docked and non-modal (Decision 0018 item 7, annotated).
+- **The result first.** The first line is the net shift in large type ("2 minutes later", `formatNetShift`) with the selection count, as one `role="status"`.
+- **Buttons that say what they do.** "← 5 min earlier" and "5 min later →" replace "− Back" and "+ Forward"; the label carries the current step, so the separate number between them no longer has to be read to know what a press does.
+- **Step sizes one press away.** A **Step** radio group (1, 5, 10, 15 minutes, styled as small segments) sits under the buttons, with a **Step minutes** field for any other whole number. Typing 3 leaves no preset checked. The field follows `parseShiftSeconds`; an invalid value (0, blank, a fraction) disables both step buttons, marks the field `aria-invalid`, and shows "Enter a whole number of minutes above 0." (before, the buttons were disabled with no explanation).
+- **One footer row:** Undo, Redo, then Discard and Done.
+- Unchanged: preview-then-apply, staged Undo and Redo (U07), `formatNetShift` and `formatStagedShift`, Escape and Close (with the discard question when something is staged), focus return after a step (5-012), stale-preview refusal, and the Build Trips drawer (which shares the `shift-drawer` class and keeps its full-height layout; the new rules sit under `.shift-drawer--compact`).
+
+### Options rejected
+
+- **Inline toolbar above the Trips table** instead of a panel: most discreet, but it moves the table down while staging and is far from the selected rows on a long schedule; a page-scroll change while staging also conflicts with the scroll restore after Done (Decision 0035 item 5).
+- **Popover anchored to the selected rows:** tied to rows that move when they are shifted and that may be scattered across the table.
+- **A slider or a time-picker for the offset:** imprecise for whole minutes and poor with the keyboard; the planner thinks in "5 minutes later", which the buttons now say.
+- **Keyboard shortcuts (arrow keys) for earlier and later:** would clash with the radio group and the number field, and the Trips table already uses the keyboard; not added.
+- **A bottom-docked full-width bar:** covers the last rows of every column instead of only the right-hand ones.
+
+### Interaction, for review
+
+1. Select Trips, then Trip actions → **Shift selected…**. The panel opens at the lower right showing "No net shift · N selected".
+2. Choose a step (1, 5, 10, 15, or type one). The two buttons change to name it.
+3. Press "… later →" or "← … earlier" as often as needed. The table shows the staged times and the row note; the panel shows the net shift.
+4. **Undo** and **Redo** step through the presses. **Discard**, ×, or Escape writes nothing (asking first when something is staged). **Done** saves the net shift in one write.
+
+Keyboard: Tab order is ×, earlier, later, the Step radios (one Tab stop; arrow keys move between sizes), Step minutes, Undo, Redo, Discard, Done.
+
+### Specs changed (assertions kept, names updated; the reason is this redesign)
+
+- `workflow-section-layout.spec.ts`: the button list is now `×, ← 1 min earlier, 1 min later →, Undo, Redo, Discard, Done`; it checks the 4 step radios with 1 checked and the `Step minutes` field; the geometry check is now width 320, right edge 16 px from the viewport edge, bottom edge 16 px from the bottom, height under 260 px (before: width 380 at the right edge). It still asserts a right-docked drawer.
+- `drafts-and-preferences`, `keyboard`, `trip-bounds`, `trip-table-layout`, `trips-runtime-presentation`, `trips-table-display`, `unified-action-layer`: `'− Back'` and `'+ Forward'` became `/min earlier/` and `/min later/`, and the `Shift minutes` label became `Step minutes`. No assertion was removed or loosened.
+
+### Tests added
+
+- `tests/ui/shift-drawer.spec.ts` (2 tests): choosing the 10 preset fills the field and names the buttons; a later press stages 10 minutes; 0 marks the field invalid, shows the message, and disables both buttons; typing 3 unchecks every preset and an earlier press gives a net 7 minutes later; Undo returns to 10; Done saves 6:10. The step radios are one keyboard group (ArrowRight moves from 1 to 5) and Escape closes the panel.
+
+### Deliberate breaks
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| New spec | the code before U10 | both tests fail |
+| Presets | a preset press does not set the step | both tests fail |
+| Invalid step | the buttons ignore an invalid step | the first test fails |
+
+### Verification run
+
+- `pnpm typecheck`: clean. `pnpm test`: 52 files, 752 passed (no unit change).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 155 passed, 0 failed (4.7 minutes); 153 before plus 2 new. No `test.fail`, `test.skip`, or `test.fixme`. The axe-core checks in `keyboard.spec.ts` pass with the new fieldset and radios.
+- Stress run `--repeat-each=10 --workers=8` of `shift-drawer.spec.ts` and `workflow-section-layout.spec.ts`: 30 of 30 passed.
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-aArffXHE.js` 807.82 kB (807.23 kB before).
+- Screenshots (session scratchpad only), three Trips staged 2 minutes later:
+  - before: `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/u10-before-1024.png`, `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/u10-before-1440.png`
+  - after: `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/u10-after-1024.png`, `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/u10-after-1440.png`
+  - What I saw: before, a full-height white drawer with three small controls at the top and empty space down to Discard and Done. After, a short panel at the lower right; the staged rows, their notes, and every time column stay visible. At 1024 px the panel covers the Block column and delete icons of the bottom five rows (before, the drawer covered them on every row). At 1440 px it covers only empty space to the right of the table.
+
+### Residual risks
+
+- On a narrow window or a short schedule the panel can still cover the Block column of the bottom rows; scroll the page to see them. The panel cannot be moved.
+- The Runtime Save and Discard overlap is gone as a side effect, because the panel now sits at the bottom of the window, unless the window is very short.
+- Not checked with a screen reader.
+
+## F1: UI follow-up fixes
+
+- Date: 2026-10-23. Model: Sonnet (main session). No sub-agents. Expedited verification as approved by the user (`docs/implementation/followup/F1-ui-fixes.md`).
+- Type: structural with precise UI wiring (existing dialogs, notices, and menu note markup; no new component or style). Hand-offs 1, 2, 4, 5, and 7 of the post-Stage-4 list.
+- Commit: see `git log`.
+
+### Issues and what changed
+
+1. **Add-trip row draft dropped on a scope change.** A row with a Pattern or a first time entered now asks Cancel or Discard before the service day, the Direction, the Trip Profile, or the tab changes (`ShiftDiscardDialog` takes a title and text; heading "Discard new Trip?"). An empty row is dropped without a question. Order per press: Runtime question, staged Shift, then the row. The navigation guard also registers when only the row is entered. A Runtime save no longer drops the row: the row was cleared by the effect that reloads the Trips after a Runtime save, so the clear now depends on the service day, Direction, and Trip Profile only (not asked for; the row is not part of a Runtime save, and dropping it silently contradicted the new rule).
+2. **Pattern draft right after "Save nodes".** Root cause, as far as I could establish it: I could not make the late reload replace a Pattern draft. With every transaction slowed (700 ms) and the click placed at 0, 300, 700, 1100, 1500, 1900, 2300, and 2700 ms after "Save nodes", with and without an earlier saved Node, the draft survived each time (the Pattern effect keeps a draft that is not yet in `aggregate.patterns`), and `route-editing.spec.ts:6` passed 100 of 100 times on the unchanged code under `--workers=16`. What the app did allow: "New node" is disabled while a Node save runs, but "Add pattern" was not, so a Pattern draft could be opened in the middle of a save; and the spec's wait ("Save nodes" disabled, "Remove B" visible) is true from the moment the save starts, so it never proved the save was done. The one failure in D01's full run is therefore not reproduced and its mechanism is not proven. Fix chosen: disable "Add pattern" while a Node or Pattern save is in flight (`nodeSaving`, new `patternSaving`; the commit from the impact dialog sets them too), the same rule "New node" already follows. Chosen over keeping a draft created after the save started because it does not change the layout and needs no merge rule for a draft against a reload. Playwright's click waits for an enabled button, so a click right after "Save nodes" now waits for the reload. `route-editing.spec.ts:6` also waits for the stored Node rows, and the retry loop in `createRouteWithPattern` (`tests/ui/support/tripsWorkspace.ts`) is removed.
+4. **Delete dialogs keep the old review after a refusal.** The Runtime profile delete and the Trips delete dialogs now close on a refusal and show it in the error banner, like the Route, Scenario, Project, and Pattern dialogs. They close on any failure of the delete, not only a stale review (nothing was deleted in any case).
+5. **Impact dialogs.** The Node save review ("Update service for deleted Nodes?") adds a line from `nonRevenueImpact`: "Removes 3 pull-out, pull-in, or deadhead activities in 2 Blocks." (singular forms; nothing at 0). The Trip Profile delete confirmation adds "Also deletes 2 Blocking Scenarios and their Blocks." ("1 Blocking Scenario and its Blocks"; nothing at 0). Checked against the code before wording it: both repositories delete the profile's Blocking Scenarios and the Blocks of those Scenarios in the same transaction (`deleteTripProfile`). Wording matches the code. The Node count comes from the preview (`removeNonRevenueActivitiesForNodes` on the stored Blocks); the commit can also remove connection activities that follow a removed revenue Trip, which this line does not count (the commit result already reported them separately).
+7. **Storage protection answer.** `MenuItem.note` may be an array (one line each, all referenced by `aria-describedby`). The Project menu shows "This browser may clear local data. Export backups regularly." under the last backup line when `persistentStorage` is `denied` or `unavailable`; nothing when `granted` or not yet known. `docs/ui-conventions.md` and the Decision 0001 amendment text updated.
+
+### Tests added (16 browser tests; no unit test)
+
+- `tests/ui/add-trip-draft.spec.ts` (7): one per scope change with an entered row (service day, Direction, tab, Trip Profile: asks, Cancel keeps the row and its entries and the scope, Discard drops the row); a Pattern alone counts and an empty row does not ask; the staged-Shift question comes before the row question; a Runtime save keeps the row.
+- `tests/ui/route-save-race.spec.ts` (2): "Add pattern" is disabled while a slowed Save nodes and a slowed Save Pattern run, then enabled; the draft opens and stays.
+- `tests/ui/impact-dialogs.spec.ts` (6): the Node line (plural, singular, absent) and the Trip profile line (plural, singular, absent). The Federal BRT Blocks name only terminal Nodes, which a Node save cannot delete (first point at 0 miles), so the Node tests point pull-out and pull-in activities at the mid-route Node Alameda.
+- `tests/ui/local-data-protection.spec.ts` (+1): `denied` and `unavailable` show the line, `granted` does not, and before any answer there is none; the accessible description holds both lines.
+- Changed, assertion kept: `deletion-reviews.spec.ts` (Delete selected and Delete runtime profile): "the dialog still shows the old review; Cancel it" became "the dialog is closed", because the intended behavior changed (item 4).
+- Fail-first: every new test failed on the code without its change (add-trip-draft 6 of 6 on the original `App.tsx` (the Runtime-save row test was added afterwards and failed with the original reload effect); route-save-race 2 of 2 with the `disabled` removed; impact-dialogs 4 of 6, the two absence tests pass either way; local-data-protection 1 of 1; the two changed deletion-reviews tests failed on the old catch handlers).
+
+### Deliberate break
+
+| Test | Break | Result |
+| --- | --- | --- |
+| Item 2's race tests (the riskiest) | `disabled={nodeSaving \|\| patternSaving}` removed from "Add pattern" | both `route-save-race.spec.ts` tests fail ("Add pattern" enabled during the save); restored from a saved copy |
+
+### Verification run
+
+- `pnpm typecheck`: clean. `pnpm test`: 52 files, 752 tests passed (no unit test added or changed).
+- Stress runs: `add-trip-draft.spec.ts` and `route-save-race.spec.ts` `--repeat-each=10 --workers=8`: 90 of 90. `route-editing.spec.ts` `--repeat-each=100 --workers=16`: 200 of 200 (both tests).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 171 passed, 0 failed (5.1 minutes; 155 before the package plus 16 new). No `test.fail`, `test.skip`, or `test.fixme`.
+- `pnpm build`: succeeds, bundle `index-C0vCiMz7.js` 809.21 kB (807.23 kB at P18).
+- Visual check at 1024 px (session scratchpad, not committed): `/tmp/claude-0/-home-user-transit-costing-tool/9664145c-d395-478a-bf9b-9c3ea5971c83/scratchpad/` `f1-1-add-trip-scope-question.png`, `f1-4-runtime-delete-after-refusal.png`, `f1-4-trips-delete-after-refusal.png`, `f1-5-node-impact.png`, `f1-5-profile-delete.png`, `f1-7-project-menu.png`. Nothing overflows or overlaps at 1024 px.
+
+### Deferred and residual risks
+
+- The D01 failure of `route-editing.spec.ts:6` is not reproduced, so its exact mechanism stays unproven; the fix removes the only app-side window found (a click during the save) and the spec no longer relies on the reload having landed. If it returns after this package, capture the page state at the failure.
+- "Duplicate" and "Reverse" on a saved Pattern also open a draft and stay enabled during a save (the same window, not asked for).
+- A Node impact line can undercount against the commit when removing a revenue Trip also removes the connection activities after it.
+- No screen-reader check of the two-line Project menu note or of the new question dialog.
+
+## F2: Structural follow-up and maintenance
+
+- Date: 2026-10-23. Model: Sonnet (main session). No sub-agents. Expedited verification as approved by the user (`docs/implementation/followup/F2-structural-maintenance.md`).
+- Type: structural; no layout or interaction change. Hand-offs 10, 11, 12, 13, 16, and 18.
+- Commit: see `git log`.
+
+### Issues and what changed
+
+- **10 and 11. Dexie version 8** (Decision 0043). `trips` gains `[scenarioId+tripProfileId]` (every earlier index kept). The upgrade deletes Blocks whose `blockingScenarioId` is absent, null, or empty, writes nothing else, and on an error logs a warning and leaves the data as it was. `listProfileTrips` in `src/main.tsx` is now `repository.listTripsForScenarioProfile` (Dexie through the index; in-memory by filter; in the contract suite). The export schema stays 6. Tests that named version 7 now name 8 (`repository.test.ts`, `database.test.ts`, `database-migration.spec.ts`, `scenario-copy-recovery.spec.ts`); the assertions are the same apart from the version number.
+- **12. U09 timing.** Measured, no code change (below).
+- **13. `saveBlocks`.** No production code called it (only the `*_WRITE_METHODS` list named it, and tests used it for setup), so it is deleted from the port, both repositories, and the list. The tests that used it call `addBlocks` (`src/testSupport/addBlocks.ts`, through the project snapshot). `listGenerationSets`, `saveGenerationSet`, and `getGenerationSet` stay (decision 13) and are in the contract suite.
+- **16.** `makePatternPoint` deleted from `src/domain/commands.ts`; typecheck shows no caller.
+- **18.** The CSV importer rule is in `architecture_overview.md` (CSV rules) and the open hand-off is closed.
+- Documents: `docs/data-schema.md` (index table, migration history), `architecture_overview.md`, Decision 0043, `codex.md`.
+
+### Item 12: timing the U09 calculation
+
+Capacity fixture (500 Trips on the day, `allOutbound`, blend-segments profile), every Trip stamped with revision 0 of its profile; "stale" sets the profile's `calculationRevision` to 1 so every Trip is revision-stale and U09 calculates each one to find its reason.
+
+| Measure | Not stale (ms) | All stale (ms) |
+| --- | --- | --- |
+| `inspectStaleTrips`, in-memory repository under Node (V8), 6 runs | 2, 1, 1, 1, 1, 1 | 120 (first run), 62, 65, 58, 58, 59 |
+| Production build served by `vite preview`, Chromium 141, 1600 x 1000: click on Trips until 400 or more rows are shown (and the "Run Times Have Changed" indicator, when stale), 5 runs each, fresh browser each time | 1,516 (first run); 612; 761; 691; 703 | 873; 880; 1,072; 816; 822 |
+
+The calculation adds about 60 ms once warm and about 120 ms on a cold first call. The browser difference (about 170 ms by medians) also contains drawing the flagged rows and the indicator, which a stale Trip needs whether or not U09 calculates a reason. That is under the 100 ms warm threshold and the first call is at it, so no cache was added. If the Trips load at 2,000 Trips is ever read as slow, cache `markTripRecalculated` per Pattern and departure first.
+
+### Tests added
+
+- `database.test.ts`: version 7 added to the upgrade test for every earlier version (7 cases, was 6) with the new index checked; two tests for version 8 (placeholder Blocks with an absent, null, and empty `blockingScenarioId` are deleted, the two normal Blocks come back byte-identical, every Trip is byte-identical, every other table keeps its count, the index returns only that profile's Trips of that Scenario; a database without placeholders opens and changes no Block).
+- `repositoryContract.test.ts` (both repositories, +6 cases): `listTripsForScenarioProfile` (profile, Scenario, key order); generation sets (save, get, list with route and Pattern filters, replace); JSON backup at schema 6 exported, restored with `replace` unchanged, and imported as a `copy`.
+- Fail-first: the version 8 tests failed on the code before the upgrade (11 failed: the version number, the index, the clean-up); the Trip Profile read failed to compile before the method existed; the generation-set test was shown to catch a broken Pattern filter in either repository (the methods existed, so it could not fail on old code).
+
+### Deliberate break
+
+| Test | Break | Result |
+| --- | --- | --- |
+| The version 8 upgrade test (the riskiest) | the clean-up filter changed from "no `blockingScenarioId`" to every Block | 6 tests fail (the version 4 to 7 seeded upgrades and both version 8 tests); restored from a saved copy |
+
+### Verification run
+
+- `pnpm typecheck`: clean. `pnpm test`: 52 files, 761 tests passed (752 before, +9: 2 version 8, 1 version 7 case, 6 contract).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 171 passed, 0 failed (5.0 minutes). No `test.fail`, `test.skip`, or `test.fixme`. No browser spec added (no stress run needed).
+- `pnpm build`: succeeds, bundle `index-RgqV9lg4.js` 809.63 kB (809.21 kB after F1).
+
+### Deferred and residual risks
+
+- The version 8 upgrade's "on error, leave the data" path is not exercised by a test: an error inside an IndexedDB upgrade transaction can abort the whole upgrade in some engines, so a simulated failure would test the engine, not the code. It follows the version 7 pattern.
+- Placeholder Blocks are deleted without a report (the version 4 upgrade reports its count in the unit test only). They never appeared in Blocking.
+- The Trips load figure for 2,000 Trips was not measured.
 
 ## Register map
 
