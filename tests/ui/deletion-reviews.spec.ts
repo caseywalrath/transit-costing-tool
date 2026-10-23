@@ -87,8 +87,9 @@ test('Delete selected removes the selected Trips after the review and is refused
   expect(await count(page, 'trips')).toBe(3);
   expect(await runInPage(page, "return (await e.db.blocks.get('late-block')).activities.length")).toBe(1);
 
-  // The dialog still shows the old review. Cancel it and review again: the Block is shown and the Trip is removed from it.
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel', exact: true }).click();
+  // The refusal closes the dialog, as the Route, Scenario, Project, and Pattern dialogs do (package F1). Review again: the Block is shown
+  // and the Trip is removed from it.
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await error(page).getByRole('button', { name: 'Dismiss message' }).click();
   await rows.first().locator('input[type="checkbox"]').check();
   await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
@@ -118,8 +119,8 @@ test('Delete runtime profile replaces the assignments after the review and is re
   await expect(error(page)).toHaveText(/The runtime profile deletion review is out of date\. Review the impact again\./);
   expect(await count(page, 'runtimeProfiles')).toBe(2);
 
-  // The dialog still shows the old review. Cancel it and review again.
-  await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
+  // The refusal closes the dialog, as the Route, Scenario, Project, and Pattern dialogs do (package F1). Review again.
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await error(page).getByRole('button', { name: 'Dismiss message' }).click();
   await openDelete();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();

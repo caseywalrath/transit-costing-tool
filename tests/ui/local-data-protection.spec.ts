@@ -251,6 +251,50 @@ test('a refusal to keep the store is recorded and not repeated, and a browser wi
   }
 });
 
+// Package F1, item 7: the browser's answer to the request to keep the store is shown in the Project menu when it is "not granted".
+const CLEAR_WARNING = 'This browser may clear local data. Export backups regularly.';
+
+test('the Project menu warns that the browser may clear local data only when the browser did not grant persistent storage', async ({ browser }) => {
+  const cases = [
+    { mode: 'denied', warned: true },
+    { mode: 'unavailable', warned: true },
+    { mode: 'granted', warned: false },
+  ] as const;
+  for (const { mode, warned } of cases) {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.addInitScript((answer) => {
+      if (answer === 'unavailable') {
+        Object.defineProperty(navigator.storage, 'persist', { configurable: true, value: undefined });
+        Object.defineProperty(navigator.storage, 'persisted', { configurable: true, value: undefined });
+      } else {
+        Object.defineProperty(navigator.storage, 'persisted', { configurable: true, value: async () => answer === 'granted' });
+        Object.defineProperty(navigator.storage, 'persist', { configurable: true, value: async () => answer === 'granted' });
+      }
+    }, mode);
+    await page.goto('/');
+    const projectMenu = () => page.getByRole('menu', { name: 'Project actions' });
+    // Not yet known: nothing has been saved, so the browser has not been asked and no line is added.
+    await page.getByRole('button', { name: 'Project actions', exact: true }).click();
+    await expect(projectMenu()).toContainText('No backup exported yet');
+    await expect(projectMenu()).not.toContainText(CLEAR_WARNING);
+    await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
+    await page.locator('#dialog-name').fill(`Persistence ${mode}`);
+    await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
+    await expect.poll(() => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null')?.persistentStorage, PROTECTION_KEY)).toBe(mode);
+
+    await page.getByRole('button', { name: 'Project actions', exact: true }).click();
+    await expect(projectMenu()).toContainText('No backup exported yet');
+    if (warned) {
+      await expect(projectMenu().locator('.action-menu-note')).toHaveText(['No backup exported yet', CLEAR_WARNING]);
+      await expect(projectMenu().getByRole('menuitem', { name: 'Backup project JSON', exact: true })).toHaveAccessibleDescription(`No backup exported yet ${CLEAR_WARNING}`);
+    } else {
+      await expect(projectMenu().locator('.action-menu-note')).toHaveText(['No backup exported yet']);
+    }
+    await context.close();
+  }
+});
+
 test('exporting a project backup records the time on this device, and nothing else does', async ({ page }) => {
   await openGolden(page);
   const read = () => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null')?.lastBackupExportedAt ?? null, PROTECTION_KEY);

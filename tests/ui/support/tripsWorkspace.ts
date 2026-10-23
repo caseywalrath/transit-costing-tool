@@ -7,8 +7,8 @@ import { runInPage, seedSnapshot } from './dexieEnv';
  * Creates a project with one Route that has Nodes A and B and one saved Pattern (A to B, rebalanced) and its Default Runtime profile.
  * Leaves the app on the Route tab with every save settled.
  *
- * Each step waits for the previous save to finish before it starts. Starting the next step while the previous save's reload is still
- * landing replaces the Node or Pattern draft that the step just created (finding L-16): the `Add node` button then never appears.
+ * Each step waits for the previous save to finish before it starts. `New node` and `Add pattern` are disabled while a save runs, so a click
+ * on them waits for the end of the save (finding L-16; before package F1 `Add pattern` stayed live and this helper retried the click).
  */
 export async function createRouteWithPattern(page: Page, projectName: string) {
   await page.goto('/');
@@ -31,11 +31,9 @@ export async function createRouteWithPattern(page: Page, projectName: string) {
   await expect(saveNodes).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Remove B', exact: true })).toBeVisible();
 
-  // Rarely (about 1 run in several hundred under heavy load) the click opens no draft. Click again until the draft is showing.
-  await expect(async () => {
-    if (!(await page.getByText('New Pattern — not saved').isVisible())) await page.getByRole('button', { name: 'Add pattern', exact: true }).click();
-    await expect(page.getByText('New Pattern — not saved')).toBeVisible({ timeout: 2000 });
-  }).toPass();
+  // "Add pattern" stays disabled until the Node save and its reload are done (review package F1, finding L-16), so the click waits for it.
+  await page.getByRole('button', { name: 'Add pattern', exact: true }).click();
+  await expect(page.getByText('New Pattern — not saved')).toBeVisible();
   await page.getByRole('button', { name: 'Add node', exact: true }).click();
   await expect(page.getByLabel('Point 1 node')).toBeVisible();
   await page.getByRole('button', { name: 'Add node', exact: true }).click();
