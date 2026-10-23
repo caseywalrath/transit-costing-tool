@@ -408,6 +408,23 @@ function validateActivityShapes(block: Block, index: number): void {
   });
 }
 
+/**
+ * The refusal for a file that gives two Blocks of one Blocking Scenario the same label on one service day (Decision 0039). It says what is
+ * wrong, how many labels repeat in the whole file, that nothing was imported, and the way out: the file is not repaired on import, so the
+ * planner renames the repeated labels where the file was exported, exports again, and imports the new file (user decision, 2026-10-23).
+ */
+function repeatedBlockLabelsMessage(blockingScenarioName: string, label: string, serviceDayId: string, entries: Array<{ value: unknown; index: number }>, serviceDays: ServiceDayDefinition[]): string {
+  const seen = new Set<string>(); const repeated = new Set<string>();
+  for (const { value } of entries) {
+    if (!isRecord(value) || typeof value.label !== 'string' || typeof value.blockingScenarioId !== 'string' || typeof value.serviceDayId !== 'string') continue;
+    const key = `${value.blockingScenarioId}\u0000${value.serviceDayId}\u0000${value.label.trim()}`;
+    if (seen.has(key)) repeated.add(key); else seen.add(key);
+  }
+  const others = Math.max(0, repeated.size - 1);
+  const day = serviceDays.find((item) => item.id === serviceDayId)?.name ?? 'the same service day';
+  return `Invalid project backup: Blocking Scenario "${blockingScenarioName}" has more than one Block labeled "${label}" on ${day}${others ? `, and ${others} other label${others === 1 ? '' : 's'} repeat${others === 1 ? 's' : ''} in this file` : ''}. Block labels must be different on each service day. Nothing was imported. Rename the repeated label${others ? 's' : ''} in the project where this file was exported, export it again, and import the new file.`;
+}
+
 /** `entries` carry each Block's position in the file, so a message names the right `blocks[n]` after placeholders are removed. */
 function validateBlocks(entries: Array<{ value: unknown; index: number }>, scenarioIds: Set<string>, serviceDays: ServiceDayDefinition[], trips: Trip[], blockingScenarios: BlockingScenario[] = []): Block[] {
   const ids = new Set<string>(); const tripIds = new Set(trips.map((trip) => trip.id)); const dayIds = new Set(serviceDays.map((day) => day.id));
@@ -424,7 +441,7 @@ function validateBlocks(entries: Array<{ value: unknown; index: number }>, scena
     // A normalized Block stores no Trip Profile of its own (Decision 0019 item 9). An older export may carry the one its Blocking Scenario has.
     if (block.tripProfileId && block.tripProfileId !== owner.tripProfileId) throw new Error(`Invalid project backup: normalized block ${block.id} duplicates mismatched Trip Profile ownership`);
     const labelKey = `${owner.id}\u0000${block.serviceDayId}\u0000${block.label.trim()}`;
-    if (labels.has(labelKey)) throw new Error(`Invalid project backup: Blocking Scenario "${owner.name}" has more than one Block labeled "${block.label}" on the same service day. Rename one of them in the app that made this file, then export again.`);
+    if (labels.has(labelKey)) throw new Error(repeatedBlockLabelsMessage(owner.name, block.label, block.serviceDayId, entries, serviceDays));
     labels.add(labelKey);
     validateActivityShapes(block, index);
     for (const activity of block.activities) { if (activity.type === 'revenueTrip' && !tripIds.has(activity.tripId)) throw new Error(`Invalid project backup: block ${block.id} references a missing trip`); }

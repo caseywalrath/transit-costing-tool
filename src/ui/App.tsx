@@ -305,7 +305,7 @@ export function App({ service, tripService, blockingService, costingService, ses
         impact.tripCount ? `${impact.tripCount} trip${impact.tripCount === 1 ? '' : 's'}` : '',
         impact.affectedBlockCount ? `revenue activities in ${impact.affectedBlockCount} block${impact.affectedBlockCount === 1 ? '' : 's'}` : '',
       ].filter(Boolean);
-      setConfirm({ title: 'Delete Pattern?', text: `Delete “${selectedPattern.name || 'Untitled pattern'}”${affected.length ? ` and remove ${affected.join(', ')}?` : '?'} This cannot be undone.`, confirmLabel: 'Delete Pattern', action: () => { void service.deletePattern(selectedPattern.id).then(async () => { setSelectedPatternId(''); await reload(projectId, scenarioId, routeId); }).catch((error) => showError(error, 'Unable to delete pattern.')); } });
+      setConfirm({ title: 'Delete Pattern?', text: `Delete “${selectedPattern.name || 'Untitled pattern'}”${affected.length ? ` and remove ${affected.join(', ')}?` : '?'} This cannot be undone.`, confirmLabel: 'Delete Pattern', action: () => { void service.deletePattern(selectedPattern.id, impact.reviewToken).then(async () => { setSelectedPatternId(''); await reload(projectId, scenarioId, routeId); }).catch((error) => showError(error, 'Unable to delete pattern.')); } });
     }).catch((error) => showError(error, 'Unable to review pattern deletion.'));
   }
   async function exportJson() { if (!projectId || !selectedProject) return; try { download(`${selectedProject.name}.json`, await service.exportProject(projectId), 'application/json'); } catch (error) { showError(error, 'Unable to export the project backup. Your data was not changed. Try again.'); } }

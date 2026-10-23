@@ -2,26 +2,27 @@
 
 ## Next sitting
 
-**Sitting 4I and 4J combined (U06, U07, P15, then P17) is in progress on the branch `claude/stage-4i-4j-review-fixes`, from `origin/main` after the merge of PR #21 (U01 to U05, P16). If a later session reads this note, the sitting stopped early: continue from the first package under "Not started", on Sonnet, on this branch. Standing rules 1 to 10 below apply unchanged.** The user did not ask for a pull request.
+**Sitting 4I and 4J combined (U06, U07, P15, P17) is finished on the branch `claude/stage-4i-4j-review-fixes`, from `origin/main` after the merge of PR #21 (U01 to U05, P16). The user must review the branch, open and merge the pull request, and read the first CI run. The next sitting is 4K: U08 on Opus, then D01 on Sonnet, then P18 (Sonnet). Start it only after this branch is merged; create `claude/stage-4k-review-fixes` from the new `origin/main`. Standing rules 1 to 10 below apply unchanged.**
 
-- Done on this branch: U06 (`U06HASH`), U07 (`U07HASH`), P15 (`b920627`).
-- Package left: **P17** (the small structural package defined in the decisions below, items 1 to 3), done only because U06, U07, and P15 are committed and pushed. Not started: P17, U08, D01, P18.
-- This sitting's rules (user, 2026-10-23): Sonnet main session, no sub-agents, no Opus review; the Decision 0005 gate is waived and each package is pushed after its commit and fix log entry; a design or UX decision that no package text, added criterion, or decision below settles is recorded in the fix log as "blocked: decision needed" with the exact question and options, and the next independent package goes on; branch protection and CI are the user's to watch, and the workflows are not edited.
-- **Blocked: decision needed (U07, details and options in its fix log entry).** (1) How the open Shift drawer and the Runtime Save and Discard buttons coexist at 1024 to 1900 px (options: reserve room beside the drawer, move Save and Discard left, dock the drawer at the bottom, leave it). (2) Where to show why a Trip cannot be recalculated (`inspectStaleTrips` findings; the text exists, no screen shows it).
+- Done on this branch: U06 (`88a40a6`), U07 (`4d270c1`), P15 (`b920627`), P17 (`P17HASH`). Each package has its own hash-record commit after it.
+- Not started: U08, D01, P18.
+- Sequence for 4K (user, 2026-10-23): **U08 on Opus**, then **D01 on Sonnet**, then **P18** (the Vitest major upgrade, its own package, not mixed with feature work). Sitting 4K rules (the Sonnet-only, no-sub-agent, waived-gate exceptions of this sitting) are not carried over; the user states the exceptions for each sitting.
+- **Blocked: decision needed (U07, details and options in its fix log entry).** (1) How the open Shift drawer and the Runtime Save and Discard buttons coexist at 1024 to 1900 px (options: reserve room beside the drawer, move Save and Discard left, dock the drawer at the bottom, leave it). (2) Where to show why a Trip cannot be recalculated (`inspectStaleTrips` findings; the text exists, no screen shows it). The user decides; then a small UI package finishes them.
 - Known failures: none. If the intermittent `unified-action-layer.spec.ts:139` failure returns, diagnose it as a package failure and fix the code.
-- State after P15: unit tests 51 files, 743 tests; browser suite 146 tests, all passing; bundle `index-DidXN46k.js` 810.48 kB. The user must still read the first CI run.
-- Carried forward for U06 and U07 from this sitting (details in the U01 to U05 entries):
-  - **U06 (done, `U06HASH`):** the Annual Cost column fits at 768, 1024, and 1440 px; an invalid estimate lists its findings; the persistence answer of `getLocalDataProtection()` is still not shown (no criterion asks for it), and the assumptions alert keeps its single sentence.
-  - **U07 (done, `U07HASH`, except two blocked items):** the Runtime totals read `:61` by design (the Decision 0010 duration format; no change); the single-flight load, the reload after a Runtime save, the Recalculate band picker, the error boundary, the shared-profile line, and the message texts are done. Blocked: the Shift drawer covering the Runtime Save button, and where to show the `inspectStaleTrips` findings.
+- State after P17: unit tests 51 files, 746 tests; browser suite 148 tests, all passing; bundle `index-DO8O5EIH.js` 805.44 kB. The user must still read the first CI run (branch protection and CI are the user's to watch).
+- Carried forward from this sitting (details in the U06, U07, P15, and P17 entries):
+  - **U06 (done, `88a40a6`):** the Annual Cost column fits at 768, 1024, and 1440 px; an invalid estimate lists its findings; the persistence answer of `getLocalDataProtection()` is still not shown (no criterion asks for it), and the assumptions alert keeps its single sentence.
+  - **U07 (done, `4d270c1`, except two blocked items):** the Runtime totals read `:61` by design (the Decision 0010 duration format; no change); the single-flight load, the reload after a Runtime save, the Recalculate band picker, the error boundary, the shared-profile line, and the message texts are done. Blocked: the Shift drawer covering the Runtime Save button, and where to show the `inspectStaleTrips` findings.
   - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead; the Add-trip row drafts are not kept across a scope change; 24 dialogs were converted (the finding counted 28, four were removed by X01).
   - **P15 (done, `b920627`):** the Pattern editor shows "incomplete" for a Pattern with no distance (the literal "0.0 miles" was on no screen; the Trips screen shows no distance); `calculateTimepointHeadways` has a unit test; display rounding is in the domain. Still open: a CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
+  - **P17 (done, `P17HASH`):** `deletePattern` takes a review token (Decision 0041 addendum); the 14 legacy route mutators are deleted and the test setups use `src/testSupport/routeFixtures.ts`; a backup with a repeated Block label is refused with the cause and the way out. `makePatternPoint` has no caller left (harmless).
   - **P16 leftovers:** `resetPatternService` (legacy mutator) still stamps wall-clock `now`; about 40 other domain signatures still default `now` to the wall clock.
 - Decisions made by the user on 2026-10-23 (all follow the recommended option). `docs/review/fix-packages.md` is on the review branch and is not edited; this note is the record.
-  1. `deletePattern` gets a review token (Decision 0041 pattern). **Approved, unscheduled:** new small structural package **P17**, with items 2 and 3. Place it after P15 in the combined sitting if time allows, otherwise in its own sitting before 4K.
-  2. The legacy per-field route mutators (`updatePattern`, `addNode`, and the others in the P09 entry) are deleted, and the unit-test setups that use them move to preview and commit. **Approved, in P17.**
-  3. Repeated Block labels already stored: the backup import refusal message explains the cause and the way out (rename the repeated labels in the source project, then export again). No repair on load. **Approved, in P17** (the message text is in the import path in `src/application` and the U02 error display).
-  4. Branch protection: the user will require the two CI checks on `main` after the first CI run passes. User action only; no package. The check names in the GitHub list are the job names "Typecheck, unit tests, build" (job `verify`) and "Browser tests" (job `browser`).
-  5. Vitest major upgrade (5 advisories in the `vitest` chain): its own package, **P18**, in sitting 4K after U08 and D01, or in a separate maintenance sitting. Not mixed with feature work.
+  1. `deletePattern` gets a review token (Decision 0041 pattern). **DONE in P17 (`P17HASH`).**
+  2. The legacy per-field route mutators (`updatePattern`, `addNode`, and the others in the P09 entry) are deleted, and the unit-test setups that use them move to preview and commit. **DONE in P17.**
+  3. Repeated Block labels already stored: the backup import refusal message explains the cause and the way out (rename the repeated labels in the source project, then export again). No repair on load. **DONE in P17** (the text is built in `src/persistence/backup.ts` and shown by the U02 error display).
+  4. Branch protection: the user will require the two CI checks on `main` after the first CI run passes. User action only; no package. (Done by the user before this sitting.) The check names in the GitHub list are the job names "Typecheck, unit tests, build" (job `verify`) and "Browser tests" (job `browser`).
+  5. Vitest major upgrade (5 advisories in the `vitest` chain): its own package, **P18**, in sitting 4K after U08 and D01, or in a separate maintenance sitting. Not mixed with feature work. **Not started.**
   6. Defaults accepted: Runtime band totals use the duration format (U07 criterion 6 first checks what the screen shows); a Pattern with no distance shows "incomplete" instead of 0.0 miles on the Trips and Pattern screens (added criterion to P15, below); menu typeahead is not built.
 - Other hand-offs still open from earlier sittings:
   - **Decided by the user on 2026-10-23 (Option B), for U07.** Under a segment-start or blended profile, an anchor that fits two first departures is rejected and the candidates are listed (user decision 3). The Recalculate dialog must hide its band picker for segment-start and blended Trips, say plainly that the fixed time can be reached two ways, and rely on the options it already has: "Use first departure for this trip", choosing another anchor, or revising the bands. No domain change is needed. See the Decision 0031 addendum.
@@ -41,6 +42,8 @@ Items that the user assigned to later packages. They are added to those packages
   - the single-flight Runtime load in `App.tsx` (the other half of the race above), then remove the two test-helper steps named above;
   - the Trips table must reload Runtime profiles after a Runtime profile is saved, so Show runtime bands shades without a page reload (the second behavior in the 4C decision bullet);
   - the Recalculate dialog hides the band picker for segment-start and blended Trips (Option B, decided 2026-10-23).
+
+- **P17 (sitting 4I/4J), defined 2026-10-23. DONE in P17 (commit `P17HASH`).** Items 1 to 3 of the decisions above: a review token for `deletePattern`; the legacy mutators deleted with the unit-test setups moved to preview and commit; the backup import refusal message for repeated Block labels.
 
 - **P15 (sitting 4I/4J), added 2026-10-23. DONE in P15 (commit `b920627`).** A Pattern with no distance entered shows "incomplete" instead of "0.0 miles" on the Trips and Pattern screens, using the same rule as Blocking (a total of 0 is incomplete mileage, P12). This is the one intended display change in P15; every other displayed value stays unchanged, and the user-visible text is recorded in the P15 entry.
 
@@ -1976,3 +1979,66 @@ One break was not a break and was replaced: removing the "not the destination Bl
 
 - `buildTripTableView` runs on every render of the Trips table, as the inline code did; with the duplicate rule now one pass it is cheaper than before. A memo was not added.
 - The application module re-exports domain functions for the interface. A new calculation that the interface needs must be added there, not imported from the domain; the import test enforces it for `App.tsx` only. `BlockingWorkspace.tsx` and `CostingWorkspace.tsx` still import a few functions from the domain (`createBlockingScenarioSourceSignature`, `sortServiceDays`, `roundCostingDisplay`, and others); the Blocking and Costing items of 4-014 are P14's and P11's.
+
+## P17: Pattern deletion token, legacy mutators removed, import refusal message
+
+- Date: 2026-10-23. Sitting 4I/4J (combined). Model: Sonnet (main session). No sub-agents.
+- Type: structural. Severity: S3. Defined by the user's decisions of 2026-10-23, items 1 to 3 (the Next sitting note); `docs/review/fix-packages.md` has no P17 entry.
+- Commit: `P17HASH`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-027 (remainder) | 4-011, 4-012 | S2 | `deletePattern` was the one confirmed deletion with no review token. It removes Runtime profiles, Runtime assignments, Generation sets, and Trips, and changes Blocks, so a Trip or a Block saved after the confirmation dialog opened was removed unseen. |
+| I-078 (second half) | 4-020 | S3 | The per-field route mutators saved without the preview and without Pattern validation. The application no longer called them, but they stayed on the public interface, and test fixtures used them, so a fixture could hold a Pattern that a planner could not save. |
+| (none) | Decision 0039 follow-up, user decision 2026-10-23 | S4 | A backup that gave two Blocks of one Blocking Scenario the same label on one service day was refused with "Rename one of them in the app that made this file". The message named neither the service day nor the way out. |
+
+### Decisions
+
+- Item 1: `deletePattern(patternId, reviewToken)`. The token covers the Pattern, its Runtime profiles and assignments, its Generation sets, its Trips, and the Blocks that hold a revenue activity of one of those Trips (Decision 0041 addendum). The review and the command share one private plan, so the counts shown and the records removed cannot differ.
+- Item 2: the mutators are deleted, not deprecated. Test setups use a new `src/testSupport/routeFixtures.ts` that saves through `previewNodeChanges`, `previewPatternChange`, and their commits.
+- Item 3: no repair on import. The message names the Blocking Scenario, the label, and the service day, says how many other labels repeat, says that nothing was imported, and says to rename the repeated labels in the project where the file was exported, export again, and import the new file.
+
+### What changed
+
+- `src/application/routeDefinitionService.ts`:
+  - `PatternDeletionImpact.reviewToken`; `getPatternDeletionImpact` and `deletePattern` use the private `planPatternDeletion` and `recordsForPattern`; `deletePattern` takes a required token and refuses with "The pattern deletion review is out of date. Review the impact again." when it is missing or differs.
+  - Removed: `addNode`, `updateNode`, `addPattern`, `updatePattern`, `addPatternPoint`, `updatePatternPoint`, `movePatternPoint`, `removePatternPoint`, `createReversePattern`, `duplicatePattern`, `addDirection`, `updateDirection`, `addDirectionColumn`, `assignPatternDirection`, and their names in `RouteDefinitionApplication`. Two imports left unused were removed. The domain functions they called stay (the domain and its tests still use them).
+- `src/ui/App.tsx`: `deleteSelectedPattern` passes `impact.reviewToken` (one line; no layout or interaction change). The existing refusal path (error banner) shows the stale-review message.
+- `src/persistence/backup.ts`: `repeatedBlockLabelsMessage` builds the refusal text of the duplicate-label check.
+- New `src/testSupport/routeFixtures.ts`: `addRouteNodes`, `savePattern`, `savePatternDraft`, `addTwoStopPattern`. `routeDefinitionService.test.ts` (about 15 setups) and `saveStatus.test.ts` use them. Where a setup depended on a legacy side effect, it now says what it needs (for example the third point of the lengthened Pattern in the `ensureDefaultRuntimeProfile` resize test is added with `previewPatternChange` and `commitPatternChange`).
+- Docs: Decision 0041 addendum (items 1 to 3) and its two stale Consequences lines; `architecture_overview.md` lists Pattern among the deletions that take a review token.
+
+### Tests added
+
+- `src/application/routeDefinitionService.test.ts` (+1 test, and two assertions in an existing one): a Pattern deletion is refused after a Trip, a Runtime profile, or a Block it would change changed after the review, nothing is deleted on a refusal, and a fresh review deletes; a missing or foreign token is refused.
+- `src/persistence/backupImportValidation.test.ts` (+2 tests): the refusal names the Blocking Scenario, the label, the service day, the count of other repeated labels, "Nothing was imported", and the rename, export, and import steps; with one repeated label the text has no count clause.
+- `tests/ui/deletion-reviews.spec.ts` (+1 test, real app): Delete Pattern is refused when a Trip was saved after the review, nothing is deleted, and a fresh review (which now counts 4 Trips) deletes the Pattern and its Trips.
+- `tests/ui/backup-import.spec.ts` (+1 test, real app): importing a file with a repeated Block label shows the new message and writes nothing.
+- No existing assertion was changed. All unit setups that used the removed mutators pass with the fixtures.
+
+### Deliberate breaks (each applied, run, and restored from a saved copy)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| Pattern deletion token | `deletePattern` does not check the token | 2 unit tests fail; the browser spec fails |
+| Pattern deletion token | the token leaves out the Trips | 1 unit test fails |
+| Pattern deletion token | the token leaves out the Blocks | 1 unit test fails |
+| Import message | "Nothing was imported" removed | 1 unit test fails |
+| Import message (browser) | "Nothing was imported" removed | the new `backup-import.spec.ts` test fails |
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 51 files, 746 tests passed (743 before; +2 in `backupImportValidation.test.ts`, +1 in `routeDefinitionService.test.ts`).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 148 passed, 0 failed (4.7 minutes); 146 before plus 2 new tests. No existing spec changed. No `test.fail`, `test.skip`, or `test.fixme`. `unified-action-layer.spec.ts:139` passed.
+- New browser tests, stress run `--repeat-each=10 --workers=8`: `deletion-reviews.spec.ts` (all 6 tests) 60 of 60 passed; the new `backup-import.spec.ts` test 10 of 10 passed.
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-DO8O5EIH.js` 805.44 kB (810.48 kB before; the removed mutators).
+- No visual change: the one UI edit passes a token to an existing call.
+
+### Hand-offs and residual risks
+
+- A Pattern deletion dialog that was open when the data changed closes and shows the error banner, like the Route, Scenario, and Project dialogs. The Runtime profile and Trips dialogs keep their old review (U05 hand-off); not changed here.
+- `makePatternPoint` (`src/domain/commands.ts`) has no caller left outside its own re-export. It is domain code and harmless; remove it in a later cleanup if wanted.
+- The fix log entries above (P09, 4G) still describe the mutators as present; they are history and are not edited.
