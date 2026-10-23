@@ -2,7 +2,13 @@
 
 ## Next sitting
 
-**U10 (Shift drawer redesign, Opus) is finished on the branch `claude/stage-4k-review-fixes`, restarted from `origin/main` after the merge of PR #25 (D01, U09, P18). The user must review the branch and the redesign (see the U10 entry, "Interaction, for review"), open and merge the pull request, and read the first CI run. With U10, every Stage 4 package is done. No next review sitting is planned; any follow-up (the open hand-offs below) needs the user's instruction.**
+**U10 (Shift drawer redesign, Opus) is finished on the branch `claude/stage-4k-review-fixes`; every Stage 4 package is done. Next: package F1 (UI follow-up fixes, Sonnet), then package F2 (structural follow-up and maintenance, Sonnet), each in its own session on the same branch. Their instructions are `docs/implementation/followup/F1-ui-fixes.md` and `docs/implementation/followup/F2-structural-maintenance.md`. The user approved the recommendation for every hand-off on 2026-10-23 (list below).**
+
+- Post-Stage-4 hand-offs, as approved by the user on 2026-10-23:
+  - F1 (fix): 1 Add-trip row draft dropped on a scope change; 2 Pattern draft lost right after Save nodes (app cause, then the spec); 4 Runtime profile and Trips delete dialogs stay open after a refusal; 5 Node impact omits non-revenue activities, Trip profile delete omits Blocking Scenarios; 7 storage protection answer not shown.
+  - F2 (fix): 10 Trip Profile index; 11 placeholder Block clean-up (both in Dexie version 8); 12 time the U09 calculation; 13 contract tests for `saveBlocks` (or delete it) and the generation-set methods; 16 delete `makePatternPoint`; 18 document the CSV importer rule.
+  - Deferred, no work: 3 Shift panel covers bottom rows (decide after the U10 review; option: a collapse button); 8 screen-reader check (needs a person); 14 one unexplained timeout in `local-data-protection.spec.ts`; 15 wall-clock defaults in about 40 domain functions; 19 newer dependency majors without advisories.
+  - Closed: 6 U09 line does not name rows; 9 menu typeahead and the radio role of Compatible only; 17 bare CR in a CSV label; 20 Route draft bullets and historical plans left as they are.
 
 - Done on this branch: D01 (`daec5d5`), U09 (`ef57f58`), and P18 (`9395d2c`). U08 landed earlier (`ac0bded`, PR #24).
 - U10 done on this branch (`c1a6177`). Earlier on `main`: D01 (`daec5d5`), U09 (`ef57f58`), P18 (`9395d2c`).
