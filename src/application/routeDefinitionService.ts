@@ -11,8 +11,9 @@ import type { Block, BlockActivity, Node, Project, ProjectSnapshot, Route, Route
 import { validateNodeDeletion, validateRouteDefinition } from '../domain/validation';
 import { adjustBlockReferences } from '../domain/trips';
 import { authoritativeTripsCsv, blockActivitiesCsv, blocksCsv, directionColumnsCsv, directionsCsv, generationSetsCsv, nodesCsv, patternPointsCsv, patternsCsv, routeCsv, runtimeBandsCsv, scheduledPointsCsv, tripsCsv } from '../persistence/csv';
-import type { BackupPort, RouteDefinitionRepository, SaveStatus } from './ports';
+import type { BackupPort, LocalDataProtection, RouteDefinitionRepository, SaveStatus } from './ports';
 import { assertReviewCurrent, fingerprint } from './reviewToken';
+import { SaveStatusPublisher, type LocalDataProtectionService } from './saveStatus';
 
 export interface RouteWorkspaceSelection {
   projects: Project[];
@@ -249,22 +250,36 @@ export class RuntimeProfileTripReferenceError extends Error {
   }
 }
 
+/**
+ * The `RouteDefinitionRepository` methods that write. This service publishes each of them through its save-status publisher
+ * (`save` below); the list lets a test check that no write-like repository method is left unclassified.
+ */
+export const ROUTE_DEFINITION_WRITE_METHODS: readonly string[] = [
+  'saveProject', 'deleteProject', 'saveScenario', 'saveScenarioRecords', 'updateScenarioRecords', 'commitRouteEdit', 'saveRouteDefinition',
+  'saveProjectSnapshot', 'saveRuntimeProfile', 'deleteRuntimeProfile', 'saveRuntimeAssignment',
+];
+
 export class RouteDefinitionService {
-  private saveStatus: SaveStatus = { state: 'idle' };
-  private readonly listeners = new Set<(status: SaveStatus) => void>();
   private readonly routeEditPreviews = new Map<string, StoredRouteEditPreview>();
 
+  /**
+   * `saveStatus` is the one publisher of the visible save status; the application passes the same instance to every service that writes
+   * (Decision 0001, amendment). `protection` records the time of a JSON backup export.
+   */
   constructor(
     private readonly repository: RouteDefinitionRepository,
     private readonly backup: BackupPort,
     private readonly now: () => string = () => new Date().toISOString(),
+    private readonly saveStatus: SaveStatusPublisher = new SaveStatusPublisher(now),
+    private readonly protection?: LocalDataProtectionService,
   ) {}
 
-  getSaveStatus(): SaveStatus { return this.saveStatus; }
-  subscribeToSaveStatus(listener: (status: SaveStatus) => void): () => void {
-    this.listeners.add(listener);
-    listener(this.saveStatus);
-    return () => this.listeners.delete(listener);
+  getSaveStatus(): SaveStatus { return this.saveStatus.getSaveStatus(); }
+  subscribeToSaveStatus(listener: (status: SaveStatus) => void): () => void { return this.saveStatus.subscribeToSaveStatus(listener); }
+  getLocalDataProtection(): LocalDataProtection { return this.protection?.getLocalDataProtection() ?? {}; }
+  subscribeToLocalDataProtection(listener: (state: LocalDataProtection) => void): () => void {
+    if (!this.protection) { listener({}); return () => {}; }
+    return this.protection.subscribeToLocalDataProtection(listener);
   }
 
   async loadWorkspace(projectId?: string, scenarioId?: string, routeId?: string): Promise<RouteWorkspaceSelection> {
@@ -652,7 +667,12 @@ export class RouteDefinitionService {
 
   validate(aggregate: RouteDefinitionAggregate): ValidationFinding[] { return validateRouteDefinition(aggregate); }
   getSegmentMiles(pattern: RoutePattern, pointIndex: number): number { return getSegmentMiles(pattern, pointIndex); }
-  exportProject(projectId: string): Promise<string> { return this.backup.exportProject(projectId); }
+  /** Produces the project JSON backup and records that a backup was exported now, so the screen can say when the last one was made. */
+  async exportProject(projectId: string): Promise<string> {
+    const payload = await this.backup.exportProject(projectId);
+    this.protection?.recordBackupExported();
+    return payload;
+  }
   async importProject(payload: string): Promise<Project> { return this.save(() => this.backup.importProject(payload, 'copy')); }
   /**
    * Exports route-level records for the route currently open in the workspace.
@@ -1120,25 +1140,15 @@ export class RouteDefinitionService {
     return aggregate;
   }
   private async save<T>(operation: () => Promise<T>): Promise<T> {
-    this.publish({ state: 'saving' });
-    try {
-      const result = await operation();
-      this.publish({ state: 'saved', updatedAt: this.now() });
-      return result;
-    } catch (error) {
-      this.publish({ state: 'error', errorMessage: error instanceof Error ? error.message : 'Unable to save locally.' });
-      throw error;
-    }
-  }
-  private publish(status: SaveStatus) {
-    this.saveStatus = status;
-    for (const listener of this.listeners) listener(status);
+    return this.saveStatus.run(operation);
   }
 }
 
 export type RouteDefinitionApplication = Pick<RouteDefinitionService,
   | 'getSaveStatus'
   | 'subscribeToSaveStatus'
+  | 'getLocalDataProtection'
+  | 'subscribeToLocalDataProtection'
   | 'loadWorkspace'
   | 'createProject'
   | 'renameProject'

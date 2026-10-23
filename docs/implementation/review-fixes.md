@@ -806,3 +806,108 @@ No user decision applied beyond the assignment of the race to this package (4C d
 - A review token is a fingerprint of the stored records, so any change to a record it covers, even a harmless one, refuses the deletion and asks for a new review. That is the intended fail-safe.
 - The single-flight load in `App.tsx` (the other half of the race) and the two steps in `tests/ui/support/tripsWorkspace.ts` remain for U07, as the added criterion requires. With the service fixed, the app's own first-visit creation path is now correct, but the browser helper still creates the defaults first.
 - The P07 hand-off about `rebalanceDependentService` does not apply: P09 did not change that call.
+
+## P10: Save status and local-data protection
+
+- Date: 2026-10-23. Sitting 4E. Model: Sonnet (main session). No sub-agents: P10 is S2, so no Opus review (sitting plan).
+- Type: structural. Severity: S2.
+- Commit: `PENDING-P10`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-023 | 4-006 | S2 | Only Route saves published the visible save status. 33 repository writes in the Trips, Blocking, and Costing services never showed "Saving locally…" or "Local save failed", and an error status stayed until the next Route save. |
+| I-045 | 6-003 | S2 | The application never asked the browser to keep its store, never recorded when a backup was last exported, and showed the browser's raw text ("The current transaction exceeded its quota limitations. QuotaExceededError: …") when a write failed because the store was full. |
+
+User decisions implemented: decision 11 (the save status covers every write: Route, Trips, Blocking, and Costing) and decision 16 (request persistent storage, map quota errors to plain guidance, remember the time of the last backup). Decision C5 (the shared Pages origin) is recorded in the Decision 0001 amendment, with no code change, as approved.
+
+### What changed
+
+- New `src/application/saveStatus.ts`:
+  - `SaveStatusPublisher`: the one publisher of the save status. `run(write)` publishes `saving`, then `saved` (with the time) or `error` (with the message), and rethrows. The status is `saving` while any write is in flight, and a burst that contained a failure ends as `error`, so overlapping writes cannot hide a failure. `error` stays until the next successful write.
+  - `StorageFullError` and `isQuotaExceeded`: a quota failure (`QuotaExceededError` by name, DOMException code 22, a wrapper's `inner` or `cause`, or a message that names it) becomes `StorageFullError`, message "Browser storage is full. Export a backup, then free space.", with the original kept as `cause`. Other errors pass through unchanged.
+  - `publishWrites(repository, publisher, writes)`: returns the repository with the listed write methods run through the publisher. The Trips, Blocking, and Costing services use it, so no call site has to remember to publish. A method that is not listed, or that the repository lacks, is returned as it is.
+  - `LocalDataProtectionService`: after the first successful save on a browser profile it calls `navigator.storage.persist()` once (not when the store already reports itself persistent) and records `granted`, `denied`, or `unavailable`. A recorded answer is not asked for again; `requestPersistentStorage()` is available for a planner action. `recordBackupExported()` records the time. It implements the new `LocalDataProtectionQueries` port.
+- `src/application/ports.ts`: `LocalDataProtection`, `LocalDataProtectionQueries`, `LocalDataProtectionStore`, and `StorageManagerPort` (the part of `navigator.storage` the application uses, so the application layer does not touch the browser).
+- `src/application/routeDefinitionService.ts`: takes the shared publisher (and the protection service) as constructor arguments; `save` runs through it; `exportProject` records the backup time; `getLocalDataProtection` and `subscribeToLocalDataProtection` (also on `RouteDefinitionApplication`) give the screen the port without a new prop. The list `ROUTE_DEFINITION_WRITE_METHODS` names the repository writes this service publishes explicitly.
+- `src/application/tripGenerationService.ts`, `blockingService.ts`, `costingService.ts`: take the shared publisher and wrap their repository with `publishWrites` (`TRIP_GENERATION_WRITE_METHODS`, `BLOCKING_WRITE_METHODS`, `COSTING_WRITE_METHODS`). No write method body changed. Each defaults to its own publisher, so existing callers and tests are unaffected.
+- `src/main.tsx`: creates one `SaveStatusPublisher` and one `LocalDataProtectionService` (with the `localStorage` store and `navigator.storage`) and passes them to the four services.
+- New `src/persistence/localDataProtectionStore.ts` (not on the owned list): `LocalStorageDataProtectionStore` keeps the record under `transit-costing-tool.local-data-protection.v1`, like the selection preferences. A missing, unreadable, or wrong-shaped value reads as empty (each field is checked), and a failed write is ignored.
+- Documentation: Decision 0001 amendment (decision 11, decision 16, C5 including the shared-origin risk); `architecture_overview.md` (persistence section).
+
+### Behavior before and after (what you will see)
+
+- A Trips, Blocking, or Costing write now shows "Saving locally…" in the header while it runs, and "Local save failed" if it fails, until the next successful write. Before, only Route saves did.
+- A write that fails because the browser store is full now says "Browser storage is full. Export a backup, then free space." in the error banner. Before, it showed the browser's text.
+- A Blocking write that is refused because its source changed after the review also shows "Local save failed" (the refusal happens inside the write).
+- The first time anything is saved on a browser profile, the browser may be asked to keep the store (Firefox shows a permission prompt; Chromium decides silently). Nothing on screen says so yet.
+- Exporting "Backup project JSON" records the time on the device. Nothing on screen shows it yet (U02).
+
+### Tests added
+
+- `src/application/saveStatus.test.ts` (19 tests):
+  - `SaveStatusPublisher` (6 tests, 10 runs counting the five quota shapes): saving then saved with the time; a failure is rethrown unchanged and stays until a later success; overlapping writes stay `saving` until the last ends, a failure in the burst ends it as `error`, and a new burst starts clean; five quota shapes become `StorageFullError` with the plain message and the original as `cause`; other errors and an already-mapped error pass through, and a self-referencing error does not loop; the after-save hook runs once per successful burst and not after a failure.
+  - `LocalDataProtectionService` (4): persistence asked once after the first save with the answer recorded, however many saves follow; a refusal is recorded and not asked again on a later start, while an explicit request still asks; no request when the store is already persistent, and `unavailable` for a missing, empty, or throwing browser API; the backup time is recorded, keeps the persistence answer, and tells subscribers.
+  - "Every write of the four services publishes through one publisher" (5): one write in each service publishes saving and saved; a failed write in each service is a `StorageFullError` and the one status shows it, and the next write clears it; `exportProject` records the time through the Route service, a failed export does not, and the record is exposed; every write-like method (names beginning `save`, `delete`, `insert`, `replace`, `commit`, `update`, `restore`, `copy`) of the Dexie and in-memory route repositories and the Dexie and in-memory Blocking repositories is classified in one of the four lists, so a new write method fails the test until a service publishes it; a full Route workflow on the Dexie repository (create, duplicate, rename, edit, runtime, Node commit, import, three deletions) runs every repository write inside a published save.
+- `src/persistence/localDataProtectionStore.test.ts` (7 tests): round trip; `not json`, `null`, `[]`, a string, and a record with wrong field types each read as empty; a partly valid record keeps its valid fields; a storage that throws, or is missing, reads as empty and ignores a write.
+- `tests/ui/local-data-protection.spec.ts` (5 tests, real app on IndexedDB; the quota simulation is ported from the review's `p6-quota.spec.ts`):
+  - a full store, for a Route edit, Build Trips, New Block, and a Costing save: each starts from a clean status, shows the plain message and "Local save failed", stores nothing, and after the store has room again the same action succeeds and the status clears;
+  - a successful write in each of the four services shows "Saving locally…" in the one indicator (a transaction held open for 0.8 s makes the saving state last, because a fast write can finish before React draws it);
+  - the browser is asked once after the first save, not by later saves, and not again after a reload;
+  - a refusal and a browser without the request are recorded and not repeated;
+  - "Backup project JSON" records the time within the test's window, and the backup file does not contain it.
+
+### Tests first: what failed on the current code
+
+The final tests, run against the source of the package-P09 commit (the new modules present but not wired in):
+
+- Unit: 5 of the 26 new tests failed (one write per service; a failed write per service; the backup time; the write classification; the Route workflow). The other 21 test the new modules themselves, which did not exist before, so they pass on arrival and are shown by the deliberate breaks below.
+- Browser: all 5 failed.
+
+### Deliberate breaks (each applied, run, and restored)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| Publisher | quota errors not mapped | 5 fail |
+| Publisher | a failed write of a burst forgotten | 8 fail |
+| Write gate | `publishWrites` publishes nothing | 2 fail |
+| Persistence request | no once-only guard | 2 fail |
+| Backup time | `exportProject` does not record | 1 fails |
+| Route writes | `save` does not publish | 2 fail |
+| Write classification | `insertTripsAtomically` removed from the Trips list | 1 fails |
+| Store | any `persistentStorage` value accepted | 2 fail |
+| Browser, quota and indicator tests | the Trips service not given the shared publisher | both fail (first run of the quota test passed this break: the status was still `error` from the Route step, so the test was restructured to start each step from a clean status, and the break then failed it) |
+| Browser, quota and indicator tests | the Blocking service not given the shared publisher | the quota test fails (checked before the Costing leg was restored) |
+| Browser, quota and indicator tests | the Costing service not given the shared publisher | both fail |
+| Browser, persistence tests | no after-save hook in `main.tsx` | 2 fail |
+| Browser, backup test | `exportProject` does not record | 1 fails |
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 35 files, 487 tests passed (461 before; 26 new: 19 in `saveStatus.test.ts`, 7 in `localDataProtectionStore.test.ts`). Three runs in a row.
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 71 passed, 0 failed (2.7 minutes); 66 before plus the 5 new tests. No `test.fail`, `test.skip`, or `test.fixme`.
+- New spec stress runs, `--repeat-each=10 --workers=8`: the final form passed 50 of 50, then 49 of 50 (one timeout in the indicator test at the Trips step, 240 s, cause not found), then 50 of 50 with traces, and the indicator test alone 10 of 10. A final run is recorded in the P11 entry. Earlier forms of the spec failed in the Costing step; see "Costing save and I-044" below.
+- `pnpm build`: succeeds (existing chunk-size warning only). Bundle `index-CgKt-qRs.js` 781.75 kB (777.85 kB before P10, +3.90 kB).
+
+### Costing save and I-044 (a finding made while testing)
+
+A Costing save is slow when the Costing estimate is working. On the unchanged `origin/main` (ee0d61c), a probe that fills the rate and clicks Save on the golden project, run 16 times with 8 browsers sharing the machine, did not store the assumption within 8 seconds in 8 of the 16 runs; with the 90-second allowance used in the new spec, every run completed. The save is a read-write transaction, and the estimate (finding 6-002 / I-044, fixed by Package P11) issues about 800 reads per build that the transaction waits behind. I did not measure the queue directly; the evidence is the timing, the identical result before this package, and the fact that Route, Trips, and Blocking saves under the same load were never slow. While the save waits, the Save button and the header show "Saving…". The new spec gives its Costing steps 90 seconds and says why. P11 should make them fast.
+
+### Hand-offs and what the next packages must know
+
+- New file outside the owned list: `src/persistence/localDataProtectionStore.ts` and its test (the `localStorage` implementation of the port; the application layer stays free of browser APIs).
+- **U02:** show `getLocalDataProtection()` (available on the `service` object that `App` already holds): "Last backup: <date and time>" or "No backup exported yet" under "Backup project JSON", and the recorded persistence answer if wanted. Add `QuotaExceededError`, `VersionError`, and `UnknownError` to the technical-error filter of `showError` as U02 criterion 4 says; the new storage-full message does not match the filter, so it already reaches the banner.
+- **U02:** a read-only tab's rejected write now also sets the header status to "Local save failed" (the message is the read-only text); present the read-only status before that.
+- The constructor argument order changed: `RouteDefinitionService(repository, backup, now, saveStatus, protection)`, `TripGenerationService(repository, now, saveStatus)`, `BlockingApplicationService(repository, context, saveStatus)`, `CostingApplicationService(contextQueries, assumptionsRepository, now, saveStatus)`. All new arguments are optional.
+- P11 moves the Costing context builder out of `main.tsx`; the shared publisher stays wired as it is.
+
+### Residual risks
+
+- Real quota exhaustion was not reproduced here. Chromium's DevTools quota override did not block writes (a Costing save under it simply finished), so the browser spec uses the review's simulation (the store's `put` and `add` throw the error a full store raises). A real full store aborts the transaction asynchronously; `isQuotaExceeded` looks through Dexie's `inner` and `cause` chain and accepts the error name, the code 22, or a message that names it, which covers the shapes Dexie and IndexedDB produce, but it was proven with those shapes, not with a real failure.
+- The backup time is recorded when the backup text is produced, not when the download finishes. A download that the planner cancels is still counted; the application cannot observe a download.
+- `navigator.storage.persist()` in Firefox shows a permission prompt the first time. The answer is recorded and the request is not repeated, so a planner who dismisses the prompt is not asked again unless a later screen offers the request.
+- The `error` status stays until the next successful write, as before for Route saves. A planner who sees "Local save failed" and then does not save again keeps seeing it. The error banner carries the specific message.
+- The single timeout in the 49-of-50 stress run (an unrelated `selectOption` at the Trips step) was not reproduced in the roughly 70 runs of the same spec that followed (50 with traces, 10 of the indicator test alone, and the full-suite run). Its cause is unknown; I treat it as load on the shared machine, with that uncertainty recorded.
+- What could still be wrong: a repository write added later under a name that does not begin with one of the eight prefixes the classification test looks for would not be caught by it.

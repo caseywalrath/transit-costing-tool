@@ -66,6 +66,37 @@ export interface SaveStatus {
   errorMessage?: string;
 }
 
+/**
+ * Device-local facts about how well the local data is protected (review issue I-045, user decision 16). They are not project data:
+ * they live beside the selection preferences, are never part of a backup, and nothing is calculated from them.
+ */
+export interface LocalDataProtection {
+  /** When the planner last exported a project JSON backup (ISO time). Absent until the first export on this browser profile. */
+  lastBackupExportedAt?: string;
+  /** The browser's answer to the persistent-storage request: kept, refused, or no such request in this browser. Absent until asked. */
+  persistentStorage?: 'granted' | 'denied' | 'unavailable';
+  /** When that answer was recorded (ISO time). */
+  persistentStorageCheckedAt?: string;
+}
+
+/** Read side of the local-data protection facts, for the screen that presents them. */
+export interface LocalDataProtectionQueries {
+  getLocalDataProtection(): LocalDataProtection;
+  subscribeToLocalDataProtection(listener: (state: LocalDataProtection) => void): () => void;
+}
+
+/** Where the protection facts are kept on this device. Reads never throw; a missing or malformed record reads as empty. */
+export interface LocalDataProtectionStore {
+  load(): LocalDataProtection;
+  save(state: LocalDataProtection): void;
+}
+
+/** The part of `navigator.storage` the application uses. Absent in browsers without the persistent-storage request. */
+export interface StorageManagerPort {
+  persist?(): Promise<boolean>;
+  persisted?(): Promise<boolean>;
+}
+
 /** Historical generation-set ports. The pre-2R screens that used them are removed; the generationSets table and old backups still need them (decision 13). */
 export interface TripGenerationRepository {
   getGenerationSet(id: string): Promise<TripGenerationSet | undefined>;

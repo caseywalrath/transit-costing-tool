@@ -3,6 +3,7 @@ import type { CostingAssumptionsInput } from '../domain/costing';
 import type { CostingAssumptionsRepository, CostingCalculationContextQueries, CostingCommands, CostingQueries } from './ports';
 import { costingCsvFiles } from '../persistence/csv';
 import { metadata, newId } from '../domain/ids';
+import { publishWrites, SaveStatusPublisher } from './saveStatus';
 
 export interface CostingEstimateRequest {
   scenarioId: string;
@@ -10,13 +11,22 @@ export interface CostingEstimateRequest {
   assumptions: CostingAssumptionsInput;
 }
 
-/** Read-only coordinator for selected-scenario costing calculations. */
+/** The `CostingAssumptionsRepository` methods that write. Every call to one is published through the save-status publisher. */
+export const COSTING_WRITE_METHODS: readonly string[] = ['saveCostingAssumptions'];
+
+/** Coordinator for selected-scenario costing calculations (read-only) and the Scenario's one set of Costing assumptions (the only write). */
 export class CostingApplicationService implements CostingQueries, CostingCommands {
+  private readonly assumptionsRepository?: CostingAssumptionsRepository;
+
+  /** `saveStatus` is the one publisher of the visible save status, shared with the other services that write (Decision 0001, amendment). */
   constructor(
     private readonly contextQueries: CostingCalculationContextQueries,
-    private readonly assumptionsRepository?: CostingAssumptionsRepository,
+    assumptionsRepository?: CostingAssumptionsRepository,
     private readonly now = () => new Date().toISOString(),
-  ) {}
+    saveStatus: SaveStatusPublisher = new SaveStatusPublisher(now),
+  ) {
+    this.assumptionsRepository = assumptionsRepository && publishWrites(assumptionsRepository, saveStatus, COSTING_WRITE_METHODS);
+  }
 
   async loadAssumptions(scenarioId: string) {
     return this.assumptionsRepository?.getCostingAssumptions(scenarioId);

@@ -4,6 +4,7 @@ import { adjustBlockReferences, AnchorBandChoiceError, applyPatternChange, calcu
 import type { AddTripRequest, Block, BlockingScenario, GenerateTripsRequest, RuntimeAssignment, RuntimeProfile, RoutePattern, Trip, TripGenerationSet, TripProfile, TripRegenerationUndo, TripTableImportRow, ValidationFinding } from '../domain/types';
 import type { TripTableImportPreview } from './ports';
 import { assertReviewCurrent, fingerprint } from './reviewToken';
+import { publishWrites, SaveStatusPublisher } from './saveStatus';
 import { metadata, newId, withUpdatedAt } from '../domain/ids';
 import { buildBatchPatternChangePreview, buildRuntimeCopyPreview, buildTripCopyPreview, type BatchPatternChangePreview, type BatchPatternChangeRequest, type RuntimeCopyPreview, type RuntimeCopyRequest, type TripCopyPreview, type TripCopyRequest } from '../domain/serviceDayCopy';
 import { buildTripShiftPreview, type TripShiftPreview, type TripShiftRequest, TripShiftValidationError } from '../domain/tripShift';
@@ -54,9 +55,21 @@ function tripTableImportSignature(trips: Trip[], patterns: Map<string, RoutePatt
   });
 }
 
+/** The `TripGenerationRepository` methods that write. Every call to one is published through the save-status publisher. */
+export const TRIP_GENERATION_WRITE_METHODS: readonly string[] = [
+  'saveGenerationSet', 'saveTrips', 'saveBlocks', 'replaceGenerationSet', 'insertTripsAtomically', 'saveTripChangesAtomically',
+  'saveRegeneratedTripsWithUndo', 'restoreLastTripRegenerationUndo', 'deleteTripsAtomically', 'saveTripProfile', 'copyTripProfileAtomically',
+  'deleteTripProfile', 'commitRuntimeCopyAtomically', 'replaceTripsForDayAtomically',
+];
+
 /** Application coordinator for the historical and authoritative trip workflows. */
 export class TripGenerationService {
-  constructor(private readonly repository: TripGenerationRepository, private readonly now: () => string = () => new Date().toISOString()) {}
+  private readonly repository: TripGenerationRepository;
+
+  /** `saveStatus` is the one publisher of the visible save status, shared with the other services that write (Decision 0001, amendment). */
+  constructor(repository: TripGenerationRepository, private readonly now: () => string = () => new Date().toISOString(), saveStatus: SaveStatusPublisher = new SaveStatusPublisher(now)) {
+    this.repository = publishWrites(repository, saveStatus, TRIP_GENERATION_WRITE_METHODS);
+  }
 
   async listTripProfiles(scenarioId: string): Promise<TripProfile[]> { return this.repository.listTripProfiles ? this.repository.listTripProfiles(scenarioId) : []; }
   async renameTripProfile(profileId: string, name: string): Promise<TripProfile> {

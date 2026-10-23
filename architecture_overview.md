@@ -290,6 +290,8 @@ The first usable application must include:
 
 CSV is not a complete backup format because it cannot reliably preserve every relationship and setting.
 
+The visible save status covers every write: the Route, Trips, Blocking, and Costing services publish saving, saved, and failed through one `SaveStatusPublisher`. A write that fails because the browser store is full is reported as "Browser storage is full. Export a backup, then free space." After the first successful save the application asks the browser once to keep the store (`navigator.storage.persist()`) and records the answer, and it records the time of the last JSON backup export. Both are device-local facts kept beside the selection preferences, never in a backup, and available to the screen through the `LocalDataProtectionQueries` port. GitHub Pages shares one origin, and therefore one browser store, among every site of the account (Decision 0001, amendment of 2026-10-23).
+
 Only one browser tab at a time may write the database. The first tab holds a Web Locks lock (with a `BroadcastChannel` election as fallback); later tabs are read-only and every write they attempt is rejected with a plain message. The check is a Dexie middleware in `TransitDatabase`, so it covers every repository. A tab whose database was upgraded by another tab closes its connection and becomes read-only. The read-only status is available through `SessionStatusQueries`. Because there is one writer, stale-source checks that run before a write transaction are acceptable. See Decision 0037.
 
 ## UI Structure

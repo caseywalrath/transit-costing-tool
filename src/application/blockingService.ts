@@ -4,6 +4,7 @@ import { applyTripAssignment, assertBlockingScenarioSourceUnchanged, classifyBlo
 import type { BlockingActivityEditRequest, BlockingAssignmentRequest, BlockingBulkAssignmentRequest, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingCompatibility, BlockSummary, BlockingSummary, BlockingTripsAssignmentRequest, MinimumLayoverRule } from '../domain/blocking';
 import { newId, withUpdatedAt } from '../domain/ids';
 import { blockingActivitiesCsv, blockingBlocksCsv, blockingScenariosCsv, blockingSummariesCsv } from '../persistence/csv';
+import { publishWrites, SaveStatusPublisher } from './saveStatus';
 
 export interface BlockingContextProvider {
   getTrip(id: string): Promise<Trip | undefined>;
@@ -26,9 +27,17 @@ function removeSelectedTripsFromBlock(block: BlockingBlock, tripIds: Set<string>
   return normalizeBlockActivities(withUpdatedAt({ ...block, activities: activities.filter((activity) => !removeActivityIds.has(activity.id)) }));
 }
 
+/** The `BlockingRepository` methods that write. Every call to one is published through the save-status publisher. */
+export const BLOCKING_WRITE_METHODS: readonly string[] = ['saveBlockingScenario', 'saveBlockingScenarioGraphAtomically', 'deleteBlockingScenarioAtomically', 'saveBlockingBlocksAtomically'];
+
 /** Application coordinator for lifecycle and transactional Blocking operations. */
 export class BlockingApplicationService implements BlockingCommands, BlockingQueries {
-  constructor(private readonly repository: BlockingRepository, private readonly context: BlockingContextProvider) {}
+  private readonly repository: BlockingRepository;
+
+  /** `saveStatus` is the one publisher of the visible save status, shared with the other services that write (Decision 0001, amendment). */
+  constructor(repository: BlockingRepository, private readonly context: BlockingContextProvider, saveStatus: SaveStatusPublisher = new SaveStatusPublisher()) {
+    this.repository = publishWrites(repository, saveStatus, BLOCKING_WRITE_METHODS);
+  }
 
   async createBlockingScenario(request: BlockingScenarioCreateRequest): Promise<BlockingScenario> {
     const siblings = await this.repository.listBlockingScenarios(request.scenarioId);
