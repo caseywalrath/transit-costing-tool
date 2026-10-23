@@ -10,6 +10,7 @@ import { InMemoryRouteDefinitionRepository } from '../persistence/inMemoryReposi
 import { BlockingApplicationService, BLOCKING_WRITE_METHODS } from './blockingService';
 import { CostingApplicationService, COSTING_WRITE_METHODS } from './costingService';
 import type { LocalDataProtection, LocalDataProtectionStore, SaveStatus } from './ports';
+import { addTwoStopPattern } from '../testSupport/routeFixtures';
 import { ROUTE_DEFINITION_WRITE_METHODS, RouteDefinitionService } from './routeDefinitionService';
 import { isQuotaExceeded, LocalDataProtectionService, SaveStatusPublisher, STORAGE_FULL_MESSAGE, StorageFullError } from './saveStatus';
 import { TRIP_GENERATION_WRITE_METHODS, TripGenerationService } from './tripGenerationService';
@@ -270,10 +271,7 @@ describe('every write of the four services publishes through one publisher', () 
       const added = await service.addRoute(created.records);
       let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, added.route.id)).aggregate!;
       aggregate = await service.updateRoute(aggregate, { name: 'Route' });
-      aggregate = await service.addNode(aggregate); aggregate = await service.addNode(aggregate);
-      const addedPattern = await service.addPattern(aggregate);
-      aggregate = await service.addPatternPoint(addedPattern.aggregate, addedPattern.pattern.id);
-      aggregate = await service.addPatternPoint(aggregate, addedPattern.pattern.id);
+      aggregate = (await addTwoStopPattern(service, aggregate)).aggregate;
       const runtime = await service.ensureDefaultRuntimeProfile(aggregate.patterns[0]);
       const alternative = await service.createDefaultRuntimeProfile(aggregate.patterns[0], 'Alternative');
       await service.assignRuntimeProfile(created.records.scenario.id, aggregate.patterns[0].id, created.records.serviceDays[0].id, alternative.id);

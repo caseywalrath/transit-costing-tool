@@ -45,14 +45,9 @@ export async function createRouteWithPattern(page: Page, projectName: string) {
   await page.getByRole('button', { name: 'Save and rebalance', exact: true }).click();
   await expect(page.getByText('New Pattern — not saved')).toHaveCount(0);
 
-  // The first visit to Trips creates the Default Runtime profile and one assignment per standard Service day. In development React
-  // StrictMode runs that load twice at once, and the two runs can store duplicate assignments, raise "Duplicate runtime assignment",
-  // and reset the Runtime editor draft (an app race recorded in docs/implementation/review-fixes.md, P05 hand-offs). Create the
-  // defaults once, through the same application method, before Trips mounts so both runs find them and change nothing.
+  // The first visit to Trips creates the Default Runtime profile and one assignment per standard Service day. The service does it in one
+  // transaction and the Trips workspace loads one at a time (review package U07), so no setup step is needed before Trips mounts.
   await expect.poll(() => runInPage(page, 'return await e.db.patterns.count()')).toBe(1);
-  await runInPage(page, 'const [pattern] = await e.db.patterns.toArray(); await e.service.ensureDefaultRuntimeProfile(pattern);');
-  // The page holds the records it loaded before the defaults existed; reload so it starts from the stored data.
-  await page.reload();
   await expect(page.getByRole('button', { name: 'Trips', exact: true })).toBeVisible();
 }
 
@@ -77,11 +72,9 @@ export async function createShiftReadySchedule(page: Page, lastTrip = '06:00', s
   // The Save button disappears while the write is still running, so wait for the stored value before going on.
   const [minutes = '0', seconds = '0'] = segment.slice(1).split(':');
   await expect.poll(() => runInPage(page, 'return (await e.db.runtimeProfiles.toArray()).map((profile) => profile.bands[0].segmentRuntimeSeconds[0])')).toEqual([Number(minutes) * 60 + Number(seconds)]);
-  // Saving a Runtime profile starts two overlapping reloads of the Runtime section. While they run they disable its menus, close an
-  // open menu, and reset the editor draft (app behavior recorded in docs/implementation/review-fixes.md, P05 hand-offs). Reload the
-  // page so the steps below start from settled data.
-  await page.reload();
-  await page.getByRole('button', { name: 'Trips', exact: true }).click();
+  // Saving a Runtime profile reloads the Runtime section once, and the menus stay disabled until it is done. Wait for that before the
+  // steps below open a menu.
+  await expect(runtimeSection.getByRole('button', { name: 'Runtime actions', exact: true })).toBeEnabled();
   await expect(runtimeSection.getByLabel('Time band 1 segment 1')).toHaveValue(segment);
 
   const tripsSection = page.locator('[aria-label="Trips section"]');

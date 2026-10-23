@@ -106,3 +106,21 @@ test('refuses a backup with a pull-out Node that is not in its Scenario, naming 
   await expect(page.locator('.notice.error')).toContainText(`block "${block.label}" has a pull-out that references a Node that is not in its Scenario`, { timeout: 15000 });
   expect(await projectCount(page)).toBe(before);
 });
+
+// Review package P17 (user decision 3 of 2026-10-23): a backup that repeats a Block label is refused, not repaired, and the message says
+// why and what to do.
+test('refuses a backup that repeats a Block label on one service day, and says how to fix the file', async ({ page }) => {
+  await openApp(page);
+  const before = await projectCount(page);
+  const backup = goldenRaw();
+  const first = backup.blocks[0];
+  const other = backup.blocks.find((block: any, index: number) => index > 0 && block.serviceDayId === first.serviceDayId && block.blockingScenarioId === first.blockingScenarioId && block.label !== first.label);
+  other.label = first.label;
+  await importFile(page, backup);
+  const notice = page.locator('.notice.error');
+  await expect(notice).toContainText(`more than one Block labeled "${first.label}"`, { timeout: 15000 });
+  await expect(notice).toContainText('Block labels must be different on each service day.');
+  await expect(notice).toContainText('Nothing was imported.');
+  await expect(notice).toContainText('Rename the repeated label in the project where this file was exported, export it again, and import the new file.');
+  expect(await projectCount(page)).toBe(before);
+});

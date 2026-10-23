@@ -6,8 +6,9 @@ import { DexieRouteDefinitionRepository } from '../persistence/dexieRepository';
 import { InMemoryRouteDefinitionRepository } from '../persistence/inMemoryRepository';
 import { RouteDefinitionService, ServiceDayValidationError } from './routeDefinitionService';
 import type { RouteDefinitionRepository, TripGenerationRepository } from './ports';
-import { metadata } from '../domain/ids';
+import { metadata, newId } from '../domain/ids';
 import type { Block, ProjectSnapshot, Trip } from '../domain/types';
+import { addRouteNodes, addTwoStopPattern, savePattern, savePatternDraft } from '../testSupport/routeFixtures';
 
 function createService(repository = new InMemoryRouteDefinitionRepository()) {
   const backup = new ProjectBackupService(
@@ -29,20 +30,17 @@ describe('RouteDefinitionService', () => {
     let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
     expect(aggregate.directions?.map((direction) => direction.name)).toEqual(['Outbound', 'Inbound']);
     aggregate = await service.updateRoute(aggregate, { name: 'Federal Boulevard' });
-    aggregate = await service.addNode(aggregate);
-    aggregate = await service.updateNode(aggregate, aggregate.nodes[0].id, { name: 'Decatur', kind: 'terminal' });
-    aggregate = await service.addNode(aggregate);
-    aggregate = await service.updateNode(aggregate, aggregate.nodes[1].id, { name: 'Broadway' });
-    const addedPattern = await service.addPattern(aggregate);
-    aggregate = await service.updatePattern(addedPattern.aggregate, addedPattern.pattern.id, { name: 'Outbound' });
-    aggregate = await service.addPatternPoint(aggregate, addedPattern.pattern.id);
-    aggregate = await service.addPatternPoint(aggregate, addedPattern.pattern.id);
-    aggregate = await service.updatePatternPoint(aggregate, addedPattern.pattern.id, 1, { nodeId: aggregate.nodes[1].id, cumulativeMiles: 4.2 });
-    const reversed = await service.createReversePattern(aggregate, addedPattern.pattern.id, 'Inbound');
-    const duplicated = await service.duplicatePattern(reversed.aggregate, addedPattern.pattern.id, 'Outbound Copy');
+    const withNodes = await addRouteNodes(service, aggregate, [{ name: 'Decatur', kind: 'terminal' }, { name: 'Broadway' }]);
+    aggregate = withNodes.aggregate;
+    const [decatur, broadway] = withNodes.nodes;
+    expect(aggregate.nodes.map((node) => node.name).sort()).toEqual(['Broadway', 'Decatur']);
+    const addedPattern = await savePattern(service, aggregate, { name: 'Outbound', stops: [{ nodeId: decatur.id, miles: 0 }, { nodeId: broadway.id, miles: 4.2 }] });
+    aggregate = addedPattern.aggregate;
+    const reversed = await savePatternDraft(service, aggregate, { ...service.reversePatternDraft(aggregate, addedPattern.pattern.id), name: 'Inbound' });
+    const duplicated = await savePatternDraft(service, reversed.aggregate, { ...service.duplicatePatternDraft(reversed.aggregate, addedPattern.pattern.id), name: 'Outbound Copy' });
 
     expect(service.validate(reversed.aggregate)).toEqual([]);
-    expect(reversed.pattern.points.map((point) => point.nodeId)).toEqual([aggregate.nodes[1].id, aggregate.nodes[0].id]);
+    expect(reversed.pattern.points.map((point) => point.nodeId)).toEqual([broadway.id, decatur.id]);
     expect(reversed.pattern.directionId).toBe(reversed.aggregate.directions?.find((direction) => direction.group === 'inbound')?.id);
     expect(service.getSegmentMiles(reversed.pattern, 1)).toBe(4.2);
     const reloaded = await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id);
@@ -70,14 +68,7 @@ describe('RouteDefinitionService', () => {
     const created = await service.createProject('Runtime project');
     const addedRoute = await service.addRoute(created.records);
     let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
-    aggregate = await service.addNode(aggregate);
-    aggregate = await service.updateNode(aggregate, aggregate.nodes[0].id, { name: 'South terminal' });
-    aggregate = await service.addNode(aggregate);
-    aggregate = await service.updateNode(aggregate, aggregate.nodes[1].id, { name: 'North terminal' });
-    const addedPattern = await service.addPattern(aggregate);
-    aggregate = await service.updatePattern(addedPattern.aggregate, addedPattern.pattern.id, { name: 'Outbound' });
-    aggregate = await service.addPatternPoint(aggregate, addedPattern.pattern.id);
-    aggregate = await service.addPatternPoint(aggregate, addedPattern.pattern.id);
+    aggregate = (await addTwoStopPattern(service, aggregate, { names: ['South terminal', 'North terminal'], patternName: 'Outbound' })).aggregate;
 
     const weekday = created.records.serviceDays[0];
     const profile = await service.createDefaultRuntimeProfile(aggregate.patterns[0], 'Weekday runtimes');
@@ -107,13 +98,7 @@ describe('RouteDefinitionService', () => {
     const created = await service.createProject('Defaults');
     const addedRoute = await service.addRoute(created.records);
     let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
-    aggregate = await service.addNode(aggregate);
-    aggregate = await service.updateNode(aggregate, aggregate.nodes[0].id, { name: 'A' });
-    aggregate = await service.addNode(aggregate);
-    aggregate = await service.updateNode(aggregate, aggregate.nodes[1].id, { name: 'B' });
-    const added = await service.addPattern(aggregate);
-    aggregate = await service.addPatternPoint(added.aggregate, added.pattern.id);
-    aggregate = await service.addPatternPoint(aggregate, added.pattern.id);
+    aggregate = (await addTwoStopPattern(service, aggregate)).aggregate;
     const pattern = aggregate.patterns[0];
     const first = await service.ensureDefaultRuntimeProfile(pattern);
     const second = await service.ensureDefaultRuntimeProfile(pattern);
@@ -127,11 +112,7 @@ describe('RouteDefinitionService', () => {
     const created = await service.createProject('Profile lifecycle');
     const addedRoute = await service.addRoute(created.records);
     let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
-    aggregate = await service.addNode(aggregate);
-    aggregate = await service.addNode(aggregate);
-    const added = await service.addPattern(aggregate);
-    aggregate = await service.addPatternPoint(added.aggregate, added.pattern.id);
-    aggregate = await service.addPatternPoint(aggregate, added.pattern.id);
+    aggregate = (await addTwoStopPattern(service, aggregate)).aggregate;
     const pattern = aggregate.patterns[0];
     const defaultProfile = await service.ensureDefaultRuntimeProfile(pattern);
     const replacement = await service.createDefaultRuntimeProfile(pattern, 'Alternative');
@@ -147,10 +128,7 @@ describe('RouteDefinitionService', () => {
     const created = await service.createProject('Deletion impacts');
     const addedRoute = await service.addRoute(created.records);
     let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
-    aggregate = await service.addNode(aggregate); aggregate = await service.addNode(aggregate);
-    const added = await service.addPattern(aggregate);
-    aggregate = await service.addPatternPoint(added.aggregate, added.pattern.id);
-    aggregate = await service.addPatternPoint(aggregate, added.pattern.id);
+    aggregate = (await addTwoStopPattern(service, aggregate)).aggregate;
     const pattern = aggregate.patterns[0]; const directionId = pattern.directionId!;
     const runtime = await service.ensureDefaultRuntimeProfile(pattern);
     const trip = { id: 'trip', scenarioId: created.records.scenario.id, routeId: aggregate.route.id, serviceDayId: created.records.serviceDays[0].id, patternId: pattern.id, stopTimes: [{ id: 'point', patternPointId: pattern.points[0].id, sequence: 0, time: 0 }], provenance: { kind: 'manual' as const, creationMethod: 'manual' as const, runtimeProfileId: runtime.profile.id, runtimeCalculationRevision: 0, calculationSource: { runtimeProfileId: runtime.profile.id, runtimeCalculationRevision: 0 }, manuallyChangedFields: [] }, ...metadata() };
@@ -158,7 +136,7 @@ describe('RouteDefinitionService', () => {
     repository.trips.set(trip.id, trip); repository.blocks.set(block.id, block);
     expect((await service.getDirectionDeletionImpact(aggregate, directionId)).patternIds).toEqual([pattern.id]);
     expect(await service.getPatternDeletionImpact(pattern.id)).toMatchObject({ runtimeProfileCount: 1, runtimeAssignmentCount: 4, tripCount: 1, affectedBlockCount: 1 });
-    await service.deletePattern(pattern.id);
+    await service.deletePattern(pattern.id, (await service.getPatternDeletionImpact(pattern.id)).reviewToken);
     expect((await repository.getRouteDefinition(aggregate.route.id))?.patterns).toEqual([]);
     expect(await repository.listRuntimeProfiles(aggregate.route.id)).toEqual([]);
     expect(repository.trips.has(trip.id)).toBe(false);
@@ -171,10 +149,7 @@ describe('RouteDefinitionService', () => {
     const created = await service.createProject('Route deletion');
     const addedRoute = await service.addRoute(created.records);
     let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
-    aggregate = await service.addNode(aggregate); aggregate = await service.addNode(aggregate);
-    const added = await service.addPattern(aggregate);
-    aggregate = await service.addPatternPoint(added.aggregate, added.pattern.id);
-    aggregate = await service.addPatternPoint(aggregate, added.pattern.id);
+    aggregate = (await addTwoStopPattern(service, aggregate)).aggregate;
     const pattern = aggregate.patterns[0];
     const runtime = await service.ensureDefaultRuntimeProfile(pattern);
     const trip = { id: 'route-trip', scenarioId: created.records.scenario.id, routeId: aggregate.route.id, serviceDayId: created.records.serviceDays[0].id, patternId: pattern.id, stopTimes: [{ id: 'point', patternPointId: pattern.points[0].id, sequence: 0, time: 0 }], provenance: { kind: 'manual' as const, creationMethod: 'manual' as const, runtimeProfileId: runtime.profile.id, runtimeCalculationRevision: 0, calculationSource: { runtimeProfileId: runtime.profile.id, runtimeCalculationRevision: 0 }, manuallyChangedFields: [] }, ...metadata() };
@@ -232,8 +207,7 @@ describe('RouteDefinitionService', () => {
     const created = await service.createProject('Stale route edit');
     const addedRoute = await service.addRoute(created.records);
     let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
-    aggregate = await service.addNode(aggregate);
-    aggregate = await service.updateNode(aggregate, aggregate.nodes[0].id, { name: 'A' });
+    aggregate = (await addRouteNodes(service, aggregate, [{ name: 'A' }])).aggregate;
     const preview = await service.previewNodeChanges(aggregate.route.id, [{ ...aggregate.nodes[0], name: 'A renamed' }]);
     await service.updateRoute(aggregate, { description: 'Changed elsewhere' });
     await expect(service.commitNodeChanges(preview.previewToken)).rejects.toThrow('changed after this review');
@@ -247,11 +221,8 @@ describe('RouteDefinitionService', () => {
     const created = await service.createProject('Rebalance');
     const addedRoute = await service.addRoute(created.records);
     let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
-    for (const name of ['A', 'B', 'C']) { aggregate = await service.addNode(aggregate); aggregate = await service.updateNode(aggregate, aggregate.nodes.at(-1)!.id, { name }); }
-    const added = await service.addPattern(aggregate);
-    aggregate = await service.addPatternPoint(added.aggregate, added.pattern.id);
-    aggregate = await service.addPatternPoint(aggregate, added.pattern.id);
-    aggregate = await service.updatePatternPoint(aggregate, added.pattern.id, 1, { nodeId: aggregate.nodes[2].id, cumulativeMiles: 2 });
+    const withNodes = await addRouteNodes(service, aggregate, [{ name: 'A' }, { name: 'B' }, { name: 'C' }]);
+    aggregate = (await savePattern(service, withNodes.aggregate, { stops: [{ nodeId: withNodes.nodes[0].id, miles: 0 }, { nodeId: withNodes.nodes[2].id, miles: 2 }] })).aggregate;
     const saved = aggregate.patterns[0];
     const runtime = await service.ensureDefaultRuntimeProfile(saved);
     await service.saveRuntimeProfile({ ...runtime.profile, bands: [{ ...runtime.profile.bands[0], endTime: 86400, segmentRuntimeSeconds: [600] }] });
@@ -471,12 +442,9 @@ describe.each(implementations)('Node deletion removes the non-revenue activities
     const created = await service.createProject('Node deletion');
     const addedRoute = await service.addRoute(created.records);
     let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
-    for (const name of ['A', 'B', 'Garage']) { aggregate = await service.addNode(aggregate); aggregate = await service.updateNode(aggregate, aggregate.nodes.at(-1)!.id, { name }); }
-    const added = await service.addPattern(aggregate);
-    aggregate = await service.addPatternPoint(added.aggregate, added.pattern.id);
-    aggregate = await service.addPatternPoint(aggregate, added.pattern.id);
-    aggregate = await service.updatePatternPoint(aggregate, added.pattern.id, 1, { nodeId: aggregate.nodes[1].id, cumulativeMiles: 1 });
-    const [a, b, garage] = aggregate.nodes;
+    const withNodes = await addRouteNodes(service, aggregate, [{ name: 'A' }, { name: 'B' }, { name: 'Garage' }]);
+    aggregate = (await savePattern(service, withNodes.aggregate, { stops: [{ nodeId: withNodes.nodes[0].id, miles: 0 }, { nodeId: withNodes.nodes[1].id, miles: 1 }] })).aggregate;
+    const [a, b, garage] = withNodes.nodes;
     const base = { scenarioId: created.records.scenario.id, serviceDayId: created.records.serviceDays[0].id, ...metadata() };
     const block = (value: Block) => value;
     await repository.saveBlocks([block({ id: 'b1', ...base, label: '1', activities: [
@@ -484,7 +452,7 @@ describe.each(implementations)('Node deletion removes the non-revenue activities
       { id: 'b1-dh', type: 'deadhead', sequence: 1, minutesAfterPreviousTrip: 4, fromNodeId: a.id, toNodeId: b.id },
       { id: 'b1-in', type: 'pullIn', sequence: 2, minutesAfterLastTrip: 5, fromNodeId: b.id, toNodeId: garage.id },
     ] }), block({ id: 'b2', ...base, label: '2', activities: [{ id: 'b2-out', type: 'pullOut', sequence: 0, minutesBeforeFirstTrip: 5, fromNodeId: garage.id, toNodeId: a.id }] }), block({ id: 'b3', ...base, label: '3', activities: [{ id: 'b3-dh', type: 'deadhead', sequence: 0, minutesAfterPreviousTrip: 4, fromNodeId: a.id, toNodeId: b.id }] })]);
-    return { repository, service, routeId: aggregate.route.id, nodes: aggregate.nodes, garage, dayId: base.serviceDayId };
+    return { repository, service, routeId: aggregate.route.id, nodes: withNodes.nodes, garage, dayId: base.serviceDayId };
   }
 
   it('reports the affected Blocks and activities in the review and writes nothing while reviewing', async () => {
@@ -537,10 +505,7 @@ describe('Deletion reviews carry a required token', () => {
     const alternate = await service.createScenario(created.project.id, 'Alternative');
     const addedRoute = await service.addRoute(created.records);
     let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
-    aggregate = await service.addNode(aggregate); aggregate = await service.addNode(aggregate);
-    const added = await service.addPattern(aggregate);
-    aggregate = await service.addPatternPoint(added.aggregate, added.pattern.id);
-    aggregate = await service.addPatternPoint(aggregate, added.pattern.id);
+    aggregate = (await addTwoStopPattern(service, aggregate)).aggregate;
     const pattern = aggregate.patterns[0];
     const runtime = await service.ensureDefaultRuntimeProfile(pattern);
     const scenarioId = created.records.scenario.id;
@@ -592,6 +557,25 @@ describe('Deletion reviews carry a required token', () => {
     expect(repository.blocks.get(block.id)!.activities).toEqual([]);
   });
 
+  it('refuses a Pattern deletion after a Trip, a Runtime profile, or a Block it would change changed after the review', async () => {
+    const { repository, service, aggregate, pattern, trip, block, runtime } = await setup();
+    const review = await service.getPatternDeletionImpact(pattern.id);
+    repository.trips.set('late-trip', { ...trip, id: 'late-trip' });
+    await expect(service.deletePattern(pattern.id, review.reviewToken)).rejects.toThrow(stale);
+    expect(repository.trips.has(trip.id)).toBe(true);
+    const second = await service.getPatternDeletionImpact(pattern.id);
+    await service.renameRuntimeProfile(runtime.profile.id, 'Renamed after review');
+    await expect(service.deletePattern(pattern.id, second.reviewToken)).rejects.toThrow(stale);
+    const third = await service.getPatternDeletionImpact(pattern.id);
+    repository.blocks.set(block.id, { ...block, activities: [...block.activities, { id: 'late-activity', type: 'revenueTrip', sequence: 1, tripId: 'late-trip' }] });
+    await expect(service.deletePattern(pattern.id, third.reviewToken)).rejects.toThrow(stale);
+    expect((await repository.getRouteDefinition(aggregate.route.id))?.patterns).toHaveLength(1);
+    expect(repository.trips.has('late-trip')).toBe(true);
+    await service.deletePattern(pattern.id, (await service.getPatternDeletionImpact(pattern.id)).reviewToken);
+    expect((await repository.getRouteDefinition(aggregate.route.id))?.patterns).toEqual([]);
+    expect(repository.trips.size).toBe(0);
+  });
+
   it('refuses a Runtime profile deletion after the profile or its assignments changed', async () => {
     const { service, runtime, aggregate, pattern } = await setup();
     const replacement = await service.createDefaultRuntimeProfile(pattern, 'Alternative');
@@ -613,6 +597,8 @@ describe('Deletion reviews carry a required token', () => {
     await expect(service.deleteProject(created.project.id, missing)).rejects.toThrow(stale);
     await expect(service.deleteScenario(scenarioId, '')).rejects.toThrow(stale);
     await expect(service.deleteRoute(aggregate.route.id, missing)).rejects.toThrow(stale);
+    await expect(service.deletePattern(aggregate.patterns[0].id, missing)).rejects.toThrow(stale);
+    await expect(service.deletePattern(aggregate.patterns[0].id, 'foreign')).rejects.toThrow(stale);
     await expect(service.deleteRuntimeProfile(runtime.profile.id, undefined, 'not-a-token')).rejects.toThrow(stale);
     const routeReview = await service.getRouteDeletionImpact(aggregate.route.id);
     await expect(service.deleteScenario(scenarioId, routeReview.reviewToken)).rejects.toThrow(stale);
@@ -634,10 +620,7 @@ describe.each(implementations)('Default Runtime profile provisioning under overl
     const created = await service.createProject('Race');
     const addedRoute = await service.addRoute(created.records);
     let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
-    aggregate = await service.addNode(aggregate); aggregate = await service.addNode(aggregate);
-    const added = await service.addPattern(aggregate);
-    aggregate = await service.addPatternPoint(added.aggregate, added.pattern.id);
-    aggregate = await service.addPatternPoint(aggregate, added.pattern.id);
+    aggregate = (await addTwoStopPattern(service, aggregate)).aggregate;
     return { repository, service, aggregate, scenarioId: created.records.scenario.id, routeId: aggregate.route.id, pattern: aggregate.patterns[0] };
   }
 
@@ -670,7 +653,8 @@ describe.each(implementations)('Default Runtime profile provisioning under overl
   it('keeps an existing profile and its assignments, and still resizes it to the Pattern', async () => {
     const { repository, service, aggregate, scenarioId, routeId, pattern } = await setup();
     const first = await service.ensureDefaultRuntimeProfile(pattern);
-    const longer = (await service.addPatternPoint(aggregate, pattern.id)).patterns.find((candidate) => candidate.id === pattern.id)!;
+    const lengthened = { ...pattern, points: [...pattern.points, { id: newId(), nodeId: pattern.points[0].nodeId, sequence: pattern.points.length, cumulativeMiles: pattern.points.at(-1)!.cumulativeMiles + 1 }] };
+    const longer = (await service.commitPatternChange((await service.previewPatternChange(aggregate.route.id, pattern.id, lengthened)).previewToken)).aggregate.patterns.find((candidate) => candidate.id === pattern.id)!;
     const again = await service.ensureDefaultRuntimeProfile(longer);
     expect(again.profile.id).toBe(first.profile.id);
     expect(again.profile.bands[0].segmentRuntimeSeconds).toHaveLength(2);
@@ -687,10 +671,7 @@ describe('Service days that share a Runtime profile', () => {
     const created = await service.createProject('Shared profile');
     const addedRoute = await service.addRoute(created.records);
     let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
-    aggregate = await service.addNode(aggregate); aggregate = await service.addNode(aggregate);
-    const added = await service.addPattern(aggregate);
-    aggregate = await service.addPatternPoint(added.aggregate, added.pattern.id);
-    aggregate = await service.addPatternPoint(aggregate, added.pattern.id);
+    aggregate = (await addTwoStopPattern(service, aggregate)).aggregate;
     const pattern = aggregate.patterns[0];
     const runtime = await service.ensureDefaultRuntimeProfile(pattern);
     const saturday = created.records.serviceDays.find((day) => day.kind === 'saturday')!;
@@ -707,10 +688,7 @@ describe('Service days that share a Runtime profile', () => {
     const created = await service.createProject('Unused');
     const addedRoute = await service.addRoute(created.records);
     let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
-    aggregate = await service.addNode(aggregate); aggregate = await service.addNode(aggregate);
-    const added = await service.addPattern(aggregate);
-    aggregate = await service.addPatternPoint(added.aggregate, added.pattern.id);
-    aggregate = await service.addPatternPoint(aggregate, added.pattern.id);
+    aggregate = (await addTwoStopPattern(service, aggregate)).aggregate;
     const unused = await service.createDefaultRuntimeProfile(aggregate.patterns[0], 'Unused');
     expect(await service.listRuntimeProfileServiceDays(unused.id)).toEqual([]);
     await expect(service.listRuntimeProfileServiceDays('missing')).rejects.toThrow('no longer available');

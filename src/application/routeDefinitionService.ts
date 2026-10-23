@@ -1,9 +1,8 @@
-import { makePatternPoint } from '../domain/commands';
 import { MAX_ANNUAL_SERVICE_DAYS } from '../domain/costing';
 import { metadata, newId, withUpdatedAt } from '../domain/ids';
 import { createProject, createScenarioRecords, duplicateRouteRecords, duplicateScenario, renameProject as renameProjectRecord, type ScenarioRecords } from '../domain/project';
 import { duplicatePattern, getSegmentMiles, normalizePattern, reversePattern, validatePattern } from '../domain/patterns';
-import { createDirectionColumn, createManagedDirections, createRouteDirection, ensureManagedDirections, mapPatternPointsToDirection, normalizeDirections, oppositeDirectionGroup } from '../domain/directions';
+import { createManagedDirections, ensureManagedDirections, oppositeDirectionGroup } from '../domain/directions';
 import { classifyPatternEdit, describePatternPointChange, getPatternServiceImpact, rebalanceRuntimeProfile, rebalanceTripForPattern, reconcileRouteTimetables, resetPatternService, type DirectionOrderConflict, type PatternServiceImpact, type RouteEditClassification, type RouteEditMode } from '../domain/safeRouteEditing';
 import { sortServiceDays } from '../domain/serviceDays';
 import { copyRuntimeProfile, normalizeRuntimeProfile, reverseCopyRuntimeProfile, validateRuntimeProfile, withRuntimeCalculationRevision, RuntimeProfileDeletionError } from '../domain/runtime';
@@ -34,6 +33,8 @@ export interface PatternDeletionImpact {
   runtimeAssignmentCount: number;
   tripCount: number;
   affectedBlockCount: number;
+  /** Fingerprint of the records this review covers; `deletePattern` requires it. */
+  reviewToken: string;
 }
 
 export interface DirectionDeletionImpact {
@@ -126,10 +127,15 @@ const SERVICE_DAY_MESSAGES: Record<string, (finding: ValidationFinding) => strin
   'serviceDay.annualServiceDaysExceed365': (finding) => `Annual service days cannot total more than ${finding.parameters?.maximum ?? MAX_ANNUAL_SERVICE_DAYS}. This change would make the total ${finding.parameters?.total}.`,
 };
 
+/** The plain-language text for one Service day finding, so a screen can show it beside the field the finding names. */
+export function serviceDayFindingMessage(finding: ValidationFinding): string {
+  return SERVICE_DAY_MESSAGES[finding.messageKey]?.(finding) ?? 'Review this service day.';
+}
+
 /** A Service day edit was refused. `findings` name the Service day and the field, so a screen can show each message beside its field. */
 export class ServiceDayValidationError extends Error {
   constructor(readonly findings: ValidationFinding[]) {
-    super(findings.map((finding) => SERVICE_DAY_MESSAGES[finding.messageKey]?.(finding) ?? 'Review this service day.').join(' '));
+    super(findings.map(serviceDayFindingMessage).join(' '));
     this.name = 'ServiceDayValidationError';
   }
 }
@@ -500,47 +506,10 @@ export class RouteDefinitionService {
     return this.saveAggregate({ ...aggregate, route: withUpdatedAt({ ...aggregate.route, ...patch }, this.now()) });
   }
 
-  async addDirection(aggregate: RouteDefinitionAggregate, name = `Direction ${(aggregate.directions?.length ?? 0) + 1}`): Promise<{ aggregate: RouteDefinitionAggregate; direction: RouteDirection }> {
-    const directions = normalizeDirections(aggregate.directions ?? []);
-    const direction = createRouteDirection(aggregate.route.scenarioId, aggregate.route.id, name, directions.length, this.now());
-    const next = { ...aggregate, directions: [...directions, direction] };
-    return { aggregate: await this.saveAggregate(next), direction };
-  }
-  async updateDirection(aggregate: RouteDefinitionAggregate, directionId: string, patch: Partial<Pick<RouteDirection, 'name' | 'sequence'>>): Promise<RouteDefinitionAggregate> {
-    if (!(aggregate.directions ?? []).some((direction) => direction.id === directionId)) throw new Error('Direction not found.');
-    const directions = normalizeDirections((aggregate.directions ?? []).map((direction) => direction.id === directionId ? withUpdatedAt({ ...direction, ...patch }, this.now()) : direction));
-    return this.saveAggregate({ ...aggregate, directions });
-  }
   async getDirectionDeletionImpact(aggregate: RouteDefinitionAggregate, directionId: string): Promise<DirectionDeletionImpact> {
     if (!(aggregate.directions ?? []).some((direction) => direction.id === directionId)) throw new Error('Direction not found.');
     const records = await this.repository.getScenarioRecords(aggregate.route.scenarioId);
     return { directionId, patternIds: (records?.patterns ?? aggregate.patterns).filter((pattern) => pattern.directionId === directionId).map((pattern) => pattern.id) };
-  }
-  async addDirectionColumn(aggregate: RouteDefinitionAggregate, directionId: string, nodeId: string, labelOverride?: string): Promise<RouteDefinitionAggregate> {
-    const direction = (aggregate.directions ?? []).find((item) => item.id === directionId);
-    if (!direction) throw new Error('Direction not found.');
-    if (!aggregate.nodes.some((node) => node.id === nodeId)) throw new Error('Node not found.');
-    const column = createDirectionColumn(nodeId, direction.columns.length, labelOverride);
-    const directions = (aggregate.directions ?? []).map((item) => item.id === directionId ? withUpdatedAt({ ...item, columns: [...item.columns, column] }, this.now()) : item);
-    return this.saveAggregate({ ...aggregate, directions: normalizeDirections(directions) });
-  }
-  async assignPatternDirection(aggregate: RouteDefinitionAggregate, patternId: string, directionId: string): Promise<RouteDefinitionAggregate> {
-    const direction = (aggregate.directions ?? []).find((item) => item.id === directionId);
-    const pattern = aggregate.patterns.find((item) => item.id === patternId);
-    if (!direction) throw new Error('Direction not found.');
-    if (!pattern) throw new Error('Pattern not found.');
-    const nextSequence = aggregate.patterns.filter((item) => item.directionId === directionId && item.id !== patternId).length;
-    const mapped = mapPatternPointsToDirection({ ...pattern, directionId, sequence: nextSequence }, direction, this.now());
-    const patterns = aggregate.patterns.map((item) => item.id === patternId ? mapped.pattern : item);
-    const directions = (aggregate.directions ?? []).map((item) => item.id === directionId ? mapped.direction : item);
-    return this.saveAggregate({ ...aggregate, patterns, directions: normalizeDirections(directions) });
-  }
-  async addNode(aggregate: RouteDefinitionAggregate): Promise<RouteDefinitionAggregate> {
-    const node: Node = { id: newId(), scenarioId: aggregate.route.scenarioId, routeId: aggregate.route.id, name: '', kind: 'timepoint', ...metadata(this.now()) };
-    return this.saveAggregate({ ...aggregate, nodes: [...aggregate.nodes, node] });
-  }
-  async updateNode(aggregate: RouteDefinitionAggregate, id: string, patch: Partial<Node>): Promise<RouteDefinitionAggregate> {
-    return this.saveAggregate({ ...aggregate, nodes: aggregate.nodes.map((node) => node.id === id ? withUpdatedAt({ ...node, ...patch }, this.now()) : node) });
   }
   async getNodeDeletionImpact(aggregate: RouteDefinitionAggregate, nodeId: string): Promise<NodeDeletionImpact> {
     const records = await this.repository.getScenarioRecords(aggregate.route.scenarioId);
@@ -553,103 +522,47 @@ export class RouteDefinitionService {
     };
   }
 
-  async addPattern(aggregate: RouteDefinitionAggregate): Promise<{ aggregate: RouteDefinitionAggregate; pattern: RoutePattern }> {
-    const directions = ensureManagedDirections(aggregate.directions ?? [], aggregate.route.scenarioId, aggregate.route.id, this.now());
-    const direction = directions[0];
-    const pattern: RoutePattern = { id: newId(), routeId: aggregate.route.id, scenarioId: aggregate.route.scenarioId, name: 'New pattern', directionId: direction.id, sequence: aggregate.patterns.filter((item) => item.directionId === direction.id).length, points: [], ...metadata(this.now()) };
-    return { aggregate: await this.saveAggregate({ ...aggregate, directions, patterns: [...aggregate.patterns, pattern] }), pattern };
-  }
-  async updatePattern(aggregate: RouteDefinitionAggregate, patternId: string, patch: Partial<RoutePattern>): Promise<RouteDefinitionAggregate> {
-    const target = aggregate.patterns.find((pattern) => pattern.id === patternId);
-    if (!target) throw new Error('Pattern not found.');
-    const updated = withUpdatedAt(normalizePattern({ ...target, ...patch }), this.now());
-    const directions = ensureManagedDirections(aggregate.directions ?? [], aggregate.route.scenarioId, aggregate.route.id, this.now());
-    const direction = directions.find((item) => item.id === updated.directionId);
-    if (direction && patch.directionId) {
-      const mapped = mapPatternPointsToDirection(updated, direction, this.now());
-      return this.saveAggregate({ ...aggregate, patterns: aggregate.patterns.map((pattern) => pattern.id === patternId ? mapped.pattern : pattern), directions: normalizeDirections(directions.map((item) => item.id === direction.id ? mapped.direction : item)) });
-    }
-    return this.saveAggregate({ ...aggregate, patterns: aggregate.patterns.map((pattern) => pattern.id === patternId ? updated : pattern) });
-  }
-  async addPatternPoint(aggregate: RouteDefinitionAggregate, patternId: string): Promise<RouteDefinitionAggregate> {
-    const pattern = aggregate.patterns.find((item) => item.id === patternId);
-    const firstNode = aggregate.nodes[0];
-    if (!pattern) throw new Error('Pattern not found.');
-    if (!firstNode) throw new Error('Add a node before adding a pattern point.');
-    const point = makePatternPoint(firstNode.id, pattern.points.length, pattern.points.at(-1)?.cumulativeMiles ?? 0);
-    const nextPattern = { ...pattern, points: [...pattern.points, point] };
-    const direction = (aggregate.directions ?? []).find((item) => item.id === pattern.directionId);
-    if (!direction) return this.updatePattern(aggregate, patternId, { points: nextPattern.points });
-    const mapped = mapPatternPointsToDirection(nextPattern, direction, this.now());
-    return this.saveAggregate({ ...aggregate, patterns: aggregate.patterns.map((item) => item.id === patternId ? mapped.pattern : item), directions: normalizeDirections((aggregate.directions ?? []).map((item) => item.id === direction.id ? mapped.direction : item)) });
-  }
-  async updatePatternPoint(aggregate: RouteDefinitionAggregate, patternId: string, index: number, patch: Partial<RoutePattern['points'][number]>): Promise<RouteDefinitionAggregate> {
-    const pattern = aggregate.patterns.find((item) => item.id === patternId);
-    if (!pattern) throw new Error('Pattern not found.');
-    const nextPattern = { ...pattern, points: pattern.points.map((point, pointIndex) => pointIndex === index ? { ...point, ...patch } : point) };
-    const direction = (aggregate.directions ?? []).find((item) => item.id === pattern.directionId);
-    if (!direction || !patch.nodeId) return this.updatePattern(aggregate, patternId, { points: nextPattern.points });
-    const mapped = mapPatternPointsToDirection(nextPattern, direction, this.now());
-    return this.saveAggregate({ ...aggregate, patterns: aggregate.patterns.map((item) => item.id === patternId ? mapped.pattern : item), directions: normalizeDirections((aggregate.directions ?? []).map((item) => item.id === direction.id ? mapped.direction : item)) });
-  }
-  async movePatternPoint(aggregate: RouteDefinitionAggregate, patternId: string, index: number, direction: -1 | 1): Promise<RouteDefinitionAggregate> {
-    const pattern = aggregate.patterns.find((item) => item.id === patternId);
-    if (!pattern) throw new Error('Pattern not found.');
-    const target = index + direction;
-    if (target < 0 || target >= pattern.points.length) return aggregate;
-    const points = [...pattern.points];
-    [points[index], points[target]] = [points[target], points[index]];
-    return this.updatePattern(aggregate, patternId, { points });
-  }
-  async removePatternPoint(aggregate: RouteDefinitionAggregate, patternId: string, index: number): Promise<RouteDefinitionAggregate> {
-    const pattern = aggregate.patterns.find((item) => item.id === patternId);
-    if (!pattern) throw new Error('Pattern not found.');
-    return this.updatePattern(aggregate, patternId, { points: pattern.points.filter((_, pointIndex) => pointIndex !== index) });
-  }
-  async createReversePattern(aggregate: RouteDefinitionAggregate, patternId: string, name: string): Promise<{ aggregate: RouteDefinitionAggregate; pattern: RoutePattern }> {
-    const source = aggregate.patterns.find((item) => item.id === patternId);
-    if (!source) throw new Error('Pattern not found.');
-    const directions = ensureManagedDirections(aggregate.directions ?? [], aggregate.route.scenarioId, aggregate.route.id, this.now());
-    const sourceDirection = directions.find((direction) => direction.id === source.directionId) ?? directions[0];
-    const targetGroup = oppositeDirectionGroup(sourceDirection.group ?? 'outbound');
-    const targetDirection = directions.find((direction) => direction.group === targetGroup)!;
-    const reversed = { ...reversePattern(source, this.now()), name: name.trim(), directionId: targetDirection.id, sequence: aggregate.patterns.filter((pattern) => pattern.directionId === targetDirection.id).length };
-    const mapped = mapPatternPointsToDirection(reversed, targetDirection, this.now());
-    return { aggregate: await this.saveAggregate({ ...aggregate, patterns: [...aggregate.patterns, mapped.pattern], directions: normalizeDirections(directions.map((direction) => direction.id === targetDirection.id ? mapped.direction : direction)) }), pattern: mapped.pattern };
-  }
-  async duplicatePattern(aggregate: RouteDefinitionAggregate, patternId: string, name: string): Promise<{ aggregate: RouteDefinitionAggregate; pattern: RoutePattern }> {
-    const source = aggregate.patterns.find((item) => item.id === patternId);
-    if (!source) throw new Error('Pattern not found.');
-    const pattern = duplicatePattern(source, name, this.now());
-    return { aggregate: await this.saveAggregate({ ...aggregate, patterns: [...aggregate.patterns, pattern] }), pattern };
-  }
 
   async getPatternDeletionImpact(patternId: string): Promise<PatternDeletionImpact> {
-    const pattern = await this.repository.getPattern(patternId);
-    if (!pattern) throw new Error('Pattern not found.');
-    const records = await this.repository.getScenarioRecords(pattern.scenarioId);
-    if (!records) throw new Error('The selected scenario is no longer available.');
-    const profiles = records.runtimeProfiles.filter((profile) => profile.patternId === patternId);
-    const trips = records.trips.filter((trip) => trip.patternId === patternId);
-    const tripIds = new Set(trips.map((trip) => trip.id));
-    return {
-      patternId,
-      runtimeProfileCount: profiles.length,
-      runtimeAssignmentCount: records.runtimeAssignments.filter((assignment) => assignment.patternId === patternId).length,
-      tripCount: trips.length,
-      affectedBlockCount: records.blocks.filter((block) => block.activities.some((activity) => activity.type === 'revenueTrip' && tripIds.has(activity.tripId))).length,
-    };
+    return this.planPatternDeletion(await this.recordsForPattern(patternId), patternId).impact;
   }
 
-  /** Confirmed pattern deletion removes only records that cannot remain valid without that pattern. */
-  async deletePattern(patternId: string): Promise<{ aggregate: RouteDefinitionAggregate; impact: PatternDeletionImpact }> {
+  /** Confirmed pattern deletion removes only records that cannot remain valid without that pattern. It runs only if the stored data still matches the review (`getPatternDeletionImpact`) that `reviewToken` came from. */
+  async deletePattern(patternId: string, reviewToken: string): Promise<{ aggregate: RouteDefinitionAggregate; impact: PatternDeletionImpact }> {
+    const records = await this.recordsForPattern(patternId);
+    const plan = this.planPatternDeletion(records, patternId);
+    assertReviewCurrent('pattern', reviewToken, plan.impact.reviewToken);
+    await this.saveScenarioRecords(plan.next);
+    const aggregate = await this.repository.getRouteDefinition(plan.routeId);
+    if (!aggregate) throw new Error('Route not found after deleting pattern.');
+    return { aggregate, impact: plan.impact };
+  }
+
+  private async recordsForPattern(patternId: string): Promise<ScenarioRecords> {
     const pattern = await this.repository.getPattern(patternId);
     if (!pattern) throw new Error('Pattern not found.');
     const records = await this.repository.getScenarioRecords(pattern.scenarioId);
     if (!records) throw new Error('The selected scenario is no longer available.');
-    const impact = await this.getPatternDeletionImpact(patternId);
-    const removedTripIds = records.trips.filter((trip) => trip.patternId === patternId).map((trip) => trip.id);
-    const adjustedBlocks = adjustBlockReferences(records.blocks, removedTripIds).blocks;
+    return records;
+  }
+
+  private planPatternDeletion(records: ScenarioRecords, patternId: string): { impact: PatternDeletionImpact; next: ScenarioRecords; routeId: string } {
+    const pattern = records.patterns.find((candidate) => candidate.id === patternId);
+    if (!pattern) throw new Error('Pattern not found.');
+    const profiles = records.runtimeProfiles.filter((profile) => profile.patternId === patternId);
+    const assignments = records.runtimeAssignments.filter((assignment) => assignment.patternId === patternId);
+    const generationSets = records.generationSets.filter((set) => set.patternId === patternId);
+    const trips = records.trips.filter((trip) => trip.patternId === patternId);
+    const tripIds = new Set(trips.map((trip) => trip.id));
+    const affectedBlocks = records.blocks.filter((block) => block.activities.some((activity) => activity.type === 'revenueTrip' && tripIds.has(activity.tripId)));
+    const impact: PatternDeletionImpact = {
+      patternId,
+      runtimeProfileCount: profiles.length,
+      runtimeAssignmentCount: assignments.length,
+      tripCount: trips.length,
+      affectedBlockCount: affectedBlocks.length,
+      reviewToken: fingerprint({ pattern, profiles, assignments, generationSets, trips, blocks: affectedBlocks }),
+    };
     const next: ScenarioRecords = {
       ...records,
       patterns: records.patterns.filter((candidate) => candidate.id !== patternId),
@@ -657,12 +570,9 @@ export class RouteDefinitionService {
       runtimeAssignments: records.runtimeAssignments.filter((assignment) => assignment.patternId !== patternId),
       generationSets: records.generationSets.filter((set) => set.patternId !== patternId),
       trips: records.trips.filter((trip) => trip.patternId !== patternId),
-      blocks: adjustedBlocks,
+      blocks: adjustBlockReferences(records.blocks, [...tripIds]).blocks,
     };
-    await this.saveScenarioRecords(next);
-    const aggregate = await this.repository.getRouteDefinition(pattern.routeId);
-    if (!aggregate) throw new Error('Route not found after deleting pattern.');
-    return { aggregate, impact };
+    return { impact, next, routeId: pattern.routeId };
   }
 
   validate(aggregate: RouteDefinitionAggregate): ValidationFinding[] { return validateRouteDefinition(aggregate); }
@@ -1172,17 +1082,7 @@ export type RouteDefinitionApplication = Pick<RouteDefinitionService,
   | 'createPatternDraft'
   | 'duplicatePatternDraft'
   | 'reversePatternDraft'
-  | 'addNode'
-  | 'updateNode'
   | 'getNodeDeletionImpact'
-  | 'addPattern'
-  | 'updatePattern'
-  | 'addPatternPoint'
-  | 'updatePatternPoint'
-  | 'movePatternPoint'
-  | 'removePatternPoint'
-  | 'createReversePattern'
-  | 'duplicatePattern'
   | 'getPatternDeletionImpact'
   | 'deletePattern'
   | 'validate'

@@ -1,42 +1,8 @@
 import { expect, test } from '@playwright/test';
+import { seedCostingFixture } from './support/costingFixture';
 
 test('Costing workspace displays a partial estimate, supports year selection, and remains usable at a narrow width', async ({ page }) => {
-  await page.goto('/');
-  // The app creates the database when it starts; wait for it before seeding the stores directly.
-  await expect(page.getByRole('button', { name: 'Project actions', exact: true })).toBeVisible();
-  await page.evaluate(async () => {
-    const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('transit-costing-tool');
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-    const stores = ['projects', 'scenarios', 'serviceDays', 'routes', 'nodes', 'patterns', 'tripProfiles', 'blockingScenarios', 'trips', 'blocks', 'costingAssumptions'];
-    const transaction = database.transaction(stores, 'readwrite');
-    const now = '2026-09-23T12:00:00.000Z';
-    const meta = { createdAt: now, updatedAt: now };
-    transaction.objectStore('projects').put({ id: 'p', name: 'Federal Boulevard Plan', distanceUnit: 'miles', currencyCode: 'USD', ...meta });
-    transaction.objectStore('scenarios').put({ id: 's', projectId: 'p', name: 'Recommended service', ...meta });
-    const days = [
-      { id: 'wd', kind: 'weekday', name: 'Weekday', annualServiceDays: 260, sequence: 0 },
-      { id: 'sa', kind: 'saturday', name: 'Saturday', annualServiceDays: 52, sequence: 1 },
-      { id: 'su', kind: 'sunday', name: 'Sunday', annualServiceDays: 52, sequence: 2 },
-      { id: 'ho', kind: 'holiday', name: 'Holiday', annualServiceDays: 0, sequence: 3 },
-    ];
-    days.forEach((day) => transaction.objectStore('serviceDays').put({ ...day, scenarioId: 's', ...meta }));
-    transaction.objectStore('routes').put({ id: 'r', scenarioId: 's', shortName: '31', name: 'Federal Boulevard', ...meta });
-    transaction.objectStore('nodes').put({ id: 'n1', scenarioId: 's', routeId: 'r', name: 'Civic Center', kind: 'terminal', ...meta });
-    transaction.objectStore('nodes').put({ id: 'n2', scenarioId: 's', routeId: 'r', name: 'Westminster', kind: 'terminal', ...meta });
-    transaction.objectStore('patterns').put({ id: 'pat', scenarioId: 's', routeId: 'r', name: 'Full route', points: [{ id: 'pp1', nodeId: 'n1', sequence: 0, cumulativeMiles: 0 }, { id: 'pp2', nodeId: 'n2', sequence: 1, cumulativeMiles: 12 }], ...meta });
-    transaction.objectStore('tripProfiles').put({ id: 'tp', scenarioId: 's', name: 'Default', ...meta });
-    transaction.objectStore('blockingScenarios').put({ id: 'bs', scenarioId: 's', tripProfileId: 'tp', name: 'Weekday plan', ...meta });
-    transaction.objectStore('trips').put({ id: 't1', scenarioId: 's', routeId: 'r', serviceDayId: 'wd', patternId: 'pat', tripProfileId: 'tp', stopTimes: [{ patternPointId: 'pp1', sequence: 0, time: 28800 }, { patternPointId: 'pp2', sequence: 1, time: 32400 }], provenance: { kind: 'manual', creationMethod: 'manual', manuallyChangedFields: [] }, ...meta });
-    transaction.objectStore('trips').put({ id: 't2', scenarioId: 's', routeId: 'r', serviceDayId: 'wd', patternId: 'pat', tripProfileId: 'tp', stopTimes: [{ patternPointId: 'pp1', sequence: 0, time: 36000 }, { patternPointId: 'pp2', sequence: 1, time: 39600 }], provenance: { kind: 'manual', creationMethod: 'manual', manuallyChangedFields: [] }, ...meta });
-    transaction.objectStore('blocks').put({ id: 'b1', scenarioId: 's', blockingScenarioId: 'bs', serviceDayId: 'wd', label: 'Block 101', activities: [{ id: 'po', type: 'pullOut', sequence: 0, minutesBeforeFirstTrip: 10, toNodeId: 'n1', miles: 1 }, { id: 'ra', type: 'revenueTrip', sequence: 1, tripId: 't1' }, { id: 'pi', type: 'pullIn', sequence: 2, minutesAfterLastTrip: 10, fromNodeId: 'n2', miles: 1 }], ...meta });
-    transaction.objectStore('costingAssumptions').put({ id: 'ca', scenarioId: 's', currencyCode: 'USD', enteredRate: 150, rateYear: 2025, sourceType: 'ntd', sourceNote: 'NTD 2025 agency profile', baseServiceYear: 2026, futureYearCount: 3, annualEscalation: 0.03, ...meta });
-    await new Promise<void>((resolve, reject) => { transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error); });
-    database.close();
-    localStorage.setItem('transit-costing-tool.route-selection.v1', JSON.stringify({ projectId: 'p', scenarioId: 's', routeId: 'r' }));
-  });
+  await seedCostingFixture(page);
   await page.reload();
   await page.getByRole('button', { name: 'Costing' }).click();
 
@@ -75,4 +41,146 @@ test('Costing workspace displays a partial estimate, supports year selection, an
       expect(box!.x + box!.width).toBeLessThanOrEqual(width);
     }
   }
+});
+
+// Review package U06 (issues I-031, I-033, I-044 loading state, I-087; Decision C3).
+import type { Page } from '@playwright/test';
+import { goldenRaw } from './support/goldenFixture';
+import { runInPage, seedSnapshot } from './support/dexieEnv';
+
+async function openGoldenCosting(page: Page, prepare?: () => Promise<void>) {
+  await seedSnapshot(page, { ...goldenRaw(), generationSets: [] });
+  if (prepare) await prepare();
+  await page.goto('/');
+  await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
+}
+
+test.describe('Service days table field errors (U06 criterion 1)', () => {
+  test('a total above 365 is shown beside its field, and the saved value is kept', async ({ page }) => {
+    test.setTimeout(120_000);
+    await openGoldenCosting(page);
+    const weekday = page.getByLabel('Weekday annual service days');
+    await weekday.fill('300');
+    await weekday.blur();
+    const message = page.getByText('Annual service days cannot total more than 365. This change would make the total 410.');
+    await expect(message).toBeVisible();
+    await expect(message).toHaveClass(/field-error/);
+    await expect(weekday).toHaveAttribute('aria-invalid', 'true');
+    await expect(weekday).toHaveAccessibleDescription(/would make the total 410/);
+    // Beside the field: inside the same table row, not in the error banner.
+    await expect(page.locator('.service-days-table tr', { has: weekday }).getByText(/would make the total 410/)).toBeVisible();
+    await expect(page.locator('.notice')).toHaveCount(0);
+    expect(await runInPage(page, "return (await e.db.serviceDays.toArray()).find((day) => day.kind === 'weekday').annualServiceDays;")).toBe(255);
+    // A valid value clears the message.
+    await weekday.fill('250');
+    await weekday.blur();
+    await expect(message).toHaveCount(0);
+    await expect(weekday).not.toHaveAttribute('aria-invalid', 'true');
+    expect(await runInPage(page, "return (await e.db.serviceDays.toArray()).find((day) => day.kind === 'weekday').annualServiceDays;")).toBe(250);
+  });
+
+  test('a blank name is shown beside the name field, and the saved name is kept', async ({ page }) => {
+    test.setTimeout(120_000);
+    await openGoldenCosting(page);
+    const name = page.getByRole('textbox', { name: 'Weekday name' });
+    await name.fill('');
+    await name.blur();
+    await expect(page.locator('.service-days-table tr', { has: name }).getByText('Enter a service day name.')).toBeVisible();
+    await expect(name).toHaveAttribute('aria-invalid', 'true');
+    expect(await runInPage(page, "return (await e.db.serviceDays.toArray()).find((day) => day.kind === 'weekday').name;")).toBe('Weekday');
+    await name.fill('Weekday plan');
+    await name.blur();
+    await expect(page.getByText('Enter a service day name.')).toHaveCount(0);
+    expect(await runInPage(page, "return (await e.db.serviceDays.toArray()).find((day) => day.kind === 'weekday').name;")).toBe('Weekday plan');
+  });
+});
+
+test.describe('Costing estimate display (U06 criteria 2 to 5)', () => {
+  test('an invalid estimate lists each finding', async ({ page }) => {
+    test.setTimeout(120_000);
+    await openGoldenCosting(page, async () => { await runInPage(page, "const day = (await e.db.serviceDays.toArray()).find((item) => item.kind === 'weekday'); await e.db.serviceDays.put({ ...day, annualServiceDays: 260 });"); });
+    await page.getByRole('button', { name: 'Costing', exact: true }).click();
+    const alert = page.getByRole('alert').filter({ hasText: 'cannot be calculated' });
+    await expect(alert).toBeVisible();
+    await expect(alert.getByRole('listitem')).toHaveText(['Annual service days total more than 365. Correct the counts in the Service days table on the Route screen.']);
+  });
+
+  test('says "Calculating estimate…" while the estimate loads, not "Select a valid Blocking Scenario"', async ({ page }) => {
+    await seedCostingFixture(page);
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Costing', exact: true })).toBeEnabled();
+    await expect(page.getByRole('textbox', { name: 'Route name' })).toBeVisible();
+    // Hold a write transaction on the stores the estimate reads so that its reads wait, while the Blocking Scenarios and the
+    // assumptions (other stores) still load. The transaction stays open until `release` is set.
+    await page.evaluate(async () => {
+      const database = await new Promise<IDBDatabase>((resolve, reject) => { const request = indexedDB.open('transit-costing-tool'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+      const transaction = database.transaction(['trips', 'blocks', 'patterns'], 'readwrite');
+      const store = transaction.objectStore('trips');
+      const holder = { release: false, database };
+      (window as unknown as { __hold: typeof holder }).__hold = holder;
+      const spin = () => { if (!holder.release) store.get('none').onsuccess = spin; };
+      spin();
+      transaction.oncomplete = () => database.close();
+    });
+    await page.getByRole('button', { name: 'Costing', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Costing Assumptions' })).toBeVisible();
+    await expect(page.getByText('Calculating estimate…')).toBeVisible();
+    await expect(page.getByText('Select a valid Blocking Scenario to calculate an estimate.')).toHaveCount(0);
+    await page.evaluate(() => { (window as unknown as { __hold: { release: boolean } }).__hold.release = true; });
+    await expect(page.locator('.costing-results-table tbody tr')).toHaveCount(4);
+    await expect(page.getByText('Calculating estimate…')).toHaveCount(0);
+  });
+
+  test('the Total row has no daily columns, a note says totals are computed before rounding, and the counts are singular', async ({ page }) => {
+    await seedCostingFixture(page);
+    await page.reload();
+    await page.getByRole('button', { name: 'Costing', exact: true }).click();
+    const total = page.locator('.costing-results-table tfoot tr');
+    await expect(total.locator('th')).toHaveText('Total');
+    const cells = total.locator('td');
+    // Days, Blocks, Daily Revenue Hours, Daily Platform Hours, Daily Cost, Annual Revenue Hours, Annual Platform Hours, Annual Cost.
+    await expect(cells).toHaveCount(8);
+    await expect(cells.nth(0)).toHaveText('364');
+    await expect(cells.nth(1)).toHaveText('1');
+    for (const index of [2, 3, 4]) await expect(cells.nth(index)).toHaveText('');
+    await expect(cells.nth(5)).toHaveText('260');
+    await expect(cells.nth(7)).toHaveText('$40,170');
+    await expect(page.getByText('Totals are computed before rounding, so a total can differ by 1 from the sum of the rounded rows.')).toBeVisible();
+    await expect(page.getByText('0 excluded Blocks · 1 unassigned Trip', { exact: true })).toBeVisible();
+  });
+
+  test('View year appears once, in the toolbar', async ({ page }) => {
+    await seedCostingFixture(page);
+    await page.reload();
+    await page.getByRole('button', { name: 'Costing', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Cost Breakdown' })).toBeVisible();
+    await expect(page.locator('label', { hasText: /^View year/ })).toHaveCount(1);
+    await expect(page.locator('.module-toolbar').getByLabel('View year')).toHaveCount(1);
+    await expect(page.locator('section[aria-labelledby="costing-estimate-title"]').getByRole('combobox')).toHaveCount(0);
+  });
+});
+
+test('Annual cost is visible without scrolling the table at 1024 and 1440 px, and the page never scrolls sideways (AC7)', async ({ page }) => {
+  await seedCostingFixture(page);
+  await page.reload();
+  await page.getByRole('button', { name: 'Costing', exact: true }).click();
+  // A rate that makes the widest money values (eight digits).
+  await page.getByLabel('Operating cost per Revenue Hour in USD').fill('150000');
+  await expect(page.locator('.costing-results-table tfoot')).toContainText('$40,170,000');
+  for (const width of [1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    const table = page.locator('.costing-results-table');
+    expect(await table.evaluate((element) => element.scrollWidth <= element.clientWidth), `the results table does not scroll at ${width} px`).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    const header = await page.getByRole('columnheader', { name: 'Annual Cost (Revenue Hours)' }).first().boundingBox();
+    const cell = await page.locator('.costing-results-table tbody tr').first().locator('td').last().boundingBox();
+    for (const box of [header, cell]) {
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+    }
+  }
+  // At 768 px the table may scroll inside its own frame, but the page does not.
+  await page.setViewportSize({ width: 768, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });

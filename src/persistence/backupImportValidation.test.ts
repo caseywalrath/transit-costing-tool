@@ -323,3 +323,38 @@ describe('recovery and validation work together', () => {
     logged.mockRestore();
   });
 });
+
+describe('P17: a backup with repeated Block labels is refused with the cause and the way out', () => {
+  const refusal = (mutate: (backup: any) => void) => {
+    const backup = goldenRaw();
+    mutate(backup);
+    try { importProjectJson(JSON.stringify(backup)); } catch (error) { return (error as Error).message; }
+    throw new Error('expected the backup to be refused');
+  };
+  const repeatLabelOf = (backup: any, first: number) => {
+    const day = backup.blocks[first].serviceDayId;
+    const other = backup.blocks.find((block: any, index: number) => index > first && block.serviceDayId === day && block.blockingScenarioId === backup.blocks[first].blockingScenarioId && block.label !== backup.blocks[first].label);
+    other.label = backup.blocks[first].label;
+    return { label: backup.blocks[first].label, dayName: backup.serviceDays.find((item: any) => item.id === day).name };
+  };
+
+  it('names the label, the service day, and the Blocking Scenario, says nothing was imported, and says to rename, export again, and import the new file', () => {
+    let repeated = { label: '', dayName: '' };
+    const message = refusal((backup) => { repeated = repeatLabelOf(backup, 0); });
+    expect(message).toContain(`more than one Block labeled "${repeated.label}" on ${repeated.dayName}`);
+    expect(message).toMatch(/Block labels must be different on each service day/);
+    expect(message).toMatch(/Nothing was imported\./);
+    expect(message).toMatch(/Rename the repeated label in the project where this file was exported, export it again, and import the new file\./);
+    expect(message).not.toMatch(/other labels? repeats?/);
+  });
+
+  it('counts the other repeated labels when more than one repeats', () => {
+    const message = refusal((backup) => {
+      repeatLabelOf(backup, 0);
+      const second = backup.blocks.findIndex((block: any, index: number) => index > 1 && block.serviceDayId !== backup.blocks[0].serviceDayId);
+      repeatLabelOf(backup, second);
+    });
+    expect(message).toMatch(/, and 1 other label repeats in this file\./);
+    expect(message).toMatch(/Rename the repeated labels in the project where this file was exported/);
+  });
+});

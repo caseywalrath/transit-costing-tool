@@ -76,3 +76,21 @@ export class TripShiftValidationError extends Error {
     this.name = 'TripShiftValidationError';
   }
 }
+
+/** The Shift minutes a planner typed, as seconds: a whole number of minutes above zero, else undefined. */
+export function parseShiftSeconds(text: string): DurationSeconds | undefined {
+  const minutes = Number(text);
+  return text.trim() !== '' && Number.isInteger(minutes) && minutes > 0 ? minutes * 60 : undefined;
+}
+
+const shiftSize = (offsetSeconds: number) => `${Math.abs(offsetSeconds / 60)} minute${Math.abs(offsetSeconds) === 60 ? '' : 's'} ${offsetSeconds < 0 ? 'earlier' : 'later'}`;
+
+/** "No net shift", "1 minute later", "2 minutes earlier". */
+export function formatNetShift(offsetSeconds: number): string {
+  return offsetSeconds === 0 ? 'No net shift' : shiftSize(offsetSeconds);
+}
+
+/** The note on a Trip row that a staged Shift moves: "Staged 1 minute later". None when nothing is staged or the net Shift is zero. */
+export function formatStagedShift(offsetSeconds: number | undefined): string | undefined {
+  return offsetSeconds === undefined || offsetSeconds === 0 ? undefined : `Staged ${shiftSize(offsetSeconds)}`;
+}

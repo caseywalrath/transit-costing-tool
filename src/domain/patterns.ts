@@ -2,6 +2,11 @@ import type { Node, PatternPoint, RouteDirection, RoutePattern, ValidationFindin
 import { newId } from './ids';
 import { validatePatternDirection } from './directions';
 export function normalizePattern(pattern: RoutePattern): RoutePattern { return { ...pattern, points: pattern.points.map((point, sequence) => ({ ...point, sequence })) }; }
+/** A Pattern's total distance (its last cumulative mile), or undefined when it has none. A total of 0 means the distance was never entered (P12, Blocking). */
+export function patternTotalMiles(pattern: RoutePattern): number | undefined {
+  const end = pattern.points.at(-1)?.cumulativeMiles;
+  return end !== undefined && Number.isFinite(end) && end > 0 ? end : undefined;
+}
 export function getSegmentMiles(pattern: RoutePattern, pointIndex: number): number {
   const point = pattern.points[pointIndex];
   if (!point) return Number.NaN;

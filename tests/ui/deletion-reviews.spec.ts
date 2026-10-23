@@ -101,7 +101,7 @@ test('Delete selected removes the selected Trips after the review and is refused
 
 test('Delete runtime profile replaces the assignments after the review and is refused when the profile changed after it', async ({ page }) => {
   await createRouteWithPattern(page, 'Runtime profile deletion reviews');
-  await runInPage(page, "const [pattern] = await e.db.patterns.toArray(); await e.service.createDefaultRuntimeProfile(pattern, 'Alternative');");
+  await runInPage(page, "const [pattern] = await e.db.patterns.toArray(); await e.service.ensureDefaultRuntimeProfile(pattern); await e.service.createDefaultRuntimeProfile(pattern, 'Alternative');");
   await page.reload();
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   const runtimeSection = page.locator('[aria-label="Runtimes section"]');
@@ -126,4 +126,26 @@ test('Delete runtime profile replaces the assignments after the review and is re
   await expect.poll(() => count(page, 'runtimeProfiles')).toBe(1);
   const assigned = await runInPage(page, "const [profile] = await e.db.runtimeProfiles.toArray(); const assignments = await e.db.runtimeAssignments.toArray(); return { name: profile.name, assignments: assignments.length, onIt: assignments.filter((item) => item.runtimeProfileId === profile.id).length };");
   expect(assigned).toEqual({ name: 'Alternative', assignments: 4, onIt: 4 });
+});
+
+test('Delete Pattern removes the Pattern and its Trips after the review and is refused when a Trip was saved after it', async ({ page }) => {
+  await createShiftReadySchedule(page, '06:20');
+  await page.getByRole('button', { name: 'Route', exact: true }).click();
+  const openDelete = async (trips: string) => {
+    await page.getByRole('button', { name: /^Delete Pattern/ }).click();
+    await expect(page.getByRole('alertdialog', { name: 'Delete Pattern?' })).toContainText(trips);
+  };
+  await openDelete('3 trips');
+  await runInPage(page, "const [trip] = await e.db.trips.toArray(); await e.db.trips.put({ ...trip, id: 'added-after-review', stopTimes: trip.stopTimes.map((point) => ({ ...point, time: point.time + 3600 })) });");
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete Pattern', exact: true }).click();
+  await expect(error(page)).toHaveText(/The pattern deletion review is out of date\. Review the impact again\./);
+  expect(await count(page, 'patterns')).toBe(1);
+  expect(await count(page, 'trips')).toBe(4);
+  // A fresh review shows the added Trip and works.
+  await error(page).getByRole('button', { name: 'Dismiss message' }).click();
+  await openDelete('4 trips');
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete Pattern', exact: true }).click();
+  await expect.poll(() => count(page, 'patterns')).toBe(0);
+  expect(await count(page, 'trips')).toBe(0);
+  await expect(error(page)).toHaveCount(0);
 });

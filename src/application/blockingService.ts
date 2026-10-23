@@ -13,7 +13,8 @@ export interface BlockingContextProvider {
   listPatterns(scenarioId: string): Promise<RoutePattern[]>;
 }
 
-function removeSelectedTripsFromBlock(block: BlockingBlock, tripIds: Set<string>): BlockingBlock {
+/** Removes the Trips in `tripIds` from a Block, with the deadheads next to them. */
+export function removeSelectedTripsFromBlock(block: BlockingBlock, tripIds: Set<string>): BlockingBlock {
   const activities = [...block.activities].sort((left, right) => left.sequence - right.sequence || left.id.localeCompare(right.id));
   const removeActivityIds = new Set<string>();
   activities.forEach((activity, index) => {

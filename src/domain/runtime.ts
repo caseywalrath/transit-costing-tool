@@ -7,6 +7,7 @@ import type {
   RuntimeProfile,
   ScheduledPoint,
   ServiceSeconds,
+  Trip,
   ValidationFinding,
 } from './types';
 import { metadata, newId } from './ids';
@@ -332,9 +333,7 @@ export function reverseCopyRuntimeProfile(
   now = new Date().toISOString(),
 ): RuntimeProfile {
   if (!name?.trim()) throw new Error('Runtime profile name is required');
-  const sourceNodes = sourcePattern.points.map((point) => point.nodeId);
-  const targetNodes = targetPattern.points.map((point) => point.nodeId);
-  if (sourceNodes.length !== targetNodes.length || sourceNodes.some((nodeId, index) => nodeId !== targetNodes[targetNodes.length - index - 1])) {
+  if (!patternsMirrorNodes(sourcePattern, targetPattern)) {
     throw new Error('Cannot reverse-copy runtime profile to an incompatible pattern');
   }
   const copied = copyRuntimeProfile(profile, {
@@ -344,4 +343,76 @@ export function reverseCopyRuntimeProfile(
     name: name.trim(),
   }, now);
   return { ...copied, bands: copied.bands.map((band) => ({ ...band, segmentRuntimeSeconds: [...band.segmentRuntimeSeconds].reverse() })) };
+}
+
+/** True when the two Patterns visit the same nodes in opposite order, which is what a reverse copy of a Runtime profile needs. */
+function patternsMirrorNodes(source: RoutePattern, target: RoutePattern): boolean {
+  return source.points.length === target.points.length && source.points.every((point, index) => point.nodeId === target.points[target.points.length - index - 1].nodeId);
+}
+
+/** The other Patterns that a Runtime profile of `selected` can be reverse-copied to. A Pattern is never its own candidate. */
+export function reverseRuntimeCandidates(selected: RoutePattern | undefined, patterns: RoutePattern[]): RoutePattern[] {
+  return selected ? patterns.filter((candidate) => candidate.id !== selected.id && patternsMirrorNodes(selected, candidate)) : [];
+}
+
+/** Adds an empty band (no time span, a zero runtime for each of `segmentCount` segments) after the last one. */
+export function addRuntimeBand(profile: RuntimeProfile, segmentCount: number): RuntimeProfile {
+  const band: RuntimeBand = { id: newId(), label: 'Time period', sequence: profile.bands.length, startTime: 0, endTime: 0, segmentRuntimeSeconds: Array(Math.max(0, segmentCount)).fill(0) };
+  return { ...profile, bands: [...profile.bands, band] };
+}
+
+export function updateRuntimeBand(profile: RuntimeProfile, index: number, patch: Partial<RuntimeBand>): RuntimeProfile {
+  return { ...profile, bands: profile.bands.map((band, bandIndex) => bandIndex === index ? { ...band, ...patch } : band) };
+}
+
+/** Copies a band to the position after it, with a new id and its own runtimes, and renumbers the bands. */
+export function duplicateRuntimeBand(profile: RuntimeProfile, index: number): RuntimeProfile {
+  const source = profile.bands[index];
+  if (!source) return profile;
+  const copy: RuntimeBand = { ...source, id: newId(), segmentRuntimeSeconds: [...source.segmentRuntimeSeconds] };
+  const bands = [...profile.bands.slice(0, index + 1), copy, ...profile.bands.slice(index + 1)];
+  return { ...profile, bands: bands.map((band, sequence) => ({ ...band, sequence })) };
+}
+
+export function removeRuntimeBand(profile: RuntimeProfile, index: number): RuntimeProfile {
+  return { ...profile, bands: profile.bands.filter((_, bandIndex) => bandIndex !== index).map((band, sequence) => ({ ...band, sequence })) };
+}
+
+/** One parsed row of pasted runtimes. */
+export interface PastedRuntimeRow { bandLabel?: string; startTime: ServiceSeconds; endTime: ServiceSeconds; segmentRuntimeSeconds: DurationSeconds[]; calculationMethod?: RuntimeProfile['calculationMethod'] }
+
+/**
+ * The profile that applying pasted rows gives. Replace turns the rows into the complete profile (a row keeps the id of the band at its
+ * position, so a later save updates that band) and takes the calculation method the rows name, else keeps the profile's. Append adds the
+ * rows after the current bands and never changes the method (finding 4-025). `bands` are the pasted bands; `pastedMethod` is the method
+ * the rows named, which Append ignores.
+ */
+export function applyPastedRuntimeRows(base: RuntimeProfile, rows: PastedRuntimeRow[], mode: 'replace' | 'append'): { profile: RuntimeProfile; bands: RuntimeBand[]; pastedMethod?: RuntimeProfile['calculationMethod'] } {
+  const firstSequence = mode === 'append' ? base.bands.length : 0;
+  const bands = rows.map((row, index): RuntimeBand => {
+    const sequence = firstSequence + index;
+    const existing = mode === 'replace' ? base.bands[index] : undefined;
+    return { id: existing?.id ?? newId(), label: row.bandLabel ?? existing?.label ?? `Time period ${sequence + 1}`, sequence, startTime: row.startTime, endTime: row.endTime, segmentRuntimeSeconds: [...row.segmentRuntimeSeconds] };
+  });
+  const pastedMethod = rows.find((row) => row.calculationMethod)?.calculationMethod;
+  const calculationMethod = mode === 'replace' ? pastedMethod ?? base.calculationMethod : base.calculationMethod;
+  const profile: RuntimeProfile = { ...base, ...(calculationMethod ? { calculationMethod } : {}), bands: mode === 'append' ? [...base.bands, ...bands] : bands };
+  return { profile, bands: mode === 'append' ? bands : profile.bands, ...(pastedMethod ? { pastedMethod } : {}) };
+}
+
+/**
+ * What the Trips table shades a Trip's run-time cells with when "Show runtime bands" is on. A single-band profile names the band that
+ * holds the departure. A segment-start or blended profile gives each segment's band contributions, but only when the Trip's stored times
+ * are the ones the profile calculates and the Trip is not marked as having changed runtimes; otherwise there is nothing to shade.
+ */
+export function describeTripBandShading(trip: Trip, pattern: RoutePattern | undefined, profile: RuntimeProfile | undefined, runtimeChanged: boolean): { singleBand?: RuntimeBand; segments?: BlendedSegment[] } {
+  const departure = trip.stopTimes[0]?.time;
+  if (!profile || departure === undefined) return {};
+  if (profile.calculationMethod !== 'blendSegments' && profile.calculationMethod !== 'segmentStart') {
+    const singleBand = selectRuntimeBand(profile, departure);
+    return singleBand ? { singleBand } : {};
+  }
+  if (!pattern || runtimeChanged) return {};
+  const calculated = profile.calculationMethod === 'segmentStart' ? segmentStartTimes(pattern, departure, profile) : blendSegmentTimes(pattern, departure, profile);
+  return 'segments' in calculated && calculated.stopTimes.every((point, index) => point.time === trip.stopTimes[index]?.time) ? { segments: calculated.segments } : {};
 }

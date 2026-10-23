@@ -58,10 +58,6 @@ test('Show headways replaces each later time with the gap from the previous Trip
 
 test('Show runtime bands lists the band and shades the run-time cells in the band color', async ({ page }) => {
   await createShiftReadySchedule(page, '06:20');
-  // Reload first. After a Runtime profile is saved, the Trips table keeps the profiles it loaded earlier, so shading would be
-  // computed from the pre-save profile and be missing (app finding recorded in docs/implementation/review-fixes.md, P05).
-  await page.reload();
-  await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await expect(rows(page)).toHaveCount(3);
   await expect(page.getByLabel('Runtime band legend')).toHaveCount(0);
   await expect(cell(page, 0, 1)).toHaveCSS('background-image', 'none');
