@@ -111,6 +111,23 @@ export function tripRunTimeSeconds(trip: Trip): DurationSeconds | undefined {
   return Number.isInteger(first) && Number.isInteger(last) && last >= first ? last - first : undefined;
 }
 
+/** Display rounding of a clock time to the nearest minute, exactly 30 seconds rounded up (Decision 0033). */
+export function roundServiceTimeToMinute(seconds: ServiceSeconds): ServiceSeconds {
+  return Math.floor((seconds + 30) / 60) * 60;
+}
+
+/** The keys (`patternId:firstTime`) of every departure that more than one Trip makes. A Trip with no times is never one. */
+export function duplicateDepartureKeys(trips: Trip[]): Set<string> {
+  const counts = new Map<string, number>();
+  for (const trip of trips) {
+    const first = trip.stopTimes[0]?.time;
+    if (first === undefined) continue;
+    const key = `${trip.patternId}:${first}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return new Set([...counts].filter(([, count]) => count > 1).map(([key]) => key));
+}
+
 /** Find each Trip's chronological predecessor at every timetable column it serves. */
 export function calculateTimepointHeadways(trips: Trip[], patterns: RoutePattern[]): Map<string, Map<string, { time: ServiceSeconds; previousTime?: ServiceSeconds }>> {
   const patternsById = new Map(patterns.map((pattern) => [pattern.id, pattern]));

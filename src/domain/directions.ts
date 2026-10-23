@@ -56,6 +56,15 @@ export function orderPatterns(patterns: RoutePattern[], directionId?: EntityId):
     .map(({ pattern }) => ({ ...pattern }));
 }
 
+/** A Pattern needs at least two points to have segments, runtimes, and Trips. */
+export const MIN_PATTERN_POINTS = 2;
+export function isUsablePattern(pattern: RoutePattern): boolean { return pattern.points.length >= MIN_PATTERN_POINTS; }
+
+/** The usable Patterns of one Direction, in their stable order. */
+export function usableDirectionPatterns(patterns: RoutePattern[], directionId: EntityId | undefined): RoutePattern[] {
+  return orderPatterns(patterns.filter(isUsablePattern), directionId);
+}
+
 /** Normalize stable pattern sequence values while preserving relative order. */
 export function normalizePatternSequences(patterns: RoutePattern[]): RoutePattern[] {
   const directions = new Map<EntityId | undefined, number>();

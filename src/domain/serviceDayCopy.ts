@@ -10,6 +10,7 @@ import type {
   ValidationFinding,
 } from './types';
 import { metadata, newId } from './ids';
+import { isUsablePattern } from './directions';
 import { adjustBlockReferences, type PatternChangePreview, previewPatternChange } from './trips';
 
 export type RuntimeCopyMode = 'independent' | 'shared';
@@ -198,7 +199,7 @@ export function buildRuntimeCopyPreview(
 ): RuntimeCopyPreview {
   const findings = validateRuntimeCopyRequest(request);
   if (sourceDay.scenarioId !== request.scenarioId || targetDay.scenarioId !== request.scenarioId) findings.push(finding('runtimeCopy', request.routeId, 'runtimeCopy.dayScenarioMismatch', 'runtimeCopy.dayScenarioMismatch'));
-  const usablePatterns = patterns.filter((pattern) => pattern.routeId === request.routeId && pattern.scenarioId === request.scenarioId && pattern.points.length >= 2).sort((left, right) => (left.sequence ?? Number.MAX_SAFE_INTEGER) - (right.sequence ?? Number.MAX_SAFE_INTEGER) || left.id.localeCompare(right.id));
+  const usablePatterns = patterns.filter((pattern) => pattern.routeId === request.routeId && pattern.scenarioId === request.scenarioId && isUsablePattern(pattern)).sort((left, right) => (left.sequence ?? Number.MAX_SAFE_INTEGER) - (right.sequence ?? Number.MAX_SAFE_INTEGER) || left.id.localeCompare(right.id));
   const sourceByPattern = new Map(sourceAssignments.map((assignment) => [assignment.patternId, assignment]));
   const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
   const unresolvedPatternIds: string[] = [];

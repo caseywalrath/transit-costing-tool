@@ -1,5 +1,6 @@
 import type { BlockingBlock, BlockingScenario, BlockActivity, DeadheadActivity, EntityId, Miles, RoutePattern, ServiceSeconds, Trip, ValidationFinding } from './types';
 import { metadata, newId, withUpdatedAt } from './ids';
+import { patternTotalMiles } from './patterns';
 
 export type BlockingStatus = 'complete' | 'incomplete' | 'invalid';
 export type CompatibilityStatus = 'compatible' | 'deadheadRequired' | 'insufficientLayover' | 'conflict' | 'incomplete';
@@ -76,7 +77,7 @@ function tripEnd(trip: Trip | undefined): ServiceSeconds | undefined { return tr
 function patternStartNode(trip: Trip, patterns: Map<EntityId, RoutePattern>): EntityId | undefined { return patterns.get(trip.patternId)?.points[0]?.nodeId; }
 function patternEndNode(trip: Trip, patterns: Map<EntityId, RoutePattern>): EntityId | undefined { return patterns.get(trip.patternId)?.points.at(-1)?.nodeId; }
 /** A Pattern's total distance. A total of 0 means that no distance was entered (decision 8), so it is not a complete distance. */
-function revenueDistance(trip: Trip, patterns: Map<EntityId, RoutePattern>): Miles | undefined { const end = patterns.get(trip.patternId)?.points.at(-1)?.cumulativeMiles; return end !== undefined && Number.isFinite(end) && end > 0 ? end : undefined; }
+function revenueDistance(trip: Trip, patterns: Map<EntityId, RoutePattern>): Miles | undefined { const pattern = patterns.get(trip.patternId); return pattern ? patternTotalMiles(pattern) : undefined; }
 function explicitTiming(activity: Exclude<BlockActivity, { type: 'revenueTrip' }>) { return Number.isInteger(activity.startTime) && Number.isInteger(activity.endTime) ? { startTime: activity.startTime!, endTime: activity.endTime! } : undefined; }
 function hasExclusiveBoundaryTiming(activity: Extract<BlockActivity, { type: 'pullOut' | 'pullIn' }>) {
   const relative = activity.type === 'pullOut' ? activity.minutesBeforeFirstTrip : activity.minutesAfterLastTrip;

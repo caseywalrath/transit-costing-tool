@@ -4,17 +4,17 @@
 
 **Sitting 4I and 4J combined (U06, U07, P15, then P17) is in progress on the branch `claude/stage-4i-4j-review-fixes`, from `origin/main` after the merge of PR #21 (U01 to U05, P16). If a later session reads this note, the sitting stopped early: continue from the first package under "Not started", on Sonnet, on this branch. Standing rules 1 to 10 below apply unchanged.** The user did not ask for a pull request.
 
-- Done on this branch: U06 (`U06HASH`), U07 (`4d270c1`).
-- Packages left: **P15** (Trips and Runtime rules out of `App.tsx`; the one display change is "incomplete" instead of "0.0 miles" for a Pattern with no distance), then **P17** (below) only if P15 is committed and pushed. Not started: P15, P17, U08, D01, P18.
+- Done on this branch: U06 (`U06HASH`), U07 (`U07HASH`), P15 (`P15HASH`).
+- Package left: **P17** (the small structural package defined in the decisions below, items 1 to 3), done only because U06, U07, and P15 are committed and pushed. Not started: P17, U08, D01, P18.
 - This sitting's rules (user, 2026-10-23): Sonnet main session, no sub-agents, no Opus review; the Decision 0005 gate is waived and each package is pushed after its commit and fix log entry; a design or UX decision that no package text, added criterion, or decision below settles is recorded in the fix log as "blocked: decision needed" with the exact question and options, and the next independent package goes on; branch protection and CI are the user's to watch, and the workflows are not edited.
 - **Blocked: decision needed (U07, details and options in its fix log entry).** (1) How the open Shift drawer and the Runtime Save and Discard buttons coexist at 1024 to 1900 px (options: reserve room beside the drawer, move Save and Discard left, dock the drawer at the bottom, leave it). (2) Where to show why a Trip cannot be recalculated (`inspectStaleTrips` findings; the text exists, no screen shows it).
 - Known failures: none. If the intermittent `unified-action-layer.spec.ts:139` failure returns, diagnose it as a package failure and fix the code.
-- State after U07: unit tests 49 files, 704 tests; browser suite 145 tests, all passing; bundle `index-CUKH2aRs.js` 808.96 kB. The user must still read the first CI run.
+- State after P15: unit tests 51 files, 743 tests; browser suite 146 tests, all passing; bundle `index-DidXN46k.js` 810.48 kB. The user must still read the first CI run.
 - Carried forward for U06 and U07 from this sitting (details in the U01 to U05 entries):
   - **U06 (done, `U06HASH`):** the Annual Cost column fits at 768, 1024, and 1440 px; an invalid estimate lists its findings; the persistence answer of `getLocalDataProtection()` is still not shown (no criterion asks for it), and the assumptions alert keeps its single sentence.
-  - **U07 (done, `4d270c1`, except two blocked items):** the Runtime totals read `:61` by design (the Decision 0010 duration format; no change); the single-flight load, the reload after a Runtime save, the Recalculate band picker, the error boundary, the shared-profile line, and the message texts are done. Blocked: the Shift drawer covering the Runtime Save button, and where to show the `inspectStaleTrips` findings.
+  - **U07 (done, `U07HASH`, except two blocked items):** the Runtime totals read `:61` by design (the Decision 0010 duration format; no change); the single-flight load, the reload after a Runtime save, the Recalculate band picker, the error boundary, the shared-profile line, and the message texts are done. Blocked: the Shift drawer covering the Runtime Save button, and where to show the `inspectStaleTrips` findings.
   - **Accessibility notes:** "Compatible only" stays a radio menu item because `blocking-workspace.spec.ts` asserts `menuitemradio`; menus do not implement typeahead; the Add-trip row drafts are not kept across a scope change; 24 dialogs were converted (the finding counted 28, four were removed by X01).
-  - **P15:** the Trips and Pattern screens still show 0.0 miles for a Pattern with no distance (only Blocking treats a 0 total as incomplete); `calculateTimepointHeadways` has no unit test; display rounding in the Trips table. A CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
+  - **P15 (done, `P15HASH`):** the Pattern editor shows "incomplete" for a Pattern with no distance (the literal "0.0 miles" was on no screen; the Trips screen shows no distance); `calculateTimepointHeadways` has a unit test; display rounding is in the domain. Still open: a CSV label with a bare CR does not round-trip byte for byte through the Trips CSV reader.
   - **P16 leftovers:** `resetPatternService` (legacy mutator) still stamps wall-clock `now`; about 40 other domain signatures still default `now` to the wall clock.
 - Decisions made by the user on 2026-10-23 (all follow the recommended option). `docs/review/fix-packages.md` is on the review branch and is not edited; this note is the record.
   1. `deletePattern` gets a review token (Decision 0041 pattern). **Approved, unscheduled:** new small structural package **P17**, with items 2 and 3. Place it after P15 in the combined sitting if time allows, otherwise in its own sitting before 4K.
@@ -42,7 +42,7 @@ Items that the user assigned to later packages. They are added to those packages
   - the Trips table must reload Runtime profiles after a Runtime profile is saved, so Show runtime bands shades without a page reload (the second behavior in the 4C decision bullet);
   - the Recalculate dialog hides the band picker for segment-start and blended Trips (Option B, decided 2026-10-23).
 
-- **P15 (sitting 4I/4J), added 2026-10-23.** A Pattern with no distance entered shows "incomplete" instead of "0.0 miles" on the Trips and Pattern screens, using the same rule as Blocking (a total of 0 is incomplete mileage, P12). This is the one intended display change in P15; every other displayed value stays unchanged, and the user-visible text is recorded in the P15 entry.
+- **P15 (sitting 4I/4J), added 2026-10-23. DONE in P15 (commit `P15HASH`).** A Pattern with no distance entered shows "incomplete" instead of "0.0 miles" on the Trips and Pattern screens, using the same rule as Blocking (a total of 0 is incomplete mileage, P12). This is the one intended display change in P15; every other displayed value stays unchanged, and the user-visible text is recorded in the P15 entry.
 
 ### Standing rules for every sitting
 
@@ -1876,3 +1876,103 @@ Each break was applied to the source, the spec (or the unit test) run, and the s
 
 - `routeRuntime` adds two reads (the Route's profiles and the day's assignments) to each Runtime section load.
 - The error boundary cannot catch an error thrown while drawing the header or the tabs, in an event handler, or in an asynchronous callback.
+
+## P15: Trips and Runtime rules out of `App.tsx`
+
+- Date: 2026-10-23. Sitting 4I/4J (combined). Model: Sonnet (main session). No sub-agents.
+- Type: structural. Severity: S3.
+- Commit: `COMMIT`.
+
+### Issues fixed
+
+| Register | Finding | Severity | What was wrong |
+| --- | --- | --- | --- |
+| I-074c | 4-014 (Trips and Runtime items) | S3 | `App.tsx` assembled Runtime bands, chose reverse-copy candidates, converted Shift minutes, labelled the net Shift, found duplicate departures (in O(n²)), rounded displayed times, applied the usable-Pattern rule four times, ordered Service days and Directions by its own rules, counted Block assignment impacts by copying a private Blocking function, validated Build Trips a second time, and called the runtime calculations while drawing each Trip row. |
+
+Added acceptance criterion (the user, 2026-10-23), done here: a Pattern with no distance entered shows "incomplete" instead of a zero distance, with the same rule as Blocking (a total of 0 is incomplete mileage, P12). Marked done in the Added acceptance criteria section.
+
+### What changed
+
+Each item of the 4-014 list for Trips and Runtime now has one home and a unit test:
+
+| Item | Now |
+| --- | --- |
+| Runtime band assembly, sequence renumbering, ids | `addRuntimeBand`, `updateRuntimeBand`, `duplicateRuntimeBand`, `removeRuntimeBand`, and `applyPastedRuntimeRows` (Replace keeps the id and label of the band at the same position; Append never changes the method) in `src/domain/runtime.ts` |
+| Reverse-candidate eligibility | `reverseRuntimeCandidates` in `runtime.ts`; `reverseCopyRuntimeProfile` uses the same node-mirror test (`patternsMirrorNodes`), so the menu and the copy cannot disagree |
+| Shift minute conversion and net-shift label | `parseShiftSeconds`, `formatNetShift`, `formatStagedShift` in `src/domain/tripShift.ts` |
+| Duplicate-departure rule | `duplicateDepartureKeys` in `src/domain/trips.ts` (one pass; a Trip with no times is never a duplicate) |
+| Display rounding | `roundServiceTimeToMinute` in `trips.ts`; `calculateTimepointHeadways` has its first unit test |
+| Usable-Pattern rule | `isUsablePattern` and `usableDirectionPatterns` in `src/domain/directions.ts`; used by `App.tsx` (the Trips tab, the Pattern choices of a Direction, the Runtime copy dialog) and by `serviceDayCopy.ts` |
+| `serviceDayOrder` | removed; the Service days table uses `sortServiceDays` (kind, sequence, then id) |
+| Direction sort | `orderDirections` (sequence, then id, columns in their own order) in both places |
+| Block assignment and unassignment impact counts | `tripBlockAssignmentImpact` and `tripBlockUnassignmentImpact` in the new `src/application/tripsWorkspaceView.ts`, which count with the Blocking service's own `removeSelectedTripsFromBlock` (now exported), so a count cannot differ from what the write removes |
+| Build Trips validation | `parseBuildTripsForm` and `buildTripsFieldProblems` in `tripsWorkspaceView.ts`; the range and order rules are the domain's `validateGenerateTripsRequest`; the texts stay in `App.tsx` |
+| Render-time runtime calls | `describeTripBandShading` in `runtime.ts` and `buildTripTableView` in `tripsWorkspaceView.ts` give each Trip row its run time, duplicate flag, and band shading, and each column its headways |
+| Pattern total distance | `patternTotalMiles` in `src/domain/patterns.ts`; Blocking's `revenueDistance` uses it, so the two screens cannot disagree |
+
+`App.tsx` now imports no calculation from `src/domain`. What it still imports as values from the domain: three error classes (`AnchorBandChoiceError`, `TripGenerationError`, `TripShiftValidationError`), the text helpers `parseServiceTime`, `parseRuntimeDuration`, `formatServiceTime`, and `formatRuntimeDuration`, and the identifier helpers `newId` and `metadata` (the Node and Pattern drafts of the Route screen use them). `src/ui/importGraph.test.ts` fails if another value import appears. Everything else the screen needs comes from `src/application/tripsWorkspaceView.ts`, which also re-exports the domain functions above so the interface imports them from one place.
+
+### Displayed values
+
+Unchanged, except the one criterion. The literal text "0.0 miles" is not on any screen today. What a Pattern with no distance shows is the **Segment mi** column of the Pattern editor on the Route screen (`0.00` for every point), and the Trips screen shows no distance at all. So the change is on the Pattern editor: a Pattern whose total distance is 0 now shows **incomplete** in the Segment mi cells; a Pattern with a distance shows what it showed (the first point still reads `0.00`). The Trips screen has nothing to change. If the planner meant another place, say so.
+
+Non-visible differences from the old inline code:
+
+- Pattern order within a Direction breaks a tie in `sequence` by id (before: the order they were stored in). Patterns with no `sequence` use their position, not 0. Real Patterns carry a unique sequence, so no screen changes.
+- Directions and their columns are ordered with the same tie-break (`orderDirections`); no stored Direction has a tie.
+- `duplicateDepartureKeys` skips a Trip with no times; before, two such Trips were flagged. A Trip row cannot be drawn without times.
+- The Build Trips messages are the same texts; the count-range rule and the Last-before-First rule now come from the domain's request validation.
+
+### Tests added
+
+- `src/domain/tripsRuntimeRules.test.ts` (25 tests): band add, update, duplicate, and remove; pasted rows in Replace and Append (ids, labels, numbering, method, copied arrays); reverse candidates (opposite order only; not itself, even for a palindrome); trip band shading for single-band, segment-start, mismatched times, marked-changed, and missing profile; Shift minutes and both labels; duplicate departures and a Trip with no times; display rounding at 29, 30, 31, and 90 seconds; timepoint headways (order, ties, unknown Pattern); the usable-Pattern rule and its Direction list; a Pattern's total distance (0, none, NaN); Service day and Direction ordering with ties.
+- `src/application/tripsWorkspaceView.test.ts` (12 tests): table rows (run time, duplicates, single-band shading, segment contributions and a Trip marked changed, a staged Shift's times against saved duplicates and headways); the Build Trips form (requests by Last Trip and by count, every reason it refuses, the domain's own rules, a Last Trip over 500 left to the service, the field marks); assignment and unassignment impact counts (moved, new, already there, deadheads once, none outside the moved Trips).
+- `src/ui/importGraph.test.ts` (2 tests): `App.tsx` imports only allowed value names from the domain; the check detects value imports and ignores type imports.
+- `tests/ui/pattern-distance.spec.ts` (1 test, real app): a Pattern with no distance shows `incomplete`, a distance of 4.5 shows `0.00` and `4.50`, and a distance reset to 0 shows `incomplete` again.
+- On the unfixed code every new test fails (the functions do not exist and `App.tsx` imports `selectRuntimeBand` and others from the domain). That shows only that they are new; what each protects is shown by the deliberate breaks. The existing browser specs (Trips table display, Shift, paste, Build Trips, Blocking assignment) pin the displayed values that must not change, and they pass unchanged.
+
+### Deliberate breaks (each applied, run, and restored)
+
+| Test group | Deliberate break | Result |
+| --- | --- | --- |
+| Display rounding | rounds 29 seconds up | 1 fails |
+| Duplicate departures | needs three Trips, not two | 3 fail |
+| Reverse candidates | a Pattern is its own candidate | 1 fails |
+| Pasted rows | Append applies the pasted method | 1 fails |
+| Band editing | a duplicated band keeps the source id | 1 fails |
+| Shift minutes | zero minutes accepted | 1 fails |
+| Usable Pattern | one point is enough | 2 fail |
+| Total distance | a total of 0 counts as a distance | 1 fails |
+| Table view | headways read the saved Trips, not the shown ones | 1 fails |
+| Impact counts | every Trip counts as newly assigned | 1 fails |
+| Domain import guard | `App.tsx` imports `selectRuntimeBand` from the domain | 1 fails |
+| Build Trips form | the count range rule is skipped | 1 fails |
+| Pattern editor (browser) | the distance check removed, so a Pattern with no distance shows `0.00` | the new spec fails |
+| Trips table (browser) | duplicate flag never set | `trips-table-display.spec.ts` "flags a duplicate departure…" fails |
+| Trips table (browser) | display rounding floors instead of rounding | `trips-table-display.spec.ts` "rounds displayed times…" fails |
+
+One break was not a break and was replaced: removing the "not the destination Block" filter from the assignment impact count changed nothing (a moved Trip is never in the destination Block, so that Block never loses a deadhead either), so the filter is a safeguard, not a rule. The break in the table above ("every Trip counts as newly assigned") stands in for it. Each break was applied to the source, the tests run, and the source restored from a saved copy.
+
+### Verification run
+
+- `pnpm typecheck`: clean.
+- `pnpm test`: 51 files, 743 tests passed (704 before; +25 in `tripsRuntimeRules.test.ts`, +12 in `tripsWorkspaceView.test.ts`, +2 in `importGraph.test.ts`).
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui`: 146 passed, 0 failed (4.7 minutes); 145 before plus the 1 new spec. No existing spec changed. No `test.fail`, `test.skip`, or `test.fixme`. `unified-action-layer.spec.ts:139` passed.
+- New spec stress run, `--repeat-each=10 --workers=8`: `pattern-distance.spec.ts` 10 of 10 passed.
+- `pnpm build`: succeeds, no chunk warning. Bundle `index-DidXN46k.js` 810.48 kB (808.96 kB before).
+- Visual inspection (scratchpad, not committed): the Trips and Runtime screens at 1024 px after P15 (`/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/trips-p15-1024.png`, and 1440 px `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/trips-p15-1440.png`) are the same as after U07 (`/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/trips-after-{1024,1440}.png`): the same rows, the same band totals, the same run times and block pills. The Pattern editor with a Pattern that has no distance: `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/pattern-editor-incomplete-p15-1024.png` (both Segment mi cells read "incomplete"), and with a distance of 4.5: `/tmp/claude-0/-home-user-transit-costing-tool/cca2e888-fc60-55dc-a41a-63377769b359/scratchpad/shots/pattern-editor-with-distance-p15-1024.png`.
+
+### Files outside the package's owned list (recorded hand-offs)
+
+- `src/domain/patterns.ts` (`patternTotalMiles`), `src/domain/blocking.ts` (`revenueDistance` calls it; same rule), `src/domain/serviceDayCopy.ts` (`isUsablePattern`), `src/application/blockingService.ts` (`removeSelectedTripsFromBlock` exported; no behavior change). New `src/application/tripsWorkspaceView.ts` and its test, `src/ui/importGraph.test.ts`, and `tests/ui/pattern-distance.spec.ts`.
+
+### Not done, or only partly
+
+- `routeDefinitionService.ts` keeps its own "fewer than two points" check (a Pattern cannot be saved or deleted into that state), and `validatePattern` keeps its own `pattern.requiresTwoPoints` rule. They are Route-editing rules, not Trips or Runtime items.
+- `App.tsx` still builds Node and Pattern drafts with `newId` and `metadata`, and parses Runtime and clock text with `parseServiceTime` and `parseRuntimeDuration`; none is a calculation, and the import test records them as allowed.
+- The Blocking items of 4-014 (P14) and the Costing items (P11) were done in their packages.
+
+### Residual risks
+
+- `buildTripTableView` runs on every render of the Trips table, as the inline code did; with the duplicate rule now one pass it is cheaper than before. A memo was not added.
+- The application module re-exports domain functions for the interface. A new calculation that the interface needs must be added there, not imported from the domain; the import test enforces it for `App.tsx` only. `BlockingWorkspace.tsx` and `CostingWorkspace.tsx` still import a few functions from the domain (`createBlockingScenarioSourceSignature`, `sortServiceDays`, `roundCostingDisplay`, and others); the Blocking and Costing items of 4-014 are P14's and P11's.
