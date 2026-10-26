@@ -6,7 +6,7 @@ import { isUsablePattern, orderDirections, usableDirectionPatterns } from '../do
 import { parseRuntimeDuration, RuntimeDurationError } from '../domain/durations';
 import { patternTotalMiles } from '../domain/patterns';
 import { addRuntimeBand, applyPastedRuntimeRows, describeTripBandShading, duplicateRuntimeBand, removeRuntimeBand, reverseRuntimeCandidates, runtimeBandTotalSeconds, updateRuntimeBand, type BlendedSegment, type PastedRuntimeRow } from '../domain/runtime';
-import { parseServiceTime } from '../domain/time';
+import { formatServiceTime, parseServiceTime } from '../domain/time';
 import { formatNetShift, formatStagedShift, parseShiftSeconds } from '../domain/tripShift';
 import { MAX_TRIPS_PER_GENERATION, calculateTimepointHeadways, duplicateDepartureKeys, roundServiceTimeToMinute, tripRunTimeSeconds, validateGenerateTripsRequest } from '../domain/trips';
 import type { BlockingBlock, GenerateTripsRequest, RoutePattern, RuntimeBand, RuntimeProfile, ServiceSeconds, Trip } from '../domain/types';
@@ -17,6 +17,9 @@ export {
   patternTotalMiles, removeRuntimeBand, reverseRuntimeCandidates, roundServiceTimeToMinute, runtimeBandTotalSeconds, sortServiceDays, tripRunTimeSeconds, updateRuntimeBand, usableDirectionPatterns,
 };
 export type { BlendedSegment, PastedRuntimeRow };
+
+/** A layover, deadhead, or headway as the Trips table shows it: `H:MM`, with seconds when not whole minutes, and a leading minus when negative. */
+export function formatTripConnectionDuration(seconds?: number) { return seconds === undefined || !Number.isInteger(seconds) ? '' : `${seconds < 0 ? '−' : ''}${formatServiceTime(Math.abs(seconds), seconds % 60 !== 0)}`; }
 
 export interface TripRowView { runTimeSeconds?: number; duplicate: boolean; singleBand?: RuntimeBand; segments?: BlendedSegment[] }
 export type TripHeadways = ReturnType<typeof calculateTimepointHeadways>;

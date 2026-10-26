@@ -92,7 +92,6 @@ export async function createShiftReadySchedule(page: Page, lastTrip = '06:00', s
     'Assign Block…',
     'Unassign from Block…',
     'Copy Trips from day…',
-    'Import Trips CSV…',
     'Export Trips CSV',
     'Delete selected…',
   ]);

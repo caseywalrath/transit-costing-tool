@@ -17,7 +17,7 @@ describe('modal dialogs', () => {
     const using = Object.keys(uiSources).filter((path) => !path.endsWith('.test.ts') && path !== './ModalDialog.tsx' && /<ModalDialog[\s>]/.test(uiSources[path])).sort();
     expect(using).toEqual(['./App.tsx', './BlockingWorkspace.tsx', './CostingWorkspace.tsx']);
     const count = (path: string) => (uiSources[path]!.match(/<ModalDialog[\s>]/g) ?? []).length;
-    expect(count('./App.tsx') + count('./BlockingWorkspace.tsx') + count('./CostingWorkspace.tsx')).toBe(24);
+    expect(count('./App.tsx') + count('./BlockingWorkspace.tsx') + count('./CostingWorkspace.tsx')).toBe(23);
   });
 
   it('every ModalDialog is named, by a heading id or a label', () => {
