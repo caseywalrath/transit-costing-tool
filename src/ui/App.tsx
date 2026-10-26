@@ -1,6 +1,6 @@
 import { Component, cloneElement, forwardRef, isValidElement, type ChangeEvent, type ErrorInfo, type FormEvent, type ReactElement, type ReactNode, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { LocalDataProtection, SaveStatus, SessionStatus, SessionStatusQueries, TripTableImportPreview } from '../application/ports';
+import type { LocalDataProtection, SaveStatus, SessionStatus, SessionStatusQueries } from '../application/ports';
 import type { BlockingCommands, BlockingQueries } from '../application/ports';
 import { BlockingWorkspace } from './BlockingWorkspace';
 import { CostingWorkspace } from './CostingWorkspace';
@@ -18,12 +18,12 @@ import { TripShiftValidationError, type TripShiftPreview } from '../domain/tripS
 import { AnchorBandChoiceError, TripGenerationError, type AnchorBandChoice, type RecalculationPreview } from '../domain/trips';
 import { metadata, newId } from '../domain/ids';
 import { formatRuntimeDuration, parseRuntimeDuration } from '../domain/durations';
-import { addRuntimeBand, applyPastedRuntimeRows, buildTripTableView, buildTripsFieldProblems, createBlockingScenarioSourceSignature, duplicateRuntimeBand, formatNetShift, formatStagedShift, isUsablePattern, MAX_TRIPS_PER_GENERATION, orderDirections, parseBuildTripsForm, parseShiftSeconds, patternTotalMiles, removeRuntimeBand, reverseRuntimeCandidates, roundServiceTimeToMinute, runtimeBandTotalSeconds, sortServiceDays, tripBlockAssignmentImpact, tripBlockUnassignmentImpact, tripRunTimeSeconds, updateRuntimeBand, usableDirectionPatterns } from '../application/tripsWorkspaceView';
+import { addRuntimeBand, applyPastedRuntimeRows, buildTripTableView, buildTripsFieldProblems, createBlockingScenarioSourceSignature, duplicateRuntimeBand, formatNetShift, formatStagedShift, formatTripConnectionDuration, isUsablePattern, MAX_TRIPS_PER_GENERATION, orderDirections, parseBuildTripsForm, parseShiftSeconds, patternTotalMiles, removeRuntimeBand, reverseRuntimeCandidates, roundServiceTimeToMinute, runtimeBandTotalSeconds, sortServiceDays, tripBlockAssignmentImpact, tripBlockUnassignmentImpact, tripRunTimeSeconds, updateRuntimeBand, usableDirectionPatterns } from '../application/tripsWorkspaceView';
 import { formatServiceTime, parseServiceTime } from '../domain/time';
 import type { BlockingBlock, Node, NodeKind, Project, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, ServiceDayDefinition, Trip, ValidationFinding } from '../domain/types';
 import type { BlockConnection } from '../domain/blocking';
 import { parseRuntimePaste, RuntimePasteParseError, runtimeProfileCsv, type RuntimePasteRow } from './runtimePaste';
-import { parseTripTableCsv, tripTableCsv } from '../application/tripTableCsv';
+import { tripTableCsv } from '../application/tripTableCsv';
 
 import type { CostingCommands, CostingQueries } from '../application/ports';
 
@@ -606,7 +606,6 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
   const [profileDeletionImpact, setProfileDeletionImpact] = useState<{ assignmentCount: number; tripCount: number; reviewToken: string }>();
   const [trips, setTrips] = useState<Trip[]>([]);
   const [lastRegenerationUndo, setLastRegenerationUndo] = useState<import('../domain/types').TripRegenerationUndo>();
-  const [tripImportPreview, setTripImportPreview] = useState<{ preview?: TripTableImportPreview; issues: string[] }>();
   const [tripsWithChangedRuntimes, setTripsWithChangedRuntimes] = useState<Trip[]>([]);
   const [staleReasons, setStaleReasons] = useState<StaleTripNotice>();
   const [selectedTripIds, setSelectedTripIds] = useState<string[]>([]);
@@ -646,7 +645,6 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
   const runtimeCopyButtonRef = useRef<HTMLButtonElement>(null);
   const tripsActionsRef = useRef<HTMLButtonElement>(null);
   const runtimeCsvInputRef = useRef<HTMLInputElement>(null);
-  const tripsCsvInputRef = useRef<HTMLInputElement>(null);
   const tripsTableScrollRef = useRef<HTMLDivElement>(null);
   const tripBlockAssignmentFocusRef = useRef<HTMLElement | null>(null);
   const runtimeEditorRef = useRef<RuntimeEditorHandle>(null);
@@ -1004,27 +1002,13 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
     catch (error) { onError(error, 'Unable to undo the last regeneration.'); await loadTrips(); }
     finally { setBusy(false); }
   }
-  async function importTripsCsv(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.currentTarget.files?.[0];
-    event.currentTarget.value = '';
-    if (!file) return;
-    try {
-      const parsed = parseTripTableCsv(await file.text());
-      let preview: TripTableImportPreview | undefined;
-      if (parsed.rows.length) preview = await tripService.previewTripTableImport({ scenarioId: records.scenario.id, routeId: aggregate.route.id, serviceDayId, directionId, tripProfileId }, parsed.rows);
-      setTripImportPreview({ preview, issues: parsed.issues });
-    } catch (error) { setTripImportPreview({ issues: [userFacingError(error, 'Unable to review the Trips CSV. Check that it is a file exported from Trips, then try again.')] }); }
-  }
-  async function applyTripsCsvImport() {
-    if (!tripImportPreview?.preview || tripImportPreview.issues.length || tripImportPreview.preview.findings.some((finding) => finding.severity === 'error')) return;
-    setBusy(true);
-    try { await tripService.applyTripTableImport(tripImportPreview.preview); setTripImportPreview(undefined); setSelectedTripIds([]); clearTripShiftHistory(); await loadTrips(); }
-    catch (error) { onError(error, 'Unable to import the Trips CSV. Review the file and try again.'); await loadTrips(); }
-    finally { setBusy(false); }
-  }
   function exportTripsCsv() {
     const safeName = `${aggregate.route.name || 'route'}-${selectedDay?.name || 'service-day'}-${selectedTripProfile?.name || 'trip-profile'}`.replaceAll(/[^a-z0-9]+/gi, '-').replaceAll(/^-|-$/g, '') || 'trips';
-    download(`${safeName}-trips.csv`, tripTableCsv(trips, patterns, (nodeId) => aggregate.nodes.find((node) => node.id === nodeId)?.shortName || aggregate.nodes.find((node) => node.id === nodeId)?.name || 'Unnamed point',), 'text/csv;charset=utf-8');
+    const direction = directions.find((item) => item.id === directionId);
+    const nodeName = (nodeId: string) => aggregate.nodes.find((node) => node.id === nodeId)?.shortName || aggregate.nodes.find((node) => node.id === nodeId)?.name || 'Unnamed point';
+    const columns = [...(direction?.columns ?? [])].sort((left, right) => left.sequence - right.sequence).map((column) => ({ id: column.id, name: column.labelOverride || nodeName(column.nodeId) }));
+    const blockLabels = new Map([...tripBlockByTripId].map(([tripId, block]) => [tripId, block.label]));
+    download(`${safeName}-trips.csv`, tripTableCsv({ trips, patterns, directionName: direction?.name ?? '', columns, blockLabels, connections: tripConnections }), 'text/csv;charset=utf-8');
   }
   const parsedShiftSeconds = parseShiftSeconds(shiftMinutes);
   const canShiftSelectedTrips = selectedTripIds.length > 0 && parsedShiftSeconds !== undefined;
@@ -1106,7 +1090,6 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
       { id: 'copy-day', label: 'Copy Trips from day…', disabled: tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => setTripCopyOpen(true) },
     ] },
     { label: 'Data', items: [
-      { id: 'import-trips-csv', label: 'Import Trips CSV…', disabled: tripProfileBusy || busy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => tripsCsvInputRef.current?.click() },
       { id: 'export-trips-csv', label: 'Export Trips CSV', disabled: !trips.length, onSelect: exportTripsCsv },
     ] },
     { label: 'Delete', items: [{ id: 'delete', label: 'Delete selected…', destructive: true, disabled: !selectedTripIds.length || busy || tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : !selectedTripIds.length ? 'Select one or more Trips.' : undefined, onSelect: () => void requestTripDeletion(selectedTripIds) }] },
@@ -1149,7 +1132,6 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
     </section>
     <section className="workflow-section" aria-label="Trips section">
       <div className="section-title"><div><h2>Trips</h2></div><div className="section-actions section-header-actions"><MenuButton fieldLabel="Profile" label={selectedTripProfile?.name ?? 'Select profile'} menuLabel="Trip Profile" groups={tripProfileMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} /><MenuButton fieldLabel="Blocking Scenario" label={selectedBlockingScenario?.name ?? 'No Blocking Scenario'} menuLabel="Blocking Scenario" groups={tripBlockingScenarioMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} /><span className="action-separator" aria-hidden="true" /><MenuButton label="Actions" menuLabel="Trip actions" groups={tripActionsMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} triggerRef={tripsActionsRef} /></div></div>
-      <input ref={tripsCsvInputRef} className="visually-hidden" tabIndex={-1} type="file" accept=".csv,text/csv" aria-label="Import Trips CSV" onChange={(event) => void importTripsCsv(event)} />
       {tripsWithChangedRuntimes.length > 0 && <p className="section-status"><span className="runtime-change-indicator">Run Times Have Changed</span></p>}
       {staleReasons && <p className="section-status" role="status">{staleTripNoticeText(staleReasons)}</p>}
       {tripBlockAssignmentStatus && <p className="section-status" role="status">{tripBlockAssignmentStatus}</p>}
@@ -1184,7 +1166,6 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
     {buildOpen && <BuildTripsDrawer tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} serviceDayId={serviceDayId} tripProfileId={tripProfileId} patterns={patterns} profileName={selectedProfile?.name} initialValues={buildValues.current} onValuesChange={(values) => { buildValues.current = values; }} onDone={async () => { buildValues.current = EMPTY_BUILD_VALUES; closeBuildDrawer(); clearTripShiftHistory(); await loadTrips(); }} onClose={closeBuildDrawer} />}
     {tripDeletion && <DeleteTripsDialog tripCount={tripDeletion.tripIds.length} affectedBlockCount={tripDeletion.affectedBlockIds.length} onDelete={() => void deleteTrips()} onClose={() => setTripDeletion(undefined)} busy={busy} />}
     {recalculationTripIds.length > 0 && <RecalculationDialog tripService={tripService} tripIds={recalculationTripIds} trips={trips} patterns={aggregate.patterns} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} onDone={finishRecalculation} onClose={() => setRecalculationTripIds([])} />}
-    {tripImportPreview && <TripTableImportDialog preview={tripImportPreview.preview} issues={tripImportPreview.issues} patterns={aggregate.patterns} busy={busy} onConfirm={() => void applyTripsCsvImport()} onClose={() => setTripImportPreview(undefined)} />}
     {runtimeCopyOpen && selectedDay && <RuntimeDayCopyDialog tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} routeName={aggregate.route.name || 'Untitled route'} targetDay={selectedDay} days={days} patterns={aggregate.patterns.filter(isUsablePattern)} onDone={completeRuntimeCopy} onClose={closeRuntimeCopy} onError={onError} />}
     {tripCopyOpen && selectedDay && <TripDayCopyDialog tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} tripProfileId={tripProfileId} routeName={aggregate.route.name || 'Untitled route'} tripProfileName={(records.tripProfiles ?? []).find((profile) => profile.id === tripProfileId)?.name || 'Trip Profile'} targetDay={selectedDay} days={days} patterns={aggregate.patterns} onDone={completeTripCopy} onClose={closeTripCopy} onError={onError} />}
     {batchPatternChangeOpen && <BatchPatternChangeDialog tripService={tripService} tripIds={selectedTripIds} patterns={patterns} trips={trips} onDone={completeTripCopy} onClose={closeBatchPatternChange} onError={onError} />}
@@ -1335,21 +1316,6 @@ function RuntimePasteDialog({ service, baseProfile, pattern, nodes, initialText,
   </ModalDialog>;
 }
 
-function TripTableImportDialog({ preview, issues, patterns, busy, onConfirm, onClose }: { preview?: TripTableImportPreview; issues: string[]; patterns: RoutePattern[]; busy: boolean; onConfirm: () => void; onClose: () => void }) {
-  const findings = preview?.findings ?? [];
-  const errors = findings.filter((finding) => finding.severity === 'error');
-  const canImport = Boolean(preview?.trips.length) && issues.length === 0 && errors.length === 0 && !busy;
-  return <ModalDialog labelledBy="trip-import-title" className="confirm-dialog trip-import-dialog" onClose={onClose} busy={busy}>
-    <h2 id="trip-import-title">Review Trips CSV</h2>
-    {preview && <p>{preview.createdCount} new · {preview.updatedCount} updated in the selected Route, Direction, service day, and Trip Profile.</p>}
-    {!preview && !issues.length && <p>No importable rows were found.</p>}
-    {(issues.length > 0 || errors.length > 0) && <section className="runtime-findings" role="alert"><strong>Fix the CSV before importing</strong><ul>{issues.map((issue) => <li key={issue}>{issue}</li>)}{errors.map((finding, index) => <li key={`${finding.entityId}-${finding.messageKey}-${index}`}>{userMessage(finding)}</li>)}</ul></section>}
-    {preview && preview.trips.length > 0 && <div className="trip-import-preview"><table><thead><tr><th scope="col">Trip</th><th scope="col">Pattern</th><th scope="col">First</th><th scope="col">Last</th></tr></thead><tbody>{preview.trips.slice(0, 8).map((trip) => <tr key={trip.id}><td>{trip.publicLabel || `Trip departing ${trip.stopTimes[0] ? formatServiceTime(trip.stopTimes[0].time, trip.stopTimes[0].time % 60 !== 0) : '—'}`}</td><td>{patterns.find((pattern) => pattern.id === trip.patternId)?.name || 'Unnamed Pattern'}</td><td>{trip.stopTimes[0] ? formatServiceTime(trip.stopTimes[0].time, trip.stopTimes[0].time % 60 !== 0) : '—'}</td><td>{trip.stopTimes.at(-1) ? formatServiceTime(trip.stopTimes.at(-1)!.time, trip.stopTimes.at(-1)!.time % 60 !== 0) : '—'}</td></tr>)}</tbody></table>{preview.trips.length > 8 && <small>Showing 8 of {preview.trips.length} rows.</small>}</div>}
-    {findings.some((finding) => finding.severity === 'warning') && <p role="status">{findings.filter((finding) => finding.severity === 'warning').map(userMessage).join(' ')}</p>}
-    <div className="dialog-actions"><button type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="primary" type="button" onClick={onConfirm} disabled={!canImport}>{busy ? 'Importing…' : `Import ${preview?.trips.length ?? 0} Trips`}</button></div>
-  </ModalDialog>;
-}
-
 function formatTripTableClock(value: number, roundToMinute: boolean): string {
   const display = roundToMinute ? roundServiceTimeToMinute(value) : value;
   return formatServiceTime(display, display % 60 !== 0);
@@ -1431,8 +1397,6 @@ function ScheduleTable({ trips, previewTrips, stagedShiftSeconds, draft, pattern
   const tableHeader = <thead><tr><th scope="col" className="trip-selection-column"><input type="checkbox" aria-label="Select all trips" checked={allTripsSelected} disabled={busy} onChange={(event) => onSelectAll(event.target.checked)} /></th><th scope="col" className="trip-pattern-column">Pattern</th>{columns.map((column) => <th scope="col" className="trip-timepoint-column" key={column.id}>{columnName(column)}</th>)}<th scope="col" className="trip-run-time-column">Run Time</th><th scope="col" className="trip-connection-column">Layover</th><th scope="col" className="trip-connection-column">Deadhead</th><th scope="col" className="trip-next-trip-column">Next Trip</th><th scope="col" className="trip-block-column">Block</th><th scope="col" className="trip-actions-column"><span className="visually-hidden">Actions</span></th></tr></thead>;
   return <>{<div className={showRuntimeBands ? 'schedule-band-view' : undefined}>{showRuntimeBands && <div className="runtime-band-legend" aria-label="Runtime band legend">{visibleBands.map((band) => <span key={band.id}><i style={{ backgroundColor: bandColor(band.id) }} />{band.label} {formatServiceTime(band.startTime)}–{formatServiceTime(band.endTime)}</span>)}</div>}<div ref={scheduleViewportRef} className="table-scroll data-grid schedule-table"><table>{tableHeader}<tbody>{draft && <DraftTripRow draft={draft} patterns={patterns} columns={columns} onChange={onDraftChange} onSave={onDraftSave} onCancel={onDraftCancel} busy={busy} />}{trips.map((savedTrip, tripIndex) => { const trip = previewById.get(savedTrip.id) ?? savedTrip; const pattern = patterns.find((item) => item.id === trip.patternId); const rowView = view.rows.get(savedTrip.id); const runtime = rowView?.runTimeSeconds; const singleBand = rowView?.singleBand; const segments = rowView?.segments; const duplicate = rowView?.duplicate ?? false; const runtimesChanged = changedRuntimeTripIds.has(trip.id); const staged = previewById.has(savedTrip.id) && stagedLabel; const assignedBlock = blockAssignments.get(savedTrip.id); const tripConnection = assignedBlock ? tripConnections.get(savedTrip.id) : undefined; const blockWarning = assignedBlock ? blockWarnings.get(savedTrip.id)?.join('\n') : undefined; const rowClass = [selectedIds.includes(trip.id) && 'trip-row-selected', runtimesChanged && 'trip-row-runtime-changed', staged && 'trip-row-staged-shift'].filter(Boolean).join(' ') || undefined; return <tr key={trip.id} className={rowClass}><td className="trip-selection-column"><input type="checkbox" aria-label={`Select ${pattern?.name || 'trip'}`} checked={selectedIds.includes(trip.id)} disabled={busy} onClick={(event) => onToggle(trip.id, tripIndex, event.shiftKey)} /></td><td className="trip-pattern-column"><select className="trip-pattern-select" aria-label="Trip pattern" title={pattern?.name} value={trip.patternId} disabled={busy} onChange={(event) => void onPatternChange(savedTrip, event.target.value)}>{patterns.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{runtimesChanged && <span className="runtime-changed-note">Run times changed</span>}{staged && <span className="staged-shift-note">{staged}</span>}{duplicate && <span className="duplicate-note">Duplicate departure</span>}</td>{columns.map((column) => { const point = pattern ? pointFor(pattern, column.id) : undefined; const time = point && trip.stopTimes.find((item) => item.patternPointId === point.id)?.time; const segmentIndex = pattern?.points.findIndex((item) => item.id === point?.id) ?? -1; const contribution = segmentIndex > 0 && time !== undefined ? segments?.[segmentIndex - 1]?.contributions ?? (singleBand ? [{ bandId: singleBand.id, bandLabel: singleBand.label, seconds: 1 }] : undefined) : undefined; const total = contribution?.reduce((sum, part) => sum + part.seconds, 0) ?? 0; let percent = 0; const stops = contribution?.map((part) => { const start = percent; percent += total ? part.seconds / total * 100 : 100; return `${bandColor(part.bandId)} ${start}% ${percent}%`; }); const detail = singleBand?.label ?? contribution?.map((part) => `${part.bandLabel}: ${formatRuntimeDuration(Math.round(part.seconds))}`).join(' + '); const exactTime = time === undefined ? undefined : formatTripTableClock(time, false); const roundedTime = time === undefined ? undefined : formatTripTableClock(time, roundDisplayedTimes); const headway = showHeadways && time !== undefined ? headwaysByColumn.get(column.id)?.get(trip.id) : undefined; const firstAtPoint = Boolean(headway && headway.previousTime === undefined); const displayedValue = time === undefined ? '—' : headway?.previousTime === undefined ? roundedTime : formatTripConnectionDuration(time - headway.previousTime); const headwayTitle = headway ? headway.previousTime === undefined ? `First scheduled time: ${exactTime}` : `Headway from ${formatTripTableClock(headway.previousTime, false)} to ${exactTime}` : undefined; const cellTitle = [detail, headwayTitle, roundDisplayedTimes && exactTime !== roundedTime ? `Exact: ${exactTime}` : undefined].filter(Boolean).join(' · '); return <td className={`trip-timepoint-column${firstAtPoint ? ' trip-headway-first' : ''}`} key={column.id} style={stops?.length ? { backgroundImage: `linear-gradient(90deg, ${stops.join(', ')})` } : undefined} title={cellTitle || undefined}>{displayedValue}</td>; })}<td className="trip-run-time-column">{runtime === undefined ? '—' : formatRuntimeDuration(runtime)}</td><td className="trip-connection-column">{tripConnection?.connection.usableLayoverSeconds === undefined ? '' : formatTripConnectionDuration(tripConnection.connection.usableLayoverSeconds)}</td><td className="trip-connection-column">{tripConnection?.connection.deadhead ? formatTripConnectionDuration(tripConnection.deadheadSeconds) : ''}</td><td className="trip-next-trip-column">{tripConnection?.nextTripStart === undefined ? '' : formatTripTableClock(tripConnection.nextTripStart, roundDisplayedTimes)}</td><td className="trip-block-column"><div className="trip-block-content"><TripBlockAssignmentControl trip={savedTrip} patternName={pattern?.name || 'Trip'} assignedBlock={assignedBlock} options={blockOptions} disabled={blockAssignmentDisabled} onChoose={(blockId, trigger) => onAssignBlock(savedTrip, blockId, trigger)} onUnassign={(trigger) => onUnassignBlock(savedTrip, trigger)} />{blockWarning && <span className="trip-block-warning" role="img" aria-label={blockWarning} title={blockWarning} tabIndex={0}>!</span>}</div></td><td className="trip-actions-column"><button className="icon-button icon-button--danger" disabled={busy} onClick={() => onDelete(savedTrip)} aria-label="Delete trip" title="Delete trip"><TrashIcon /></button></td></tr>; })}{!trips.length && !draft && <tr><td colSpan={columns.length + 8} className="table-empty">Use Build Trips or Add Trip to begin this schedule.</td></tr>}</tbody></table></div></div>}{stickyHeaderMetrics && createPortal(<div ref={stickyHeaderViewportRef} className="table-scroll data-grid schedule-table sticky-schedule-header" role="region" aria-label="Trips table headings while scrolling" style={{ left: `${stickyHeaderMetrics.left}px`, width: `${stickyHeaderMetrics.width}px`, height: `${stickyHeaderMetrics.height}px` }}><table style={{ width: `${stickyHeaderMetrics.tableWidth}px`, minWidth: `${stickyHeaderMetrics.tableWidth}px`, tableLayout: 'fixed' }}><colgroup>{stickyHeaderMetrics.columnWidths.map((width, index) => <col key={index} style={{ width: `${width}px` }} />)}</colgroup>{tableHeader}</table></div>, document.body)}</>;
 }
-
-function formatTripConnectionDuration(seconds?: number) { return seconds === undefined || !Number.isInteger(seconds) ? '' : `${seconds < 0 ? '−' : ''}${formatServiceTime(Math.abs(seconds), seconds % 60 !== 0)}`; }
 
 function blockConnectionWarningMessage(ruleId: string): string {
   const messages: Record<string, string> = {
