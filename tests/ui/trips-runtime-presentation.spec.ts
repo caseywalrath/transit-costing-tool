@@ -146,7 +146,7 @@ test('Undo and Redo change the Shift history only after the preview resolves', a
   await expect(undo).toBeEnabled();
 });
 
-test('the Trips CSV import preview names the Pattern and the Trip, not their ids', async ({ page }) => {
+test('the Trips CSV export mirrors the Trips table and contains no ids', async ({ page }) => {
   await createShiftReadySchedule(page, '06:20');
   await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
   const downloadPromise = page.waitForEvent('download');
@@ -158,26 +158,15 @@ test('the Trips CSV import preview names the Pattern and the Trip, not their ids
   const csv = Buffer.concat(chunks).toString('utf8');
   const lines = csv.trim().split(/\r?\n/);
   const header = lines[0].split(',');
-  const labelIndex = header.indexOf('publicLabel');
-  const first = lines[1].split(',');
-  first[labelIndex] = 'Early A';
-  lines[1] = first.join(',');
+  expect(header.slice(0, 2)).toEqual(['Direction', 'Pattern']);
+  expect(header.slice(-5)).toEqual(['Run Time', 'Layover', 'Deadhead', 'Next Trip', 'Block']);
+  expect(lines).toHaveLength(4);
   const ids = await runInPage(page, 'return { pattern: (await e.db.patterns.toArray())[0], trips: (await e.db.trips.toArray()).map((trip) => trip.id) }');
-
-  await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Import Trips CSV…' }).click();
-  await page.locator('input[aria-label="Import Trips CSV"]').setInputFiles({ name: 'trips.csv', mimeType: 'text/csv', buffer: Buffer.from(lines.join('\r\n')) });
-  const dialog = page.getByRole('dialog', { name: 'Review Trips CSV' });
-  await expect(dialog).toBeVisible();
-  const rows = dialog.locator('.trip-import-preview tbody tr');
-  await expect(rows).toHaveCount(3);
-  const text = await dialog.locator('.trip-import-preview').innerText();
-  expect(text).not.toContain(ids.pattern.id);
-  for (const id of ids.trips) expect(text).not.toContain(id);
-  await expect(rows.nth(0).locator('td').nth(0)).toHaveText('Early A');
-  await expect(rows.nth(0).locator('td').nth(1)).toHaveText(ids.pattern.name);
-  // A Trip with no label is named by its pattern and first departure.
-  await expect(rows.nth(1).locator('td').nth(0)).toHaveText('Trip departing 6:10');
+  expect(lines[1].split(',')[1]).toBe(ids.pattern.name);
+  expect(lines[1].split(',')[2]).toBe('6:00');
+  expect(csv).not.toContain(ids.pattern.id);
+  for (const id of ids.trips) expect(csv).not.toContain(id);
+  expect(csv).not.toContain('point:');
 });
 
 test('a render error shows a recoverable message instead of an empty page, and another tab still opens', async ({ page }) => {
