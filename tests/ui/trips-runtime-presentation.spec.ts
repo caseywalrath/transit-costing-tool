@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule } from './support/tripsWorkspace';
-import { editRuntimeCell, openRuntimes, runCommand, runtimeCell, scopeField } from './support/ui';
+import { editRuntimeCell, openRuntimes, runCommand, runtimeCell, scopeField, shiftBar } from './support/ui';
 
 test.setTimeout(120_000);
 
@@ -105,7 +105,7 @@ test('Undo and Redo change the Shift history only after the preview resolves', a
   await createShiftReadySchedule(page, '06:20');
   await page.locator('.trips-workspace .schedule-table tbody tr').first().getByRole('checkbox').check();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
+  const drawer = shiftBar(page);
   const redo = drawer.getByRole('button', { name: 'Redo', exact: true });
   const undo = drawer.getByRole('button', { name: 'Undo', exact: true });
   await drawer.getByRole('button', { name: /min later/ }).click();

@@ -35,4 +35,5 @@ A UI/UX review in October 2026 found inconsistent visual hierarchy (every panel 
 - The subtle text colour is #62707b (user decision O-1, 2026-10-27), not the #7b8a95 shown in the round-two mockups, so captions meet WCAG AA contrast.
 - Implementation added two things the design did not name: a compact copy of the Trips selection bar pinned above the fixed duplicate heading row (user request after UR-6c, plan item O-2), and the axe `target-size` rule beside `color-contrast` (UR-11).
 - At acceptance (UR-13) the user added: a **Pattern short name** (the former Label field) and Node short names, generated from the full names when not entered, shown in the Trips and Blocking tables; sort icons only on the sorted column; stacked Route details; and role tokens for the spacing between the scale steps.
+- After acceptance the user approved UR-15 and UR-16: Shift is a mode of the Trips selection bar instead of a floating panel, and blank projects, scenarios, and Routes show their next action as a button with a Route setup line.
 - Dark mode, density options, a command palette, glossary tooltips, and rule-based selection remain deferred.

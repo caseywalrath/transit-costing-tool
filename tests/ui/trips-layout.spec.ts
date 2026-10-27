@@ -2,7 +2,7 @@
 // Pattern column is a chip. These checks drive the real app, as the other Trips specs do.
 import { expect, test } from '@playwright/test';
 import { createShiftReadySchedule, openGoldenTrips } from './support/tripsWorkspace';
-import { editRuntimeCell, openRuntimes, region, runCommand, runtimeCell } from './support/ui';
+import { editRuntimeCell, openRuntimes, region, runCommand, runtimeCell, shiftBar } from './support/ui';
 
 test.setTimeout(90_000);
 
@@ -174,7 +174,7 @@ test('the selection bar is pinned, compact, above the pinned table headings whil
 
   // It works from there: Shift… opens the drawer for the selected trip.
   await bar.getByRole('button', { name: 'Shift…', exact: true }).click();
-  await expect(page.getByRole('complementary', { name: 'Shift selected trips' })).toBeVisible();
+  await expect(shiftBar(page)).toBeVisible();
   await page.getByRole('button', { name: 'Discard', exact: true }).last().click();
 
   await page.evaluate(() => window.scrollTo(0, 0));

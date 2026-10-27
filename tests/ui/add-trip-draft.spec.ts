@@ -2,7 +2,7 @@
 // Trip Profile, or tab changes. It asks Cancel or Discard first; an empty row is dropped without a question.
 import { expect, test, type Page } from '@playwright/test';
 import { createShiftReadySchedule } from './support/tripsWorkspace';
-import { editRuntimeCell, runCommand, scopeField } from './support/ui';
+import { editRuntimeCell, runCommand, scopeField, shiftBar } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
@@ -98,7 +98,7 @@ test('with a staged Shift and an entered row open, each press asks one question:
   // A staged Shift needs a selected Trip, and Add trip is disabled while one is staged, so stage first with the row already open.
   await page.locator('.schedule-table tbody input[type="checkbox"]').first().check();
   await runCommand(page, 'trips.shift');
-  await page.getByRole('complementary', { name: 'Shift selected trips' }).getByRole('button', { name: /min earlier/ }).click();
+  await shiftBar(page).getByRole('button', { name: /min earlier/ }).click();
   await expect(page.getByText('Staged 1 minute earlier')).toBeVisible();
 
   const day = scopeField(page, 'Day');

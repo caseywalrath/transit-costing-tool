@@ -93,7 +93,6 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   const [shiftDiscardAction, setShiftDiscardAction] = useState<(() => void)>();
   const [runtimeLeave, setRuntimeLeave] = useState<{ action: () => void; leavesContext?: boolean }>();
   const [draftTripDiscardAction, setDraftTripDiscardAction] = useState<(() => void)>();
-  const shiftDrawerRef = useRef<HTMLElement>(null);
   const lastShiftControl = useRef<HTMLButtonElement | null>(null);
   const buildValues = useRef<BuildTripsValues>(EMPTY_BUILD_VALUES);
   const [runtimeEditorState, setRuntimeEditorState] = useState<RuntimeEditorState>({ dirty: false, saving: false, changeCount: 0 });
@@ -353,7 +352,9 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
     const active = document.activeElement;
     if (active && active !== document.body && !active.matches(':disabled')) return;
     const pressed = lastShiftControl.current;
-    const target = pressed?.isConnected && !pressed.disabled ? pressed : shiftDrawerRef.current?.querySelector<HTMLElement>('button:not(:disabled)');
+    // The live shift bar is the one outside the hidden slot that holds the table's own copy while the pinned copy shows.
+    const liveBar = [...document.querySelectorAll<HTMLElement>('[data-shift-bar]')].find((bar) => !bar.closest('.selection-bar-slot--pinned'));
+    const target = pressed?.isConnected && !pressed.disabled && !pressed.closest('.selection-bar-slot--pinned') ? pressed : liveBar?.querySelector<HTMLElement>('button:not(:disabled)');
     target?.focus({ preventScroll: true });
   }, [busy, shiftDrawerOpen]);
 
@@ -409,7 +410,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
       const preview = await tripService.previewStagedTripShift(shiftRequest(offsetSeconds));
       setShiftPreview(preview); setShiftOperations(operations); setShiftError('');
       return true;
-    } catch (error) { setShiftError(shiftErrorText(error, 'Unable to preview the selected trips. Close the shift drawer and try again.')); return false; }
+    } catch (error) { setShiftError(shiftErrorText(error, 'Unable to preview the selected trips. Discard the shift and try again.')); return false; }
     finally { setBusy(false); }
   }
   // Undo and Redo history changes only after the preview resolves (finding 5-026): a refused preview leaves it as it was.
@@ -422,7 +423,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
     try {
       setBusy(true);
       setShiftPreview(await tripService.previewStagedTripShift(shiftRequest(0, [...selectedTripIds])));
-    } catch (error) { setShiftError(shiftErrorText(error, 'Unable to preview the selected trips. Close the shift drawer and try again.')); }
+    } catch (error) { setShiftError(shiftErrorText(error, 'Unable to preview the selected trips. Discard the shift and try again.')); }
     finally { setBusy(false); }
   }
   function discardStagedShift(after?: () => void) {
@@ -595,7 +596,23 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   ];
   const canUnassignSelected = selectedTripIds.some((id) => tripBlockByTripId.has(id));
   // The selection bar. The table draws it above its rows and, compact, above its pinned headings (only one copy is live at a time).
-  const renderSelectionBar = (compact: boolean) => selectedTripIds.length > 0 ? <SelectionBar compact={compact} count={selectedTripIds.length} noun="trip" ariaLabel="Selected trips" onClear={clearTripSelection}>
+  // Shift (UR-15) is a mode of the selection bar: while it is open the bar holds the shift controls instead of the selection commands.
+  // The compact copy, pinned above the fixed headings, keeps the step buttons, the net shift, Discard, and Done.
+  const shiftTripCount = shiftPreview?.selectedTripIds.length ?? selectedTripIds.length;
+  const renderShiftBar = (compact: boolean) => <div className={compact ? 'selection-bar selection-bar--compact shift-bar' : 'selection-bar shift-bar'} role="toolbar" aria-label="Shift selected trips" data-shift-bar onClickCapture={(event) => { const control = (event.target as HTMLElement).closest('button'); if (control) lastShiftControl.current = control; }}>
+    <b className="selection-bar__count">Shift {shiftTripCount} {shiftTripCount === 1 ? 'trip' : 'trips'}</b>
+    <button type="button" disabled={!canShiftSelectedTrips || busy || tripProfileBusy} title={parsedShiftSeconds === undefined ? 'Enter a whole number of minutes above 0.' : undefined} onClick={() => void appendStagedShift(-(parsedShiftSeconds ?? 0))}><span aria-hidden="true">← </span>{shiftStepLabel} earlier</button>
+    <button type="button" disabled={!canShiftSelectedTrips || busy || tripProfileBusy} title={parsedShiftSeconds === undefined ? 'Enter a whole number of minutes above 0.' : undefined} onClick={() => void appendStagedShift(parsedShiftSeconds ?? 0)}>{shiftStepLabel} later<span aria-hidden="true"> →</span></button>
+    {!compact && <fieldset className="shift-step-size" disabled={tripProfileBusy || busy}><legend>Step</legend>{SHIFT_STEP_PRESETS.map((minutes) => <label key={minutes} className="shift-step-preset"><input type="radio" name="shift-step" value={minutes} checked={shiftMinutes.trim() === String(minutes)} onChange={() => setShiftMinutes(String(minutes))} />{minutes}</label>)}<label className="shift-step-other"><input aria-label="Step minutes" type="number" min="1" step="1" inputMode="numeric" value={shiftMinutes} aria-invalid={parsedShiftSeconds === undefined} aria-describedby={parsedShiftSeconds === undefined ? 'shift-step-error' : undefined} onChange={(event) => setShiftMinutes(event.target.value)} /> min</label></fieldset>}
+    <span className="shift-net" role="status"><strong>{netShiftLabel}</strong></span>
+    {!compact && <><button type="button" disabled={!shiftOperations.length || busy} onClick={() => void undoStagedShift()}>Undo</button><button type="button" disabled={!redoShiftOperations.length || busy} onClick={() => void redoStagedShift()}>Redo</button></>}
+    <span className="grow" />
+    <button type="button" onClick={() => discardStagedShift()} disabled={busy}>Discard</button>
+    <button className="primary" type="button" onClick={() => void completeStagedShift()} disabled={busy || Boolean(shiftError)}>{busy ? 'Saving…' : 'Done'}</button>
+    {!compact && parsedShiftSeconds === undefined && <p id="shift-step-error" className="field-error shift-bar__message">Enter a whole number of minutes above 0.</p>}
+    {shiftError && <p className="field-error shift-bar__message" role="alert">{shiftError}</p>}
+  </div>;
+  const renderSelectionBar = (compact: boolean) => shiftDrawerOpen ? renderShiftBar(compact) : selectedTripIds.length > 0 ? <SelectionBar compact={compact} count={selectedTripIds.length} noun="trip" ariaLabel="Selected trips" onClear={clearTripSelection}>
     <button type="button" disabled={busy || tripProfileBusy || shiftDrawerOpen} title={shiftDrawerOpen ? 'The shift drawer is already open.' : undefined} onClick={() => void openShiftDrawer()}>Shift…</button>
     <button type="button" disabled={busy || tripProfileBusy || shiftOperations.length > 0} title={shiftOperations.length ? 'Discard the staged shift first.' : undefined} onClick={() => (selectedTrips.length === 1 ? setTripPatternChangeOpen(true) : setBatchPatternChangeOpen(true))}>Change pattern…</button>
     <button type="button" disabled={busy || tripProfileBusy || shiftOperations.length > 0 || !selectedChangedRuntimeTripIds.length} title={shiftOperations.length ? 'Discard the staged shift first.' : !selectedChangedRuntimeTripIds.length ? 'Select trips with changed runtimes.' : undefined} onClick={() => setRecalculationTripIds([...selectedChangedRuntimeTripIds])}>Regenerate…</button>
@@ -668,15 +685,6 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
         });
       })} onSelectAll={(selected) => requestShiftScopeChange(() => { selectionAnchorId.current = undefined; setSelectedTripIds(selected ? trips.map((trip) => trip.id) : []); })} onSelectBy={selectTripsBy} onDelete={(trip) => requestShiftScopeChange(() => void requestTripDeletion([trip.id]))} onDraftChange={setDraftTrip} onDraftSave={() => void saveDraftTrip()} onDraftCancel={() => setDraftTrip(undefined)} busy={busy || tripProfileBusy} />
     </WorkSurface>
-    {shiftDrawerOpen && <aside ref={shiftDrawerRef} className="shift-drawer shift-drawer--compact" role="complementary" aria-labelledby="shift-drawer-title" onClickCapture={(event) => { const control = (event.target as HTMLElement).closest('button'); if (control) lastShiftControl.current = control; }}>
-      <header><h2 id="shift-drawer-title">Shift selected trips</h2><button className="icon-button" type="button" aria-label="Close shift drawer" title="Close shift drawer" onClick={requestCloseShiftDrawer} disabled={busy}>×</button></header>
-      <p className="shift-net" role="status"><strong>{netShiftLabel}</strong><span>{shiftPreview?.selectedTripIds.length ?? selectedTripIds.length} selected</span></p>
-      <div className="shift-steps"><button type="button" disabled={!canShiftSelectedTrips || busy || tripProfileBusy} onClick={() => void appendStagedShift(-(parsedShiftSeconds ?? 0))}><span aria-hidden="true">← </span>{shiftStepLabel} earlier</button><button type="button" disabled={!canShiftSelectedTrips || busy || tripProfileBusy} onClick={() => void appendStagedShift(parsedShiftSeconds ?? 0)}>{shiftStepLabel} later<span aria-hidden="true"> →</span></button></div>
-      <fieldset className="shift-step-size" disabled={tripProfileBusy || busy}><legend>Step</legend>{SHIFT_STEP_PRESETS.map((minutes) => <label key={minutes} className="shift-step-preset"><input type="radio" name="shift-step" value={minutes} checked={shiftMinutes.trim() === String(minutes)} onChange={() => setShiftMinutes(String(minutes))} />{minutes}</label>)}<label className="shift-step-other"><input aria-label="Step minutes" type="number" min="1" step="1" inputMode="numeric" value={shiftMinutes} aria-invalid={parsedShiftSeconds === undefined} aria-describedby={parsedShiftSeconds === undefined ? 'shift-step-error' : undefined} onChange={(event) => setShiftMinutes(event.target.value)} /> min</label></fieldset>
-      {parsedShiftSeconds === undefined && <p id="shift-step-error" className="field-error">Enter a whole number of minutes above 0.</p>}
-      {shiftError && <p className="field-error" role="alert">{shiftError}</p>}
-      <footer><button type="button" disabled={!shiftOperations.length || busy} onClick={() => void undoStagedShift()}>Undo</button><button type="button" disabled={!redoShiftOperations.length || busy} onClick={() => void redoStagedShift()}>Redo</button><span className="grow" /><button type="button" onClick={() => discardStagedShift()} disabled={busy}>Discard</button><button className="primary" type="button" onClick={() => void completeStagedShift()} disabled={busy || Boolean(shiftError)}>{busy ? 'Saving…' : 'Done'}</button></footer>
-    </aside>}
     {tripBlockAssignment?.operation === 'assign' && <TripBlockAssignmentDialog draft={tripBlockAssignment} blockingScenarioName={selectedBlockingScenario?.name ?? 'blocking scenario'} serviceDayName={selectedDay?.name ?? 'selected service day'} blocks={dayBlockingBlocks} blockOptions={tripBlockOptions} currentAssignments={tripBlockByTripId} onConfirm={(destinationId) => void confirmTripBlockAssignment(destinationId)} onClose={closeTripBlockAssignment} busy={busy} error={tripBlockAssignmentError} />}
     {tripBlockAssignment?.operation === 'unassign' && <TripBlockUnassignmentDialog draft={tripBlockAssignment} blockingScenarioName={selectedBlockingScenario?.name ?? 'blocking scenario'} serviceDayName={selectedDay?.name ?? 'selected service day'} blocks={dayBlockingBlocks} currentAssignments={tripBlockByTripId} onConfirm={() => void confirmTripBlockAssignment('')} onClose={closeTripBlockAssignment} busy={busy} error={tripBlockAssignmentError} />}
     {runtimeLeave && <RouteNavigationDraftDialog title="Save runtime changes before leaving?" text="The runtime profile has unsaved edits." onCancel={() => setRuntimeLeave(undefined)} onDiscard={() => { const { action, leavesContext } = runtimeLeave; setRuntimeLeave(undefined); runtimeEditorRef.current?.discard(); (leavesContext ? requestShiftAndDraftScopeChange : requestShiftScopeChange)(action); }} onSave={() => { const { action, leavesContext } = runtimeLeave; setRuntimeLeave(undefined); saveRuntimeThen(action, leavesContext); }} />}

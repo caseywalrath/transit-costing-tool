@@ -3,7 +3,7 @@
 // vertical scrolling; a fixed duplicate heading row appears once the real headings scroll above the viewport.
 import { expect, test, type Page } from '@playwright/test';
 import { createShiftReadySchedule, openGoldenTrips, settleFrames } from './support/tripsWorkspace';
-import { runCommand } from './support/ui';
+import { runCommand, shiftBar } from './support/ui';
 
 test.setTimeout(90_000);
 
@@ -107,7 +107,7 @@ test('restores the page and horizontal grid position after committing a Shift', 
   const shiftedRow = grid(page).locator('tbody tr').nth(60);
   const rowBefore = await shiftedRow.innerText();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
+  const drawer = shiftBar(page);
   await drawer.getByRole('button', { name: /min later/ }).click();
   await expect(page.getByText('Staged 1 minute later')).toBeVisible();
 

@@ -2,7 +2,7 @@
 // ⌘ adds to it. Every change goes through the staged-Shift check.
 import { expect, test, type Page } from '@playwright/test';
 import { openGoldenTrips } from './support/tripsWorkspace';
-import { runCommand } from './support/ui';
+import { runCommand, shiftBar } from './support/ui';
 
 test.setTimeout(120_000);
 
@@ -107,7 +107,7 @@ test('the select menu stays usable from the pinned headings, and a staged Shift 
   await expect(selected(page)).toHaveCount(0);
   await grid(page).locator('tbody tr').first().locator('input[type="checkbox"]').check();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
+  const drawer = shiftBar(page);
   await drawer.getByRole('button', { name: '1 min later' }).click();
   await expect(drawer.getByRole('status')).toContainText('1 minute later');
 
