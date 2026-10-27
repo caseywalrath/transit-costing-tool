@@ -1,8 +1,11 @@
 /* Route tab (UR-6a): supporting panels above, Nodes and Patterns as work surfaces below. */
 .route-workspace { display: grid; gap: var(--space-4); }
-.route-top-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+/* Route details stack their fields, so the two panels end at about the same height. */
+.route-top-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
 .route-bottom-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.6fr); gap: var(--space-4); align-items: start; }
-.route-details-fields { grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr) minmax(0, 1.6fr); margin-top: 0; }
+.route-details-fields { grid-template-columns: minmax(0, 1fr); margin-top: 0; }
+.service-days-table th:last-child, .service-days-table td:last-child { width: 9em; }
+.service-days-table td:last-child input { text-align: right; }
 .service-days-total { margin-top: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-note); }
 .service-days-total.value-invalid { color: var(--color-danger); }
 .table-add-row td, .table-add-row td:first-child { background: var(--color-surface); }

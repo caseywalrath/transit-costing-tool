@@ -1,22 +1,22 @@
 /* Phase 4 blocking workspace: route-scoped candidates and complete Block detail. */
-.blocking-workspace { display: grid; gap: 14px; max-width: 100%; }
+.blocking-workspace { display: grid; gap: var(--space-4); max-width: 100%; }
 .blocking-workspace h1 { margin: 0; font-size: var(--font-size-title); }
 /* BL-A. Side mode gives the Unassigned trips panel 34% of the width (at least 420px); rail mode narrows it to a 46px button. The first track is
    `max(420px, 34%)`, not `minmax(…)`, because a track list animates only between lengths, and the column change takes 200ms. */
-.blocking-top { display: grid; grid-template-columns: max(420px, 34%) minmax(0, 1fr); gap: 14px; align-items: start; min-width: 0; transition: grid-template-columns 200ms ease; }
+.blocking-top { display: grid; grid-template-columns: max(420px, 34%) minmax(0, 1fr); gap: var(--space-4); align-items: start; min-width: 0; transition: grid-template-columns 200ms ease; }
 .blocking-top--rail { grid-template-columns: 46px minmax(0, 1fr); }
 .blocking-top > * { min-width: 0; }
 @media (prefers-reduced-motion: reduce) { .blocking-top { transition: none; } }
-.unassigned-rail { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 46px; min-height: 180px; border: 1px solid var(--color-border); border-radius: var(--radius-panel); background: var(--color-surface); padding: var(--space-2) 0; color: var(--color-text-muted); cursor: pointer; }
+.unassigned-rail { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); width: 46px; min-height: 180px; border: 1px solid var(--color-border); border-radius: var(--radius-panel); background: var(--color-surface); padding: var(--space-2) 0; color: var(--color-text-muted); cursor: pointer; }
 .unassigned-rail:hover { background: var(--color-sunken); }
 .unassigned-rail__arrow { font-size: var(--font-size-label); }
-.unassigned-rail__badge { min-width: 24px; border: 1px solid; border-radius: var(--radius-pill); padding: 1px 6px; font-size: var(--font-size-label); font-weight: var(--font-weight-bold); line-height: 1.3; }
+.unassigned-rail__badge { min-width: 24px; border: 1px solid; border-radius: var(--radius-pill); padding: 1px var(--space-inline); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); line-height: 1.3; }
 .unassigned-rail__badge--ok { border-color: var(--color-ok); background: var(--color-ok-soft); color: var(--color-ok); }
 .unassigned-rail__badge--warn { border-color: var(--color-warn-border); background: var(--color-warn-soft); color: var(--color-warn); }
 .unassigned-rail__label { writing-mode: vertical-rl; transform: rotate(180deg); font-size: var(--font-size-note); font-weight: var(--font-weight-bold); white-space: nowrap; }
 .toggle-button { border-radius: var(--radius-pill); }
 .toggle-button[aria-pressed="true"] { border-color: var(--color-accent); background: var(--color-selection); color: var(--color-accent-strong); font-weight: var(--font-weight-bold); }
-.blocking-workspace .work-surface__context .menu-field { display: inline-flex; flex-direction: row; align-items: center; flex: none; gap: 6px; }
+.blocking-workspace .work-surface__context .menu-field { display: inline-flex; flex-direction: row; align-items: center; flex: none; gap: var(--space-inline); }
 .blocking-workspace .work-surface__context .menu-field .menu-trigger { width: auto; min-width: 0; }
 .blocking-workspace .selection-bar { margin-bottom: var(--space-2); }
 .blocking-workspace .selection-bar .subtle-danger { color: var(--color-danger); }
@@ -42,9 +42,10 @@
 .blocking-blocks-table .blocking-block-hours-column { width: 9.5%; }
 .blocking-blocks-table .blocking-block-percent-column { width: 8%; }
 .blocking-blocks-table .blocking-block-deadhead-column { width: 8%; }
-.blocking-blocks-table thead th:first-child .column-sort-button { padding-left: 0; }
-.blocking-blocks-table thead th:not(:first-child) .column-sort-button { position: relative; padding: 3px 0 3px var(--space-4); text-align: right; }
-.blocking-blocks-table thead th:not(:first-child) .column-sort-indicator { position: absolute; left: 3px; top: 50%; transform: translateY(-50%); }
+/* The sort icon sits beside its label: after it in the text column, before it in the right-aligned numeric columns. */
+.blocking-blocks-table thead .column-sort-button { display: flex; align-items: center; gap: var(--space-1); padding: 3px 0; }
+.blocking-blocks-table thead th:not(:first-child) .column-sort-button { justify-content: flex-end; padding-left: var(--space-1); }
+.blocking-blocks-table thead th:not(:first-child) .column-sort-indicator { order: -1; }
 .blocking-blocks-table tbody td:not(:first-child), .blocking-blocks-table tfoot td { text-align: right; }
 .blocking-block-name { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; }
 .blocking-block-name .link-button { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -62,7 +63,7 @@
 .blocking-trips-table .assign-button { width: 100%; max-width: 78px; min-width: 0; padding: 3px var(--space-1); font-size: var(--font-size-caption); white-space: nowrap; }
 .blocking-trips-table .sortable-filter-header { padding: 0; vertical-align: bottom; }
 /* The filter button sits in the heading's top-right corner and the label uses the full width below it, so narrow columns do not cut the label. */
-.blocking-trips-table .column-sort-button { display: flex; align-items: flex-end; gap: 2px; min-height: calc(var(--control-height) + var(--space-4)); padding: 3px 5px 6px; }
+.blocking-trips-table .column-sort-button { display: flex; align-items: flex-end; gap: var(--space-1); min-height: calc(var(--control-height) + var(--space-4)); padding: 3px 5px 6px; }
 .blocking-trips-table .column-sort-label { min-width: 0; }
 .blocking-trips-table .column-sort-indicator { flex: none; }
 .blocking-trips-table .column-filter-button { top: 2px; }
@@ -70,6 +71,8 @@
 .column-sort-button { display: block; width: 100%; min-height: 32px; border: 0; border-radius: 0; background: transparent; padding: 3px 28px 3px 5px; color: inherit; font-size: inherit; font-weight: inherit; line-height: 1.15; text-align: left; white-space: normal; }
 .column-sort-button:hover:not(:disabled) { background: var(--color-sunken); }
 .column-sort-indicator { color: var(--color-text-muted); font-size: var(--font-size-caption); line-height: 1; }
+.column-sort-indicator--idle { visibility: hidden; }
+.column-sort-button:hover .column-sort-indicator--idle, .column-sort-button:focus-visible .column-sort-indicator--idle { visibility: visible; }
 .column-filter-button { position: absolute; top: 3px; right: 2px; width: 24px; min-height: 24px; border: 0; border-radius: var(--radius-control); background: transparent; padding: 0; color: var(--color-text-muted); font-size: var(--font-size-caption); }
 .column-filter-button:hover:not(:disabled), .column-filter-button.active { background: var(--color-sunken); color: var(--color-accent-strong); }
 .column-filter-button.active::after { content: ''; position: absolute; top: var(--space-1); right: var(--space-1); width: 5px; height: 5px; border-radius: 50%; background: var(--color-accent); }

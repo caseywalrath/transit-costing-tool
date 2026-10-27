@@ -138,6 +138,7 @@ interface RoutePattern extends EntityMetadata {
   name: string;
   directionId?: EntityId;
   sequence?: number;
+  /** The pattern's short name ("Pattern short name" in the interface; called Label before the interface revision). */
   directionLabel?: string;
   notes?: string;
   points: PatternPoint[];

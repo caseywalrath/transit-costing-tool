@@ -1,7 +1,7 @@
-.app-shell { max-width: 1720px; margin: 0 auto; padding: 0 18px 30px; }
+.app-shell { max-width: 1720px; margin: 0 auto; padding: 0 var(--space-4) var(--space-5); }
 
 /* Application header (H-B). Row 1 is the app bar; row 2 is the scope bar and never wraps. */
-.app-header { margin: 0 -18px var(--space-3); }
+.app-header { margin: 0 calc(-1 * var(--space-4)) var(--space-3); }
 .app-bar { display: flex; align-items: center; gap: var(--space-4); height: 48px; padding: 0 var(--space-4); background: var(--color-surface); border-bottom: 1px solid var(--color-border); }
 .app-bar__brand { display: flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
 .app-bar__brand strong { font-size: var(--font-size-title); font-weight: var(--font-weight-bold); color: var(--color-text); }
@@ -13,7 +13,7 @@
 .tab.active, .tab.active:hover:not(:disabled) { background: transparent; border-bottom-color: var(--color-accent); color: var(--color-text); font-weight: var(--font-weight-semibold); }
 .tab:disabled { color: var(--color-text-subtle); background: transparent; }
 nav { display: flex; gap: 2px; }
-.save-status { display: inline-flex; align-items: center; gap: 6px; color: var(--color-text-muted); font-size: var(--font-size-note); white-space: nowrap; }
+.save-status { display: inline-flex; align-items: center; gap: var(--space-inline); color: var(--color-text-muted); font-size: var(--font-size-note); white-space: nowrap; }
 .save-status__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-ok); flex: none; }
 .save-status--saving .save-status__dot { background: var(--color-accent); }
 .save-status--error .save-status__dot { background: var(--color-danger); }
@@ -26,7 +26,7 @@ nav { display: flex; gap: 2px; }
 .scope-switchers { display: flex; align-items: center; gap: var(--space-1); flex: 0 1 auto; min-width: 0; }
 .scope-switchers__sep { color: var(--color-text-subtle); flex: none; }
 .scope-switchers .menu-button { flex: 0 1 auto; min-width: 0; }
-.menu-trigger.switcher { display: inline-flex; align-items: baseline; gap: 6px; width: 100%; min-width: 96px; border-color: transparent; background: transparent; padding: var(--space-1) var(--space-2); font-weight: var(--font-weight-semibold); }
+.menu-trigger.switcher { display: inline-flex; align-items: baseline; gap: var(--space-inline); width: 100%; min-width: 96px; border-color: transparent; background: transparent; padding: var(--space-1) var(--space-2); font-weight: var(--font-weight-semibold); }
 .menu-trigger.switcher:hover:not(:disabled) { border-color: var(--color-border); background: var(--color-surface); }
 .menu-trigger.switcher--project { max-width: 260px; }
 .menu-trigger.switcher--scenario { max-width: 220px; }

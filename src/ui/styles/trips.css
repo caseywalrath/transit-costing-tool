@@ -93,12 +93,12 @@
 
 /* Trips tab (UR-6c): Runtimes and Trips are work surfaces; the selection bar sits above the table. */
 .work-surface__context { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); min-width: 0; }
-.work-surface__context .menu-field, .runtimes-toolbar .menu-field { display: inline-flex; flex-direction: row; align-items: center; flex: none; gap: 6px; }
+.work-surface__context .menu-field, .runtimes-toolbar .menu-field { display: inline-flex; flex-direction: row; align-items: center; flex: none; gap: var(--space-inline); }
 .work-surface__context .menu-field .menu-trigger, .runtimes-toolbar .menu-field .menu-trigger { width: auto; min-width: 0; }
 .work-surface__actions .context-field select { width: auto; min-width: 180px; }
 .runtimes-surface .work-surface__header { border-bottom: 0; }
 .runtimes-surface:has(.runtimes-body) .work-surface__header { border-bottom: 1px solid var(--color-border-soft); }
-.disclosure { display: inline-flex; align-items: center; gap: 6px; min-height: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: var(--font-weight-bold); }
+.disclosure { display: inline-flex; align-items: center; gap: var(--space-inline); min-height: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: var(--font-weight-bold); }
 .disclosure:hover:not(:disabled), .disclosure:disabled { background: transparent; color: inherit; }
 .disclosure__arrow { width: var(--space-3); color: var(--color-text-muted); font-size: var(--font-size-note); }
 .runtimes-summary { flex: 1 1 320px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
