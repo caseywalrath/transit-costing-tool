@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
 import type { BlockActivity, BlockingBlock, RoutePattern, RuntimeBand, RuntimeProfile, Trip, TripRegenerationUndo } from '../domain/types';
-import { buildTripTableView, buildTripsFieldProblems, parseBuildTripsForm, regenerationUndoApplies, runtimeBandTotalRange, tripBlockAssignmentImpact, tripBlockUnassignmentImpact, type BuildTripsFormValues } from './tripsWorkspaceView';
+import { buildTripTableView, buildTripsFieldProblems, parseBuildTripsForm, regenerationUndoApplies, tripBlockAssignmentImpact, tripBlockUnassignmentImpact, type BuildTripsFormValues } from './tripsWorkspaceView';
 
 const stamp = metadata('2026-10-23T00:00:00.000Z');
 const pattern = (id: string): RoutePattern => ({ ...stamp, id, scenarioId: 's', routeId: 'r', name: id, directionId: 'out', points: [0, 1].map((index) => ({ id: `${id}-${index}`, nodeId: `n${index}`, sequence: index, cumulativeMiles: index, directionColumnId: `col-${index}` })) });
@@ -169,13 +169,4 @@ describe('when the regeneration undo applies to the schedule on screen (Decision
   });
 });
 
-describe('runtimeBandTotalRange', () => {
-  it('returns the shortest and longest band totals', () => {
-    expect(runtimeBandTotalRange({ bands: [band('a', 0, 100, 3180), band('b', 100, 200, 3900), band('c', 200, 300, 3300)] })).toEqual({ minSeconds: 3180, maxSeconds: 3900 });
-  });
-  it('returns nothing when there are no bands', () => {
-    expect(runtimeBandTotalRange({ bands: [] })).toBeUndefined();
-    expect(runtimeBandTotalRange(undefined)).toBeUndefined();
-  });
-});
 

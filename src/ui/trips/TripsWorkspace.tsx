@@ -9,7 +9,7 @@ import { type RouteDefinitionApplication, type ScenarioRecords } from '../../app
 import { TripShiftStalePreviewError, type TripGenerationApplication } from '../../application/tripGenerationService';
 import { TripShiftValidationError, type TripShiftPreview } from '../../domain/tripShift';
 import { TripGenerationError } from '../../domain/trips';
-import { createBlockingScenarioSourceSignature, formatNetShift, isUsablePattern, orderDirections, parseShiftSeconds, regenerationUndoApplies, reverseRuntimeCandidates, routeRuntimeCalculationMethod, RUNTIME_METHOD_SUMMARY_LABELS, runtimeBandTotalRange, sortServiceDays, usableDirectionPatterns, type RuntimeCalculationMethod } from '../../application/tripsWorkspaceView';
+import { createBlockingScenarioSourceSignature, formatNetShift, isUsablePattern, orderDirections, parseShiftSeconds, regenerationUndoApplies, reverseRuntimeCandidates, routeRuntimeCalculationMethod, sortServiceDays, usableDirectionPatterns, type RuntimeCalculationMethod } from '../../application/tripsWorkspaceView';
 import { formatServiceTime, parseServiceTime } from '../../domain/time';
 import { type BlockingBlock, type Route, type RouteDefinitionAggregate, type RuntimeAssignment, type RuntimeProfile, type ServiceDayDefinition, type Trip } from '../../domain/types';
 import { type BlockConnection } from '../../domain/blocking';
@@ -23,7 +23,6 @@ import { combineSelection, invertSelection, tripIdsMatching } from '../../applic
 import { download } from '../shared/download';
 import { messages, userMessage } from '../shared/messages';
 import { RouteNavigationDraftDialog, ShiftDiscardDialog } from '../shared/dialogs';
-import { formatDuration } from '../format';
 import { InlineNote, WorkSurface } from '../shared/surfaces';
 import { SaveBar, SelectionBar } from '../shared/bars';
 import { ContextField } from '../shared/ContextField';
@@ -595,9 +594,6 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
     { items: [{ id: 'export-trips-csv', label: 'Export trips CSV', disabled: !trips.length, onSelect: exportTripsCsv }] },
   ];
   const canUnassignSelected = selectedTripIds.some((id) => tripBlockByTripId.has(id));
-  const runtimeMethodLabel = RUNTIME_METHOD_SUMMARY_LABELS[routeMethod];
-  const bandRange = runtimeBandTotalRange(selectedProfile);
-  const runtimeSummary = [selectedPattern?.name || 'Unnamed pattern', selectedProfile?.name, selectedProfile ? `${selectedProfile.bands.length} band${selectedProfile.bands.length === 1 ? '' : 's'}` : undefined, bandRange ? `run time ${formatDuration(bandRange.minSeconds)}${bandRange.maxSeconds === bandRange.minSeconds ? '' : `–${formatDuration(bandRange.maxSeconds)}`}` : undefined, selectedProfile ? runtimeMethodLabel : undefined].filter(Boolean).join(' · ');
   // The selection bar. The table draws it above its rows and, compact, above its pinned headings (only one copy is live at a time).
   const renderSelectionBar = (compact: boolean) => selectedTripIds.length > 0 ? <SelectionBar compact={compact} count={selectedTripIds.length} noun="trip" ariaLabel="Selected trips" onClear={clearTripSelection}>
     <button type="button" disabled={busy || tripProfileBusy || shiftDrawerOpen} title={shiftDrawerOpen ? 'The shift drawer is already open.' : undefined} onClick={() => void openShiftDrawer()}>Shift…</button>
@@ -617,7 +613,6 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
     <section className="work-surface runtimes-surface" aria-label="Runtimes section">
       <header className="work-surface__header">
         <h2 className="work-surface__title"><button type="button" ref={runtimesToggleRef} className="disclosure" aria-expanded={runtimesOpen} aria-controls="runtimes-body" disabled={runtimesOpen && runtimeEditorState.dirty} title={runtimesOpen && runtimeEditorState.dirty ? 'Save or discard runtime edits first' : undefined} onClick={() => setRuntimesSectionOpen(!runtimesOpen)}><span aria-hidden="true" className="disclosure__arrow">{runtimesOpen ? '▾' : '▸'}</span>Runtimes</button></h2>
-        <span className="work-surface__subtitle runtimes-summary">{runtimeSummary}</span>
         <div className="work-surface__actions">
           {runtimesOpen
             ? <ContextField label="Pattern"><select value={patternId} disabled={tripProfileBusy} onChange={(event) => { const next = event.target.value; requestScopeChange(() => setPatternId(next)); }}>{patterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></ContextField>
@@ -640,7 +635,6 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
             { id: 'copy-day', label: 'Copy runtimes from another day…', disabled: loading || tripProfileBusy, onSelect: () => setRuntimeCopyOpen(true) },
           ] },
         ]} disabled={loading || tripProfileBusy} triggerRef={runtimeCopyButtonRef} />
-        <button type="button" disabled={runtimeEditorState.dirty || runtimeEditorState.saving} title={runtimeEditorState.dirty ? 'Save or discard runtime edits first' : undefined} onClick={() => setRuntimesSectionOpen(false)}>Close</button>
       </div>
       {selectedProfile && <p className="profile-usage">Used by {dayNameList(profileDays.length ? profileDays.map((day) => day.name) : [selectedDay?.name ?? 'this service day'])} for {selectedPattern?.name}.</p>}
       {selectedProfile && selectedPattern ? <RuntimeEditor2 ref={runtimeEditorRef} service={service} profile={selectedProfile} pattern={selectedPattern} nodes={aggregate.nodes} onStateChange={setRuntimeEditorState} onSaved={async () => onRuntimeChanged()} onError={onError} /> : <p className="runtime-status">Loading runtimes…</p>}

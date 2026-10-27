@@ -8,11 +8,11 @@ test.setTimeout(90_000);
 
 const toggle = (page: import('@playwright/test').Page) => region(page, 'runtimes').getByRole('button', { name: 'Runtimes', exact: true });
 
-test('Runtimes starts collapsed with a one-line summary, and its open state is kept across a reload on this device', async ({ page }) => {
+test('Runtimes starts collapsed, and its open state is kept across a reload on this device', async ({ page }) => {
   await openGoldenTrips(page);
   await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
-  // "<Pattern> · <Runtime profile> · N bands · run time <min>–<max> · <method>", from the band totals (:53, 1:01, 1:05, :57).
-  await expect(region(page, 'runtimes').locator('.runtimes-summary')).toHaveText(/^Southbound: Wagon Road to Evans · .+ · 4 bands · run time :53–1:05 · (band at segment start|single band for trip|continuous blend \(legacy\))$/);
+  // UR-14: the collapsed heading has no summary line.
+  await expect(region(page, 'runtimes').locator('.work-surface__subtitle')).toHaveCount(0);
   await expect(runtimeCell(region(page, 'runtimes'), 'Time band 1 segment 1')).toHaveCount(0);
 
   await region(page, 'runtimes').getByRole('button', { name: 'Edit runtimes', exact: true }).click();
@@ -26,7 +26,7 @@ test('Runtimes starts collapsed with a one-line summary, and its open state is k
   await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
   await expect(runtimeCell(region(page, 'runtimes'), 'Time band 1 segment 1')).toBeVisible();
 
-  await region(page, 'runtimes').getByRole('button', { name: 'Close', exact: true }).click();
+  await toggle(page).click();
   await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
   await page.reload();
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
@@ -39,22 +39,22 @@ test('a malformed stored open state reads as collapsed', async ({ page }) => {
   await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
 });
 
-test('Close is disabled while the Runtime editor has unsaved edits, and the save bar goes with Discard', async ({ page }) => {
+test('the Runtimes toggle is the only close control, and it is disabled while the Runtime editor has unsaved edits', async ({ page }) => {
   await createShiftReadySchedule(page, '06:10');
   const runtimes = region(page, 'runtimes');
-  const close = runtimes.getByRole('button', { name: 'Close', exact: true });
-  await expect(close).toBeEnabled();
+  // UR-14: no Close button; the heading's toggle collapses the section.
+  await expect(runtimes.getByRole('button', { name: 'Close', exact: true })).toHaveCount(0);
+  await expect(toggle(page)).toBeEnabled();
 
   await editRuntimeCell(runtimes, 'Time band 1 segment 1', ':09');
   await expect(runtimes.getByRole('region', { name: 'Unsaved changes' })).toBeVisible();
-  await expect(close).toBeDisabled();
-  await expect(close).toHaveAttribute('title', 'Save or discard runtime edits first');
   await expect(toggle(page)).toBeDisabled();
+  await expect(toggle(page)).toHaveAttribute('title', 'Save or discard runtime edits first');
 
   await runtimes.getByRole('button', { name: 'Discard', exact: true }).click();
   await expect(runtimes.getByRole('region', { name: 'Unsaved changes' })).toHaveCount(0);
-  await expect(close).toBeEnabled();
-  await close.click();
+  await expect(toggle(page)).toBeEnabled();
+  await toggle(page).click();
   await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
 });
 

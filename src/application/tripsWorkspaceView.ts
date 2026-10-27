@@ -32,15 +32,6 @@ export function regenerationUndoApplies(undo: TripRegenerationUndo | undefined, 
   return undo.afterTrips.every((trip) => shownIds.has(trip.id));
 }
 
-/** The words the collapsed Runtimes line uses for the Route's calculation method (UR-6c). */
-export const RUNTIME_METHOD_SUMMARY_LABELS: Record<RuntimeCalculationMethod, string> = { singleBand: 'single band for trip', segmentStart: 'band at segment start', blendSegments: 'continuous blend (legacy)' };
-
-/** The shortest and longest band totals of a Runtime profile, in seconds. `undefined` when the profile has no bands. */
-export function runtimeBandTotalRange(profile: Pick<RuntimeProfile, 'bands'> | undefined): { minSeconds: number; maxSeconds: number } | undefined {
-  const totals = (profile?.bands ?? []).map(runtimeBandTotalSeconds);
-  return totals.length ? { minSeconds: Math.min(...totals), maxSeconds: Math.max(...totals) } : undefined;
-}
-
 
 export interface TripRowView { runTimeSeconds?: number; duplicate: boolean; singleBand?: RuntimeBand; segments?: BlendedSegment[] }
 /**

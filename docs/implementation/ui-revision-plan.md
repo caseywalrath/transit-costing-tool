@@ -1,6 +1,6 @@
 # UI revision plan (Phase UR)
 
-- Status: Approved design; UR-0, UR-1, UR-3, and UR-4 done; UR-2 awaits its visual review gate; UR-5 implemented and awaits its gate; UR-6a and UR-6b implemented and await their shared gate; UR-6c implemented and awaits its gate (O-2); UR-6d implemented and awaits its gate; UR-7 and UR-7b implemented and await their gate; UR-8 implemented and awaits its gate; UR-9 implemented and awaits its gate; UR-10 implemented and awaits its review; UR-11 implemented and awaits its gate; UR-12 integration review done (`docs/implementation/ui-revision-closeout.md`). The user approved every open gate and accepted Phase UR on 2026-10-27; UR-13 implements the decisions made at acceptance.
+- Status: Approved design; UR-0, UR-1, UR-3, and UR-4 done; UR-2 awaits its visual review gate; UR-5 implemented and awaits its gate; UR-6a and UR-6b implemented and await their shared gate; UR-6c implemented and awaits its gate (O-2); UR-6d implemented and awaits its gate; UR-7 and UR-7b implemented and await their gate; UR-8 implemented and awaits its gate; UR-9 implemented and awaits its gate; UR-10 implemented and awaits its review; UR-11 implemented and awaits its gate; UR-12 integration review done (`docs/implementation/ui-revision-closeout.md`). The user approved every open gate and accepted Phase UR on 2026-10-27; UR-13 implements the decisions made at acceptance; UR-14 fixes items 1 to 6 of the user's post-acceptance list.
 - Date: 2026-10-27
 - Decision record: `docs/decisions/0047-interface-revision-design-system.md`
 - Base: `main` at the merge of PR #30 (`fd42c5d`, Decision 0046: Regenerate selected and Undo last regeneration are separate Trips actions). This plan keeps that behaviour (section 3, row "Regenerate and undo").
@@ -119,6 +119,7 @@ The user-visible changes start at UR-2 (font and colours). UR-0, UR-1, UR-3 (exc
 | UR-11 | Accessibility quick wins | Sonnet | UR-10 | no |
 | UR-12 | Integration review and closeout | Opus | all | **yes: final acceptance** |
 | UR-13 | Acceptance follow-up: role tokens, short names, sort icons, stacked Route details | Opus | UR-12 | no (report only) |
+| UR-14 | Post-acceptance fixes: Node save leaves the Pattern clean, Tab wraps to the next row, Pattern list cards, Runtimes header trimmed | Opus | UR-13 | no (report only) |
 
 UR-3 can run in parallel with UR-2 because it touches different files. UR-6a, 6b, 6c, and 6d own different files and can run in any order after UR-5. UR-8 and UR-9 both edit the Trips table, so run them one after the other.
 
@@ -585,6 +586,19 @@ Apply `useGridNavigation` to the Nodes table (Name, Short, Notes; Type stays a s
 ### UR-13 Acceptance follow-up (Opus)
 
 The user's decisions on the UR-12 findings (closeout, section 7): role tokens `--space-inline`, `--inset-tight`, `--inset-panel`, and `--font-size-chip`, with one-off values snapped to the scale; Pattern and Node short names, generated from the full names when not entered, in the Trips and Blocking tables (`src/application/shortNames.ts`; the Pattern "Label" field becomes "Pattern short name" with no schema change); sort icons beside the label and only on the sorted column; stacked Route details.
+
+### UR-14 Post-acceptance fixes (Opus)
+
+The user's list of 2026-10-27, items 1 to 6:
+
+1. Saving Nodes rewrote every Pattern's `updatedAt` (`reconcileRouteTimetables`), and the Pattern editor compared its draft with the saved Pattern including `updatedAt`, so it showed a save bar for no change. The editor now compares `patternSignature` (which leaves out `updatedAt`) and takes the new save time into an unchanged draft.
+2. The Pattern list shows each Pattern as a card on a tinted list, with the name without its direction prefix, the short-name chip, and "N points · total mi".
+3. In the Nodes, Pattern points, and Runtimes grids, Tab runs through a row's cells, then the row's buttons, then the next row's first cell (`useGridNavigation` `rowProps`). The Trips table is not a grid; its Tab order (checkbox, Pattern chip, Block, Delete, then the next row) was checked and is unchanged.
+4. The Annual service days note "Saves when you leave a field. Zero is valid." is removed.
+5. The collapsed Runtimes summary line is removed (with `RUNTIME_METHOD_SUMMARY_LABELS` and `runtimeBandTotalRange`, which only it used).
+6. The Runtimes **Close** button is removed; the disclosure button collapses the section.
+
+Items 7 (Shift drawer) and 8 (blank-project onboarding) are design proposals in the UR-14 report, awaiting the user's choice.
 
 ---
 

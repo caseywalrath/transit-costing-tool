@@ -31,7 +31,7 @@ export function NodesGrid({ nodes, savedNodes, pendingDeletes, saving, errorsFor
       const pending = pendingDeletes.has(node.id);
       const saved = savedById.get(node.id);
       const errors = errorsFor(node.id);
-      return <tr key={node.id} className={`${pending ? 'pending-delete' : ''} ${!saved ? 'draft-row' : ''}`}>
+      return <tr key={node.id} {...grid.rowProps(r)} className={`${pending ? 'pending-delete' : ''} ${!saved ? 'draft-row' : ''}`}>
         {NODE_COLUMNS.map((label, c) => {
           const edited = saved ? text(saved, c) !== text(node, c) : c === 0 || Boolean(text(node, c));
           const editing = grid.editing?.r === r && grid.editing.c === c;

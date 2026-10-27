@@ -23,10 +23,10 @@ test('uses one header action layer and a right-docked Shift drawer', async ({ pa
   await expect(drawer).toBeVisible();
 
   await expect(sections).toHaveCount(2);
-  // Runtimes (open): the Pattern selector is the header action; the profile menu, Actions, and Close are on the line below it.
+  // Runtimes (open): the Pattern selector is the header action; the profile menu and Actions are on the line below it (UR-14: no Close).
   await expect(runtimeSection.getByRole('button', { name: 'Runtimes', exact: true })).toHaveAttribute('aria-expanded', 'true');
   await expect(runtimeActions.getByLabel('Pattern')).toBeVisible();
-  await expect(runtimeSection.locator('.runtimes-toolbar').getByRole('button')).toHaveText(['Default ▾', '', 'Close']);
+  await expect(runtimeSection.locator('.runtimes-toolbar').getByRole('button')).toHaveText(['Default ▾', '']);
   // Trips: the profile and Blocking scenario menus follow the title; View, Add trip, Build trips…, and Actions sit at the right.
   await expect(tripsSection.locator('.work-surface__context').getByRole('button')).toHaveText(['Default ▾', 'No blocking scenario ▾']);
   await expect(tripActions.getByRole('button')).toHaveText(['View ▾', 'Add trip', 'Build trips…', '']);
