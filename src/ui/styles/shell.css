@@ -28,3 +28,6 @@ nav { display: flex; gap: 2px; }
 .empty-project { max-width: 620px; border: 0; background: transparent; padding: 0; text-align: center; }
 .primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-surface); font-weight: var(--font-weight-bold); }
 .primary:disabled { background: var(--color-sunken); border-color: var(--color-border); color: var(--color-text-subtle); font-weight: var(--font-weight-regular); }
+.primary:hover:not(:disabled) { background: var(--color-accent-strong); border-color: var(--color-accent-strong); }
+.ghost { border-color: transparent; background: transparent; color: var(--color-accent); }
+.ghost:hover:not(:disabled) { background: var(--color-accent-soft); }
