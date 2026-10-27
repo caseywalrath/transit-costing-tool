@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule, openGoldenTrips } from './support/tripsWorkspace';
+import { projectSelect, scopeField } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
@@ -79,7 +80,7 @@ test('Tab and Shift+Tab stay inside an open modal dialog', async ({ page }) => {
   await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
   await page.locator('#dialog-name').fill('Trap check');
   await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
-  await expect(page.locator('.context-bar select').first().locator('option:checked')).toHaveText('Trap check');
+  await expect(projectSelect(page).locator('option:checked')).toHaveText('Trap check');
   await page.getByRole('button', { name: 'Project actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Delete project', exact: true }).click();
   const dialog = page.getByRole('alertdialog');
@@ -149,7 +150,7 @@ test('every dialog opened from the screens has an accessible name, and the axe d
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await page.locator('.route-picker').getByLabel('Day').selectOption({ label: 'Weekday' });
+  await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
   await expect(page.locator('.trips-workspace .schedule-table tbody tr').first()).toBeVisible({ timeout: 30_000 });
   expect(await axeViolations(page)).toEqual([]);
   await page.locator('[aria-label="Runtimes section"] .menu-field').filter({ hasText: 'Profile' }).getByRole('button').click();

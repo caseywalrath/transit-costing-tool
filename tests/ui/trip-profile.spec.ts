@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { createRouteWithPattern } from './support/tripsWorkspace';
+import { scopeField } from './support/ui';
 
 test.setTimeout(60_000);
 
@@ -9,7 +10,7 @@ test('places Trip profile selection and lifecycle actions in the Trips header me
 
   const tripsSection = page.locator('[aria-label="Trips section"]');
   const profileButton = tripsSection.locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button');
-  await expect(page.locator('.route-picker').getByLabel('Trip Profile')).toHaveCount(0);
+  await expect(scopeField(page, 'Trip profile')).toHaveCount(0);
   await expect(page.locator('.trip-profile-context')).toHaveCount(0);
   const [profileControlsBox, scheduleTableBox] = await Promise.all([
     profileButton.boundingBox(),

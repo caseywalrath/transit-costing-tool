@@ -4,6 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw, goldenWithAltProfile } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
+import { runCommand } from './support/ui';
 
 test.setTimeout(120000);
 
@@ -19,8 +20,7 @@ async function open(page: Page, snapshot: unknown = goldenRaw()) {
 async function buildThreeTrips(page: Page): Promise<number> {
   const before = await tripCount(page);
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Build trips…' }).click();
+  await runCommand(page, 'trips.build');
   const drawer = page.getByRole('complementary', { name: 'Build Trips' });
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
   await drawer.getByLabel('First Trip').fill('03:00');

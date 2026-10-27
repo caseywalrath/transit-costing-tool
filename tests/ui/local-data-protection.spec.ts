@@ -10,6 +10,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
+import { scopeField } from './support/ui';
 
 test.setTimeout(240_000);
 const SLOW = 30_000;
@@ -76,7 +77,7 @@ test('a full browser store is reported in plain words, and the save status shows
 
   // Trips write: Build Trips.
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await page.locator('.route-picker').getByLabel('Day').selectOption({ label: 'Weekday' });
+  await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
   await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Build trips…' }).click();
   const drawer = page.getByRole('complementary', { name: 'Build Trips' });
@@ -163,7 +164,7 @@ test('a write of each service shows "Saving locally…" in the one indicator in 
   await expect.poll(() => runInPage(page, 'return (await e.db.routes.toArray())[0].description ?? null')).toBe('indicator test');
 
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await page.locator('.route-picker').getByLabel('Day').selectOption({ label: 'Weekday' });
+  await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
   await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Build trips…' }).click();
   const drawer = page.getByRole('complementary', { name: 'Build Trips' });

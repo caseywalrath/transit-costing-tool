@@ -5,6 +5,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule } from './support/tripsWorkspace';
+import { scopeField } from './support/ui';
 
 test.setTimeout(120_000);
 
@@ -17,7 +18,7 @@ async function openGoldenTripsAfter(page: Page, prepare: string) {
   await page.goto('/');
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await page.locator('.route-picker').getByLabel('Day').selectOption({ label: 'Weekday' });
+  await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
   await expect(page.locator('.trips-workspace .schedule-table tbody tr')).toHaveCount(138, { timeout: 30_000 });
 }
 
@@ -37,7 +38,7 @@ test('the Runtime profile line lists every Service day that shares the profile (
   await openGoldenTripsAfter(page, shareWeekdayProfileWith('Saturday', 'Sunday'));
   await expect(page.locator('.profile-usage')).toHaveText('Used by Weekday, Saturday, and Sunday for Southbound: Wagon Road to Evans.');
   // The same profile is named from Saturday's side.
-  await page.locator('.route-picker').getByLabel('Day').selectOption({ label: 'Saturday' });
+  await scopeField(page, 'Day').selectOption({ label: 'Saturday' });
   await expect(page.locator('.profile-usage')).toHaveText(/^Used by Weekday, Saturday, and Sunday for /);
 });
 

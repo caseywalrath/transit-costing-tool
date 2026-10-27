@@ -4,6 +4,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
+import { scenarioSelect } from './support/ui';
 
 test.setTimeout(120_000);
 test.use({ actionTimeout: 15_000 });
@@ -145,7 +146,7 @@ test('selection reloads and exports that fail show the error banner with a next 
   // Delete the database under the open page: its connection closes, so every later read fails with a browser error.
   await runInPage(page, 'e.db.close(); await e.db.delete();');
 
-  await page.locator('.context-bar select').nth(1).selectOption({ label: 'Select scenario' });
+  await scenarioSelect(page).selectOption({ label: 'Select scenario' });
   await expect(banner(page).filter({ hasText: 'Unable to load that selection. Reload this page and try again.' })).toHaveCount(1);
   await expect(banner(page).filter({ hasText: /Dexie|IndexedDB|database|closed/i }).filter({ hasNotText: 'upgraded in another tab' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Dismiss message' }).click();

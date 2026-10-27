@@ -2,6 +2,7 @@
 import { expect, type Page } from '@playwright/test';
 import { goldenRaw } from './goldenFixture';
 import { runInPage, seedSnapshot } from './dexieEnv';
+import { scopeField } from './ui';
 
 /**
  * Creates a project with one Route that has Nodes A and B and one saved Pattern (A to B, rebalanced) and its Default Runtime profile.
@@ -118,7 +119,7 @@ export async function openGoldenTrips(page: Page) {
   await page.goto('/');
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30000 });
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await page.locator('.route-picker').getByLabel('Day').selectOption({ label: 'Weekday' });
+  await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
   await expect(page.locator('.trips-workspace .schedule-table tbody tr')).toHaveCount(138, { timeout: 30000 });
 }
 

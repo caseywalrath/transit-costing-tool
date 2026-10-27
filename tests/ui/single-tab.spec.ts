@@ -5,6 +5,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { goldenRaw, goldenWithAltProfile } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
+import { runCommand } from './support/ui';
 
 test.setTimeout(120000);
 test.use({ actionTimeout: 15000 });
@@ -152,8 +153,7 @@ test('a Project deleted in the active tab is not resurrected by a Route edit in 
 });
 
 async function buildThreeTrips(page: Page) {
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Build trips…' }).click();
+  await runCommand(page, 'trips.build');
   const drawer = page.getByRole('complementary', { name: 'Build Trips' });
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
   await drawer.getByLabel('First Trip').fill('03:00');

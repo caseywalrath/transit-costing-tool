@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { seedCostingFixture } from './support/costingFixture';
+import { scopeField } from './support/ui';
 
 test('Costing workspace displays a partial estimate, supports year selection, and remains usable at a narrow width', async ({ page }) => {
   await seedCostingFixture(page);
@@ -155,7 +156,7 @@ test.describe('Costing estimate display (U06 criteria 2 to 5)', () => {
     await page.getByRole('button', { name: 'Costing', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Cost Breakdown' })).toBeVisible();
     await expect(page.locator('label', { hasText: /^View year/ })).toHaveCount(1);
-    await expect(page.locator('.module-toolbar').getByLabel('View year')).toHaveCount(1);
+    await expect(scopeField(page, 'View year')).toHaveCount(1);
     await expect(page.locator('section[aria-labelledby="costing-estimate-title"]').getByRole('combobox')).toHaveCount(0);
   });
 });

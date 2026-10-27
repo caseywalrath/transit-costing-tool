@@ -134,6 +134,14 @@ To prove that a new browser spec is not flaky, run it ten times over with eight 
 PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm exec playwright test tests/ui/<spec>.spec.ts --repeat-each=10 --workers=8
 ```
 
+The visual tour (`tests/ui/visual-tour.spec.ts`, interface revision plan UR-0) captures five screenshots at 1024 px and five at 1440 px into `test-results/ui-tour/<width>/` for visual review. It skips itself unless `UI_TOUR=1`, so CI never runs it:
+
+```bash
+UI_TOUR=1 PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm exec playwright test tests/ui/visual-tour.spec.ts
+```
+
+Specs reach scope selectors, panels, and menu commands through `tests/ui/support/ui.ts` (`scopeField`, `region`, `runCommand`, `projectSelect`, `scenarioSelect`), so a package that moves a control edits that file and not every spec.
+
 Assert counts (reads of a store, rows written) rather than elapsed time when a spec measures speed on the Vite development server: eight parallel browsers stretch times two to five times, and React `StrictMode` doubles every effect.
 
 ## Checks and CI

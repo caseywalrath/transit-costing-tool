@@ -3,6 +3,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule } from './support/tripsWorkspace';
+import { scenarioSelect } from './support/ui';
 
 test.setTimeout(90_000);
 
@@ -51,7 +52,7 @@ test('Delete scenario removes the Scenario after the review and is refused when 
   await page.locator('#dialog-name').fill('Alternative');
   await page.getByRole('button', { name: 'Create scenario', exact: true }).click();
   await expect.poll(() => count(page, 'scenarios')).toBe(2);
-  await expect(page.locator('.context-bar select').nth(1).locator('option:checked')).toHaveText('Alternative');
+  await expect(scenarioSelect(page).locator('option:checked')).toHaveText('Alternative');
 
   // The review is taken for the selected (new) Scenario; a Service day of it changes before the planner confirms.
   await page.getByRole('button', { name: 'Scenario actions', exact: true }).click();

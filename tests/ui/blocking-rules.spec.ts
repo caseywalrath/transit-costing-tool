@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { createRouteWithPattern } from './support/tripsWorkspace';
+import { runCommand } from './support/ui';
 
 // Package P14: Blocking rules that the Blocking screen used to apply itself (findings 4-007, 4-014, 4-018; Decision 0039).
 test.setTimeout(90_000);
@@ -7,8 +8,7 @@ test.setTimeout(90_000);
 async function openBlockingWithTrips(page: Page, tripCount: number) {
   await createRouteWithPattern(page, 'Blocking rules');
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Build trips…' }).click();
+  await runCommand(page, 'trips.build');
   await page.locator('.build-trips-drawer').getByLabel('Pattern').selectOption({ index: 1 });
   await page.getByLabel('First Trip').fill('06:00');
   await page.getByLabel('Headway').fill('10');

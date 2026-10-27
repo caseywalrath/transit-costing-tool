@@ -1,13 +1,13 @@
 import { expect, test } from '@playwright/test';
 import { createShiftReadySchedule } from './support/tripsWorkspace';
+import { runCommand } from './support/ui';
 
 // U10: the compact Shift drawer. The step buttons name their size and direction; a step size is one press away, or typed.
 test('step sizes are chosen with one press or typed, the buttons name the step, and an invalid step is refused', async ({ page }) => {
   await createShiftReadySchedule(page, '06:20');
   const rows = page.locator('.schedule-table tbody tr');
   await rows.first().locator('input[type="checkbox"]').check();
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
+  await runCommand(page, 'trips.shift');
   const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
   const status = drawer.getByRole('status');
   await expect(status).toHaveText('No net shift1 selected');
@@ -39,8 +39,7 @@ test('step sizes are chosen with one press or typed, the buttons name the step, 
 test('the step sizes are a keyboard radio group', async ({ page }) => {
   await createShiftReadySchedule(page, '06:20');
   await page.locator('.schedule-table tbody tr').first().locator('input[type="checkbox"]').check();
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
+  await runCommand(page, 'trips.shift');
   const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
   // The drawer previews the selection as it opens and disables its controls until that is done; when the preview ends, a control
   // that lost the focus to the disabled state gives it to the first step button. A step size focused before then loses the focus

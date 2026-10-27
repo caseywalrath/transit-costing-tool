@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { createRouteWithPattern } from './support/tripsWorkspace';
+import { runCommand } from './support/ui';
 
 test.setTimeout(60_000);
 
@@ -10,8 +11,7 @@ async function createUsableRoute(page: import('@playwright/test').Page) {
 test('assigns, reassigns, and unassigns Trips from the Trips table by pill and bulk Actions', async ({ page }) => {
   await createUsableRoute(page);
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Build trips…' }).click();
+  await runCommand(page, 'trips.build');
   await page.locator('.build-trips-drawer').getByLabel('Pattern').selectOption({ index: 1 });
   await page.getByLabel('First Trip').fill('06:00');
   await page.getByLabel('Headway').fill('10');
@@ -53,8 +53,7 @@ test('assigns, reassigns, and unassigns Trips from the Trips table by pill and b
   await expect(secondTripBlock).toContainText('Block 2');
 
   await schedule.getByRole('checkbox', { name: 'Select all trips' }).click();
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Assign Block…', exact: true }).click();
+  await runCommand(page, 'trips.assignBlock');
   const bulkDialog = page.getByRole('alertdialog', { name: 'Assign 3 selected Trips?' });
   await bulkDialog.getByLabel('Destination Block').selectOption({ label: 'Block 3' });
   await expect(bulkDialog).toContainText('2 selected Trips are currently in another Block and will be moved.');
@@ -77,8 +76,7 @@ test('assigns, reassigns, and unassigns Trips from the Trips table by pill and b
   await expect(schedule.getByRole('button', { name: /departing 6:00: Unassigned/ })).toBeVisible();
 
   await schedule.getByRole('checkbox', { name: 'Select all trips' }).click();
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Unassign from Block…', exact: true }).click();
+  await runCommand(page, 'trips.unassignBlock');
   const bulkUnassignDialog = page.getByRole('alertdialog', { name: 'Unassign selected Trips?' });
   await expect(bulkUnassignDialog).toContainText('2 selected Trips in “Block 3” will become unassigned.');
   await expect(bulkUnassignDialog).toContainText('1 selected Trip is already unassigned and will remain so.');

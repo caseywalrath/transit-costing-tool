@@ -4,6 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
+import { scopeField } from './support/ui';
 
 test.setTimeout(120_000);
 
@@ -17,7 +18,7 @@ async function openCosting(page: Page, prepare?: () => Promise<void>) {
 }
 
 const days = (page: Page) => page.locator('.costing-days');
-const yearOptions = (page: Page) => page.locator('.module-toolbar').getByLabel('View year').locator('option').allTextContents();
+const yearOptions = (page: Page) => scopeField(page, 'View year').locator('option').allTextContents();
 
 test('shows each day count and the total against the 365-day limit, in the valid style when the total is 365', async ({ page }) => {
   await openCosting(page);

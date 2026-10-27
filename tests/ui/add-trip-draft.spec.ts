@@ -2,6 +2,7 @@
 // Trip Profile, or tab changes. It asks Cancel or Discard first; an empty row is dropped without a question.
 import { expect, test, type Page } from '@playwright/test';
 import { createShiftReadySchedule } from './support/tripsWorkspace';
+import { scopeField } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
@@ -24,8 +25,8 @@ async function openDraft(page: Page, enter: 'pattern' | 'time' | 'nothing') {
 }
 
 const scopeChanges: Array<{ name: string; change: (page: Page) => Promise<void>; unchanged: (page: Page) => Promise<unknown> }> = [
-  { name: 'service day', change: (page) => page.locator('.route-picker').getByLabel('Day').selectOption({ index: 1 }).then(() => undefined), unchanged: (page) => page.locator('.route-picker').getByLabel('Day').inputValue() },
-  { name: 'Direction', change: (page) => page.locator('.route-picker').getByLabel('Direction').selectOption({ index: 1 }).then(() => undefined), unchanged: (page) => page.locator('.route-picker').getByLabel('Direction').inputValue() },
+  { name: 'service day', change: (page) => scopeField(page, 'Day').selectOption({ index: 1 }).then(() => undefined), unchanged: (page) => scopeField(page, 'Day').inputValue() },
+  { name: 'Direction', change: (page) => scopeField(page, 'Direction').selectOption({ index: 1 }).then(() => undefined), unchanged: (page) => scopeField(page, 'Direction').inputValue() },
   { name: 'tab', change: (page) => page.getByRole('button', { name: 'Route', exact: true }).click(), unchanged: (page) => page.getByRole('button', { name: 'Trips', exact: true }).getAttribute('class') },
   {
     name: 'Trip Profile',
@@ -74,7 +75,7 @@ for (const scope of scopeChanges) {
 
 test('a Pattern alone counts as entered, and an empty Add-trip row is dropped without a question', async ({ page }) => {
   await createShiftReadySchedule(page, '06:10');
-  const day = page.locator('.route-picker').getByLabel('Day');
+  const day = scopeField(page, 'Day');
   const original = await day.inputValue();
 
   await openDraft(page, 'pattern');
@@ -102,7 +103,7 @@ test('with a staged Shift and an entered row open, each press asks one question:
   await page.getByRole('complementary', { name: 'Shift selected Trips' }).getByRole('button', { name: /min earlier/ }).click();
   await expect(page.getByText('Staged 1 minute earlier')).toBeVisible();
 
-  const day = page.locator('.route-picker').getByLabel('Day');
+  const day = scopeField(page, 'Day');
   const original = await day.inputValue();
   await day.selectOption({ index: 1 });
   await expect(shiftDialog(page)).toBeVisible();

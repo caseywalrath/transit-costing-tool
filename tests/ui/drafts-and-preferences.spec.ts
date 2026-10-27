@@ -4,6 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule, openGoldenTrips } from './support/tripsWorkspace';
+import { scopeField } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
@@ -25,7 +26,7 @@ async function dirtyRuntime(page: Page, value = ':09') {
   await expect(runtimeSection(page).getByRole('button', { name: 'Save', exact: true })).toBeVisible();
 }
 
-const dayOption = (page: Page) => page.locator('.route-picker').getByLabel('Day').evaluate((select: HTMLSelectElement) => select.selectedOptions[0]?.textContent ?? '');
+const dayOption = (page: Page) => scopeField(page, 'Day').evaluate((select: HTMLSelectElement) => select.selectedOptions[0]?.textContent ?? '');
 
 async function startStagedShift(page: Page) {
   await page.locator('.schedule-table tbody input[type="checkbox"]').first().check();
@@ -39,7 +40,7 @@ async function startStagedShift(page: Page) {
 
 test('a dirty Runtime draft asks Save, Discard, or Cancel before the service day changes', async ({ page }) => {
   await createShiftReadySchedule(page);
-  const day = page.locator('.route-picker').getByLabel('Day');
+  const day = scopeField(page, 'Day');
   const original = await dayOption(page);
   await dirtyRuntime(page);
 
@@ -64,7 +65,7 @@ test('a dirty Runtime draft asks Save, Discard, or Cancel before the service day
 
 test('Save in the Runtime leave dialog saves the profile, then changes the service day', async ({ page }) => {
   await createShiftReadySchedule(page);
-  const day = page.locator('.route-picker').getByLabel('Day');
+  const day = scopeField(page, 'Day');
   const original = await dayOption(page);
   await dirtyRuntime(page, ':09');
 
@@ -274,7 +275,7 @@ test('the remembered Blocking Scenario survives a Trip Profile change and is res
 
   // Trips: pick the Blocking Scenario that is not the first one listed.
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await page.locator('.route-picker').getByLabel('Day').selectOption({ label: 'Weekday' });
+  await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
   const scenarioMenu = tripsSection(page).locator('.menu-field').filter({ hasText: 'Scenario' }).getByRole('button');
   const profileMenu = tripsSection(page).locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button');
   await expect(scenarioMenu).toContainText(/blocks/i, { timeout: 30_000 });
