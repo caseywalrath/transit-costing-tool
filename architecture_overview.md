@@ -388,7 +388,7 @@ Add annual service quantities, a Revenue-Hour-based cost estimate, user and NTD 
 
 ### Phase UR: Interface revision (approved, not started)
 
-Replace the visual system and the screen layouts without changing domain, persistence, or CSV behaviour: design tokens and a bundled Source Sans 3, a two-row header, three surface levels, a unified save bar, spreadsheet-style grids, collapsible Runtimes, headway trip identification, selection by Pattern, and a Blocking layout whose Unassigned panel collapses to a rail. Decision 0046 records the design; `docs/implementation/ui-revision-plan.md` holds the packages. The "UI Structure" section above is updated when the packages land.
+Replace the visual system and the screen layouts without changing domain, persistence, or CSV behaviour: design tokens and a bundled Source Sans 3, a two-row header, three surface levels, a unified save bar, spreadsheet-style grids, collapsible Runtimes, headway trip identification, selection by Pattern, and a Blocking layout whose Unassigned panel collapses to a rail. Decision 0047 records the design; `docs/implementation/ui-revision-plan.md` holds the packages. The "UI Structure" section above is updated when the packages land.
 
 ### Phase 6: Advanced capabilities
 

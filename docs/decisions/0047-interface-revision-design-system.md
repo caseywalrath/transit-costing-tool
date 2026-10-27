@@ -1,8 +1,8 @@
-# Decision 0046: Interface revision design system and layout
+# Decision 0047: Interface revision design system and layout
 
 - Status: Accepted (design); implementation pending under `docs/implementation/ui-revision-plan.md`
 - Date: 2026-10-27
-- Amends: Decision 0034 (headway display gains a pinned Departs column and change marking), Decision 0028 (toolbar layout), and the "Shared workflow and table hierarchy" conventions in `docs/ui-conventions.md`. Supersedes nothing else.
+- Amends: Decision 0034 (headway display gains a pinned Departs column and change marking), Decision 0028 (toolbar layout), Decision 0046 (where Regenerate selected and Undo last regeneration are placed; their rules are kept, item 13), and the "Shared workflow and table hierarchy" conventions in `docs/ui-conventions.md`. Supersedes nothing else.
 
 ## Context
 
@@ -22,7 +22,8 @@ A UI/UX review in October 2026 found inconsistent visual hierarchy (every panel 
 10. **Selecting Trips (SEL-1, SEL-2).** The header checkbox opens a Select menu (all, none, invert, by Pattern with counts, by status). Clicking a Pattern chip offers select, add, or remove for that Pattern; Ctrl-click (⌘-click) adds directly. Shift-click keeps range selection. Rule-based selection (SEL-3) is deferred.
 11. **Blocking (BL-A).** Unassigned trips and Current block stay side by side whenever unassigned Trips exist. When none remain, or when the planner collapses it, the Unassigned panel becomes a narrow rail in the same column; the collapse choice is a per-device preference.
 12. **Number formats.** F1-A clock times (`4:08`, `5:04:30`, `26:01`); F2-A displayed durations (`:53` under an hour, `1:01` from an hour); F3-A hours (two decimals daily, whole annual with separators); F4-A miles (two decimals, separators, full value while editing); F5-A units in table headings, beside numbers in summary tiles; F6-A whole dollars in tables, cents for the hourly rate; F7-A `—` for not applicable and amber "Incomplete" for missing input; F8-A one-decimal percentages. CSV output formats are unchanged.
-13. **Terminology (T1-A, T3).** Interface text uses sentence case, with domain terms lower-cased mid-label ("Blocking scenario", "Unassigned trips"). The documentation keeps its capitalised domain terms. "Profile" is always qualified ("Runtime profile", "Trip profile"). The Costing field is "Inflation rate (%)"; the glossary records it as the interface name for annual escalation.
+13. **Regenerate and undo (keeps Decision 0046).** Regenerate moves from the Trips Actions menu to the Trips selection bar as **Regenerate…**. It is present whenever Trips are selected and is never replaced or hidden by a saved undo. It is disabled with the hint "Select trips with changed runtimes." until a selected Trip has changed runtimes, and it acts only on those Trips, so select-all stays safe. **Undo last regeneration (N trips)** stays a separate item in the Trips Actions ("⋯") menu, listed only while `regenerationUndoApplies` is true. The "Run times have changed" notice gains a "Select these trips" button, so Regenerate is reachable without hunting for affected rows.
+14. **Terminology (T1-A, T3).** Interface text uses sentence case, with domain terms lower-cased mid-label ("Blocking scenario", "Unassigned trips"). The documentation keeps its capitalised domain terms. "Profile" is always qualified ("Runtime profile", "Trip profile"). The Costing field is "Inflation rate (%)"; the glossary records it as the interface name for annual escalation.
 
 ## Consequences
 
@@ -30,4 +31,6 @@ A UI/UX review in October 2026 found inconsistent visual hierarchy (every panel 
 - Browser tests that reach controls by class names or menu items that move must go through shared helpers in `tests/ui/support/` (plan package UR-0), so later layout changes update one helper instead of many specs.
 - `src/ui/App.tsx` is split into per-workspace files before the layout work (plan package UR-1), so each later package owns distinct files.
 - The minimum supported viewport width for the no-wrap rule is 1024 px.
+- Several browser specs assert today's design values, such as font sizes, control widths, and header positions. The package that changes a value updates that assertion to the new value. Assertions about behaviour (alignment within 1 px, no nested scroll area, scroll restoration, single-line rows) are kept. The plan's "Browser tests and CI" section lists them.
+- The subtle text colour is #62707b (user decision O-1, 2026-10-27), not the #7b8a95 shown in the round-two mockups, so captions meet WCAG AA contrast.
 - Dark mode, density options, a command palette, glossary tooltips, and rule-based selection remain deferred.

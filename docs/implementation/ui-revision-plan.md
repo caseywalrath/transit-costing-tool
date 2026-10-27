@@ -2,7 +2,8 @@
 
 - Status: Approved design; no package started.
 - Date: 2026-10-27
-- Decision record: `docs/decisions/0046-interface-revision-design-system.md`
+- Decision record: `docs/decisions/0047-interface-revision-design-system.md`
+- Base: `main` at the merge of PR #30 (`fd42c5d`, Decision 0046: Regenerate selected and Undo last regeneration are separate Trips actions). This plan keeps that behaviour (section 3, row "Regenerate and undo").
 - Reference mockups: `docs/implementation/ui-revision/mockups.html` (open in a browser) and the screenshots in `docs/implementation/ui-revision/screens/`
 - Published review page (user's account, private): https://claude.ai/artifact/PRQ43BF8oWjmffcKFLLBc7
 
@@ -48,12 +49,14 @@ The user asked for Claude model names on this plan. They map onto the classes in
 | Type | Source Sans 3, bundled; TY-A (tabular digits, no monospaced face). |
 | F1–F8 | All option A (Appendix C). |
 | T1-A, T3 | Sentence case with lower-case domain terms in the interface; "inflation". |
+| O-1 | Subtle text colour is #62707b (decided 2026-10-27). |
+| Regenerate and undo | Decision 0046 (PR #30) is kept: Regenerate is never hidden or replaced by a saved undo, is disabled with a hint until a selected Trip has changed runtimes, and acts only on those Trips. Undo is a separate item listed only while `regenerationUndoApplies` is true. Only the placement changes (UR-6c). |
 
 ## 4. Open items for the user
 
 These must be answered at the gate named. The plan states the default an agent applies if the user has not answered.
 
-- **O-1 Subtle text contrast (gate before UR-2).** The approved `--color-text-subtle` (#7b8a95) has a contrast ratio of 3.55:1 on white and 3.15:1 on the page background, below the WCAG AA minimum of 4.5:1 for normal text. Option 1: keep the value and use it only for non-text marks (chevrons, checkbox borders, the `—` placeholder is text and would fail). Option 2 (recommended): change it to **#62707b** (5.09:1 on white, 4.52:1 on the page background), which looks almost identical. **Default if unanswered: Option 2.**
+- **O-1 Subtle text contrast: decided.** The user chose **#62707b** on 2026-10-27 (5.09:1 on white, 4.52:1 on the page background). The mockups and screenshots show the earlier #7b8a95; use #62707b.
 - **O-2 Selection bar position (gate after UR-6c).** The mockup puts the selection bar above the Trips table. With 138 rows, the bar scrolls out of view when the selected rows are far down. Option 1: keep it above the table, as approved. Option 2: also keep it in view by sticking it to the bottom of the window while the table is on screen. **Default: Option 1**; UR-6c captures a screenshot of the scrolled case for the user to judge.
 - **O-3 Editable runtimes of an hour or more (information only).** Editable runtime cells keep showing `:61`, because `1:01` already means one minute one second in the entry grammar. Totals and other display-only durations show `1:01`.
 
@@ -66,6 +69,29 @@ These must be answered at the gate named. The plan states the default an agent a
 5. **Preferences.** New per-device preferences use `readStoredRecord` from `src/ui/preferences.ts` and must tolerate missing or malformed values. Keys follow the pattern `transit-costing-tool.<name>.v1`.
 6. **Verification for every package:** `pnpm typecheck`, `pnpm test`, `pnpm build`, and `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm test:ui` (omit the variable outside Claude Code cloud sessions). Then run the visual tour (Appendix E) and look at every screenshot. A new or changed browser spec must pass `--repeat-each=10 --workers=8` (see `codex.md`).
 7. **Minimum width.** Every layout must work at 1024 px and 1440 px wide. The tour captures both.
+8. **Browser tests and CI.** Follow section 5a.
+
+## 5a. Browser tests and CI
+
+GitHub runs two required checks on every pull request to `main` (`.github/workflows/ci.yml`): `verify` (frozen-lockfile install, typecheck, unit tests, build) and `browser` (Playwright with its bundled Chromium; `PLAYWRIGHT_CHROMIUM_EXECUTABLE` is not set there). Every UR package lands through its own pull request, and both checks must be green before the user merges it.
+
+1. **Never skip, delete, or weaken a test to get green.** Do not add `test.skip`, `test.fixme`, or wider tolerances. The only exception is the visual tour, which is skipped by design unless `UI_TOUR=1`.
+2. **Behaviour assertions stay; design-value assertions move with the design.** Where a spec asserts a value this plan changes (a font size, a control width, a header position), the package that makes the change updates the value to the new one in the same commit. It also names the spec and the old and new value in its report. Assertions about behaviour stay exactly as strict: alignment within 1 px, no nested vertical scroll, scroll restoration, single-line rows, and keyboard paths.
+3. **Specs that assert design values today:**
+
+   | Spec | What it asserts now | Package that may change it | What must stay |
+   | --- | --- | --- | --- |
+   | `standards-mode.spec.ts` | Root and table cell font size `14px` | UR-2 (the token keeps 14 px, so no change expected) | Standards mode, page language and title |
+   | `trip-table-layout.spec.ts` | Pattern selector width ≤ 96.5 px and font size `11.2px`; scroll positions; duplicate heading widths | UR-6c (the selector becomes a chip), UR-8 (pinned columns) | Duplicate heading widths match within 1 px; heading y within 1 px; horizontal scroll sync; scroll restoration after a shift |
+   | `runtime-table-layout.spec.ts` | From/To field widths ≤ 62.5 px; a 10 px border between To and the first segment | UR-7 (borderless grid cells) | From/To adjacent; segments after To; the table fits its region |
+   | `workflow-section-layout.spec.ts`, `service-day-copy-layout.spec.ts` | Runtime and Trip action triggers inside their section headers; Shift drawer 320 px wide at the lower right | UR-6c (header actions change; the drawer is unchanged) | Header actions inside the header; drawer size and position |
+   | `keyboard.spec.ts` | axe rules and menu keyboard paths | UR-5, UR-6c, UR-11 | All axe rules pass; every menu is keyboard-operable |
+   | `unified-action-layer.spec.ts` | The Trips Actions menu contents, including PR #30's Regenerate and Undo tests | UR-6c | Every PR #30 assertion, re-expressed for the new placement (UR-6c acceptance) |
+
+4. **Fonts make tests more stable.** Bundling Source Sans 3 (UR-2) removes the difference between the local Chromium and the CI runner's system fonts. After UR-2, rerun the four layout specs above with `--repeat-each=10 --workers=8` locally. In the pull request, report any value that differed between the local run and CI.
+5. **New specs.** Each new spec passes `--repeat-each=10 --workers=8` before it is pushed (`codex.md`). Assert counts and states, not elapsed time.
+6. **The tour never runs in CI.** `visual-tour.spec.ts` skips itself without `UI_TOUR=1`, writes only to `test-results/` (ignored by Git), and must not be made a required check.
+7. **Test count.** Each package report states the browser test count before and after. A drop must be explained by a merged or replaced test, named in the report.
 
 ---
 
@@ -103,7 +129,7 @@ UR-3 can run in parallel with UR-2 because it touches different files. UR-6a, 6b
 
 **Goal.** Make the browser tests independent of where controls sit, before anything moves. Add a screenshot tour for visual review. No production code changes.
 
-**Read.** `tests/ui/support/*.ts`, a sample of specs (`trip-profile.spec.ts`, `blocking-workspace.spec.ts`, `costing-workspace.spec.ts`, `unified-action-layer.spec.ts`), and `src/ui/MenuButton.tsx`.
+**Read.** Section 5a, `tests/ui/support/*.ts`, a sample of specs (`trip-profile.spec.ts`, `blocking-workspace.spec.ts`, `costing-workspace.spec.ts`, `unified-action-layer.spec.ts`, including the two regeneration tests that PR #30 added), and `src/ui/MenuButton.tsx`.
 
 **Owns.** `tests/ui/support/ui.ts` (new), `tests/ui/visual-tour.spec.ts` (new), and edits to existing specs that only replace direct selectors with helper calls.
 
@@ -123,8 +149,8 @@ UR-3 can run in parallel with UR-2 because it touches different files. UR-6a, 6b
 | `trips.build` | Trip actions › Build trips… |
 | `trips.add` | Trip actions › Add trip… |
 | `trips.shift` | Trip actions › Shift selected… |
-| `trips.regenerate` | Trip actions › Regenerate selected… |
-| `trips.undoRegeneration` | Trip actions › Undo last regeneration (…) |
+| `trips.regenerate` | Trip actions › Regenerate selected… (always listed; Decision 0046) |
+| `trips.undoRegeneration` | Trip actions › Undo last regeneration (N Trips) (separate item `undo-regeneration`, listed only while the undo applies) |
 | `trips.changePattern` | Trip actions › Change pattern… |
 | `trips.assignBlock` | Trip actions › Assign Block… |
 | `trips.unassignBlock` | Trip actions › Unassign from Block… |
@@ -196,7 +222,7 @@ Move each helper next to its only user. A helper with users in more than one fil
 
 **Goal.** Introduce the approved tokens and font. Replace every raw value in CSS. The layout does not change.
 
-**Read.** Appendix A, Decision 0046, and the screenshots `screens/token-swatches.png` and `screens/route-tab.png`.
+**Read.** Appendix A, Decision 0047, section 5a, and the screenshots `screens/token-swatches.png` and `screens/route-tab.png`.
 
 **Owns.** `src/ui/styles/*.css`, `src/main.tsx` (font import), `package.json`, and `pnpm-lock.yaml`.
 
@@ -354,7 +380,7 @@ Move each helper next to its only user. A helper with users in more than one fil
 
 ### UR-6c Trips tab layout, Runtimes R-A, selection bar (Sonnet)
 
-**Read.** `screens/trips-runtimes-collapsed.png`, `screens/trips-runtimes-open.png`, mockup section 4, and `src/ui/trips/TripsWorkspace.tsx`.
+**Read.** `screens/trips-runtimes-collapsed.png`, `screens/trips-runtimes-open.png`, mockup section 4, Decision 0046 (`docs/decisions/0046-separate-regenerate-and-undo-actions.md`), section 5a, and `src/ui/trips/TripsWorkspace.tsx`.
 
 **Specification.**
 - **Runtimes section (R-A).**
@@ -367,8 +393,10 @@ Move each helper next to its only user. A helper with users in more than one fil
   - a "View" menu (`menuitemcheckbox`: Show runtime bands, Show headways, Round displayed times);
   - an "Add trip" button;
   - a **"Build trips…"** primary button;
-  - a "⋯" menu (`Trip actions`: Copy trips from another day…, Export trips CSV, Undo last regeneration (N trips) when available).
+  - a "⋯" menu (`Trip actions`: Undo last regeneration (N trips), Copy trips from another day…, Export trips CSV). The Undo item keeps Decision 0046 exactly: it is a separate item listed only while `regenerationUndoApplies(…)` is true, is never shown disabled for that reason, is disabled while a write runs or a Shift is staged, and runs `undoRegeneration()` unchanged.
 - **Selection bar** (`SelectionBar`). Shown above the table while one or more trips are selected: "N trips selected", then Shift…, Change pattern…, Regenerate…, Assign block…, Unassign…, Delete… (danger), Clear. Each button keeps the disabled rules and titles of today's menu item. Selection changes still go through `requestShiftScopeChange`.
+- **Regenerate… (Decision 0046 kept).** The button is always present in the selection bar and is never hidden or replaced while an undo is saved. It is disabled, with the title "Select trips with changed runtimes.", until a selected trip has changed runtimes; with "Discard the staged shift first." while a Shift is staged; and while a write runs. It opens the review for `selectedChangedRuntimeTripIds` only, so select-all stays safe. Copy the `disabled`, `title`, and `onSelect` expressions from today's `regenerate` menu item; do not rewrite them.
+- **"Run times have changed" notice.** Add a "Select these trips" button (secondary, small) that selects every visible trip with changed runtimes, using `requestShiftScopeChange`. This keeps Regenerate one click away now that it is no longer in a menu that is always visible.
 - **Change pattern with one trip selected** uses today's single-trip review (`changeTripPattern`, signed over the trip, target pattern, and target profile). With more than one, it uses the batch dialog. This replaces the per-row Pattern `<select>`.
 - **Pattern column.** A `Chip` showing the pattern's Label (`directionLabel`) when set, otherwise the pattern name with a leading "<Direction>: " removed. The chip's `title` is the full name. Remove the per-row `<select aria-label="Trip pattern">`; the draft Add-trip row keeps its select.
 - **Block column.** A `BlockPill`: neutral background, a dot in the block's existing hashed colour, and the block number as text. The assignment menu behaviour is unchanged.
@@ -376,7 +404,16 @@ Move each helper next to its only user. A helper with users in more than one fil
 
 **Acceptance.**
 - All Trips specs pass (the `trips-*`, `trip-*`, `shift-drawer`, `add-trip-draft`, and `stale-trip-reasons` specs, among others).
-- New checks: the open state persists across reload; Close is disabled while dirty; the selection bar appears and disappears with the selection; Change pattern with one trip opens the single-trip review.
+- New checks: the open state persists across reload; Close is disabled while dirty; the selection bar appears and disappears with the selection; Change pattern with one trip opens the single-trip review; "Select these trips" selects exactly the trips marked "Run times changed".
+- **PR #30 regression guard.** Rewrite the two regeneration tests in `unified-action-layer.spec.ts` for the new placement and keep every assertion:
+  1. With no regeneration yet, no Undo item exists.
+  2. After one regeneration, Undo (1 trips) is enabled in Trip actions, and Regenerate… is present but disabled when the selected trip no longer has changed runtimes.
+  3. Select-all enables Regenerate…, and its review lists only the two trips with changed runtimes.
+  4. The second regeneration replaces the undo (Undo (2 trips)).
+  5. The undo survives a reload and restores the earlier times.
+  6. After an undo, the Undo item is gone.
+- `regenerationUndoApplies` unit tests in `tripsWorkspaceView.test.ts` pass unchanged.
+- `docs/ui-conventions.md`: rewrite the Trips Actions bullet, which since PR #30 describes Regenerate and Undo in the menu, for the new placement. Keep its rules. In `docs/decisions/0046-separate-regenerate-and-undo-actions.md`, change the header line "Placement amended by Decision 0047 (planned)" to "(implemented)".
 - The fixed duplicate heading row (Decision 0035) still matches the table's columns after the Pattern column change: `trip-table-layout.spec.ts` passes.
 - Capture one extra tour screenshot with rows 120 to 125 selected and the page scrolled to them, for O-2.
 
@@ -538,7 +575,7 @@ Apply `useGridNavigation` to the Nodes table (Name, Short, Notes; Type stays a s
 - Review the full diff since UR-0 for layer violations, raw style values, missing helper use, and inconsistent component use.
 - Run every check and the tour at both widths. Compare the tour with the screenshots in `docs/implementation/ui-revision/screens/` and list the differences.
 - Update `architecture_overview.md` (the UI Structure section: header rows, surface levels, save rule, grid, and the minimum width), `codex.md` (current implementation status), and `docs/ui-conventions.md` (a consolidated "Interface revision" section; delete superseded bullets).
-- Set Decision 0046 to "Accepted (implemented)" and write `docs/implementation/ui-revision-closeout.md`.
+- Set Decision 0047 to "Accepted (implemented)" and write `docs/implementation/ui-revision-closeout.md`.
 
 **Gate.** User acceptance.
 
@@ -559,7 +596,7 @@ Apply `useGridNavigation` to the Nodes table (Name, Short, Notes; Type stays a s
 ## Appendix A. Tokens (`src/ui/styles/tokens.css`)
 
 ```css
-/* Decision 0046. Component CSS uses only these names. */
+/* Decision 0047. Component CSS uses only these names. */
 :root {
   /* Surfaces */
   --color-canvas: #eef2f4;        /* page background */
@@ -571,7 +608,7 @@ Apply `useGridNavigation` to the Nodes table (Name, Short, Notes; Type stays a s
   /* Text */
   --color-text: #17212b;
   --color-text-muted: #536574;    /* labels, secondary text */
-  --color-text-subtle: #62707b;   /* captions, placeholders. O-1: #7b8a95 if the user keeps the original value */
+  --color-text-subtle: #62707b;   /* captions, placeholders (O-1, decided) */
   /* Action and selection */
   --color-accent: #1b668d;        /* primary button, active tab, links */
   --color-accent-strong: #134f6d; /* primary hover */
@@ -728,6 +765,9 @@ Use `Intl.NumberFormat('en-US', …)`, so separators do not depend on the browse
 | Run Time · Next Trip | Run time · Next trip |
 | Add Time Band | Add time band |
 | Run Times Have Changed | Run times have changed |
+| Regenerate selected… (menu item) | Regenerate… (selection bar; UR-6c) |
+| Undo last regeneration (N Trips) | Undo last regeneration (N trips) |
+| Select Trips with changed runtimes. (hint) | Select trips with changed runtimes. |
 | Build Trips (drawer title) | Build trips |
 | Copy Trips from day… | Copy trips from another day… |
 | Copy runtimes from day… | Copy runtimes from another day… |
