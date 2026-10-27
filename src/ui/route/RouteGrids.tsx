@@ -3,11 +3,14 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import { useGridNavigation } from '../shared/useGridNavigation';
 import { TrashIcon } from '../shared/icons';
+import { abbreviatePlaceName } from '../../application/shortNames';
 import { type Node, type NodeKind, type RoutePattern } from '../../domain/types';
 
 const NODE_KINDS: NodeKind[] = ['timepoint', 'terminal', 'garage', 'other'];
 const NODE_KIND_LABELS: Record<NodeKind, string> = { timepoint: 'Timepoint', terminal: 'Terminal', garage: 'Garage', other: 'Other' };
 const NODE_COLUMNS = ['Node name', 'Node short name', 'Node type', 'Node notes'] as const;
+/** The short name the Blocking tables use when none is entered, shown as a placeholder only when it differs from the name. */
+const generatedNodeShortName = (node: Node) => { const generated = abbreviatePlaceName(node.name); return generated !== node.name.trim() ? generated : ''; };
 
 export function NodesGrid({ nodes, savedNodes, pendingDeletes, saving, errorsFor, newNodeButton, onChange, onSetPendingDelete, onAdd }: {
   nodes: Node[]; savedNodes: Node[]; pendingDeletes: Set<string>; saving: boolean; errorsFor: (id: string) => string[];
@@ -35,7 +38,7 @@ export function NodesGrid({ nodes, savedNodes, pendingDeletes, saving, errorsFor
           return <td key={label} {...grid.cellProps(r, c)} className={edited ? 'grid-cell grid-cell--edited' : 'grid-cell'} data-cell={label}>
             {c === 2 ? <select data-grid-control tabIndex={-1} aria-label={label} value={node.kind} disabled={pending || saving} onChange={(event) => onChange(node.id, { kind: event.target.value as NodeKind })}>{NODE_KINDS.map((kind) => <option key={kind} value={kind}>{NODE_KIND_LABELS[kind]}</option>)}</select>
               : editing ? <input {...grid.inputProps} className="grid-cell__input" aria-label={label} />
-                : <span className={!text(node, c) ? 'grid-cell__placeholder' : undefined}>{text(node, c) || (c === 0 ? 'Enter node name' : '')}</span>}
+                : <span className={!text(node, c) ? 'grid-cell__placeholder' : undefined}>{text(node, c) || (c === 0 ? 'Enter node name' : c === 1 ? generatedNodeShortName(node) : '')}</span>}
             {c === 0 && errors.map((error) => <small className="field-error" key={error}>{error}</small>)}
           </td>;
         })}

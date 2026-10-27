@@ -179,11 +179,12 @@ test('a Trip from another Route shows that Route in its Pattern pill and resolve
   await expect(rows).toHaveCount(2);
   const ownPill = rows.nth(0).locator('.pattern-pill');
   const otherPill = rows.nth(1).locator('.pattern-pill');
-  await expect(otherPill).toHaveText('31B · Cross Pattern');
+  // UR-13: the pill shows the Pattern's short name (generated here: direction abbreviation, then the name); the tooltip keeps the full name.
+  await expect(otherPill).toHaveText('31B · SB Cross Pattern');
   await expect(otherPill).toHaveAttribute('title', '31B · Cross Pattern');
   await expect(ownPill).not.toContainText('·');
-  expect((await ownPill.innerText()).trim().length).toBeGreaterThan(0);
-  await expect(ownPill).toHaveAttribute('title', (await ownPill.innerText()).trim());
+  await expect(ownPill).toHaveText(/^(NB|SB) \S/);
+  await expect(ownPill).toHaveAttribute('title', /^(Northbound|Southbound): /);
   await expect(rows.nth(1)).not.toContainText('Missing pattern');
   // The other Route's Trip resolves its start and end Nodes instead of showing dashes.
   await expect(rows.nth(1).locator('.blocking-node-column').first()).not.toHaveText('—');
@@ -197,14 +198,19 @@ test('Blocking shows hours with the Costing rounding: Saturday Block 22 reads 14
   await expect(row).not.toContainText('14.57');
 });
 
-test('the labels are exact: Move Trip counts Trips only, "No current issues." is neutral, Pattern pills carry the full name, and the menus say Trip Profile', async ({ page }) => {
+test('the labels are exact: Move Trip counts Trips only, "No current issues." is neutral, Pattern pills show the short name with the full name as tooltip, and the menus say Trip Profile', async ({ page }) => {
   await openBlocking(page);
   await selectBlock(page, '26');
   // Block 26 has a Pull-out row first: the first Trip is still "Trip 1".
   await expect(currentBlock(page).getByRole('button', { name: 'Move trip 1 down', exact: true })).toBeVisible();
   await expect(currentBlock(page).getByRole('button', { name: 'Move trip 1 up', exact: true })).toBeDisabled();
   await expect(currentBlock(page).getByRole('button', { name: /^Move trip 0/ })).toHaveCount(0);
-  for (const pill of await currentBlock(page).locator('.pattern-pill').all()) await expect(pill).toHaveAttribute('title', (await pill.innerText()).trim());
+  for (const pill of await currentBlock(page).locator('.pattern-pill').all()) {
+    await expect(pill).toHaveText(/^(NB|SB) \S/);
+    await expect(pill).toHaveAttribute('title', /^(Northbound|Southbound): /);
+  }
+  // Start and End show the Node's short name (generated: "Wagon Road" → "Wagon Rd") with the full name as tooltip.
+  await expect(currentBlock(page).locator('.blocking-node-column span[title="Wagon Road"]').first()).toHaveText('Wagon Rd');
 
   // A Block without issues says so in a neutral style, not the amber warning style that real issues use.
   const noIssues = page.getByText('No current issues.');

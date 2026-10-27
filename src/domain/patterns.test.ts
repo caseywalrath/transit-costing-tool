@@ -61,7 +61,7 @@ describe('patterns', () => {
     const copy = duplicatePattern(source, 'Outbound Short', '2026-02-01T00:00:00.000Z');
     expect(copy.id).not.toBe(source.id);
     expect(copy.name).toBe('Outbound Short');
-    expect(copy.directionLabel).toBe(source.directionLabel);
+    expect(copy.directionLabel).toBeUndefined();
     expect(copy.notes).toBe(source.notes);
     expect(copy.points.map((point) => point.nodeId)).toEqual(['1', '2']);
     expect(copy.points.map((point) => point.sequence)).toEqual([0, 1]);

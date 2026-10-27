@@ -1,15 +1,15 @@
-/* Bar and label primitives (UR-4, Appendix B): save bar, selection bar, context field, chip, block pill. Not yet rendered by any tab. */
-.save-bar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px; padding: var(--space-2) 14px;
+/* Bar and label primitives (UR-4, Appendix B): save bar, selection bar, context field, chip, block pill. */
+.save-bar { position: sticky; bottom: 0; display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--inset-panel);
   background: var(--color-warn-soft); border-top: 1px solid var(--color-warn-border); border-radius: 0 0 var(--radius-panel) var(--radius-panel); }
 .save-bar__message { flex: 1; color: var(--color-warn); font-weight: var(--font-weight-semibold); }
-.selection-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 10px; margin-bottom: var(--space-2);
+.selection-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-inline); padding: var(--space-inline) var(--inset-tight); margin-bottom: var(--space-2);
   background: var(--color-selection); border: 1px solid var(--color-accent-soft); border-radius: var(--radius-panel); }
-.selection-bar__count { margin-right: 6px; }
-.context-field { display: inline-flex; align-items: center; gap: 6px; flex: none; min-width: 0; }
+.selection-bar__count { margin-right: var(--space-inline); }
+.context-field { display: inline-flex; align-items: center; gap: var(--space-inline); flex: none; min-width: 0; }
 .context-field__label { font-size: var(--font-size-label); font-weight: var(--font-weight-semibold); color: var(--color-text-muted); }
 .chip { display: inline-flex; align-items: center; height: 22px; padding: 0 var(--space-2); border-radius: var(--radius-control); background: var(--color-sunken);
-  font-size: 12.5px; font-weight: var(--font-weight-semibold); white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+  font-size: var(--font-size-chip); font-weight: var(--font-weight-semibold); white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 button.chip { min-height: 22px; border: 0; color: var(--color-text); }
-.block-pill { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 var(--space-2) 0 6px; border-radius: var(--radius-pill);
-  border: 1px solid var(--color-border); background: var(--color-surface); font-size: 12.5px; font-weight: var(--font-weight-semibold); }
+.block-pill { display: inline-flex; align-items: center; gap: var(--space-1); height: 22px; padding: 0 var(--space-2) 0 var(--space-inline); border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border); background: var(--color-surface); font-size: var(--font-size-chip); font-weight: var(--font-weight-semibold); }
 .block-pill__dot { width: 8px; height: 8px; border-radius: 50%; }

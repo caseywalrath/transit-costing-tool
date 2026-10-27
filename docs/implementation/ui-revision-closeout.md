@@ -1,6 +1,6 @@
 # Interface revision closeout (UR-12)
 
-- Status: Integration review complete; awaits user acceptance (the UR-12 gate)
+- Status: Accepted by the user on 2026-10-27, with the follow-up in section 7 (UR-13)
 - Date: 2026-10-27
 - Plan: `docs/implementation/ui-revision-plan.md`
 - Decision: `docs/decisions/0047-interface-revision-design-system.md` (now "Accepted (implemented)")
@@ -113,3 +113,19 @@ The references are in `docs/implementation/ui-revision/screens/`. They were draw
 - `docs/ui-conventions.md`: a consolidated "Interface revision" section at the top (tokens and formats, surfaces and actions, interface text, accessibility, and one subsection per tab and for the grid), including the UR-8, UR-9, UR-10, and UR-11 conventions that had not been recorded. Superseded bullets in the older sections were rewritten or deleted (workflow-section styling, the Runtime header Save and Discard, the Phase 4 Blocking Actions menus, the disabled selection actions).
 - `docs/decisions/0047-interface-revision-design-system.md`: status "Accepted (implemented)".
 - `codex.md`: current implementation status.
+
+## 7. User decisions and follow-up package UR-13 (2026-10-27)
+
+The user approved the open gates (F-2) and accepted Phase UR with these decisions:
+
+| Finding | Decision | Implemented in UR-13 |
+| --- | --- | --- |
+| F-1 | Add role tokens; snap one-off values | Tokens `--space-inline` (6 px), `--inset-tight` (10 px), `--inset-panel` (14 px), and `--font-size-chip` (12.5 px) replace the raw values added in Phase UR. One-off values snap to the scale: panel gaps of 14 px become 16 px (`.trips-workspace`, `.blocking-workspace`, `.blocking-top`), the save-bar gap and the rail gap 10 → 8 px, the Block pill gap 5 → 4 px, the application padding 18/30 → 16/24 px, and the inline-note icon glyph 10 → 11.5 px. Raw values remain only for control geometry and in rules written before Phase UR. |
+| F-3 | Short names for Patterns and Nodes in Trips and Blocking, generated when not entered | The Pattern "Label" field is now **Pattern short name**, beside "Pattern name" (still stored as `directionLabel`: no schema, backup, or CSV change). `src/application/shortNames.ts` generates a short name when none is entered ("Northbound: Evans to Wagon Road" → "NB Evans–Wagon Rd") and shortens Node names ("Westminster Station" → "Westminster Sta"); a Node's entered short name is used first. Trips chips and Blocking pills use the Pattern short name; the Blocking Start and End cells use the Node short name; every one keeps the full name as its tooltip. Reverse and Duplicate no longer copy the short name (previously Reverse wrote "Reverse <label>"). The Pattern short name field and the empty Nodes Short cells show the generated name as a placeholder. |
+| F-4, F-6 | Keep as they are | — |
+| F-5 | Sort icon beside the label, shown only on the sorted column | Done in both Blocking tables; an idle ↕ shows on hover or keyboard focus. |
+| Route details | Stacked rows | Route name, Short name, and Description stack in the left panel; the two top panels are equal width; the service-day count column is narrow and right-aligned. No scope caption was added (user decision). |
+
+Changes to tests in UR-13: `tripPatternChipText` and its three unit tests are replaced by `shortNames.ts` and nine unit tests; the duplicate-pattern unit test now expects no short name on the copy. Browser spec values changed with the design (plan section 5a, rule 2), all in `blocking-presentation.spec.ts`: the other-route pill reads "31B · SB Cross Pattern" (was "31B · Cross Pattern"; its tooltip is unchanged); the selected Route's pills read "NB …" or "SB …" with the full name as tooltip (was: tooltip equal to the text); a new assertion checks that a Start or End cell shows "Wagon Rd" with the tooltip "Wagon Road". The Pattern field is labelled "Pattern short name", not "Short name", because the Route details field already uses "Short name"; `single-tab.spec.ts` relies on that label being unique.
+
+Open observation: in the Unassigned trips panel at 1440 px, Pattern pills and the Start and End cells are still cut for the golden project ("NB Englewoo…", "Engle…"), because its Nodes have no short names and names such as "Englewood" have no street word to shorten. Entering Node short names (for example "ENG", "WSTM") fixes both, since generated Pattern short names use them.

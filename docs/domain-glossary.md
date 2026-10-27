@@ -48,9 +48,13 @@ One occurrence of a node within a pattern. It contains an order and cumulative d
 
 The directed connection between two adjacent pattern points. Segment distance is the difference between their cumulative mile values. Segment runtime is defined in a runtime band.
 
-### Label
+### Pattern short name
 
-Optional user-entered text on a pattern, such as southbound, clockwise, or To Englewood. It is descriptive and does not determine its direction group or pattern structure.
+Optional user-entered short text for a pattern, such as "NB Evans–Wagon Rd", shown in the Trips and Blocking tables. It is stored as `directionLabel` (formerly called Label). When it is empty, the tables show a name generated from the pattern name: the direction abbreviation, then the origin and destination with street words shortened. It is descriptive and does not determine its direction group or pattern structure. Reversing or duplicating a pattern does not copy it.
+
+### Node short name
+
+Optional user-entered short text for a node. The Blocking tables show it; when it is empty they show the node name with street and place words shortened ("Wagon Rd", "Westminster Sta").
 
 ### Reverse pattern
 

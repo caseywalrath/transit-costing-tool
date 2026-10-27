@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
 import type { BlockActivity, BlockingBlock, RoutePattern, RuntimeBand, RuntimeProfile, Trip, TripRegenerationUndo } from '../domain/types';
-import { buildTripTableView, buildTripsFieldProblems, parseBuildTripsForm, regenerationUndoApplies, runtimeBandTotalRange, tripPatternChipText, tripBlockAssignmentImpact, tripBlockUnassignmentImpact, type BuildTripsFormValues } from './tripsWorkspaceView';
+import { buildTripTableView, buildTripsFieldProblems, parseBuildTripsForm, regenerationUndoApplies, runtimeBandTotalRange, tripBlockAssignmentImpact, tripBlockUnassignmentImpact, type BuildTripsFormValues } from './tripsWorkspaceView';
 
 const stamp = metadata('2026-10-23T00:00:00.000Z');
 const pattern = (id: string): RoutePattern => ({ ...stamp, id, scenarioId: 's', routeId: 'r', name: id, directionId: 'out', points: [0, 1].map((index) => ({ id: `${id}-${index}`, nodeId: `n${index}`, sequence: index, cumulativeMiles: index, directionColumnId: `col-${index}` })) });
@@ -179,17 +179,3 @@ describe('runtimeBandTotalRange', () => {
   });
 });
 
-describe('tripPatternChipText', () => {
-  it('prefers the Pattern Label', () => {
-    expect(tripPatternChipText({ name: 'Southbound: Wagon Rd–Evans', directionLabel: 'Full' }, 'Southbound')).toBe('Full');
-  });
-  it('removes a leading direction name, whatever its case', () => {
-    expect(tripPatternChipText({ name: 'Southbound: Wagon Rd–Evans' }, 'Southbound')).toBe('Wagon Rd–Evans');
-    expect(tripPatternChipText({ name: 'southbound: Wagon Rd–Evans', directionLabel: '  ' }, 'Southbound')).toBe('Wagon Rd–Evans');
-  });
-  it('keeps the name when it has no such prefix or would become empty', () => {
-    expect(tripPatternChipText({ name: 'Wagon Rd–Evans' }, 'Southbound')).toBe('Wagon Rd–Evans');
-    expect(tripPatternChipText({ name: 'Southbound:' }, 'Southbound')).toBe('Southbound:');
-    expect(tripPatternChipText(undefined, 'Southbound')).toBe('Unnamed pattern');
-  });
-});

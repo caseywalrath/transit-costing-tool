@@ -41,18 +41,6 @@ export function runtimeBandTotalRange(profile: Pick<RuntimeProfile, 'bands'> | u
   return totals.length ? { minSeconds: Math.min(...totals), maxSeconds: Math.max(...totals) } : undefined;
 }
 
-/**
- * What the Pattern column chip shows: the Pattern's Label when it has one, otherwise its name without a leading "<Direction>: ".
- * The chip's tooltip is always the full name.
- */
-export function tripPatternChipText(pattern: Pick<RoutePattern, 'name' | 'directionLabel'> | undefined, directionName: string | undefined): string {
-  const label = pattern?.directionLabel?.trim();
-  if (label) return label;
-  const name = pattern?.name?.trim() || 'Unnamed pattern';
-  const prefix = directionName ? `${directionName}:` : '';
-  if (prefix && name.toLowerCase().startsWith(prefix.toLowerCase())) return name.slice(prefix.length).trim() || name;
-  return name;
-}
 
 export interface TripRowView { runTimeSeconds?: number; duplicate: boolean; singleBand?: RuntimeBand; segments?: BlendedSegment[] }
 /**

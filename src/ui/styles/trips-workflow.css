@@ -1,5 +1,5 @@
 /* Workflow primitives: a page is made of sections, section headers, and data-grid viewports. */
-.trips-workspace { display: grid; gap: 14px; max-width: 100%; }
+.trips-workspace { display: grid; gap: var(--space-4); max-width: 100%; }
 .trips-workspace > h1 { margin: 0; }
 .workflow-section, .prerequisite { border: 1px solid var(--color-border); border-top: 3px solid var(--color-accent); background: var(--color-surface); padding: var(--space-3); min-width: 0; }
 .workflow-section { position: relative; }
@@ -116,7 +116,7 @@
 .trip-block-warning { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 17px; height: 17px; border: 1px solid var(--color-warn-border); border-radius: 50%; background: var(--color-warn-soft); color: var(--color-warn); font-size: var(--font-size-caption); font-weight: 800; line-height: 1; cursor: help; }
 .trip-block-warning:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .menu-trigger.trip-block-assignment-trigger { max-width: 100%; }
-.menu-trigger.block-pill { min-height: 22px; padding: 0 var(--space-2) 0 6px; color: var(--color-text); }
+.menu-trigger.block-pill { min-height: 22px; padding: 0 var(--space-2) 0 var(--space-inline); color: var(--color-text); }
 .menu-trigger.block-pill .menu-chevron { display: none; }
 .menu-trigger.trip-block-unassigned-trigger { min-height: 20px; border: 0; background: transparent; color: var(--color-accent); padding: 1px 2px; font-size: var(--font-size-caption); text-decoration: underline; }
 .trip-block-assignment-dialog { width: min(480px, 100%); }

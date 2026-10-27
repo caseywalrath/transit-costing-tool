@@ -1,6 +1,6 @@
 # Decision 0047: Interface revision design system and layout
 
-- Status: Accepted (implemented). Packages UR-0 to UR-11 of `docs/implementation/ui-revision-plan.md` implement it; the integration review is `docs/implementation/ui-revision-closeout.md`. User acceptance of the implementation is the UR-12 gate.
+- Status: Accepted (implemented). Packages UR-0 to UR-13 of `docs/implementation/ui-revision-plan.md` implement it; the integration review is `docs/implementation/ui-revision-closeout.md`. The user accepted the implementation on 2026-10-27.
 - Date: 2026-10-27
 - Amends: Decision 0034 (headway display gains a pinned Departs column and change marking), Decision 0028 (toolbar layout), Decision 0046 (where Regenerate selected and Undo last regeneration are placed; their rules are kept, item 13), and the "Shared workflow and table hierarchy" conventions in `docs/ui-conventions.md`. Supersedes nothing else.
 
@@ -34,4 +34,5 @@ A UI/UX review in October 2026 found inconsistent visual hierarchy (every panel 
 - Several browser specs assert today's design values, such as font sizes, control widths, and header positions. The package that changes a value updates that assertion to the new value. Assertions about behaviour (alignment within 1 px, no nested scroll area, scroll restoration, single-line rows) are kept. The plan's "Browser tests and CI" section lists them.
 - The subtle text colour is #62707b (user decision O-1, 2026-10-27), not the #7b8a95 shown in the round-two mockups, so captions meet WCAG AA contrast.
 - Implementation added two things the design did not name: a compact copy of the Trips selection bar pinned above the fixed duplicate heading row (user request after UR-6c, plan item O-2), and the axe `target-size` rule beside `color-contrast` (UR-11).
+- At acceptance (UR-13) the user added: a **Pattern short name** (the former Label field) and Node short names, generated from the full names when not entered, shown in the Trips and Blocking tables; sort icons only on the sorted column; stacked Route details; and role tokens for the spacing between the scale steps.
 - Dark mode, density options, a command palette, glossary tooltips, and rule-based selection remain deferred.

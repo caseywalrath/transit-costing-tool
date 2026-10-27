@@ -43,6 +43,7 @@
   --font-family: 'Source Sans 3 Variable', 'Segoe UI', system-ui, sans-serif;
   --font-size-caption: 11.5px;  /* switcher captions, menu group labels */
   --font-size-label: 12px;      /* field labels, table headings */
+  --font-size-chip: 12.5px;     /* Pattern chips and Block pills */
   --font-size-note: 13px;       /* inline notes, status, subtitles */
   --font-size-body: 14px;       /* body, cells, controls */
   --font-size-title: 16px;      /* work surface titles, app name */
@@ -54,6 +55,9 @@
 
   /* Space, size, shape */
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px;
+  --space-inline: 6px;  /* between a label and its control, an icon and its text, and the items of a compact bar */
+  --inset-tight: 10px;  /* vertical padding of panel headers and supporting-panel bodies; horizontal padding of the selection bar */
+  --inset-panel: 14px;  /* horizontal padding inside work surfaces and the save bar */
   --control-height: 30px;
   --row-height: 30px;
   --radius-control: 5px;
