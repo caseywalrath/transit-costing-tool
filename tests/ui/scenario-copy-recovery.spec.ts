@@ -145,7 +145,7 @@ test('the version 7 upgrade repairs a Scenario that was duplicated with 138 refe
 
   const result = await upgradeFromVersion6(page, 'p03-upgrade', seed.rows);
 
-  expect(result.version).toBe(8);
+  expect(result.version).toBe(9);
   const copyBlocks = result.tables.blocks.filter((block: any) => block.scenarioId === seed.copyScenarioId);
   expect(nodeReferenceIds(copyBlocks).filter((id) => sourceNodeIds.has(id))).toHaveLength(0);
   expect(new Set(nodeReferenceIds(copyBlocks)).size).toBeGreaterThan(0);
@@ -164,7 +164,7 @@ test('the version 7 upgrade infers the Nodes of a copy whose source Scenario was
   const seed = seedWithLeakyCopy({ removeSource: true });
   const result = await upgradeFromVersion6(page, 'p03-upgrade-orphan', seed.rows);
   const copyNodeIds = new Set(seed.copyNodeIds);
-  expect(result.version).toBe(8);
+  expect(result.version).toBe(9);
   expect(result.tables.blocks).toHaveLength(seed.correctCopyBlocks.length);
   expect(nodeReferenceIds(result.tables.blocks).every((id) => copyNodeIds.has(id))).toBe(true);
   expect([...result.tables.blocks].sort((a: any, b: any) => a.id.localeCompare(b.id))).toEqual([...seed.correctCopyBlocks].sort((a, b) => a.id.localeCompare(b.id)));
@@ -174,7 +174,7 @@ test('a read-only tab still runs the version 7 upgrade, and its ordinary writes 
   const seed = seedWithLeakyCopy();
   const result = await upgradeFromVersion6(page, 'p03-upgrade-readonly', seed.rows, { readOnly: true });
   const sourceNodeIds = new Set(seed.sourceNodeIds);
-  expect(result.version).toBe(8);
+  expect(result.version).toBe(9);
   expect(nodeReferenceIds(result.tables.blocks.filter((block: any) => block.scenarioId === seed.copyScenarioId)).filter((id) => sourceNodeIds.has(id))).toHaveLength(0);
   expect(result.ordinaryWrite).toContain('read-only');
 });

@@ -378,26 +378,40 @@ export function removeRuntimeBand(profile: RuntimeProfile, index: number): Runti
   return { ...profile, bands: profile.bands.filter((_, bandIndex) => bandIndex !== index).map((band, sequence) => ({ ...band, sequence })) };
 }
 
-/** One parsed row of pasted runtimes. */
-export interface PastedRuntimeRow { bandLabel?: string; startTime: ServiceSeconds; endTime: ServiceSeconds; segmentRuntimeSeconds: DurationSeconds[]; calculationMethod?: RuntimeProfile['calculationMethod'] }
+export type RuntimeCalculationMethod = NonNullable<RuntimeProfile['calculationMethod']>;
+
+/** The method new Runtime profiles use on a Route that has none yet (Decision 0035 item 1). */
+export const DEFAULT_RUNTIME_CALCULATION_METHOD: RuntimeCalculationMethod = 'segmentStart';
 
 /**
- * The profile that applying pasted rows gives. Replace turns the rows into the complete profile (a row keeps the id of the band at its
- * position, so a later save updates that band) and takes the calculation method the rows name, else keeps the profile's. Append adds the
- * rows after the current bands and never changes the method (finding 4-025). `bands` are the pasted bands; `pastedMethod` is the method
- * the rows named, which Append ignores.
+ * The one calculation method of a Route's Runtime profiles (Decision 0045): the method most of them use, a profile without one counting
+ * as `singleBand`. A tie goes to `segmentStart`, then `singleBand`, then the legacy blend. A Route with no profiles uses the default.
  */
-export function applyPastedRuntimeRows(base: RuntimeProfile, rows: PastedRuntimeRow[], mode: 'replace' | 'append'): { profile: RuntimeProfile; bands: RuntimeBand[]; pastedMethod?: RuntimeProfile['calculationMethod'] } {
-  const firstSequence = mode === 'append' ? base.bands.length : 0;
-  const bands = rows.map((row, index): RuntimeBand => {
-    const sequence = firstSequence + index;
-    const existing = mode === 'replace' ? base.bands[index] : undefined;
-    return { id: existing?.id ?? newId(), label: row.bandLabel ?? existing?.label ?? `Time period ${sequence + 1}`, sequence, startTime: row.startTime, endTime: row.endTime, segmentRuntimeSeconds: [...row.segmentRuntimeSeconds] };
+export function routeRuntimeCalculationMethod(profiles: RuntimeProfile[]): RuntimeCalculationMethod {
+  if (!profiles.length) return DEFAULT_RUNTIME_CALCULATION_METHOD;
+  const counts = new Map<RuntimeCalculationMethod, number>();
+  for (const profile of profiles) { const method = profile.calculationMethod ?? 'singleBand'; counts.set(method, (counts.get(method) ?? 0) + 1); }
+  const order: RuntimeCalculationMethod[] = ['segmentStart', 'singleBand', 'blendSegments'];
+  return order.reduce((best, method) => (counts.get(method) ?? 0) > (counts.get(best) ?? 0) ? method : best, order.find((method) => counts.has(method))!);
+}
+
+/**
+ * Gives every profile of each Route the Route's one calculation method. A profile whose method changes gets the next calculation
+ * revision, so its Trips are reported as having changed runtimes; its saved Trip times are not rewritten. Profiles that already use
+ * the method are returned unchanged (the same objects). `method` sets the method of every Route in `profiles` instead of the majority.
+ */
+export function unifyRouteRuntimeCalculationMethods(profiles: RuntimeProfile[], now: string, method?: RuntimeCalculationMethod): { profiles: RuntimeProfile[]; changedProfileIds: string[] } {
+  const byRoute = new Map<string, RuntimeProfile[]>();
+  for (const profile of profiles) byRoute.set(profile.routeId, [...(byRoute.get(profile.routeId) ?? []), profile]);
+  const target = new Map([...byRoute].map(([routeId, routeProfiles]) => [routeId, method ?? routeRuntimeCalculationMethod(routeProfiles)]));
+  const changedProfileIds: string[] = [];
+  const unified = profiles.map((profile) => {
+    const routeMethod = target.get(profile.routeId)!;
+    if ((profile.calculationMethod ?? 'singleBand') === routeMethod) return profile;
+    changedProfileIds.push(profile.id);
+    return withRuntimeCalculationRevision(profile, { ...profile, calculationMethod: routeMethod, updatedAt: now });
   });
-  const pastedMethod = rows.find((row) => row.calculationMethod)?.calculationMethod;
-  const calculationMethod = mode === 'replace' ? pastedMethod ?? base.calculationMethod : base.calculationMethod;
-  const profile: RuntimeProfile = { ...base, ...(calculationMethod ? { calculationMethod } : {}), bands: mode === 'append' ? [...base.bands, ...bands] : bands };
-  return { profile, bands: mode === 'append' ? bands : profile.bands, ...(pastedMethod ? { pastedMethod } : {}) };
+  return { profiles: unified, changedProfileIds };
 }
 
 /**

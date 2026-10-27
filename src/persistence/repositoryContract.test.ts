@@ -146,7 +146,7 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       expect(normalize((await repository.getProjectSnapshot(snapshot.project.id))!)).toEqual(normalize(snapshot));
     });
 
-    it('exports a JSON backup at schema 6 and restores it unchanged (Dexie version 8 changes no backup format)', async () => {
+    it('exports a JSON backup at schema 6 and restores it unchanged (Dexie versions 8 and 9 change no backup format)', async () => {
       const { snapshot } = fixture();
       await repository.saveProjectSnapshot(snapshot);
       const backup = new ProjectBackupService((id) => repository.getProjectSnapshot(id), (value) => repository.saveProjectSnapshot(value));

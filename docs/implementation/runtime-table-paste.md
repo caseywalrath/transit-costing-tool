@@ -2,6 +2,8 @@
 
 ## Status
 
+**Superseded and removed** on 2026-10-27 by Decision 0045: Runtime paste and Runtime profile CSV import no longer exist. Runtime profile CSV export remains. This plan is kept as history.
+
 Implemented on 2026-10-20 as a scoped revision to the Trips Runtimes editor. This workflow does not import scheduled Trips or full Excel workbooks.
 
 ## Objective

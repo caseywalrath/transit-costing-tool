@@ -239,6 +239,52 @@ describe('RouteDefinitionService', () => {
 });
 
 // Scenario-wide writes (review issues I-001 and I-016 area, package P01): the caller's Scenario copy may be older than storage.
+describe('one runtime calculation method per Route (Decision 0045)', () => {
+  async function twoPatternRoute() {
+    const { service } = createService();
+    const created = await service.createProject('Method project');
+    const addedRoute = await service.addRoute(created.records);
+    let aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
+    const added = await addTwoStopPattern(service, aggregate, { names: ['South', 'North'], patternName: 'Trunk' });
+    aggregate = added.aggregate;
+    const branch = await savePatternDraft(service, aggregate, { ...service.duplicatePatternDraft(aggregate, aggregate.patterns[0].id), name: 'Branch' });
+    aggregate = branch.aggregate;
+    const trunkProfile = await service.createDefaultRuntimeProfile(aggregate.patterns.find((pattern) => pattern.name === 'Trunk')!, 'Trunk runtimes');
+    const branchProfile = await service.createDefaultRuntimeProfile(branch.pattern, 'Branch runtimes');
+    return { service, routeId: aggregate.route.id, branchPattern: branch.pattern, trunkProfile, branchProfile };
+  }
+
+  it('gives a new profile the method the Route already uses', async () => {
+    const { service, routeId, branchPattern, trunkProfile, branchProfile } = await twoPatternRoute();
+    expect([trunkProfile.calculationMethod, branchProfile.calculationMethod]).toEqual(['segmentStart', 'segmentStart']);
+    await service.setRouteRuntimeCalculationMethod(routeId, 'singleBand');
+    const copy = await service.copyRuntimeProfile(trunkProfile.id, 'Trunk copy');
+    expect(copy.calculationMethod).toBe('singleBand');
+    const another = await service.createDefaultRuntimeProfile(branchPattern, 'Another');
+    expect(another.calculationMethod).toBe('singleBand');
+  });
+
+  it('changes every profile of the Route at once and reports the profiles and Trips the change affects', async () => {
+    const { service, routeId, trunkProfile } = await twoPatternRoute();
+    expect(await service.getRouteRuntimeCalculationMethodImpact(routeId, 'singleBand')).toEqual({ profileCount: 2, tripCount: 0 });
+    expect(await service.getRouteRuntimeCalculationMethodImpact(routeId, 'segmentStart')).toEqual({ profileCount: 0, tripCount: 0 });
+    await service.setRouteRuntimeCalculationMethod(routeId, 'singleBand');
+    const profiles = await service.listRuntimeProfiles(routeId);
+    expect(profiles.map((profile) => [profile.calculationMethod, profile.calculationRevision])).toEqual([['singleBand', 1], ['singleBand', 1]]);
+    expect(profiles.some((profile) => profile.id === trunkProfile.id)).toBe(true);
+  });
+
+  it('applies a method saved on one profile to every profile of the Route, and keeps the Route method when another field changes', async () => {
+    const { service, routeId, trunkProfile, branchProfile } = await twoPatternRoute();
+    await service.saveRuntimeProfile({ ...trunkProfile, calculationMethod: 'singleBand' });
+    expect((await service.listRuntimeProfiles(routeId)).map((profile) => profile.calculationMethod)).toEqual(['singleBand', 'singleBand']);
+    // A save that leaves the stored method alone cannot put a different method on one profile.
+    const stored = (await service.listRuntimeProfiles(routeId)).find((profile) => profile.id === branchProfile.id)!;
+    const renamed = await service.saveRuntimeProfile({ ...stored, name: 'Branch renamed' });
+    expect(renamed.calculationMethod).toBe('singleBand');
+  });
+});
+
 describe('Scenario-wide writes re-read stored records', () => {
   const at = '2026-09-14T00:00:00.000Z';
   const later = '2026-09-15T00:00:00.000Z';

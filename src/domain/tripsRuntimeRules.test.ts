@@ -1,5 +1,5 @@
 // Review package P15 (issue I-074c, finding 4-014). The Trips and Runtime rules that App.tsx used to compute for itself, now in the
-// domain, each with a test: Runtime band editing and paste, reverse-copy candidates, trip band shading, shift minutes, duplicate
+// domain, each with a test: Runtime band editing, the Route's one calculation method, reverse-copy candidates, trip band shading, shift minutes, duplicate
 // departures, display rounding, headways, the usable-Pattern rule, and a Pattern's total distance.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { setIdGenerator } from './ids';
@@ -7,7 +7,7 @@ import { metadata } from './ids';
 import { isUsablePattern, orderDirections, usableDirectionPatterns } from './directions';
 import { sortServiceDays } from './serviceDays';
 import { patternTotalMiles } from './patterns';
-import { addRuntimeBand, applyPastedRuntimeRows, describeTripBandShading, duplicateRuntimeBand, removeRuntimeBand, reverseRuntimeCandidates, updateRuntimeBand } from './runtime';
+import { addRuntimeBand, describeTripBandShading, duplicateRuntimeBand, removeRuntimeBand, reverseRuntimeCandidates, routeRuntimeCalculationMethod, unifyRouteRuntimeCalculationMethods, updateRuntimeBand } from './runtime';
 import { formatNetShift, formatStagedShift, parseShiftSeconds } from './tripShift';
 import { calculateTimepointHeadways, duplicateDepartureKeys, roundServiceTimeToMinute } from './trips';
 import type { RouteDirection, RoutePattern, RuntimeBand, RuntimeProfile, ServiceDayDefinition, Trip } from './types';
@@ -59,37 +59,28 @@ describe('Runtime band editing', () => {
   });
 });
 
-describe('pasted Runtime rows', () => {
-  const base = profile([band('b1', 0, 0, 3600, [60]), band('b2', 1, 3600, 7200, [90])], 'singleBand');
-  const rows = [
-    { bandLabel: 'Early', startTime: 0, endTime: 1800, segmentRuntimeSeconds: [30] },
-    { startTime: 1800, endTime: 3600, segmentRuntimeSeconds: [45] },
-  ];
+describe('one calculation method per Route (Decision 0045)', () => {
+  const withMethod = (id: string, routeId: string, method?: RuntimeProfile['calculationMethod']): RuntimeProfile => ({ ...profile([band(`${id}-b`, 0, 0, 3600, [60])], method), id, routeId, calculationRevision: 2 });
 
-  it('Replace keeps the id and the label of the band at the same position when the row names none, and renumbers from 0', () => {
-    const { profile: next, bands } = applyPastedRuntimeRows(base, rows, 'replace');
-    expect(next.bands.map((item) => [item.id, item.label, item.sequence])).toEqual([['b1', 'Early', 0], ['b2', 'Band b2', 1]]);
-    expect(bands).toEqual(next.bands);
-    expect(applyPastedRuntimeRows(base, [...rows, { startTime: 3600, endTime: 5400, segmentRuntimeSeconds: [20] }], 'replace').profile.bands[2]).toMatchObject({ id: 'id-1', label: 'Time period 3', sequence: 2 });
+  it('takes the method most profiles use, counts a missing method as single band, and breaks a tie toward segment start', () => {
+    expect(routeRuntimeCalculationMethod([])).toBe('segmentStart');
+    expect(routeRuntimeCalculationMethod([withMethod('a', 'r', undefined), withMethod('b', 'r', 'singleBand'), withMethod('c', 'r', 'segmentStart')])).toBe('singleBand');
+    expect(routeRuntimeCalculationMethod([withMethod('a', 'r', 'singleBand'), withMethod('b', 'r', 'segmentStart')])).toBe('segmentStart');
+    expect(routeRuntimeCalculationMethod([withMethod('a', 'r', 'blendSegments')])).toBe('blendSegments');
   });
 
-  it('Append keeps every current band and numbers the pasted bands after them', () => {
-    const { profile: next, bands } = applyPastedRuntimeRows(base, rows, 'append');
-    expect(next.bands.map((item) => [item.id, item.sequence])).toEqual([['b1', 0], ['b2', 1], ['id-1', 2], ['id-2', 3]]);
-    expect(bands.map((item) => item.label)).toEqual(['Early', 'Time period 4']);
+  it('unifies each Route separately and raises the calculation revision only of profiles whose method changes', () => {
+    const profiles = [withMethod('a', 'r1', 'singleBand'), withMethod('b', 'r1', 'singleBand'), withMethod('c', 'r1', 'segmentStart'), withMethod('d', 'r2', 'segmentStart')];
+    const result = unifyRouteRuntimeCalculationMethods(profiles, '2026-10-27T00:00:00.000Z');
+    expect(result.changedProfileIds).toEqual(['c']);
+    expect(result.profiles.map((item) => [item.id, item.calculationMethod, item.calculationRevision])).toEqual([['a', 'singleBand', 2], ['b', 'singleBand', 2], ['c', 'singleBand', 3], ['d', 'segmentStart', 2]]);
+    expect(result.profiles[0]).toBe(profiles[0]);
   });
 
-  it('Replace applies a pasted calculation method; Append never changes the method; no pasted method keeps it', () => {
-    const named = rows.map((row) => ({ ...row, calculationMethod: 'segmentStart' as const }));
-    expect(applyPastedRuntimeRows(base, named, 'replace').profile.calculationMethod).toBe('segmentStart');
-    expect(applyPastedRuntimeRows(base, named, 'append').profile.calculationMethod).toBe('singleBand');
-    expect(applyPastedRuntimeRows(base, rows, 'replace').profile.calculationMethod).toBe('singleBand');
-    expect(applyPastedRuntimeRows(base, named, 'append').pastedMethod).toBe('segmentStart');
-  });
-
-  it('copies the pasted runtimes instead of sharing the parsed arrays', () => {
-    const { bands } = applyPastedRuntimeRows(base, rows, 'replace');
-    expect(bands[0].segmentRuntimeSeconds).not.toBe(rows[0].segmentRuntimeSeconds);
+  it('sets a chosen method on every profile and leaves a missing single-band method as it is', () => {
+    const profiles = [withMethod('a', 'r', undefined), withMethod('b', 'r', 'segmentStart')];
+    expect(unifyRouteRuntimeCalculationMethods(profiles, '2026-10-27T00:00:00.000Z', 'singleBand').changedProfileIds).toEqual(['b']);
+    expect(unifyRouteRuntimeCalculationMethods(profiles, '2026-10-27T00:00:00.000Z', 'segmentStart').changedProfileIds).toEqual(['a']);
   });
 });
 
