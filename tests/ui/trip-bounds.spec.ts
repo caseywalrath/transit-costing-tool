@@ -56,7 +56,7 @@ test('Build Trips refuses a Last Trip that would create more than 500 Trips and 
   await drawer.getByLabel('Headway').fill('1');
   await drawer.getByLabel('Last trip').fill('23:59');
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
-  await expect(drawer.getByRole('alert')).toContainText('Enter 500 Trips or fewer.');
+  await expect(drawer.getByRole('alert')).toContainText('Enter 500 trips or fewer.');
   await expect(drawer).toBeVisible();
   expect(await runInPage(page, 'return await e.db.trips.count()')).toBe(1);
 

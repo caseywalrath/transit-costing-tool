@@ -126,7 +126,7 @@ export function App({ service, tripService, blockingService, costingService, ses
   function deleteCurrentProject() {
     if (!selectedProject) return;
     void service.getProjectDeletionImpact(selectedProject.id).then((impact) => {
-      const summary = `${impact.scenarioCount} scenario${impact.scenarioCount === 1 ? '' : 's'}, ${impact.routeCount} route${impact.routeCount === 1 ? '' : 's'}, ${impact.patternCount} pattern${impact.patternCount === 1 ? '' : 's'}, ${impact.tripCount} trip${impact.tripCount === 1 ? '' : 's'}, and ${impact.blockCount} Block${impact.blockCount === 1 ? '' : 's'}`;
+      const summary = `${impact.scenarioCount} scenario${impact.scenarioCount === 1 ? '' : 's'}, ${impact.routeCount} route${impact.routeCount === 1 ? '' : 's'}, ${impact.patternCount} pattern${impact.patternCount === 1 ? '' : 's'}, ${impact.tripCount} trip${impact.tripCount === 1 ? '' : 's'}, and ${impact.blockCount} block${impact.blockCount === 1 ? '' : 's'}`;
       setConfirm({ title: 'Delete project?', text: `Delete “${selectedProject.name}” and its ${summary}? All related service days, runtime and trip profiles, blocking scenarios, and costing data will also be deleted. This cannot be undone.`, confirmLabel: 'Delete project', action: () => { void service.deleteProject(selectedProject.id, impact.reviewToken).then(async () => { setActiveTab('route'); await reload(selectedProject.id); }).catch((error) => showError(error, 'Unable to delete project.')); } });
     }).catch((error) => showError(error, 'Unable to review project deletion.'));
   }

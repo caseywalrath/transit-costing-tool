@@ -29,7 +29,7 @@ export function TripBlockAssignmentDialog({ draft, blockingScenarioName, service
     <p className="trip-block-assignment-context">{blockingScenarioName} · {serviceDayName}</p>
     {draft.source === 'actions' ? <label className="dialog-field">Destination block<select autoFocus value={destinationBlockId} onChange={(event) => setDestinationBlockId(event.target.value)} disabled={busy}><option value="">Choose a block</option>{blockOptions.map((option) => <option key={option.id} value={option.id} disabled={option.disabled}>{option.label}{option.disabled ? ' — unavailable' : ''}</option>)}</select></label> : <p>Destination block: <strong>{destination?.label ?? 'Unavailable'}</strong></p>}
     {(assignedElsewhereCount > 0 || unassignedCount > 0 || alreadyThereCount > 0) && <p>{assignedElsewhereCount > 0 ? `${assignedElsewhereCount} selected trip${assignedElsewhereCount === 1 ? ' is' : 's are'} currently in another block and will be moved.` : ''}{unassignedCount > 0 ? ` ${unassignedCount} unassigned trip${unassignedCount === 1 ? '' : 's'} will be assigned.` : ''}{alreadyThereCount > 0 ? ` ${alreadyThereCount} trip${alreadyThereCount === 1 ? ' is' : 's are'} already in this block and will stay there.` : ''}</p>}
-    {deadheadCount > 0 && <p>{deadheadCount} adjacent deadhead activit{deadheadCount === 1 ? 'y will' : 'ies will'} be removed from source Blocks. Pull-outs and pull-ins remain in their original Blocks.</p>}
+    {deadheadCount > 0 && <p>{deadheadCount} adjacent deadhead activit{deadheadCount === 1 ? 'y will' : 'ies will'} be removed from source blocks. Pull-outs and pull-ins remain in their original blocks.</p>}
     {unavailable && <p className="field-error" role="alert">{unavailable.reason}</p>}
     {error && <p className="field-error" role="alert">{error}</p>}
     <div className="dialog-actions"><button autoFocus={draft.source === 'pill'} type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="primary" type="button" onClick={() => destinationBlockId && onConfirm(destinationBlockId)} disabled={!canSubmit}>{busy ? 'Saving…' : confirmLabel}</button></div>
@@ -44,7 +44,7 @@ export function TripBlockUnassignmentDialog({ draft, blockingScenarioName, servi
     <h2 id="trip-block-unassignment-title">{title}</h2>
     <p className="trip-block-assignment-context">{blockingScenarioName} · {serviceDayName}</p>
     <p>{assignedTripIds.length} selected trip{assignedTripIds.length === 1 ? '' : 's'} in {sourceBlockLabels.length ? sourceBlockLabels.map((label) => `“${label}”`).join(', ') : 'the selected blocks'} will become unassigned.</p>
-    {alreadyUnassignedCount > 0 && <p>{alreadyUnassignedCount} selected Trip{alreadyUnassignedCount === 1 ? ' is' : 's are'} already unassigned and will remain so.</p>}
+    {alreadyUnassignedCount > 0 && <p>{alreadyUnassignedCount} selected trip{alreadyUnassignedCount === 1 ? ' is' : 's are'} already unassigned and will remain so.</p>}
     {deadheadCount > 0 && <p>{deadheadCount} adjacent deadhead activit{deadheadCount === 1 ? 'y will' : 'ies will'} be removed. Pull-outs and pull-ins remain in their Blocks.</p>}
     {error && <p className="field-error" role="alert">{error}</p>}
     <div className="dialog-actions"><button autoFocus type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="primary" type="button" onClick={onConfirm} disabled={!assignedTripIds.length || busy}>{busy ? 'Saving…' : confirmLabel}</button></div>

@@ -55,9 +55,9 @@ test('assigns, reassigns, and unassigns Trips from the Trips table by pill and b
   await runCommand(page, 'trips.assignBlock');
   const bulkDialog = page.getByRole('alertdialog', { name: 'Assign 3 selected Trips?' });
   await bulkDialog.getByLabel('Destination block').selectOption({ label: 'Block 3' });
-  await expect(bulkDialog).toContainText('2 selected Trips are currently in another Block and will be moved.');
-  await expect(bulkDialog).toContainText('1 unassigned Trip will be assigned.');
-  await bulkDialog.getByRole('button', { name: 'Assign 3 Trips', exact: true }).click();
+  await expect(bulkDialog).toContainText('2 selected trips are currently in another block and will be moved.');
+  await expect(bulkDialog).toContainText('1 unassigned trip will be assigned.');
+  await bulkDialog.getByRole('button', { name: 'Assign 3 trips', exact: true }).click();
   await expect(schedule.getByRole('button', { name: /departing 6:00: Block 3/ })).toBeVisible();
   await expect(schedule.getByRole('button', { name: /departing 6:10: Block 3/ })).toBeVisible();
   await expect(schedule.getByRole('button', { name: /departing 6:20: Block 3/ })).toBeVisible();
@@ -130,7 +130,7 @@ test('creates an empty Blocking Scenario and an empty Block, then exposes its Tr
   await expect(currentBlock.getByRole('button', { name: /Block 11/ })).toBeVisible();
   await expect(page.getByText('This empty Block is valid.')).toBeVisible();
   await blockingActions.click();
-  const exportButton = page.getByRole('menuitem', { name: 'Export Blocking CSV (ZIP)', exact: true });
+  const exportButton = page.getByRole('menuitem', { name: 'Export blocking CSV (ZIP)', exact: true });
   const download = page.waitForEvent('download');
   await exportButton.click();
   expect((await download).suggestedFilename()).toBe('Base-blocks-csv.zip');

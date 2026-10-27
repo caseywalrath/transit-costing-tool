@@ -23,7 +23,7 @@ test('names why Trips cannot be recalculated, once, and shows nothing when they 
   await expect(page.getByText('Run times have changed')).toBeVisible();
   const line = reasonLine(page);
   await expect(line).toHaveCount(1);
-  await expect(line).toHaveText('2 Trips cannot be recalculated. No Runtime band covers its first departure. Add or extend a Runtime band.');
+  await expect(line).toHaveText('2 Trips cannot be recalculated. No runtime band covers its first departure. Add or extend a runtime band.');
   await expect(line.locator('xpath=..')).toHaveAttribute('role', 'status'); // the inline note that holds the text
 
   // Extending the band again leaves the Trips stale but calculable: the indicator stays and the reason line goes.

@@ -317,7 +317,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
         setTripBlockingBlocks(updatedBlocks);
         setSelectedTripIds((ids) => ids.filter((id) => !tripBlockAssignment.tripIds.includes(id)));
         const alreadyUnassignedCount = tripBlockAssignment.tripIds.length - assignedTripIds.length;
-        setTripBlockAssignmentStatus(`Unassigned ${assignedTripIds.length} Trip${assignedTripIds.length === 1 ? '' : 's'}${alreadyUnassignedCount ? `; ${alreadyUnassignedCount} already unassigned` : ''}.`);
+        setTripBlockAssignmentStatus(`Unassigned ${assignedTripIds.length} trip${assignedTripIds.length === 1 ? '' : 's'}${alreadyUnassignedCount ? `; ${alreadyUnassignedCount} already unassigned` : ''}.`);
         setTripBlockAssignment(undefined);
         refocusAfterAssignment.current = true;
       } catch (error) {
@@ -336,7 +336,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
       const result = await blockingService.assignTripsToBlock({ blockingScenarioId: tripBlockAssignment.blockingScenarioId, serviceDayId: tripBlockAssignment.serviceDayId, tripIds: tripBlockAssignment.tripIds, destinationBlockId, sourceSignature: tripBlockAssignment.sourceSignature });
       setTripBlockingBlocks(result.blocks);
       setSelectedTripIds((ids) => ids.filter((id) => !tripBlockAssignment.tripIds.includes(id)));
-      setTripBlockAssignmentStatus(`Assigned ${tripBlockAssignment.tripIds.length} Trip${tripBlockAssignment.tripIds.length === 1 ? '' : 's'} to ${option.label}.`);
+      setTripBlockAssignmentStatus(`Assigned ${tripBlockAssignment.tripIds.length} trip${tripBlockAssignment.tripIds.length === 1 ? '' : 's'} to ${option.label}.`);
       setTripBlockAssignment(undefined);
       refocusAfterAssignment.current = true;
     } catch (error) {

@@ -85,7 +85,7 @@ test('the Runtime Method applies to every Pattern on the Route after a confirmat
   // Cancel leaves the method as it is.
   await menu.getByRole('menuitemradio', { name: 'Single band for trip' }).click();
   let dialog = page.getByRole('dialog', { name: /^Use Single band for trip for .+\?$/ });
-  await expect(dialog.getByRole('status')).toContainText('1 Runtime profile will change. 0 Trips will be marked Run times changed');
+  await expect(dialog.getByRole('status')).toContainText('1 runtime profile will change. 0 trips will be marked Run times changed');
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect(await storedMethod()).toEqual(['segmentStart']);
@@ -140,7 +140,7 @@ test('the Trips CSV export mirrors the Trips table and contains no ids', async (
   const lines = csv.trim().split(/\r?\n/);
   const header = lines[0].split(',');
   expect(header.slice(0, 2)).toEqual(['Direction', 'Pattern']);
-  expect(header.slice(-5)).toEqual(['Run time', 'Layover', 'Deadhead', 'Next trip', 'Block']);
+  expect(header.slice(-5)).toEqual(['Run Time', 'Layover', 'Deadhead', 'Next Trip', 'Block']);
   expect(lines).toHaveLength(4);
   const ids = await runInPage(page, 'return { pattern: (await e.db.patterns.toArray())[0], trips: (await e.db.trips.toArray()).map((trip) => trip.id) }');
   expect(lines[1].split(',')[1]).toBe(ids.pattern.name);
