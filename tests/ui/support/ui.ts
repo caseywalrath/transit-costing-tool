@@ -34,8 +34,8 @@ export async function chooseScenario(page: Page, name: string) {
 export type RegionId = 'unassignedTrips' | 'currentBlock' | 'runtimes' | 'trips' | 'blockingControls' | 'routeControls' | 'costingControls';
 
 const regionToday: Record<RegionId, string> = {
-  unassignedTrips: 'Unassigned Trips',
-  currentBlock: 'Current Block',
+  unassignedTrips: 'Unassigned trips',
+  currentBlock: 'Current block',
   runtimes: 'Runtimes section',
   trips: 'Trips section',
   blockingControls: 'Scope',
@@ -144,17 +144,17 @@ const commands = {
   'route.new': { menu: 'Route actions', item: 'New route' },
   'route.rename': { menu: 'Route actions', item: 'Rename route' },
   'route.duplicate': { menu: 'Route actions', item: 'Duplicate route' },
-  'route.exportCsv': { menu: 'Route actions', item: 'Export Route CSV (ZIP)' },
-  'route.delete': { menu: 'Route actions', item: 'Delete route' },
-  'blockingScenario.new': { menu: 'Blocking actions', item: 'New Blocking Scenario…' },
-  'blockingScenario.rename': { menu: 'Blocking actions', item: 'Rename Blocking Scenario…' },
-  'blockingScenario.duplicate': { menu: 'Blocking actions', item: 'Duplicate Blocking Scenario…' },
-  'blockingScenario.delete': { menu: 'Blocking actions', item: 'Delete Blocking Scenario…' },
-  'blockingScenario.exportCsv': { menu: 'Blocking actions', item: 'Export Blocking CSV (ZIP)' },
-  'block.rename': { menu: 'Current Block actions', within: 'currentBlock', item: 'Rename block…' },
-  'block.notes': { menu: 'Current Block actions', within: 'currentBlock', item: 'Edit notes…' },
-  'block.delete': { menu: 'Current Block actions', within: 'currentBlock', item: 'Delete block…' },
-  'unassigned.minimumLayover': { menu: 'Unassigned Trip actions', within: 'unassignedTrips', item: 'Minimum layover…' },
+  'route.exportCsv': { menu: 'Route actions', item: 'Export route CSV (ZIP)' },
+  'route.delete': { menu: 'Route actions', item: 'Delete route…' },
+  'blockingScenario.new': { menu: 'Blocking actions', item: 'New blocking scenario…' },
+  'blockingScenario.rename': { menu: 'Blocking actions', item: 'Rename blocking scenario…' },
+  'blockingScenario.duplicate': { menu: 'Blocking actions', item: 'Duplicate blocking scenario…' },
+  'blockingScenario.delete': { menu: 'Blocking actions', item: 'Delete blocking scenario…' },
+  'blockingScenario.exportCsv': { menu: 'Blocking actions', item: 'Export blocking CSV (ZIP)' },
+  'block.rename': { menu: 'Current block actions', within: 'currentBlock', item: 'Rename block…' },
+  'block.notes': { menu: 'Current block actions', within: 'currentBlock', item: 'Edit notes…' },
+  'block.delete': { menu: 'Current block actions', within: 'currentBlock', item: 'Delete block…' },
+  'unassigned.minimumLayover': { menu: 'Unassigned trip actions', within: 'unassignedTrips', item: 'Minimum layover…' },
 } satisfies Record<string, Command>;
 
 export type CommandId = keyof typeof commands | keyof typeof buttonCommands;

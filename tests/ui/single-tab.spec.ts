@@ -75,7 +75,7 @@ test('a Route added in the active tab survives an annual-count edit attempted in
 test('a Block reorder in the active tab survives an annual-count edit attempted in the read-only tab', async ({ browser }) => {
   const { active, readOnly } = await twoTabs(browser);
   await active.getByRole('button', { name: 'Blocking', exact: true }).click();
-  const current = active.getByLabel('Current Block');
+  const current = active.getByLabel('Current block');
   await expect(current.locator('tbody tr').first()).toBeVisible({ timeout: 30000 });
   const order = "const block = (await e.db.blocks.toArray()).filter((candidate) => candidate.activities.length > 3)[0]; return block.activities.slice(0, 4).map((activity) => activity.id).join(',')";
   const before = await runInPage(active, order);
@@ -155,11 +155,11 @@ test('a Project deleted in the active tab is not resurrected by a Route edit in 
 
 async function buildThreeTrips(page: Page) {
   await runCommand(page, 'trips.build');
-  const drawer = page.getByRole('complementary', { name: 'Build Trips' });
+  const drawer = page.getByRole('complementary', { name: 'Build trips' });
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
-  await drawer.getByLabel('First Trip').fill('03:00');
+  await drawer.getByLabel('First trip').fill('03:00');
   await drawer.getByLabel('Headway').fill('10');
-  await drawer.getByLabel('Number of Trips').fill('3');
+  await drawer.getByLabel('Number of trips').fill('3');
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
 }
 
@@ -251,7 +251,7 @@ test('control: a Blocking edit made from a stale view of the active tab is still
   await seedSnapshot(page, goldenRaw());
   await load(page);
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  const current = page.getByLabel('Current Block');
+  const current = page.getByLabel('Current block');
   await expect(current.locator('tbody tr').first()).toBeVisible({ timeout: 30000 });
   const order = "const block = (await e.db.blocks.toArray()).filter((candidate) => candidate.activities.length > 3)[0]; return block.activities.slice(0, 4).map((activity) => activity.id).join(',')";
   // A write that did not come through this tab's guarded connection changes the Blocking Scenario after the view was loaded.
@@ -261,7 +261,7 @@ test('control: a Blocking edit made from a stale view of the active tab is still
     await e.db.blocks.put({ ...block, activities: [second, first, ...rest].map((activity, index) => ({ ...activity, sequence: index })) });`);
   const changed = await runInPage(page, order);
   await current.getByRole('button', { name: /Move.*down/i }).nth(2).click();
-  await expect(page.getByText('Blocking Scenario changed since the operation was reviewed')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('Blocking scenario changed since the operation was reviewed')).toBeVisible({ timeout: 10000 });
   expect(await runInPage(page, order)).toBe(changed);
 });
 
@@ -307,6 +307,6 @@ test('a read-only tab can still run a database upgrade', async ({ browser }) => 
   await page.getByRole('button', { name: /^Project: / }).click();
   await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Should not save');
-  await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
+  await page.getByRole('button', { name: 'New project', exact: true }).last().click();
   await expectRejected(page);
 });

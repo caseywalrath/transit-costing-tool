@@ -105,7 +105,7 @@ test('Undo and Redo change the Shift history only after the preview resolves', a
   await createShiftReadySchedule(page, '06:20');
   await page.locator('.trips-workspace .schedule-table tbody tr').first().getByRole('checkbox').check();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
+  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
   const redo = drawer.getByRole('button', { name: 'Redo', exact: true });
   const undo = drawer.getByRole('button', { name: 'Undo', exact: true });
   await drawer.getByRole('button', { name: /min later/ }).click();
@@ -140,7 +140,7 @@ test('the Trips CSV export mirrors the Trips table and contains no ids', async (
   const lines = csv.trim().split(/\r?\n/);
   const header = lines[0].split(',');
   expect(header.slice(0, 2)).toEqual(['Direction', 'Pattern']);
-  expect(header.slice(-5)).toEqual(['Run Time', 'Layover', 'Deadhead', 'Next Trip', 'Block']);
+  expect(header.slice(-5)).toEqual(['Run time', 'Layover', 'Deadhead', 'Next trip', 'Block']);
   expect(lines).toHaveLength(4);
   const ids = await runInPage(page, 'return { pattern: (await e.db.patterns.toArray())[0], trips: (await e.db.trips.toArray()).map((trip) => trip.id) }');
   expect(lines[1].split(',')[1]).toBe(ids.pattern.name);

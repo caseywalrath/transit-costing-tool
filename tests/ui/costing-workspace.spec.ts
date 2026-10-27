@@ -131,7 +131,7 @@ test.describe('Costing estimate display (U06 criteria 2 to 5)', () => {
     await page.getByRole('button', { name: 'Costing', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Costing Assumptions' })).toBeVisible();
     await expect(page.getByText('Calculating estimate…')).toBeVisible();
-    await expect(page.getByText('Select a valid Blocking Scenario to calculate an estimate.')).toHaveCount(0);
+    await expect(page.getByText('Select a valid blocking scenario to calculate an estimate.')).toHaveCount(0);
     await page.evaluate(() => { (window as unknown as { __hold: { release: boolean } }).__hold.release = true; });
     await expect(page.locator('.costing-results-table tbody tr')).toHaveCount(4);
     await expect(page.getByText('Calculating estimate…')).toHaveCount(0);

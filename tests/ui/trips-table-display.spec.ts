@@ -100,13 +100,13 @@ test('flags a duplicate departure and warns on both Trips when a Block overlaps 
   // Put both 06:00 Trips in one Block. Each arrives at 6:07, after the other departs at 6:00, so both are warned.
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New Blocking Scenario…', exact: true }).click();
-  await page.getByRole('dialog', { name: 'New Blocking Scenario' }).getByLabel('Name').fill('Overlap check');
-  await page.getByRole('dialog', { name: 'New Blocking Scenario' }).getByRole('button', { name: 'Create', exact: true }).click();
-  const currentBlock = page.getByLabel('Current Block');
+  await page.getByRole('menuitem', { name: 'New blocking scenario…', exact: true }).click();
+  await page.getByRole('dialog', { name: 'New blocking scenario' }).getByLabel('Name').fill('Overlap check');
+  await page.getByRole('dialog', { name: 'New blocking scenario' }).getByRole('button', { name: 'Create', exact: true }).click();
+  const currentBlock = page.getByLabel('Current block');
   await currentBlock.getByRole('button', { name: 'New block', exact: true }).click();
-  await page.getByRole('dialog', { name: 'New Block' }).getByLabel('Name').fill('Block 1');
-  await page.getByRole('dialog', { name: 'New Block' }).getByRole('button', { name: 'Create Block', exact: true }).click();
+  await page.getByRole('dialog', { name: 'New block' }).getByLabel('Name').fill('Block 1');
+  await page.getByRole('dialog', { name: 'New block' }).getByRole('button', { name: 'Create block', exact: true }).click();
   await expect(currentBlock.getByRole('button', { name: /Block 1/ })).toBeVisible();
 
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
@@ -115,7 +115,7 @@ test('flags a duplicate departure and warns on both Trips when a Block overlaps 
   for (const index of [0, 1]) {
     await rows(page).nth(index).getByRole('button', { name: /Block assignment for/ }).click();
     await page.getByRole('menu', { name: /Block assignment for/ }).getByRole('menuitemradio', { name: 'Block 1', exact: true }).click();
-    await page.getByRole('alertdialog', { name: 'Assign Trip to Block?' }).getByRole('button', { name: 'Assign Trip', exact: true }).click();
+    await page.getByRole('alertdialog', { name: 'Assign trip to block?' }).getByRole('button', { name: 'Assign trip', exact: true }).click();
     await expect(rows(page).nth(index).getByRole('button', { name: /Block assignment for/ })).toContainText('Block 1');
   }
   await expect(page.locator('.trip-block-warning')).toHaveCount(2);
@@ -134,7 +134,7 @@ test('discards a Shift whose net offset is zero without writing any Trip', async
 
   const openShift = async () => {
     await runCommand(page, 'trips.shift');
-    return page.getByRole('complementary', { name: 'Shift selected Trips' });
+    return page.getByRole('complementary', { name: 'Shift selected trips' });
   };
   await rows(page).first().getByRole('checkbox').check();
   const drawer = await openShift();

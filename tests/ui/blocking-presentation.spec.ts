@@ -20,7 +20,7 @@ async function openBlocking(page: Page, day = 'Weekday') {
 }
 
 const blocksTable = (page: Page) => page.getByLabel('Blocks', { exact: true });
-const currentBlock = (page: Page) => page.getByLabel('Current Block');
+const currentBlock = (page: Page) => page.getByLabel('Current block');
 async function selectBlock(page: Page, label: string) {
   await blocksTable(page).locator('.link-button').filter({ hasText: new RegExp(`^${label}$`) }).click();
   await expect(currentBlock(page).locator('.menu-field').getByRole('button').first()).toContainText(label);
@@ -41,7 +41,7 @@ test('removing a Trip, a Pull-out, or a Pull-in asks first and names the activit
   await currentBlock(page).getByRole('button', { name: 'Remove Trip 3', exact: true }).click();
   await expect(confirm).toBeVisible();
   await expect(confirm.getByRole('heading', { name: 'Remove Trip 3?' })).toBeVisible();
-  await expect(confirm).toContainText('Remove Trip 3 from Block “26”');
+  await expect(confirm).toContainText('Remove Trip 3 from block “26”');
   await confirm.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(confirm).toHaveCount(0);
   expect((await storedBlock(page, '26')).types).toEqual(before.types);
@@ -49,7 +49,7 @@ test('removing a Trip, a Pull-out, or a Pull-in asks first and names the activit
   // A Pull-out: asking, then Cancel.
   await currentBlock(page).getByRole('button', { name: 'Remove Pull-out', exact: true }).click();
   await expect(confirm.getByRole('heading', { name: 'Remove pull-out?' })).toBeVisible();
-  await expect(confirm).toContainText('Remove the pull-out from Block “26”');
+  await expect(confirm).toContainText('Remove the pull-out from block “26”');
   await confirm.getByRole('button', { name: 'Cancel', exact: true }).click();
   expect((await storedBlock(page, '26')).types).toEqual(before.types);
 
@@ -74,26 +74,26 @@ test('Delete Block shows what it removes, deletes with the reviewed source, and 
   await selectBlock(page, '26');
   const counts = await runInPage(page, "const day = (await e.db.serviceDays.toArray()).find((item) => item.kind === 'weekday'); const block = (await e.db.blocks.toArray()).find((item) => item.label === '26' && item.serviceDayId === day.id); return { trips: block.activities.filter((a) => a.type === 'revenueTrip').length, deadheads: block.activities.filter((a) => a.type === 'deadhead').length, activities: block.activities.length };");
   const confirm = page.getByRole('alertdialog');
-  const open = async () => { await currentBlock(page).getByRole('button', { name: 'Current Block actions', exact: true }).click(); await page.getByRole('menuitem', { name: 'Delete block…', exact: true }).click(); };
+  const open = async () => { await currentBlock(page).getByRole('button', { name: 'Current block actions', exact: true }).click(); await page.getByRole('menuitem', { name: 'Delete block…', exact: true }).click(); };
 
   await open();
-  await expect(confirm.getByRole('heading', { name: 'Delete Block?' })).toBeVisible();
+  await expect(confirm.getByRole('heading', { name: 'Delete block?' })).toBeVisible();
   const plural = (count: number, one: string, many = one + 's') => `${count} ${count === 1 ? one : many}`;
-  await expect(confirm).toContainText(`Delete Block “26” with ${plural(counts.trips, 'Trip')}, ${plural(counts.deadheads, 'deadhead')}, and ${plural(counts.activities, 'activity', 'activities')} in all?`);
+  await expect(confirm).toContainText(`Delete block “26” with ${plural(counts.trips, 'trip')}, ${plural(counts.deadheads, 'deadhead')}, and ${plural(counts.activities, 'activity', 'activities')} in all?`);
   await confirm.getByRole('button', { name: 'Cancel', exact: true }).click();
   expect(await storedBlock(page, '26')).toBeTruthy();
 
   // The Block changes after the review: the deletion is refused and nothing is removed.
   await open();
   await runInPage(page, "const day = (await e.db.serviceDays.toArray()).find((item) => item.kind === 'weekday'); const block = (await e.db.blocks.toArray()).find((item) => item.label === '26' && item.serviceDayId === day.id); await e.db.blocks.put({ ...block, notes: 'Changed after the review' });");
-  await confirm.getByRole('button', { name: 'Delete Block', exact: true }).click();
-  await expect(page.locator('.notice.error')).toContainText('Blocking Scenario changed since the operation was reviewed');
+  await confirm.getByRole('button', { name: 'Delete block', exact: true }).click();
+  await expect(page.locator('.notice.error')).toContainText('Blocking scenario changed since the operation was reviewed');
   expect(await storedBlock(page, '26')).toBeTruthy();
   await expect(confirm).toHaveCount(0);
 
   // A fresh review deletes it.
   await open();
-  await confirm.getByRole('button', { name: 'Delete Block', exact: true }).click();
+  await confirm.getByRole('button', { name: 'Delete block', exact: true }).click();
   await expect(confirm).toHaveCount(0);
   await expect.poll(() => storedBlock(page, '26')).toBeUndefined();
 });
@@ -103,10 +103,10 @@ test('Delete Block uses the source it reviewed, even when the screen was loaded 
   await selectBlock(page, '27');
   // Another path changes a Block after the screen loaded it. The review reads the stored data, so deleting what was reviewed works.
   await runInPage(page, "const day = (await e.db.serviceDays.toArray()).find((item) => item.kind === 'weekday'); const block = (await e.db.blocks.toArray()).find((item) => item.label === '26' && item.serviceDayId === day.id); await e.db.blocks.put({ ...block, notes: 'Changed before the review' });");
-  await currentBlock(page).getByRole('button', { name: 'Current Block actions', exact: true }).click();
+  await currentBlock(page).getByRole('button', { name: 'Current block actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Delete block…', exact: true }).click();
   const confirm = page.getByRole('alertdialog');
-  await confirm.getByRole('button', { name: 'Delete Block', exact: true }).click();
+  await confirm.getByRole('button', { name: 'Delete block', exact: true }).click();
   await expect(confirm).toHaveCount(0);
   await expect(page.locator('.notice.error')).toHaveCount(0);
   await expect.poll(() => storedBlock(page, '27')).toBeUndefined();
@@ -117,23 +117,23 @@ test('Delete Blocking Scenario shows its Blocks and activities, and is refused i
   await openBlocking(page);
   const counts = await runInPage(page, "const blocks = await e.db.blocks.toArray(); return { blocks: blocks.length, activities: blocks.reduce((sum, block) => sum + block.activities.length, 0), name: (await e.db.blockingScenarios.toArray())[0].name };");
   const confirm = page.getByRole('alertdialog');
-  const open = async () => { await page.getByRole('button', { name: 'Blocking actions', exact: true }).click(); await page.getByRole('menuitem', { name: 'Delete Blocking Scenario…', exact: true }).click(); };
+  const open = async () => { await page.getByRole('button', { name: 'Blocking actions', exact: true }).click(); await page.getByRole('menuitem', { name: 'Delete blocking scenario…', exact: true }).click(); };
 
   await open();
-  await expect(confirm.getByRole('heading', { name: 'Delete Blocking Scenario?' })).toBeVisible();
-  await expect(confirm).toContainText(`Delete “${counts.name}” with ${counts.blocks} Blocks and ${counts.activities} activities across every service day?`);
+  await expect(confirm.getByRole('heading', { name: 'Delete blocking scenario?' })).toBeVisible();
+  await expect(confirm).toContainText(`Delete “${counts.name}” with ${counts.blocks} blocks and ${counts.activities} activities across every service day?`);
   await confirm.getByRole('button', { name: 'Cancel', exact: true }).click();
   expect(await runInPage(page, 'return await e.db.blockingScenarios.count()')).toBe(1);
 
   await open();
   await runInPage(page, "const block = (await e.db.blocks.toArray())[0]; await e.db.blocks.put({ ...block, notes: 'Changed after the review' });");
-  await confirm.getByRole('button', { name: 'Delete Blocking Scenario', exact: true }).click();
-  await expect(page.locator('.notice.error')).toContainText('Blocking Scenario changed since the operation was reviewed');
+  await confirm.getByRole('button', { name: 'Delete blocking scenario', exact: true }).click();
+  await expect(page.locator('.notice.error')).toContainText('Blocking scenario changed since the operation was reviewed');
   expect(await runInPage(page, 'return await e.db.blockingScenarios.count()')).toBe(1);
   await expect(confirm).toHaveCount(0);
 
   await open();
-  await confirm.getByRole('button', { name: 'Delete Blocking Scenario', exact: true }).click();
+  await confirm.getByRole('button', { name: 'Delete blocking scenario', exact: true }).click();
   await expect(confirm).toHaveCount(0);
   await expect.poll(() => runInPage(page, 'return [await e.db.blockingScenarios.count(), await e.db.blocks.count()]')).toEqual([0, 0]);
 });
@@ -143,9 +143,9 @@ test('the Pattern actions menu offers "Delete pattern…" and its confirmation r
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'Pattern actions', exact: true })).toBeVisible({ timeout: 30_000 });
   await runCommand(page, 'pattern.delete');
-  const confirm = page.getByRole('alertdialog', { name: 'Delete Pattern?' });
+  const confirm = page.getByRole('alertdialog', { name: 'Delete pattern?' });
   await expect(confirm).toBeVisible();
-  await expect(confirm.getByRole('button', { name: 'Delete Pattern', exact: true })).toBeVisible();
+  await expect(confirm.getByRole('button', { name: 'Delete pattern', exact: true })).toBeVisible();
   await expect(confirm.getByRole('button', { name: 'Confirm', exact: true })).toHaveCount(0);
   await confirm.getByRole('button', { name: 'Cancel', exact: true }).click();
 });
@@ -201,9 +201,9 @@ test('the labels are exact: Move Trip counts Trips only, "No current issues." is
   await openBlocking(page);
   await selectBlock(page, '26');
   // Block 26 has a Pull-out row first: the first Trip is still "Trip 1".
-  await expect(currentBlock(page).getByRole('button', { name: 'Move Trip 1 down', exact: true })).toBeVisible();
-  await expect(currentBlock(page).getByRole('button', { name: 'Move Trip 1 up', exact: true })).toBeDisabled();
-  await expect(currentBlock(page).getByRole('button', { name: /^Move Trip 0/ })).toHaveCount(0);
+  await expect(currentBlock(page).getByRole('button', { name: 'Move trip 1 down', exact: true })).toBeVisible();
+  await expect(currentBlock(page).getByRole('button', { name: 'Move trip 1 up', exact: true })).toBeDisabled();
+  await expect(currentBlock(page).getByRole('button', { name: /^Move trip 0/ })).toHaveCount(0);
   for (const pill of await currentBlock(page).locator('.pattern-pill').all()) await expect(pill).toHaveAttribute('title', (await pill.innerText()).trim());
 
   // A Block without issues says so in a neutral style, not the amber warning style that real issues use.
@@ -215,6 +215,6 @@ test('the labels are exact: Move Trip counts Trips only, "No current issues." is
   await expect(page.getByRole('region', { name: 'Scope' }).getByLabel('Trip profile')).toBeVisible();
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await page.locator('[aria-label="Trips section"] .menu-field').filter({ hasText: 'Profile' }).getByRole('button').click();
-  await expect(page.locator('[role="menu"][aria-label="Trip Profile"]')).toHaveCount(1);
-  expect(await page.locator('[aria-label="Trip profile"]').count()).toBe(0);
+  await expect(page.locator('[role="menu"][aria-label="Trip profile"]')).toHaveCount(1);
+  expect(await page.locator('select[aria-label="Trip profile"]').count()).toBe(0);
 });

@@ -107,7 +107,7 @@ test('the select menu stays usable from the pinned headings, and a staged Shift 
   await expect(selected(page)).toHaveCount(0);
   await grid(page).locator('tbody tr').first().locator('input[type="checkbox"]').check();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
+  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
   await drawer.getByRole('button', { name: '1 min later' }).click();
   await expect(drawer.getByRole('status')).toContainText('1 minute later');
 

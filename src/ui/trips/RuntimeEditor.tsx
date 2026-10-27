@@ -103,7 +103,7 @@ export const methodLabel = (method: RuntimeProfile['calculationMethod']) => CALC
 export function RouteRuntimeMethodDialog({ routeName, method, impact, busy, onConfirm, onClose }: { routeName: string; method: RuntimeCalculationMethod; impact?: { profileCount: number; tripCount: number }; busy: boolean; onConfirm: () => void; onClose: () => void }) {
   return <ModalDialog labelledBy="route-runtime-method-title" className="confirm-dialog" onClose={onClose} busy={busy}>
     <h2 id="route-runtime-method-title">Use {methodLabel(method)} for {routeName}?</h2>
-    <p>The calculation method applies to every Runtime profile of every Pattern on this Route, on every service day and Trip Profile.</p>
+    <p>The calculation method applies to every runtime profile of every pattern on this route, on every service day and trip profile.</p>
     {impact ? <p role="status">{impact.profileCount} Runtime profile{impact.profileCount === 1 ? '' : 's'} will change. {impact.tripCount} Trip{impact.tripCount === 1 ? '' : 's'} will be marked Run times changed; their saved times stay as they are until you regenerate them.</p> : <p role="status">Reviewing the change…</p>}
     <div className="dialog-actions"><button type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="primary" type="button" onClick={onConfirm} disabled={busy || !impact}>{busy ? 'Changing…' : 'Change method'}</button></div>
   </ModalDialog>;

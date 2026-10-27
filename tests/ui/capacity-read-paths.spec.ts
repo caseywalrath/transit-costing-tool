@@ -48,7 +48,7 @@ test('Blocking: 300 unassigned Trips are reviewed with a handful of Trip reads a
     const tab = [...document.querySelectorAll('nav button')].find((button) => button.textContent === 'Blocking') as HTMLElement;
     // Ready: the unassigned list has rows, no review is pending, and the first row's button shows its result and is enabled.
     const ready = () => {
-      const section = document.querySelector('[aria-label="Unassigned Trips"]');
+      const section = document.querySelector('[aria-label="Unassigned trips"]');
       if (!section || section.querySelector('.blocking-compatibility-status')) return false;
       const button = section.querySelector<HTMLButtonElement>('tbody tr .assign-button');
       return Boolean(button) && !button!.disabled && button!.textContent?.trim() !== 'Select';
@@ -66,8 +66,8 @@ test('Blocking: 300 unassigned Trips are reviewed with a handful of Trip reads a
   expect(reads).toBeLessThanOrEqual(16);
   expect(elapsed).toBeLessThanOrEqual(15_000);
   // Every unassigned Trip was reviewed: none is still waiting for its result.
-  await expect(page.locator('[aria-label="Unassigned Trips"] tbody .assign-button:disabled')).toHaveCount(0);
-  await expect(page.locator('[aria-label="Unassigned Trips"] tbody .assign-button', { hasText: 'Select' })).toHaveCount(0);
+  await expect(page.locator('[aria-label="Unassigned trips"] tbody .assign-button:disabled')).toHaveCount(0);
+  await expect(page.locator('[aria-label="Unassigned trips"] tbody .assign-button', { hasText: 'Select' })).toHaveCount(0);
 });
 
 test('Costing: the estimate at 400 Blocks and 2,000 Trips appears soon after the tab opens, from a handful of Trip reads (P6-S1-02)', async ({ page }) => {

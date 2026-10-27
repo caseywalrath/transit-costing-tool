@@ -9,8 +9,8 @@ test.use({ actionTimeout: 15_000 });
 
 const tripsSection = (page: Page) => page.locator('[aria-label="Trips section"]');
 const draftRow = (page: Page) => page.locator('.schedule-table tbody tr.draft-trip-row');
-const draftDialog = (page: Page) => page.getByRole('heading', { name: 'Discard new Trip?' });
-const draftDialogBox = (page: Page) => page.getByRole('dialog', { name: 'Discard new Trip?' });
+const draftDialog = (page: Page) => page.getByRole('heading', { name: 'Discard new trip?' });
+const draftDialogBox = (page: Page) => page.getByRole('dialog', { name: 'Discard new trip?' });
 const shiftDialogBox = (page: Page) => page.getByRole('dialog', { name: 'Discard staged shift?' });
 const shiftDialog = (page: Page) => page.getByRole('heading', { name: 'Discard staged shift?' });
 const profileMenuButton = (page: Page) => tripsSection(page).locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button');
@@ -98,7 +98,7 @@ test('with a staged Shift and an entered row open, each press asks one question:
   // A staged Shift needs a selected Trip, and Add trip is disabled while one is staged, so stage first with the row already open.
   await page.locator('.schedule-table tbody input[type="checkbox"]').first().check();
   await runCommand(page, 'trips.shift');
-  await page.getByRole('complementary', { name: 'Shift selected Trips' }).getByRole('button', { name: /min earlier/ }).click();
+  await page.getByRole('complementary', { name: 'Shift selected trips' }).getByRole('button', { name: /min earlier/ }).click();
   await expect(page.getByText('Staged 1 minute earlier')).toBeVisible();
 
   const day = scopeField(page, 'Day');

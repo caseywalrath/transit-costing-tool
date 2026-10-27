@@ -21,11 +21,11 @@ async function buildThreeTrips(page: Page): Promise<number> {
   const before = await tripCount(page);
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await runCommand(page, 'trips.build');
-  const drawer = page.getByRole('complementary', { name: 'Build Trips' });
+  const drawer = page.getByRole('complementary', { name: 'Build trips' });
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
-  await drawer.getByLabel('First Trip').fill('03:00');
+  await drawer.getByLabel('First trip').fill('03:00');
   await drawer.getByLabel('Headway').fill('10');
-  await drawer.getByLabel('Number of Trips').fill('3');
+  await drawer.getByLabel('Number of trips').fill('3');
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
   await expect(drawer).toBeHidden({ timeout: 15000 });
   await expect.poll(() => tripCount(page)).toBe(before + 3);

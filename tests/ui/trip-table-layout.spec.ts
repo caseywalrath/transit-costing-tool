@@ -107,7 +107,7 @@ test('restores the page and horizontal grid position after committing a Shift', 
   const shiftedRow = grid(page).locator('tbody tr').nth(60);
   const rowBefore = await shiftedRow.innerText();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
+  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
   await drawer.getByRole('button', { name: /min later/ }).click();
   await expect(page.getByText('Staged 1 minute later')).toBeVisible();
 

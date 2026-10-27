@@ -9,7 +9,7 @@ test('keeps Node and Pattern drafts local until their explicit saves', async ({ 
   await page.getByRole('button', { name: /^Project: / }).click();
   await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Draft verification');
-  await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
+  await page.getByRole('button', { name: 'New project', exact: true }).last().click();
   await page.getByRole('button', { name: 'Route actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
 
@@ -44,7 +44,7 @@ test('keeps Node and Pattern drafts local until their explicit saves', async ({ 
   await expect(page.getByLabel('Point 2 node')).toBeVisible();
   await page.getByLabel('Point 2 node').selectOption({ label: 'B' });
   await page.getByRole('button', { name: 'Review and save', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Save Pattern and rebalance?' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Save pattern and rebalance?' })).toBeVisible();
   await page.getByRole('button', { name: 'Save and rebalance', exact: true }).click();
   await expect(page.getByText('New Pattern — not saved')).toHaveCount(0);
 
@@ -68,7 +68,7 @@ test('renames and duplicates a Route from the module Actions menu', async ({ pag
   await page.getByRole('button', { name: /^Project: / }).click();
   await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Route lifecycle');
-  await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
+  await page.getByRole('button', { name: 'New project', exact: true }).last().click();
   const routeActions = page.getByRole('button', { name: 'Route actions', exact: true });
   await routeActions.click();
   await page.getByRole('menuitem', { name: 'New route', exact: true }).click();

@@ -20,7 +20,7 @@ test('uses unified Runtime and Trips header action layers', async ({ page }) => 
   await expect(runtimeHeader.getByRole('button', { name: 'Runtimes', exact: true })).toBeVisible();
   await expect(runtimeSection.getByRole('button', { name: 'Runtime actions', exact: true })).toBeVisible();
   await expect(tripActions.getByRole('button', { name: 'Trip actions', exact: true })).toBeVisible();
-  await expect(tripsSection.locator('.work-surface__context').getByRole('button')).toHaveText(['Default ▾', 'No Blocking Scenario ▾']);
+  await expect(tripsSection.locator('.work-surface__context').getByRole('button')).toHaveText(['Default ▾', 'No blocking scenario ▾']);
   await expect(runtimeSection.locator('.runtime-editor-toolbar')).toHaveCount(0);
   await expect(tripsSection.locator('.more-actions')).toHaveCount(0);
   await expect(runtimeSection.getByRole('region', { name: 'Unsaved changes' })).toHaveCount(0);

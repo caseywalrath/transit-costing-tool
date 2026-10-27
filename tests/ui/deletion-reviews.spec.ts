@@ -13,7 +13,7 @@ const error = (page: Page) => page.locator('.notice.error');
 async function openRouteDelete(page: Page) {
   await page.getByRole('button', { name: 'Route', exact: true }).click();
   await page.getByRole('button', { name: 'Route actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Delete route', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Delete route…', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Delete route?' })).toBeVisible();
 }
 
@@ -134,18 +134,18 @@ test('Delete Pattern removes the Pattern and its Trips after the review and is r
   await page.getByRole('button', { name: 'Route', exact: true }).click();
   const openDelete = async (trips: string) => {
     await runCommand(page, 'pattern.delete');
-    await expect(page.getByRole('alertdialog', { name: 'Delete Pattern?' })).toContainText(trips);
+    await expect(page.getByRole('alertdialog', { name: 'Delete pattern?' })).toContainText(trips);
   };
   await openDelete('3 trips');
   await runInPage(page, "const [trip] = await e.db.trips.toArray(); await e.db.trips.put({ ...trip, id: 'added-after-review', stopTimes: trip.stopTimes.map((point) => ({ ...point, time: point.time + 3600 })) });");
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete Pattern', exact: true }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete pattern', exact: true }).click();
   await expect(error(page)).toHaveText(/The pattern deletion review is out of date\. Review the impact again\./);
   expect(await count(page, 'patterns')).toBe(1);
   expect(await count(page, 'trips')).toBe(4);
   // A fresh review shows the added Trip and works.
   await error(page).getByRole('button', { name: 'Dismiss message' }).click();
   await openDelete('4 trips');
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete Pattern', exact: true }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete pattern', exact: true }).click();
   await expect.poll(() => count(page, 'patterns')).toBe(0);
   expect(await count(page, 'trips')).toBe(0);
   await expect(error(page)).toHaveCount(0);

@@ -16,7 +16,7 @@ export async function createRouteWithPattern(page: Page, projectName: string) {
   await page.getByRole('button', { name: /^Project: / }).click();
   await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill(projectName);
-  await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
+  await page.getByRole('button', { name: 'New project', exact: true }).last().click();
   await page.getByRole('button', { name: 'Route actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
 
@@ -87,12 +87,12 @@ export async function createShiftReadySchedule(page: Page, lastTrip = '06:00', s
   await expect(page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem')).toHaveText(['Copy trips from another day…', 'Export trips CSV']);
   await page.keyboard.press('Escape');
   await tripsSection.getByRole('button', { name: 'Build trips…', exact: true }).click();
-  const drawer = page.getByRole('complementary', { name: 'Build Trips' });
+  const drawer = page.getByRole('complementary', { name: 'Build trips' });
   await expect(drawer).toBeVisible();
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
-  await drawer.getByLabel('First Trip').fill('06:00');
+  await drawer.getByLabel('First trip').fill('06:00');
   await drawer.getByLabel('Headway').fill('10');
-  await drawer.getByLabel('Last Trip').fill(lastTrip);
+  await drawer.getByLabel('Last trip').fill(lastTrip);
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
   await expect(drawer).toBeHidden();
   const [lastHours, lastMinutes] = lastTrip.split(':').map(Number);

@@ -194,7 +194,7 @@ test('leaving the tab with unsaved grid edits asks first', async ({ page }) => {
   await page.keyboard.type(':10');
   await page.keyboard.press('Enter');
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  const dialog = page.getByRole('alertdialog', { name: 'Save Runtime changes before leaving?' });
+  const dialog = page.getByRole('alertdialog', { name: 'Save runtime changes before leaving?' });
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(cell(page, 'Time band 2 segment 1')).toHaveText(':10');

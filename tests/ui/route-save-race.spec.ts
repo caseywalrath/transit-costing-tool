@@ -33,7 +33,7 @@ test('Add pattern is disabled while Save nodes is running, then opens a Pattern 
   await page.getByRole('button', { name: /^Project: / }).click();
   await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Save race verification');
-  await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
+  await page.getByRole('button', { name: 'New project', exact: true }).last().click();
   await page.getByRole('button', { name: 'Route actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
   await page.getByRole('button', { name: 'New node', exact: true }).click();

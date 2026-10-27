@@ -29,24 +29,24 @@ test('Build Trips uses a right drawer and supports inclusive last-trip and count
   await createShiftReadySchedule(page);
   const openBuildDrawer = async () => {
     await runCommand(page, 'trips.build');
-    const drawer = page.getByRole('complementary', { name: 'Build Trips' });
+    const drawer = page.getByRole('complementary', { name: 'Build trips' });
     await drawer.getByLabel('Pattern').selectOption({ index: 1 });
     return drawer;
   };
 
   const byLastTrip = await openBuildDrawer();
-  await byLastTrip.getByLabel('First Trip').fill('05:00');
+  await byLastTrip.getByLabel('First trip').fill('05:00');
   await byLastTrip.getByLabel('Headway').fill('15');
-  await byLastTrip.getByLabel('Last Trip').fill('06:00');
-  await expect(byLastTrip.getByLabel('Number of Trips')).toBeDisabled();
+  await byLastTrip.getByLabel('Last trip').fill('06:00');
+  await expect(byLastTrip.getByLabel('Number of trips')).toBeDisabled();
   await byLastTrip.getByRole('button', { name: 'Build', exact: true }).click();
   await expect(page.locator('.schedule-table tbody tr')).toHaveCount(6);
 
   const byCount = await openBuildDrawer();
-  await byCount.getByLabel('First Trip').fill('07:00');
+  await byCount.getByLabel('First trip').fill('07:00');
   await byCount.getByLabel('Headway').fill('10');
-  await byCount.getByLabel('Number of Trips').fill('3');
-  await expect(byCount.getByLabel('Last Trip')).toBeDisabled();
+  await byCount.getByLabel('Number of trips').fill('3');
+  await expect(byCount.getByLabel('Last trip')).toBeDisabled();
   await byCount.getByRole('button', { name: 'Build', exact: true }).click();
   await expect(page.locator('.schedule-table tbody tr')).toHaveCount(9);
   await expect(page.locator('.schedule-table')).toContainText('7:20');
@@ -65,7 +65,7 @@ test('regeneration preview shows signed time and Run Time changes for each ancho
   const dialog = page.getByRole('dialog', { name: 'Regenerate selected trips' });
   await expect(dialog.locator('.preview-times thead th')).toHaveText([
     'Trip', 'Anchor', 'Fixed time', 'First change', 'First: current → new',
-    'Last change', 'Last: current → new', 'Run Time change', 'Layover change', 'Layover: current → new',
+    'Last change', 'Last: current → new', 'Run time change', 'Layover change', 'Layover: current → new',
   ]);
   const cells = dialog.locator('.preview-times tbody tr').first().locator('td');
   await expect(cells.nth(3)).toHaveText('0:00');
@@ -170,7 +170,7 @@ test('restores the page scroll position after committing a shift', async ({ page
 
   await page.locator('.schedule-table tbody input[type="checkbox"]').nth(8).check();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
+  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
   await drawer.getByRole('button', { name: /min later/ }).click();
   await expect(page.getByText('Staged 1 minute later')).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 300));
@@ -188,7 +188,7 @@ test('stages Shift actions, guards scope changes, and persists only on Done', as
   await page.locator('.schedule-table tbody input[type="checkbox"]').check();
   await runCommand(page, 'trips.shift');
 
-  const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
+  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
   await expect(drawer).toBeVisible();
   await drawer.getByRole('button', { name: /min earlier/ }).click();
   await expect(page.getByText('Staged 1 minute earlier')).toBeVisible();

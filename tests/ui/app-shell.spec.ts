@@ -111,7 +111,7 @@ test('choosing another project with unsaved Node edits asks first, and Cancel ke
   await projectSwitcher(page).click();
   await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Second project');
-  await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
+  await page.getByRole('button', { name: 'New project', exact: true }).last().click();
   await expect(projectSwitcher(page)).toHaveAccessibleName('Project: Second project');
 
   await chooseProject(page, projectName);

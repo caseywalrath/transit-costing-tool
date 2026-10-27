@@ -15,7 +15,7 @@ const TRIPS_BLOCKING_KEY = 'transit-costing-tool.trip-blocking-scenario.v1';
 
 const runtimeSection = (page: Page) => page.locator('[aria-label="Runtimes section"]');
 const tripsSection = (page: Page) => page.locator('[aria-label="Trips section"]');
-const leaveDialog = (page: Page) => page.getByRole('alertdialog', { name: 'Save Runtime changes before leaving?' });
+const leaveDialog = (page: Page) => page.getByRole('alertdialog', { name: 'Save runtime changes before leaving?' });
 const shiftDialog = (page: Page) => page.getByRole('heading', { name: 'Discard staged shift?' });
 const firstSegment = (page: Page) => runtimeCell(runtimeSection(page), 'Time band 1 segment 1');
 
@@ -31,7 +31,7 @@ const dayOption = (page: Page) => scopeField(page, 'Day').evaluate((select: HTML
 async function startStagedShift(page: Page) {
   await page.locator('.schedule-table tbody input[type="checkbox"]').first().check();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
+  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
   await drawer.getByRole('button', { name: /min earlier/ }).click();
   await expect(page.getByText('Staged 1 minute earlier')).toBeVisible();
   return drawer;
@@ -154,29 +154,29 @@ test('a staged Shift is guarded on a tab change, and a dirty Runtime draft is as
 test('Build Trips closes without a prompt and shows its values again when it is reopened', async ({ page }) => {
   await createShiftReadySchedule(page);
   const open = () => runCommand(page, 'trips.build');
-  const drawer = page.getByRole('complementary', { name: 'Build Trips' });
+  const drawer = page.getByRole('complementary', { name: 'Build trips' });
 
   await open();
-  await expect(drawer.getByLabel('First Trip')).toHaveValue('');
+  await expect(drawer.getByLabel('First trip')).toHaveValue('');
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
-  await drawer.getByLabel('First Trip').fill('07:15');
+  await drawer.getByLabel('First trip').fill('07:15');
   await drawer.getByLabel('Headway').fill('20');
-  await drawer.getByLabel('Number of Trips').fill('3');
+  await drawer.getByLabel('Number of trips').fill('3');
   await drawer.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(drawer).toBeHidden();
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
 
   await open();
-  await expect(drawer.getByLabel('First Trip')).toHaveValue('07:15');
+  await expect(drawer.getByLabel('First trip')).toHaveValue('07:15');
   await expect(drawer.getByLabel('Headway')).toHaveValue('20');
-  await expect(drawer.getByLabel('Number of Trips')).toHaveValue('3');
+  await expect(drawer.getByLabel('Number of trips')).toHaveValue('3');
   await expect(drawer.getByLabel('Pattern')).not.toHaveValue('');
 
   // A successful build clears the values.
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
   await expect(drawer).toBeHidden();
   await open();
-  await expect(drawer.getByLabel('First Trip')).toHaveValue('');
+  await expect(drawer.getByLabel('First trip')).toHaveValue('');
   await expect(drawer.getByLabel('Headway')).toHaveValue('');
 });
 

@@ -100,7 +100,7 @@ test('Change pattern with one trip opens the single-trip review, and with severa
 
   await boxes.nth(1).check();
   await runCommand(page, 'trips.changePattern');
-  await expect(page.getByRole('dialog', { name: 'Change selected Patterns' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Change selected patterns' })).toBeVisible();
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
 });
 
@@ -174,7 +174,7 @@ test('the selection bar is pinned, compact, above the pinned table headings whil
 
   // It works from there: Shift… opens the drawer for the selected trip.
   await bar.getByRole('button', { name: 'Shift…', exact: true }).click();
-  await expect(page.getByRole('complementary', { name: 'Shift selected Trips' })).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'Shift selected trips' })).toBeVisible();
   await page.getByRole('button', { name: 'Discard', exact: true }).last().click();
 
   await page.evaluate(() => window.scrollTo(0, 0));

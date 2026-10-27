@@ -39,9 +39,9 @@ for (const width of [1024, 1440]) {
     await runInPage(page, "const day = (await e.db.serviceDays.toArray()).find((item) => item.kind === 'weekday'); const block = (await e.db.blocks.toArray()).find((item) => item.label === '11' && item.serviceDayId === day.id); await e.db.blocks.delete(block.id);");
     await page.reload();
     await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-    const unassigned = page.getByLabel('Unassigned Trips', { exact: true });
+    const unassigned = page.getByLabel('Unassigned trips', { exact: true });
     await expect(unassigned).toBeVisible();
-    const block = page.getByRole('region', { name: 'Current Block', exact: true });
+    const block = page.getByRole('region', { name: 'Current block', exact: true });
     await block.locator('.menu-field').getByRole('button').first().click();
     await page.getByRole('menuitemradio', { name: '26', exact: true }).click();
     await unassigned.locator('tbody input[type="checkbox"]').nth(0).check();

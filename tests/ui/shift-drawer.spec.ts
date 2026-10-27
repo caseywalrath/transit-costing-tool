@@ -8,7 +8,7 @@ test('step sizes are chosen with one press or typed, the buttons name the step, 
   const rows = page.locator('.schedule-table tbody tr');
   await rows.first().locator('input[type="checkbox"]').check();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
+  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
   const status = drawer.getByRole('status');
   await expect(status).toHaveText('No net shift1 selected');
 
@@ -40,7 +40,7 @@ test('the step sizes are a keyboard radio group', async ({ page }) => {
   await createShiftReadySchedule(page, '06:20');
   await page.locator('.schedule-table tbody tr').first().locator('input[type="checkbox"]').check();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
+  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
   // The drawer previews the selection as it opens and disables its controls until that is done; when the preview ends, a control
   // that lost the focus to the disabled state gives it to the first step button. A step size focused before then loses the focus
   // (the cause of intermittent CI failures), so wait until the step buttons are enabled, which happens only after the preview.

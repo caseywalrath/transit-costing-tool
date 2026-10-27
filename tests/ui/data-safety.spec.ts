@@ -75,7 +75,7 @@ test('after a stale-source refusal Blocking reloads its data and shows the messa
   await page.setViewportSize({ width: 1400, height: 1000 });
   await openGolden(page);
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  const currentBlock = page.getByLabel('Current Block');
+  const currentBlock = page.getByLabel('Current block');
   const blockMenu = currentBlock.locator('.menu-field').filter({ hasText: 'Block' }).getByRole('button').first();
   await expect(blockMenu).toBeVisible({ timeout: 30_000 });
   await page.getByLabel('Blocks', { exact: true }).locator('.link-button').filter({ hasText: /^26$/ }).click();
@@ -88,11 +88,11 @@ test('after a stale-source refusal Blocking reloads its data and shows the messa
 
   const blocksBefore = await runInPage(page, 'return await e.db.blocks.count()');
   await currentBlock.getByRole('button', { name: 'New block', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'New Block' });
+  const dialog = page.getByRole('dialog', { name: 'New block' });
   await dialog.getByLabel('Name').fill('Block 900');
-  await dialog.getByRole('button', { name: 'Create Block', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Create block', exact: true }).click();
 
-  const stale = 'Blocking Scenario changed since the operation was reviewed. Nothing was saved, and the latest Blocks are loaded. Review them and try again.';
+  const stale = 'Blocking scenario changed since the operation was reviewed. Nothing was saved, and the latest blocks are loaded. Review them and try again.';
   await expect(banner(page).filter({ hasText: stale })).toHaveCount(1);
   await expect(banner(page)).toHaveCount(1);
   // The screen now shows the stored label: it reloaded.
@@ -101,7 +101,7 @@ test('after a stale-source refusal Blocking reloads its data and shows the messa
 
   // The same action now succeeds, because the source signature was refreshed.
   await expect(dialog.getByLabel('Name')).toHaveValue('Block 900');
-  await dialog.getByRole('button', { name: 'Create Block', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Create block', exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect(blockMenu).toContainText('Block 900');
   // The earlier message stays until it is dismissed; the retry added no second one.
@@ -113,16 +113,16 @@ test('a typed Blocking refusal is shown once, as written', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 1000 });
   await openGolden(page);
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  const currentBlock = page.getByLabel('Current Block');
+  const currentBlock = page.getByLabel('Current block');
   const blockMenu = currentBlock.locator('.menu-field').filter({ hasText: 'Block' }).getByRole('button').first();
   await expect(blockMenu).toBeVisible({ timeout: 30_000 });
   await page.getByLabel('Blocks', { exact: true }).locator('.link-button').filter({ hasText: /^26$/ }).click();
   await expect(blockMenu).toContainText('26');
 
   await currentBlock.getByRole('button', { name: 'New block', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'New Block' });
+  const dialog = page.getByRole('dialog', { name: 'New block' });
   await dialog.getByLabel('Name').fill('26');
-  await dialog.getByRole('button', { name: 'Create Block', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Create block', exact: true }).click();
   await expect(banner(page)).toHaveCount(1);
   await expect(banner(page)).toContainText('Another Block on this service day already uses that label.');
   expect(await banner(page).innerText()).not.toMatch(/\s{2}|^\s/);

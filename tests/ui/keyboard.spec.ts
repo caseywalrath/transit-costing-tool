@@ -50,7 +50,7 @@ test('a name dialog opened from a menu by keyboard takes focus, closes on Escape
   await page.goto('/');
   const trigger = page.getByRole('button', { name: /^Project: / });
   await chooseByKeyboard(page, trigger, 'New project…');
-  const dialog = page.getByRole('dialog', { name: 'New Project' });
+  const dialog = page.getByRole('dialog', { name: 'New project' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByLabel('Name')).toBeFocused();
   await page.keyboard.press('Escape');
@@ -64,7 +64,7 @@ test('a menu item that opens a dialog does not refocus the menu trigger, also wi
   // Count the times the trigger receives focus from here on: opening a dialog must not give it any.
   await page.evaluate(() => { const trigger = document.querySelector<HTMLElement>('button[aria-label^="Project: "]')!; (window as unknown as { triggerFocusCount: number }).triggerFocusCount = 0; trigger.addEventListener('focus', () => { (window as unknown as { triggerFocusCount: number }).triggerFocusCount += 1; }); });
   await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'New Project' });
+  const dialog = page.getByRole('dialog', { name: 'New project' });
   await expect(dialog).toBeVisible();
   await page.waitForTimeout(250);
   expect(await insideDialog(dialog)).toBe(true);
@@ -79,7 +79,7 @@ test('Tab and Shift+Tab stay inside an open modal dialog', async ({ page }) => {
   await page.getByRole('button', { name: /^Project: / }).click();
   await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Trap check');
-  await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
+  await page.getByRole('button', { name: 'New project', exact: true }).last().click();
   await expect(projectSwitcher(page)).toHaveAccessibleName('Project: Trap check');
   await page.getByRole('button', { name: /^Project: / }).click();
   await page.getByRole('menuitem', { name: 'Delete project…', exact: true }).click();
@@ -180,7 +180,7 @@ test('Shift drawer steps keep keyboard focus inside the drawer', async ({ page }
   await openGoldenTrips(page);
   await page.locator('.trips-workspace .schedule-table tbody input[type=checkbox]').first().check();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
+  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
   const forward = drawer.getByRole('button', { name: /min later/ });
   await forward.focus();
   await page.keyboard.press('Enter');
@@ -199,7 +199,7 @@ test('focus returns to the Block pill after confirming an assignment, and to Tri
   await chooseByKeyboard(page, pill, '13');
   const dialog = page.getByRole('alertdialog');
   await expect(dialog).toBeVisible();
-  await dialog.getByRole('button', { name: /Move Trip|Assign Trip/ }).focus();
+  await dialog.getByRole('button', { name: /Move trip|Assign trip/ }).focus();
   await page.keyboard.press('Enter');
   await expect(dialog).toHaveCount(0);
   await expect.poll(() => active(page), { timeout: 10_000 }).not.toBe('BODY');
@@ -295,19 +295,19 @@ test('fields with an error are marked invalid and point at the message', async (
 test('Build Trips marks the fields it cannot use, and the Runtime profile dialog marks its Name', async ({ page }) => {
   await createShiftReadySchedule(page, '06:10');
   await runCommand(page, 'trips.build');
-  const drawer = page.getByRole('complementary', { name: 'Build Trips' });
+  const drawer = page.getByRole('complementary', { name: 'Build trips' });
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
   await expect(drawer.getByRole('alert')).toBeVisible();
-  for (const label of ['Pattern', 'First Trip', 'Headway']) await expect(drawer.getByLabel(label)).toHaveAttribute('aria-invalid', 'true');
-  await expect(drawer.getByLabel('First Trip')).toHaveAttribute('aria-describedby', 'build-trips-error');
-  await drawer.getByLabel('First Trip').fill('7:00');
+  for (const label of ['Pattern', 'First trip', 'Headway']) await expect(drawer.getByLabel(label)).toHaveAttribute('aria-invalid', 'true');
+  await expect(drawer.getByLabel('First trip')).toHaveAttribute('aria-describedby', 'build-trips-error');
+  await drawer.getByLabel('First trip').fill('7:00');
   await drawer.getByLabel('Headway').fill('10');
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
   // Neither Number of Trips nor Last Trip is entered: both are marked, the fields that are fine are not.
-  await expect(drawer.getByLabel('Number of Trips')).toHaveAttribute('aria-invalid', 'true');
-  await expect(drawer.getByLabel('Last Trip')).toHaveAttribute('aria-invalid', 'true');
-  await expect(drawer.getByLabel('First Trip')).toHaveAttribute('aria-invalid', 'false');
+  await expect(drawer.getByLabel('Number of trips')).toHaveAttribute('aria-invalid', 'true');
+  await expect(drawer.getByLabel('Last trip')).toHaveAttribute('aria-invalid', 'true');
+  await expect(drawer.getByLabel('First trip')).toHaveAttribute('aria-invalid', 'false');
   await drawer.getByRole('button', { name: 'Cancel', exact: true }).click();
 
   const profile = page.locator('[aria-label="Runtimes section"] .menu-field').filter({ hasText: 'Profile' }).getByRole('button');
@@ -345,7 +345,7 @@ test('each workspace has one h1, there is one main landmark, the file input is l
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await checks(/Trips and runtimes/, page.locator('.trips-workspace .schedule-table tbody tr'));
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await checks(/^Blocking$/, page.getByLabel('Current Block').locator('tbody tr'));
+  await checks(/^Blocking$/, page.getByLabel('Current block').locator('tbody tr'));
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Costing Assumptions' })).toBeVisible();
   await checks(/Cost estimate/, page.getByRole('region', { name: 'Scope' }));

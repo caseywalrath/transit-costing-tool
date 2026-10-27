@@ -46,7 +46,7 @@ async function openRoute(page: Page, raw: any) {
 async function reviewNodeDeletion(page: Page, nodeName: string) {
   await page.getByRole('button', { name: `Remove ${nodeName}`, exact: true }).click();
   await page.getByRole('button', { name: 'Save nodes', exact: true }).click();
-  const dialog = page.getByRole('alertdialog', { name: 'Update service for deleted Nodes?' });
+  const dialog = page.getByRole('alertdialog', { name: 'Update service for deleted nodes?' });
   await expect(dialog).toBeVisible({ timeout: 30000 });
   return dialog;
 }
@@ -92,7 +92,7 @@ async function openTripProfileDeletion(page: Page, raw: any, profileName: string
   }
   await profileButton.click();
   await page.getByRole('menu', { name: 'Trip profile' }).getByRole('menuitem', { name: 'Delete profile…' }).click();
-  const dialog = page.getByRole('alertdialog').filter({ hasText: 'Delete Trip Profile?' });
+  const dialog = page.getByRole('alertdialog').filter({ hasText: 'Delete trip profile?' });
   await expect(dialog).toBeVisible();
   return dialog;
 }
@@ -102,19 +102,19 @@ test('the Trip profile delete confirmation states how many Blocking Scenarios go
   const [first] = raw.blockingScenarios;
   raw.blockingScenarios.push({ ...first, id: 'second-blocking-scenario', name: 'Second' });
   const dialog = await openTripProfileDeletion(page, raw, 'Default');
-  await expect(dialog).toContainText('Also deletes 2 Blocking Scenarios and their Blocks.');
-  await dialog.getByRole('button', { name: 'Delete Trip Profile', exact: true }).click();
+  await expect(dialog).toContainText('Also deletes 2 blocking scenarios and their blocks.');
+  await dialog.getByRole('button', { name: 'Delete trip profile', exact: true }).click();
   await expect.poll(() => runInPage(page, 'return await e.db.blockingScenarios.count()')).toBe(0);
   expect(await runInPage(page, 'return await e.db.blocks.count()')).toBe(0);
 });
 
 test('the Trip profile delete confirmation uses the singular for one Blocking Scenario', async ({ page }) => {
   const dialog = await openTripProfileDeletion(page, goldenWithAltProfile(), 'Default');
-  await expect(dialog).toContainText('Also deletes 1 Blocking Scenario and its Blocks.');
+  await expect(dialog).toContainText('Also deletes 1 blocking scenario and its blocks.');
 });
 
 test('the Trip profile delete confirmation shows no such line for a profile without a Blocking Scenario', async ({ page }) => {
   const dialog = await openTripProfileDeletion(page, goldenWithAltProfile(), 'Alt');
   await expect(dialog).toContainText('This cannot be undone.');
-  await expect(dialog).not.toContainText('Blocking Scenario');
+  await expect(dialog).not.toContainText('blocking scenario');
 });

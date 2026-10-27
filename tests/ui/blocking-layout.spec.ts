@@ -10,8 +10,8 @@ test.setTimeout(120_000);
 test.use({ actionTimeout: 15_000 });
 
 const COLLAPSED_KEY = 'transit-costing-tool.blocking-unassigned-collapsed.v1';
-const currentBlock = (page: Page) => page.getByRole('region', { name: 'Current Block', exact: true });
-const unassignedPanel = (page: Page) => page.getByLabel('Unassigned Trips', { exact: true });
+const currentBlock = (page: Page) => page.getByRole('region', { name: 'Current block', exact: true });
+const unassignedPanel = (page: Page) => page.getByLabel('Unassigned trips', { exact: true });
 const rail = (page: Page, count: number) => page.getByRole('button', { name: `Expand unassigned trips, ${count}`, exact: true });
 const collapseButton = (page: Page) => page.getByRole('button', { name: 'Collapse unassigned trips', exact: true });
 
@@ -21,20 +21,20 @@ async function openBlockingWithTrips(page: Page, tripCount: number) {
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await runCommand(page, 'trips.build');
   await page.locator('.build-trips-drawer').getByLabel('Pattern').selectOption({ index: 1 });
-  await page.getByLabel('First Trip').fill('06:00');
+  await page.getByLabel('First trip').fill('06:00');
   await page.getByLabel('Headway').fill('10');
-  await page.getByLabel('Last Trip').fill(`06:${String((tripCount - 1) * 10).padStart(2, '0')}`);
+  await page.getByLabel('Last trip').fill(`06:${String((tripCount - 1) * 10).padStart(2, '0')}`);
   await page.getByRole('button', { name: 'Build', exact: true }).click();
   await expect(page.locator('.schedule-table tbody tr')).toHaveCount(tripCount);
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New Blocking Scenario…', exact: true }).click();
-  const scenarioDialog = page.getByRole('dialog', { name: 'New Blocking Scenario' });
+  await page.getByRole('menuitem', { name: 'New blocking scenario…', exact: true }).click();
+  const scenarioDialog = page.getByRole('dialog', { name: 'New blocking scenario' });
   await scenarioDialog.getByLabel('Name').fill('Layout');
   await scenarioDialog.getByRole('button', { name: 'Create', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Blocking scenario' })).toHaveValue(/.+/);
   await runCommand(page, 'block.new');
-  await page.getByRole('dialog', { name: 'New Block' }).getByRole('button', { name: 'Create Block', exact: true }).click();
+  await page.getByRole('dialog', { name: 'New block' }).getByRole('button', { name: 'Create block', exact: true }).click();
   await expect(currentBlock(page).getByText('This empty Block is valid.')).toBeVisible();
 }
 
@@ -121,10 +121,10 @@ test('the Unassigned trips header shows Compatible only as a toggle and Clear fi
   await compatibleOnly.click();
   await expect(compatibleOnly).toHaveAttribute('aria-pressed', 'false');
   await expect(panel.getByRole('button', { name: 'Clear filters', exact: true })).toHaveCount(0);
-  await panel.getByRole('button', { name: 'Filter From Time' }).click();
-  await page.getByRole('dialog', { name: 'Filter From Time' }).getByLabel('On or after').fill('6:10');
+  await panel.getByRole('button', { name: 'Filter From time' }).click();
+  await page.getByRole('dialog', { name: 'Filter From time' }).getByLabel('On or after').fill('6:10');
   await expect(panel.getByRole('button', { name: 'Clear filters', exact: true })).toBeVisible();
-  await expect(panel.getByRole('button', { name: 'Unassigned Trip actions', exact: true })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Unassigned trip actions', exact: true })).toBeVisible();
 });
 
 test('selected unassigned Trips are assigned from the selection bar to the current Block', async ({ page }) => {
@@ -163,7 +163,7 @@ test('selected Block Trips are removed or moved from the Block selection bar', a
   // With one Block there is nowhere to move to.
   await expect(toolbar.getByRole('button', { name: 'Move to block…', exact: true })).toBeDisabled();
   await runCommand(page, 'block.removeTrips');
-  await page.getByRole('alertdialog', { name: 'Remove selected Trips?' }).getByRole('button', { name: 'Remove Trips', exact: true }).click();
+  await page.getByRole('alertdialog', { name: 'Remove selected trips?' }).getByRole('button', { name: 'Remove from block', exact: true }).click();
   await expect(currentBlock(page).locator('tbody tr:not(.blocking-add-row)')).toHaveCount(1);
   await expect(toolbar).toHaveCount(0);
 });
@@ -177,7 +177,7 @@ test('"+ Add pull-out" and "+ Add pull-in" are table rows that disappear once th
   await expect(rows.last()).toContainText('+ Add pull-in');
   await runCommand(page, 'block.addPullOut');
   const dialog = page.getByRole('dialog', { name: 'Add Pull-out' });
-  await dialog.getByLabel('Minutes before first Trip').fill('10');
+  await dialog.getByLabel('Minutes before first trip').fill('10');
   await dialog.getByRole('combobox', { name: 'To', exact: true }).selectOption({ index: 1 });
   await dialog.getByRole('button', { name: 'Add activity', exact: true }).click();
   await expect(block.getByRole('button', { name: '+ Add pull-out', exact: true })).toHaveCount(0);
@@ -192,8 +192,8 @@ test('the Current block header shows the subtitle, New block, and a menu with Re
   await expect(header.getByRole('heading', { name: 'Current block' })).toBeVisible();
   await expect(header.locator('.work-surface__subtitle')).toContainText(/^\d+ trips · \d+:\d\d(:\d\d)? – \d+:\d\d(:\d\d)? · Revenue [\d.]+ h · Layover [\d.]+%$/);
   await expect(header.getByRole('button', { name: 'New block', exact: true })).toBeVisible();
-  await header.getByRole('button', { name: 'Current Block actions', exact: true }).click();
-  await expect(page.getByRole('menu', { name: 'Current Block actions' }).getByRole('menuitem')).toHaveText(['Rename block…', 'Edit notes…', 'Delete block…']);
+  await header.getByRole('button', { name: 'Current block actions', exact: true }).click();
+  await expect(page.getByRole('menu', { name: 'Current block actions' }).getByRole('menuitem')).toHaveText(['Rename block…', 'Edit notes…', 'Delete block…']);
 });
 
 test('the day summary is a seven-cell strip above the Blocks table, and the footer counts the blocks', async ({ page }) => {

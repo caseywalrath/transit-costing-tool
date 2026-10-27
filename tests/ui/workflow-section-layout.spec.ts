@@ -19,7 +19,7 @@ test('uses one header action layer and a right-docked Shift drawer', async ({ pa
 
   await page.locator('.schedule-table tbody input[type="checkbox"]').first().check();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
+  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
   await expect(drawer).toBeVisible();
 
   await expect(sections).toHaveCount(2);
@@ -28,7 +28,7 @@ test('uses one header action layer and a right-docked Shift drawer', async ({ pa
   await expect(runtimeActions.getByLabel('Pattern')).toBeVisible();
   await expect(runtimeSection.locator('.runtimes-toolbar').getByRole('button')).toHaveText(['Default ▾', '', 'Close']);
   // Trips: the profile and Blocking scenario menus follow the title; View, Add trip, Build trips…, and Actions sit at the right.
-  await expect(tripsSection.locator('.work-surface__context').getByRole('button')).toHaveText(['Default ▾', 'No Blocking Scenario ▾']);
+  await expect(tripsSection.locator('.work-surface__context').getByRole('button')).toHaveText(['Default ▾', 'No blocking scenario ▾']);
   await expect(tripActions.getByRole('button')).toHaveText(['View ▾', 'Add trip', 'Build trips…', '']);
   await expect(tripActions.getByRole('button', { name: 'Build trips…', exact: true })).toHaveClass(/primary/);
   await expect(runtimeSection.locator('.runtime-editor-toolbar')).toHaveCount(0);
