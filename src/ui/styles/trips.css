@@ -91,3 +91,22 @@
 .recalculation-band-choice { display: flex; align-items: end; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-2) 0; }
 .recalculation-band-choice label { display: grid; gap: var(--space-1); min-width: min(390px, 100%); max-width: 100%; }
 .recalculation-band-choice select { width: 100%; color: var(--color-text); }
+
+/* Trips tab (UR-6c): Runtimes and Trips are work surfaces; the selection bar sits above the table. */
+.work-surface__context { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); min-width: 0; }
+.work-surface__context .menu-field, .runtimes-toolbar .menu-field { display: inline-flex; flex-direction: row; align-items: center; flex: none; gap: 6px; }
+.work-surface__context .menu-field .menu-trigger, .runtimes-toolbar .menu-field .menu-trigger { width: auto; min-width: 0; }
+.work-surface__actions .context-field select { width: auto; min-width: 180px; }
+.runtimes-surface .work-surface__header { border-bottom: 0; }
+.runtimes-surface:has(.runtimes-body) .work-surface__header { border-bottom: 1px solid var(--color-border-soft); }
+.disclosure { display: inline-flex; align-items: center; gap: 6px; min-height: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: var(--font-weight-bold); }
+.disclosure:hover:not(:disabled), .disclosure:disabled { background: transparent; color: inherit; }
+.disclosure__arrow { width: var(--space-3); color: var(--color-text-muted); font-size: var(--font-size-note); }
+.runtimes-summary { flex: 1 1 320px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runtimes-toolbar { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+.runtimes-body .runtime-editor { margin-top: var(--space-2); border: 0; background: transparent; padding: 0; min-width: 0; }
+.runtimes-body .runtime-status { border: 0; background: transparent; padding: 0; }
+.trips-surface .work-surface__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); min-width: 0; }
+.inline-note button.small { min-height: var(--space-5); padding: 0 var(--space-2); }
+.selection-bar { margin-bottom: 0; }
+.selection-bar .subtle-danger { color: var(--color-danger); }

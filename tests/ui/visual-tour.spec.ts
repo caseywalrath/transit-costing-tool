@@ -1,6 +1,7 @@
 // Screenshot tour for visual review. Skipped unless UI_TOUR=1. Output: test-results/ui-tour/<width>/<tab>.png
 import { test, expect } from '@playwright/test';
 import { openGoldenTrips } from './support/tripsWorkspace';
+import { openRuntimes } from './support/ui';
 
 test.skip(!process.env.UI_TOUR, 'Set UI_TOUR=1 to capture the tour.');
 
@@ -19,6 +20,19 @@ for (const width of [1024, 1440]) {
     await page.getByRole('button', { name: 'Trips', exact: true }).click();
     await expect(page.locator('.schedule-table tbody tr').first()).toBeVisible();
     await page.screenshot({ path: out('trips-full'), fullPage: true });
-    // Packages add states here, for example runtimes open, headways on, a selection, Blocking with unassigned trips.
+    // UR-6c: Runtimes open, a selection, and the O-2 case (rows 120 to 125 selected, the page scrolled to them).
+    await openRuntimes(page);
+    await page.screenshot({ path: out('trips-runtimes-open'), fullPage: false });
+    const boxes = page.locator('.trips-workspace .schedule-table tbody input[type="checkbox"]');
+    await boxes.nth(2).check();
+    await boxes.nth(3).check();
+    await page.screenshot({ path: out('trips-selection'), fullPage: false });
+    await page.getByRole('button', { name: 'Clear', exact: true }).click();
+    for (let row = 120; row <= 125; row += 1) await boxes.nth(row).check();
+    await boxes.nth(122).scrollIntoViewIfNeeded();
+    await page.evaluate(() => window.scrollBy(0, 200));
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: out('trips-selection-scrolled'), fullPage: false });
+    // Packages add states here, for example headways on, Blocking with unassigned trips.
   });
 }

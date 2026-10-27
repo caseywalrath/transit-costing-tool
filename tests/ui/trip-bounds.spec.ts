@@ -4,6 +4,7 @@
 import { expect, test } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { createShiftReadySchedule } from './support/tripsWorkspace';
+import { runCommand } from './support/ui';
 
 test('a Shift that would start a Trip before 0:00 is refused in the drawer, and the app stays usable', async ({ page }) => {
   await createShiftReadySchedule(page);
@@ -16,8 +17,7 @@ test('a Shift that would start a Trip before 0:00 is refused in the drawer, and 
 
   const tripsSection = page.locator('[aria-label="Trips section"]');
   await page.locator('.schedule-table tbody input[type="checkbox"]').check();
-  await tripsSection.getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
+  await runCommand(page, 'trips.shift');
   const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
   await expect(drawer).toBeVisible();
 
@@ -48,8 +48,7 @@ test('a Shift that would start a Trip before 0:00 is refused in the drawer, and 
 test('Build Trips refuses a Last Trip that would create more than 500 Trips and stores none', async ({ page }) => {
   await createShiftReadySchedule(page);
   const tripsSection = page.locator('[aria-label="Trips section"]');
-  await tripsSection.getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Build trips…' }).click();
+  await runCommand(page, 'trips.build');
   const drawer = page.getByRole('complementary', { name: 'Build Trips' });
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
   // A departure every minute from 0:00 to 23:59 is 1,440 Trips.

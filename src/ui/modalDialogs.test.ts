@@ -17,7 +17,7 @@ describe('modal dialogs', () => {
     const using = Object.keys(uiSources).filter((path) => !path.endsWith('.test.ts') && path !== './ModalDialog.tsx' && /<ModalDialog[\s>]/.test(uiSources[path])).sort();
     expect(using).toEqual(['./blocking/BlockingWorkspace.tsx', './costing/CostingWorkspace.tsx', './route/RouteWorkspace.tsx', './shared/dialogs.tsx', './trips/RuntimeEditor.tsx', './trips/dialogs.tsx']);
     const count = (path: string) => (uiSources[path]!.match(/<ModalDialog[\s>]/g) ?? []).length;
-    expect(using.reduce((total, path) => total + count(path), 0)).toBe(23);
+    expect(using.reduce((total, path) => total + count(path), 0)).toBe(24); // UR-6c added the single-trip Change pattern review.
   });
 
   it('every ModalDialog is named, by a heading id or a label', () => {

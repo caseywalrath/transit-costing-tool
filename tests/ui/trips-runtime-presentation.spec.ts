@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule } from './support/tripsWorkspace';
-import { scopeField } from './support/ui';
+import { openRuntimes, runCommand, scopeField } from './support/ui';
 
 test.setTimeout(120_000);
 
@@ -20,6 +20,7 @@ async function openGoldenTripsAfter(page: Page, prepare: string) {
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
   await expect(page.locator('.trips-workspace .schedule-table tbody tr')).toHaveCount(138, { timeout: 30_000 });
+  await openRuntimes(page);
 }
 
 /** Shares the Weekday Runtime profile of the first Southbound Pattern with the named Service days. */
@@ -49,11 +50,13 @@ test('the Runtime profile line names two Service days with "and", and one Servic
   await expect(page.locator('.profile-usage')).toHaveText('Used by Weekday for Southbound: Wagon Road to Evans.');
 });
 
-test('the Trips selector for a Blocking Scenario is labeled "Blocking Scenario"', async ({ page }) => {
+test('the Trips selectors are labeled "Trip profile" and "Blocking scenario"', async ({ page }) => {
   await openGoldenTripsAfter(page, '');
   const labels = await tripsSection(page).locator('.menu-field-label').allTextContents();
-  expect(labels).toEqual(['Profile', 'Blocking Scenario']);
-  await expect(tripsSection(page).locator('.menu-field').filter({ hasText: 'Blocking Scenario' }).getByRole('button')).toBeVisible();
+  expect(labels).toEqual(['Trip profile', 'Blocking scenario']);
+  await expect(tripsSection(page).locator('.menu-field').filter({ hasText: 'Blocking scenario' }).getByRole('button')).toBeVisible();
+  // The Runtimes section names its profile selector "Runtime profile".
+  await expect(runtimeSection(page).locator('.menu-field-label')).toHaveText(['Runtime profile']);
 });
 
 test('Runtime band totals of 60 minutes or more use the same duration format as the segments and the Run Time column', async ({ page }) => {
@@ -66,6 +69,7 @@ test('Runtime band totals of 60 minutes or more use the same duration format as 
 test('the Runtime Method applies to every Pattern on the Route after a confirmation, and Paste and CSV import are gone', async ({ page }) => {
   await createRouteWithPattern(page, 'Route method');
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
+  await openRuntimes(page);
   const section = runtimeSection(page);
   await expect(section.getByLabel('Time band 1 segment 1')).toBeVisible();
   const storedMethod = () => runInPage(page, 'return (await e.db.runtimeProfiles.toArray()).map((profile) => profile.calculationMethod)');
@@ -73,7 +77,7 @@ test('the Runtime Method applies to every Pattern on the Route after a confirmat
 
   await section.getByRole('button', { name: 'Runtime actions', exact: true }).click();
   const menu = page.getByRole('menu', { name: 'Runtime actions' });
-  await expect(menu.getByText('Method (all Patterns on this Route)', { exact: true })).toBeVisible();
+  await expect(menu.getByText('Calculation method (whole route)', { exact: true })).toBeVisible();
   await expect(menu.getByRole('menuitemradio', { name: 'Band at segment start' })).toHaveAttribute('aria-checked', 'true');
   await expect(menu.getByRole('menuitem', { name: 'Paste rows…' })).toHaveCount(0);
   await expect(menu.getByRole('menuitem', { name: 'Import profile CSV…' })).toHaveCount(0);
@@ -100,8 +104,7 @@ test('the Runtime Method applies to every Pattern on the Route after a confirmat
 test('Undo and Redo change the Shift history only after the preview resolves', async ({ page }) => {
   await createShiftReadySchedule(page, '06:20');
   await page.locator('.trips-workspace .schedule-table tbody tr').first().getByRole('checkbox').check();
-  await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
+  await runCommand(page, 'trips.shift');
   const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
   const redo = drawer.getByRole('button', { name: 'Redo', exact: true });
   const undo = drawer.getByRole('button', { name: 'Undo', exact: true });
@@ -127,9 +130,8 @@ test('Undo and Redo change the Shift history only after the preview resolves', a
 
 test('the Trips CSV export mirrors the Trips table and contains no ids', async ({ page }) => {
   await createShiftReadySchedule(page, '06:20');
-  await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Export Trips CSV' }).click();
+  await runCommand(page, 'trips.exportCsv');
   const download = await downloadPromise;
   const stream = await download.createReadStream();
   const chunks: Buffer[] = [];
@@ -185,8 +187,7 @@ test('the error message offers Try again, which draws the screen once the data i
 test('Show runtime bands follows a Runtime profile saved in the same session, with no page reload', async ({ page }) => {
   await createShiftReadySchedule(page, '06:20');
   await expect(page.locator('.trips-workspace .schedule-table tbody tr')).toHaveCount(3);
-  await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).locator('[role^="menuitem"]', { hasText: 'Show runtime bands' }).click();
+  await runCommand(page, 'trips.toggleBands');
   const legend = page.getByLabel('Runtime band legend');
   await expect(legend).toContainText('0:00–30:00');
 
@@ -215,8 +216,7 @@ test('the Recalculate dialog offers no band picker for a segment-start profile a
   await page.reload();
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await page.locator('.schedule-table tbody input[type="checkbox"]').first().check();
-  await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Regenerate selected…' }).click();
+  await runCommand(page, 'trips.regenerate');
   const dialog = page.getByRole('dialog', { name: 'Regenerate selected trips' });
   await dialog.getByRole('button', { name: 'Last timepoint', exact: true }).click();
   const alert = dialog.getByRole('alert');
@@ -248,8 +248,7 @@ test('the Recalculate dialog still offers the band picker for a single-band prof
   await page.reload();
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await page.locator('.schedule-table tbody input[type="checkbox"]').first().check();
-  await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Regenerate selected…' }).click();
+  await runCommand(page, 'trips.regenerate');
   const dialog = page.getByRole('dialog', { name: 'Regenerate selected trips' });
   await dialog.getByRole('button', { name: 'Last timepoint', exact: true }).click();
   await expect(dialog.getByLabel('Runtime band')).toBeVisible();
@@ -261,6 +260,7 @@ test('the first visit to Trips creates one Default Runtime profile and one assig
   // No default exists yet: the Route screen does not create it.
   expect(await runInPage(page, 'return [await e.db.runtimeProfiles.count(), await e.db.runtimeAssignments.count()]')).toEqual([0, 0]);
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
+  await openRuntimes(page);
   await expect(runtimeSection(page).getByLabel('Time band 1 segment 1')).toBeVisible();
   await expect(runtimeSection(page).getByRole('button', { name: 'Runtime actions', exact: true })).toBeEnabled();
   await expect(page.locator('.notice')).toHaveCount(0);

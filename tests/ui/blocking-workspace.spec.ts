@@ -169,9 +169,7 @@ test('creates an empty Blocking Scenario and an empty Block, then exposes its Tr
 test('shift-click selects inclusive ranges in Unassigned Trips and Current Block', async ({ page }) => {
   await createUsableRoute(page);
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  const tripsSection = page.locator('[aria-label="Trips section"]');
-  await tripsSection.getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Build trips…' }).click();
+  await runCommand(page, 'trips.build');
   await page.locator('.build-trips-drawer').getByLabel('Pattern').selectOption({ index: 1 });
   await page.getByLabel('First Trip').fill('06:00');
   await page.getByLabel('Headway').fill('10');
@@ -240,9 +238,7 @@ test('shift-click selects inclusive ranges in Unassigned Trips and Current Block
 test('filters and sorts Unassigned Trips while assignments insert by From Time', async ({ page }) => {
   await createUsableRoute(page);
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  const tripsSection = page.locator('[aria-label="Trips section"]');
-  await tripsSection.getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Build trips…' }).click();
+  await runCommand(page, 'trips.build');
   await page.locator('.build-trips-drawer').getByLabel('Pattern').selectOption({ index: 1 });
   await page.getByLabel('First Trip').fill('06:00');
   await page.getByLabel('Headway').fill('10');

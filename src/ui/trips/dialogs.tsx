@@ -189,3 +189,38 @@ export function BatchPatternChangeDialog({ tripService, tripIds, patterns, trips
   async function apply() { if (!preview || preview.ineligibleTripIds.length) return; setBusy(true); setError(''); try { await tripService.applyBatchPatternChange(preview); await onDone(); onClose(); } catch (caught) { setError(caught instanceof Error && caught.name === 'ServiceDayCopyStalePreviewError' ? 'Selected Trips changed. Review again.' : userFacingError(caught, 'Unable to change Patterns. Review the change again, then apply.')); } finally { setBusy(false); } }
   return <ModalDialog labelledBy="batch-pattern-title" className="confirm-dialog preview-dialog" onClose={onClose} busy={busy}><h2 id="batch-pattern-title">Change selected Patterns</h2><label className="dialog-field">Target Pattern<select autoFocus value={targetPatternId} disabled={busy} onChange={(event) => { setTargetPatternId(event.target.value); setPreview(undefined); setError(''); }}>{patterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label>{preview && <><CopyImpact items={[["Eligible", preview.eligibleTripIds.length], ['Cannot change', preview.ineligibleTripIds.length], ['Affected blocks', preview.affectedBlockIds.length]]} /><ul className="impact-list batch-pattern-results">{preview.changes.map((change) => <li key={change.tripId}>{tripName(change.tripId)}: {change.finding ? userMessage(change.finding) : 'Ready'}</li>)}</ul></>}{error && <p className="field-error" role="alert">{error}</p>}<div className="dialog-actions"><button onClick={onClose} disabled={busy}>Cancel</button><button onClick={() => void review()} disabled={!targetPatternId || busy}>{busy ? 'Reviewing…' : 'Review change'}</button>{preview && <button className="primary" onClick={() => void apply()} disabled={Boolean(preview.ineligibleTripIds.length) || busy}>{busy ? 'Saving…' : 'Change Patterns'}</button>}</div></ModalDialog>;
 }
+
+/**
+ * Change pattern with one Trip selected. It uses the single-Trip review: the target Pattern, the Trip, and the target runtime profile are
+ * previewed and signed (`previewTripPatternChange`), and the change is refused if any of them changed before it is applied.
+ */
+export function TripPatternChangeDialog({ tripService, trip, directionId, patterns, onDone, onClose }: { tripService: TripGenerationApplication; trip: Trip; directionId: string; patterns: RoutePattern[]; onDone: () => Promise<void>; onClose: () => void }) {
+  const targets = patterns.filter((pattern) => pattern.id !== trip.patternId);
+  const [targetPatternId, setTargetPatternId] = useState(targets[0]?.id ?? '');
+  const [review, setReview] = useState<Awaited<ReturnType<TripGenerationApplication['previewTripPatternChange']>>>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const currentName = patterns.find((pattern) => pattern.id === trip.patternId)?.name || 'Unnamed pattern';
+  const affectedBlocks = review?.affectedBlockIds?.length ?? 0;
+  async function previewChange() {
+    setBusy(true); setError('');
+    try { setReview(await tripService.previewTripPatternChange(trip.id, targetPatternId, directionId)); }
+    catch (caught) { setError(userFacingError(caught, 'Unable to review this pattern change. Close this dialog and try again.')); }
+    finally { setBusy(false); }
+  }
+  async function apply() {
+    if (!review || review.finding) return;
+    setBusy(true); setError('');
+    try { await tripService.changeTripPattern(review); await onDone(); onClose(); }
+    catch (caught) { setError(caught instanceof Error && caught.name === 'TripPatternChangeStalePreviewError' ? 'The trip or pattern changed. Review the change again.' : userFacingError(caught, 'Unable to change the pattern. Review the change again, then apply.')); setReview(undefined); }
+    finally { setBusy(false); }
+  }
+  return <ModalDialog labelledBy="trip-pattern-title" className="confirm-dialog preview-dialog" onClose={onClose} busy={busy}>
+    <h2 id="trip-pattern-title">Change pattern of this trip</h2>
+    <p>{currentName}</p>
+    <label className="dialog-field">Target pattern<select autoFocus value={targetPatternId} disabled={busy} onChange={(event) => { setTargetPatternId(event.target.value); setReview(undefined); setError(''); }}>{targets.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label>
+    {review && (review.finding ? <p className="field-error" role="alert">{userMessage(review.finding)}</p> : <p role="status">Ready to change this trip's pattern. {affectedBlocks ? `${affectedBlocks} block${affectedBlocks === 1 ? '' : 's'} will be affected.` : 'No blocks are affected.'}</p>)}
+    {error && <p className="field-error" role="alert">{error}</p>}
+    <div className="dialog-actions"><button onClick={onClose} disabled={busy}>Cancel</button><button onClick={() => void previewChange()} disabled={!targetPatternId || busy}>{busy && !review ? 'Reviewing…' : 'Review change'}</button>{review && <button className="primary" onClick={() => void apply()} disabled={Boolean(review.finding) || busy}>{busy ? 'Saving…' : 'Change pattern'}</button>}</div>
+  </ModalDialog>;
+}

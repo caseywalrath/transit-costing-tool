@@ -46,7 +46,7 @@ export const RuntimeEditor2 = forwardRef<RuntimeEditorHandle, { service: RouteDe
         {band.segmentRuntimeSeconds.map((value, segmentIndex) => <td key={`${band.id}-${segmentIndex}`}><RuntimeTimeInput label={`Time band ${bandIndex + 1} segment ${segmentIndex + 1}`} value={value} duration onCommit={(next) => updateBand(bandIndex, { segmentRuntimeSeconds: band.segmentRuntimeSeconds.map((item, index) => index === segmentIndex ? next : item) })} /></td>)}
         <td className="runtime-total">{formatDuration(runtimeBandTotalSeconds(band))}</td>
         <td><div className="row-actions"><button className="icon-button" onClick={() => duplicateBand(bandIndex)} aria-label={`Duplicate time band ${bandIndex + 1}`} title="Duplicate time band"><CopyIcon /></button><button className="icon-button icon-button--danger" onClick={() => setDraft((current) => removeRuntimeBand(current, bandIndex))} aria-label={`Remove time band ${bandIndex + 1}`} title="Remove time band"><TrashIcon /></button></div></td>
-      </tr>)}{draft.bands.length === 0 && <tr><td colSpan={pattern.points.length + 3} className="table-empty">Add a time band to enter runtimes.</td></tr>}</tbody>
+      </tr>)}{draft.bands.length === 0 && <tr><td colSpan={pattern.points.length + 3} className="table-empty">Add a time band to enter runtimes.</td></tr>}<tr className="table-add-row"><td colSpan={pattern.points.length + 3}><button type="button" className="ghost" disabled={saving} onClick={addBand}><span aria-hidden="true">+ </span>Add time band</button></td></tr></tbody>
     </table></div>
     {findings.length > 0 && <p className="field-error" role="alert">{[...new Set(findings.map(userMessage))].join(' ')}</p>}
   </div>;

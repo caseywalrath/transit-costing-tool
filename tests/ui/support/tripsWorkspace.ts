@@ -2,7 +2,7 @@
 import { expect, type Page } from '@playwright/test';
 import { goldenRaw } from './goldenFixture';
 import { runInPage, seedSnapshot } from './dexieEnv';
-import { scopeField } from './ui';
+import { openRuntimes, scopeField } from './ui';
 
 /**
  * Creates a project with one Route that has Nodes A and B and one saved Pattern (A to B, rebalanced) and its Default Runtime profile.
@@ -57,6 +57,7 @@ export async function createRouteWithPattern(page: Page, projectName: string) {
 export async function createShiftReadySchedule(page: Page, lastTrip = '06:00', segment = ':07') {
   await createRouteWithPattern(page, 'Unified action layer verification');
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
+  await openRuntimes(page);
 
   const runtimeSection = page.locator('[aria-label="Runtimes section"]');
   await expect(runtimeSection.locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button', { name: 'Default' })).toBeVisible();
@@ -83,20 +84,10 @@ export async function createShiftReadySchedule(page: Page, lastTrip = '06:00', s
   const actions = tripsSection.getByRole('button', { name: 'Trip actions', exact: true });
   await actions.focus();
   await actions.press('ArrowDown');
-  const actionMenu = page.getByRole('menu', { name: 'Trip actions' });
-  await expect(actionMenu.getByRole('menuitem')).toHaveText([
-    'Build trips…',
-    'Add trip…',
-    'Regenerate selected…',
-    'Shift selected…',
-    'Change pattern…',
-    'Assign Block…',
-    'Unassign from Block…',
-    'Copy Trips from day…',
-    'Export Trips CSV',
-    'Delete selected…',
-  ]);
-  await actionMenu.getByRole('menuitem', { name: 'Build trips…' }).click();
+  // UR-6c: Build trips and Add trip are header buttons and the selection commands live in the selection bar; the menu keeps the rest.
+  await expect(page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem')).toHaveText(['Copy trips from another day…', 'Export trips CSV']);
+  await page.keyboard.press('Escape');
+  await tripsSection.getByRole('button', { name: 'Build trips…', exact: true }).click();
   const drawer = page.getByRole('complementary', { name: 'Build Trips' });
   await expect(drawer).toBeVisible();
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });

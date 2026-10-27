@@ -9,7 +9,7 @@ import { type RouteDefinitionApplication, type ScenarioRecords } from '../../app
 import { TripShiftStalePreviewError, type TripGenerationApplication } from '../../application/tripGenerationService';
 import { TripShiftValidationError, type TripShiftPreview } from '../../domain/tripShift';
 import { TripGenerationError } from '../../domain/trips';
-import { createBlockingScenarioSourceSignature, formatNetShift, isUsablePattern, orderDirections, parseShiftSeconds, regenerationUndoApplies, reverseRuntimeCandidates, routeRuntimeCalculationMethod, sortServiceDays, usableDirectionPatterns, type RuntimeCalculationMethod } from '../../application/tripsWorkspaceView';
+import { createBlockingScenarioSourceSignature, formatNetShift, isUsablePattern, orderDirections, parseShiftSeconds, regenerationUndoApplies, reverseRuntimeCandidates, routeRuntimeCalculationMethod, RUNTIME_METHOD_SUMMARY_LABELS, runtimeBandTotalRange, sortServiceDays, usableDirectionPatterns, type RuntimeCalculationMethod } from '../../application/tripsWorkspaceView';
 import { formatServiceTime, parseServiceTime } from '../../domain/time';
 import { type BlockingBlock, type Route, type RouteDefinitionAggregate, type RuntimeAssignment, type RuntimeProfile, type ServiceDayDefinition, type Trip } from '../../domain/types';
 import { type BlockConnection } from '../../domain/blocking';
@@ -17,13 +17,22 @@ import { runtimeProfileCsv } from '../runtimeProfileCsv';
 import { tripTableCsv } from '../../application/tripTableCsv';
 import { type RouteNavigationGuard } from '../shared/types';
 import { type RuntimeEditorHandle, type RuntimeEditorState, RuntimeEditor2, RouteRuntimeMethodDialog } from './RuntimeEditor';
-import { type BuildTripsValues, EMPTY_BUILD_VALUES, type NewRuntimeDialog, TripBlockAssignmentDialog, TripBlockUnassignmentDialog, BuildTripsDrawer, RuntimeProfileDialog2, DeleteRuntimeProfileDialog, DeleteTripsDialog, RecalculationDialog, RuntimeDayCopyDialog, TripDayCopyDialog, BatchPatternChangeDialog } from './dialogs';
+import { type BuildTripsValues, EMPTY_BUILD_VALUES, type NewRuntimeDialog, TripBlockAssignmentDialog, TripBlockUnassignmentDialog, BuildTripsDrawer, RuntimeProfileDialog2, DeleteRuntimeProfileDialog, DeleteTripsDialog, RecalculationDialog, RuntimeDayCopyDialog, TripDayCopyDialog, BatchPatternChangeDialog, TripPatternChangeDialog } from './dialogs';
 import { type TripBlockAssignmentDraft, type TripBlockOption, ScheduleTable } from './ScheduleTable';
 import { download } from '../shared/download';
 import { messages, userMessage } from '../shared/messages';
 import { RouteNavigationDraftDialog, ShiftDiscardDialog } from '../shared/dialogs';
+import { formatDuration } from '../format';
+import { InlineNote, WorkSurface } from '../shared/surfaces';
+import { SaveBar, SelectionBar } from '../shared/bars';
+import { ContextField } from '../shared/ContextField';
 
 export const TRIP_BLOCKING_SCENARIO_PREFERENCE_KEY = 'transit-costing-tool.trip-blocking-scenario.v1';
+export const RUNTIMES_OPEN_PREFERENCE_KEY = 'transit-costing-tool.runtimes-open.v1';
+
+/** Whether the Runtimes section was left open on this device. Collapsed unless the stored value is exactly `{ "open": true }`. */
+export function storedRuntimesOpen(): boolean { return readStoredRecord(RUNTIMES_OPEN_PREFERENCE_KEY).open === true; }
+function rememberRuntimesOpen(open: boolean) { try { localStorage.setItem(RUNTIMES_OPEN_PREFERENCE_KEY, JSON.stringify({ open })); } catch { /* UI preference only. */ } }
 
 /** The Blocking Scenario last chosen in Trips for each Trip Profile of a Scenario. An older record holds a single choice. */
 export function rememberedTripBlockingScenarios(scenarioId: string): Record<string, string> {
@@ -96,6 +105,8 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   const [routeMethodChange, setRouteMethodChange] = useState<{ method: RuntimeCalculationMethod; impact?: { profileCount: number; tripCount: number }; busy: boolean }>();
   const [tripCopyOpen, setTripCopyOpen] = useState(false);
   const [batchPatternChangeOpen, setBatchPatternChangeOpen] = useState(false);
+  const [tripPatternChangeOpen, setTripPatternChangeOpen] = useState(false);
+  const [runtimesOpen, setRuntimesOpen] = useState(storedRuntimesOpen);
   const [blockingScenarios, setBlockingScenarios] = useState<import('../../domain/types').BlockingScenario[]>([]);
   const [tripBlockingScenarioId, setTripBlockingScenarioId] = useState('');
   const [tripBlockingBlocks, setTripBlockingBlocks] = useState<BlockingBlock[]>([]);
@@ -107,8 +118,13 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   const [tripBlockAssignmentStatus, setTripBlockAssignmentStatus] = useState('');
   const runtimeCopyButtonRef = useRef<HTMLButtonElement>(null);
   const tripsActionsRef = useRef<HTMLButtonElement>(null);
+  const buildTripsButtonRef = useRef<HTMLButtonElement>(null);
+  const runtimesToggleRef = useRef<HTMLButtonElement>(null);
   const tripsTableScrollRef = useRef<HTMLDivElement>(null);
   const tripBlockAssignmentFocusRef = useRef<HTMLElement | null>(null);
+  // Set when an assignment or unassignment succeeds. The Trip actions menu is disabled while the dialog's draft exists, and the selection
+  // bar button that opened it goes away with the selection, so the focus is put back after the render that ends the draft.
+  const refocusAfterAssignment = useRef(false);
   const runtimeEditorRef = useRef<RuntimeEditorHandle>(null);
   const selectionAnchorId = useRef<string | undefined>(undefined);
   const patterns = usableDirectionPatterns(aggregate.patterns, directionId);
@@ -236,6 +252,11 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   }, [blockingService, tripBlockingScenarioId, serviceDayId, tripBlockingBlocksBusy, tripBlockingBlocks, trips]);
   // Remember the choice for each Trip Profile. A change of Trip Profile, or a moment with no choice, must not erase another profile's choice.
   useEffect(() => { if (!tripProfileId || !tripBlockingScenarioId || !blockingScenarios.some((item) => item.id === tripBlockingScenarioId && item.tripProfileId === tripProfileId)) return; rememberTripBlockingScenario(records.scenario.id, tripProfileId, tripBlockingScenarioId); }, [records.scenario.id, tripProfileId, tripBlockingScenarioId, blockingScenarios]);
+  useEffect(() => {
+    if (tripBlockAssignment || !refocusAfterAssignment.current) return;
+    refocusAfterAssignment.current = false;
+    tripBlockAssignmentFocusRef.current?.focus();
+  }, [tripBlockAssignment]);
   useEffect(() => { setTripBlockAssignment(undefined); setTripBlockAssignmentError(''); setTripBlockAssignmentStatus(''); }, [serviceDayId, directionId, tripProfileId, tripBlockingScenarioId]);
 
   const selectedBlockingScenario = blockingScenarios.find((item) => item.id === tripBlockingScenarioId);
@@ -297,7 +318,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
         const alreadyUnassignedCount = tripBlockAssignment.tripIds.length - assignedTripIds.length;
         setTripBlockAssignmentStatus(`Unassigned ${assignedTripIds.length} Trip${assignedTripIds.length === 1 ? '' : 's'}${alreadyUnassignedCount ? `; ${alreadyUnassignedCount} already unassigned` : ''}.`);
         setTripBlockAssignment(undefined);
-        window.setTimeout(() => tripBlockAssignmentFocusRef.current?.focus());
+        refocusAfterAssignment.current = true;
       } catch (error) {
         setTripBlockAssignmentError(userFacingError(error, 'Unable to unassign the selected Trips. Reopen Blocking to check the Blocks, then try again.'));
         if (error instanceof Error && error.message.includes('changed since the operation was reviewed')) {
@@ -316,7 +337,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
       setSelectedTripIds((ids) => ids.filter((id) => !tripBlockAssignment.tripIds.includes(id)));
       setTripBlockAssignmentStatus(`Assigned ${tripBlockAssignment.tripIds.length} Trip${tripBlockAssignment.tripIds.length === 1 ? '' : 's'} to ${option.label}.`);
       setTripBlockAssignment(undefined);
-      window.setTimeout(() => tripBlockAssignmentFocusRef.current?.focus());
+      refocusAfterAssignment.current = true;
     } catch (error) {
       setTripBlockAssignmentError(userFacingError(error, 'Unable to assign the selected Trips. Reopen Blocking to check the Blocks, then try again.'));
       if (error instanceof Error && error.message.includes('changed since the operation was reviewed')) {
@@ -452,14 +473,14 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   const reverseCandidates = reverseRuntimeCandidates(selectedPattern, patterns);
   async function requestProfileDeletion() { if (!selectedProfile) return; try { const impact = await service.getRuntimeProfileDeletionImpact(selectedProfile.id); setProfileDeletionImpact(impact); setDeleteProfileOpen(true); } catch (error) { onError(error); } }
   async function deleteProfile(replacementProfileId?: string) { if (!selectedProfile || !profileDeletionImpact) return; try { await service.deleteRuntimeProfile(selectedProfile.id, replacementProfileId, profileDeletionImpact.reviewToken); setDeleteProfileOpen(false); setProfileDeletionImpact(undefined); onRuntimeChanged(); } catch (error) { setDeleteProfileOpen(false); setProfileDeletionImpact(undefined); onError(error, 'Unable to delete the runtime profile. Your data was not changed.'); } }
-  async function changeTripPattern(trip: Trip, targetPatternId: string) { try { const preview = await tripService.previewTripPatternChange(trip.id, targetPatternId, directionId); if (preview.finding) { onError(new TripGenerationError([preview.finding])); return; } await tripService.changeTripPattern(preview); clearTripShiftHistory(); await loadTrips(); } catch (error) { onError(error); } }
   async function saveDraftTrip() {
     if (!draftTrip?.patternId || !draftTrip.firstTrip.trim()) return;
     try { const firstTrip = parseServiceTime(draftTrip.firstTrip); setBusy(true); const result = await tripService.addTrip({ scenarioId: records.scenario.id, routeId: aggregate.route.id, serviceDayId, directionId, patternId: draftTrip.patternId, tripProfileId, firstTrip }); setDraftTrip(undefined); clearTripShiftHistory(); await loadTrips(); if (result.warnings.length) onError(new TripGenerationError(result.warnings)); } catch (error) { onError(error); } finally { setBusy(false); }
   }
   const changedRuntimeTripIds = new Set(tripsWithChangedRuntimes.map((trip) => trip.id));
   const selectedChangedRuntimeTripIds = selectedTripIds.filter((id) => changedRuntimeTripIds.has(id));
-  async function finishRecalculation() { setRecalculationTripIds([]); setSelectedTripIds([]); clearTripShiftHistory(); await loadTrips(); }
+  // The selection bar goes away with the selection, so the focus moves to the Trip actions menu, which is always there.
+  async function finishRecalculation() { setRecalculationTripIds([]); setSelectedTripIds([]); clearTripShiftHistory(); await loadTrips(); window.setTimeout(() => tripsActionsRef.current?.focus()); }
   async function undoRegeneration() {
     setBusy(true);
     try { await tripService.undoLastTripRegeneration(); setSelectedTripIds([]); clearTripShiftHistory(); await loadTrips(); }
@@ -485,7 +506,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   async function deleteTrips() {
     if (!tripDeletion) return;
     setBusy(true);
-    try { await tripService.deleteTrips(tripDeletion.tripIds, tripDeletion.reviewToken); setSelectedTripIds((ids) => ids.filter((id) => !tripDeletion.tripIds.includes(id))); setTripDeletion(undefined); clearTripShiftHistory(); await loadTrips(); }
+    try { await tripService.deleteTrips(tripDeletion.tripIds, tripDeletion.reviewToken); setSelectedTripIds((ids) => ids.filter((id) => !tripDeletion.tripIds.includes(id))); setTripDeletion(undefined); clearTripShiftHistory(); await loadTrips(); window.setTimeout(() => tripsActionsRef.current?.focus()); }
     catch (error) { setTripDeletion(undefined); onError(error); } finally { setBusy(false); }
   }
   async function completeRuntimeCopy() { onRuntimeChanged(); }
@@ -510,7 +531,20 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   function closeRuntimeCopy() { setRuntimeCopyOpen(false); window.setTimeout(() => runtimeCopyButtonRef.current?.focus()); }
   function closeTripCopy() { setTripCopyOpen(false); window.setTimeout(() => tripsActionsRef.current?.focus()); }
   function closeBatchPatternChange() { setBatchPatternChangeOpen(false); window.setTimeout(() => tripsActionsRef.current?.focus()); }
-  function closeBuildDrawer() { setBuildOpen(false); window.setTimeout(() => tripsActionsRef.current?.focus()); }
+  function closeBuildDrawer() { setBuildOpen(false); window.setTimeout(() => buildTripsButtonRef.current?.focus()); }
+  function closeTripPatternChange() { setTripPatternChangeOpen(false); window.setTimeout(() => tripsActionsRef.current?.focus()); }
+  /** Opens or closes the Runtimes section and remembers the choice. Closing is refused while the editor has unsaved edits. */
+  function setRuntimesSectionOpen(open: boolean) {
+    if (!open && (runtimeEditorState.dirty || runtimeEditorState.saving)) return;
+    if (!open) setRuntimeEditorState({ dirty: false, saving: false });
+    setRuntimesOpen(open); rememberRuntimesOpen(open);
+    window.setTimeout(() => (open ? runtimeCopyButtonRef : runtimesToggleRef).current?.focus());
+  }
+  const selectedTrips = trips.filter((trip) => selectedTripIds.includes(trip.id));
+  function selectTripsWithChangedRuntimes() {
+    requestShiftScopeChange(() => { selectionAnchorId.current = undefined; setSelectedTripIds(tripsWithChangedRuntimes.map((trip) => trip.id)); });
+  }
+  function clearTripSelection() { requestShiftScopeChange(() => { selectionAnchorId.current = undefined; setSelectedTripIds([]); }); }
   const runtimeProfileMenu: MenuGroup[] = [
     { label: 'Profiles', items: profiles.map((profile) => ({ id: profile.id, label: profile.name, wrapLabel: true, checked: profile.id === profileId, disabled: loading || tripProfileBusy, onSelect: () => requestScopeChange(() => void assignProfile(profile.id)) })) },
     { items: [
@@ -536,26 +570,21 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
     ...blockingScenarios.map((scenario) => ({ id: scenario.id, label: scenario.name, checked: scenario.id === tripBlockingScenarioId, disabled: tripProfileBusy, onSelect: () => requestShiftScopeChange(() => setTripBlockingScenarioId(scenario.id)) })),
   ] }];
   const applicableRegenerationUndo = regenerationUndoApplies(lastRegenerationUndo, records.scenario.id, tripProfileId, trips) ? lastRegenerationUndo : undefined;
+  const viewMenu: MenuGroup[] = [{ items: [
+    { id: 'show-runtime-bands', label: 'Show runtime bands', checked: showRuntimeBands, kind: 'checkbox', onSelect: () => setShowRuntimeBands((current) => !current) },
+    { id: 'show-headways', label: 'Show headways', checked: showHeadways, kind: 'checkbox', onSelect: () => setShowHeadways((current) => !current) },
+    { id: 'round-table-times', label: 'Round displayed times', checked: roundDisplayedTimes, kind: 'checkbox', onSelect: () => setRoundDisplayedTimes((current) => !current) },
+  ] }];
+  // The ⋯ menu holds only what is not a selection command: Undo (Decision 0046: listed only while the saved undo applies, never shown disabled for that reason), service-day copy, and CSV export.
   const tripActionsMenu: MenuGroup[] = [
-    { label: 'Display', items: [{ id: 'show-runtime-bands', label: 'Show runtime bands', checked: showRuntimeBands, kind: 'checkbox', onSelect: () => setShowRuntimeBands((current) => !current) }, { id: 'show-headways', label: 'Show headways', checked: showHeadways, kind: 'checkbox', onSelect: () => setShowHeadways((current) => !current) }, { id: 'round-table-times', label: 'Round displayed times', checked: roundDisplayedTimes, kind: 'checkbox', onSelect: () => setRoundDisplayedTimes((current) => !current) }] },
-    { label: 'Schedule', items: [
-      { id: 'build', label: 'Build trips…', disabled: tripProfileBusy || shiftOperations.length > 0 || buildOpen, title: buildOpen ? 'The Build Trips drawer is already open.' : shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => setBuildOpen(true) },
-      { id: 'add', label: 'Add trip…', disabled: Boolean(draftTrip) || tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => setDraftTrip({ patternId: '', firstTrip: '' }) },
-      { id: 'regenerate', label: 'Regenerate selected…', disabled: busy || tripProfileBusy || shiftOperations.length > 0 || !selectedChangedRuntimeTripIds.length, title: shiftOperations.length ? 'Discard the staged shift first.' : !selectedChangedRuntimeTripIds.length ? 'Select Trips with changed runtimes.' : undefined, onSelect: () => setRecalculationTripIds([...selectedChangedRuntimeTripIds]) },
-      ...(applicableRegenerationUndo ? [{ id: 'undo-regeneration', label: `Undo last regeneration (${applicableRegenerationUndo.afterTrips.length} Trips)`, disabled: busy || tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => void undoRegeneration() }] : []),
-      { id: 'shift', label: 'Shift selected…', disabled: !selectedTripIds.length || busy || tripProfileBusy || shiftDrawerOpen, title: shiftDrawerOpen ? 'The Shift drawer is already open.' : !selectedTripIds.length ? 'Select one or more Trips.' : undefined, onSelect: () => void openShiftDrawer() },
-      { id: 'change-pattern', label: 'Change pattern…', disabled: !selectedTripIds.length || busy || tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : !selectedTripIds.length ? 'Select one or more Trips.' : undefined, onSelect: () => setBatchPatternChangeOpen(true) },
-      { id: 'assign-block', label: 'Assign Block…', disabled: !selectedTripIds.length || !selectedBlockingScenario || tripBlockingBlocksBusy || !tripBlockOptions.length || !hasAssignableTripBlock || busy || tripProfileBusy || shiftOperations.length > 0 || shiftDrawerOpen, title: !selectedTripIds.length ? 'Select one or more Trips.' : !selectedBlockingScenario ? 'Select a Blocking Scenario first.' : tripBlockingBlocksBusy ? 'Loading Blocks.' : !tripBlockOptions.length ? 'Create a Block in the selected Blocking Scenario first.' : !hasAssignableTripBlock ? 'No Blocks can accept Trips from the selected Route.' : shiftOperations.length || shiftDrawerOpen ? 'Finish or discard the staged shift first.' : undefined, restoreFocus: false, onSelect: () => openTripBlockAssignment(selectedTripIds, '', 'actions', tripsActionsRef.current) },
-      { id: 'unassign-block', label: 'Unassign from Block…', destructive: true, disabled: !selectedTripIds.some((id) => tripBlockByTripId.has(id)) || !selectedBlockingScenario || tripBlockingBlocksBusy || busy || tripProfileBusy || shiftOperations.length > 0 || shiftDrawerOpen, title: !selectedTripIds.length ? 'Select one or more Trips.' : !selectedTripIds.some((id) => tripBlockByTripId.has(id)) ? 'Select at least one assigned Trip.' : !selectedBlockingScenario ? 'Select a Blocking Scenario first.' : shiftOperations.length || shiftDrawerOpen ? 'Finish or discard the staged shift first.' : undefined, restoreFocus: false, onSelect: () => openTripBlockAssignment(selectedTripIds, '', 'actions', tripsActionsRef.current, 'unassign') },
-    ] },
-    { label: 'Service day', items: [
-      { id: 'copy-day', label: 'Copy Trips from day…', disabled: tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => setTripCopyOpen(true) },
-    ] },
-    { label: 'Data', items: [
-      { id: 'export-trips-csv', label: 'Export Trips CSV', disabled: !trips.length, onSelect: exportTripsCsv },
-    ] },
-    { label: 'Delete', items: [{ id: 'delete', label: 'Delete selected…', destructive: true, disabled: !selectedTripIds.length || busy || tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : !selectedTripIds.length ? 'Select one or more Trips.' : undefined, onSelect: () => void requestTripDeletion(selectedTripIds) }] },
+    ...(applicableRegenerationUndo ? [{ items: [{ id: 'undo-regeneration', label: `Undo last regeneration (${applicableRegenerationUndo.afterTrips.length} trips)`, disabled: busy || tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => void undoRegeneration() }] }] : []),
+    { items: [{ id: 'copy-day', label: 'Copy trips from another day…', disabled: tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => setTripCopyOpen(true) }] },
+    { items: [{ id: 'export-trips-csv', label: 'Export trips CSV', disabled: !trips.length, onSelect: exportTripsCsv }] },
   ];
+  const canUnassignSelected = selectedTripIds.some((id) => tripBlockByTripId.has(id));
+  const runtimeMethodLabel = RUNTIME_METHOD_SUMMARY_LABELS[routeMethod];
+  const bandRange = runtimeBandTotalRange(selectedProfile);
+  const runtimeSummary = [selectedPattern?.name || 'Unnamed pattern', selectedProfile?.name, selectedProfile ? `${selectedProfile.bands.length} band${selectedProfile.bands.length === 1 ? '' : 's'}` : undefined, bandRange ? `run time ${formatDuration(bandRange.minSeconds)}${bandRange.maxSeconds === bandRange.minSeconds ? '' : `–${formatDuration(bandRange.maxSeconds)}`}` : undefined, selectedProfile ? runtimeMethodLabel : undefined].filter(Boolean).join(' · ');
   const netShiftSeconds = shiftPreview?.netOffsetSeconds ?? 0;
   const netShiftLabel = formatNetShift(netShiftSeconds);
   const shiftStepLabel = parsedShiftSeconds === undefined ? '—' : `${parsedShiftSeconds / 60} min`;
@@ -563,38 +592,62 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   if (!patterns.length) return <section className="trips-workspace"><section className="prerequisite"><h1 className="box-heading">Add a pattern on Route</h1><p>Choose a direction, then add a pattern with at least two points before entering runtimes or trips.</p></section></section>;
   return <div className="trips-workspace">
     <h1 className="visually-hidden">Trips and runtimes</h1>
-    <section className="workflow-section" aria-label="Runtimes section">
-      <div className="section-title"><div><h2>Runtimes</h2></div><div className="section-actions section-header-actions">
-        <label className="header-field">Pattern<select value={patternId} disabled={tripProfileBusy} onChange={(event) => { const next = event.target.value; requestScopeChange(() => setPatternId(next)); }}>{patterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label>
-        <MenuButton fieldLabel="Profile" label={selectedProfile?.name ?? 'Select profile'} menuLabel="Runtime profile" groups={runtimeProfileMenu} disabled={loading || tripProfileBusy} />
-        {runtimeEditorState.dirty && <><span className="action-separator" aria-hidden="true" /><button onClick={() => { runtimeEditorRef.current?.discard(); window.setTimeout(() => runtimeCopyButtonRef.current?.focus()); }} disabled={runtimeEditorState.saving || tripProfileBusy}>Discard</button><button className="primary" onClick={() => saveRuntimeThen(() => { window.setTimeout(() => runtimeCopyButtonRef.current?.focus()); })} disabled={runtimeEditorState.saving || tripProfileBusy}>{runtimeEditorState.saving ? 'Saving…' : 'Save'}</button></>}
-        <span className="action-separator" aria-hidden="true" />
+    <section className="work-surface runtimes-surface" aria-label="Runtimes section">
+      <header className="work-surface__header">
+        <h2 className="work-surface__title"><button type="button" ref={runtimesToggleRef} className="disclosure" aria-expanded={runtimesOpen} aria-controls="runtimes-body" disabled={runtimesOpen && runtimeEditorState.dirty} title={runtimesOpen && runtimeEditorState.dirty ? 'Save or discard runtime edits first' : undefined} onClick={() => setRuntimesSectionOpen(!runtimesOpen)}><span aria-hidden="true" className="disclosure__arrow">{runtimesOpen ? '▾' : '▸'}</span>Runtimes</button></h2>
+        <span className="work-surface__subtitle runtimes-summary">{runtimeSummary}</span>
+        <div className="work-surface__actions">
+          {runtimesOpen
+            ? <ContextField label="Pattern"><select value={patternId} disabled={tripProfileBusy} onChange={(event) => { const next = event.target.value; requestScopeChange(() => setPatternId(next)); }}>{patterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></ContextField>
+            : <button type="button" onClick={() => setRuntimesSectionOpen(true)}>Edit runtimes</button>}
+        </div>
+      </header>
+      {runtimesOpen && <div className="work-surface__body runtimes-body" id="runtimes-body">
+      <div className="runtimes-toolbar">
+        <MenuButton fieldLabel="Runtime profile" label={selectedProfile?.name ?? 'Select profile'} menuLabel="Runtime profile" groups={runtimeProfileMenu} disabled={loading || tripProfileBusy} menuAlign="start" />
         <MenuButton label="Actions" menuLabel="Runtime actions" groups={[
-          { label: 'Method (all Patterns on this Route)', items: [
+          { label: 'Calculation method (whole route)', items: [
             { id: 'single-band', label: 'Single band for trip', checked: routeMethod === 'singleBand', disabled: !selectedProfile || runtimeEditorState.dirty || runtimeEditorState.saving || tripProfileBusy, title: runtimeEditorState.dirty ? 'Save or discard runtime edits before changing the method.' : undefined, onSelect: () => void requestRouteMethodChange('singleBand') },
             { id: 'segment-start', label: 'Band at segment start', checked: routeMethod === 'segmentStart', disabled: !selectedProfile || runtimeEditorState.dirty || runtimeEditorState.saving || tripProfileBusy, title: runtimeEditorState.dirty ? 'Save or discard runtime edits before changing the method.' : undefined, onSelect: () => void requestRouteMethodChange('segmentStart') },
             ...(routeMethod === 'blendSegments' ? [{ id: 'legacy-blend', label: 'Legacy continuous blend', checked: true, disabled: true, onSelect: () => {} }] : []),
-          ] },
-          { label: 'Edit runtimes', items: [
-            { id: 'add-time-band', label: 'Add Time Band', disabled: !selectedProfile || runtimeEditorState.saving || tripProfileBusy, onSelect: () => runtimeEditorRef.current?.addBand() },
           ] },
           { label: 'Data', items: [
             { id: 'export-runtime-csv', label: 'Export profile CSV', disabled: !selectedProfile || runtimeEditorState.dirty || runtimeEditorState.saving, title: runtimeEditorState.dirty ? 'Save or discard runtime edits before exporting.' : runtimeEditorState.saving ? 'Wait for runtime changes to finish saving.' : undefined, onSelect: exportRuntimeCsv },
           ] },
           { label: 'Service day', items: [
-            { id: 'copy-day', label: 'Copy runtimes from day…', disabled: loading || tripProfileBusy, onSelect: () => setRuntimeCopyOpen(true) },
+            { id: 'copy-day', label: 'Copy runtimes from another day…', disabled: loading || tripProfileBusy, onSelect: () => setRuntimeCopyOpen(true) },
           ] },
         ]} disabled={loading || tripProfileBusy} triggerRef={runtimeCopyButtonRef} />
-      </div></div>
+        <button type="button" disabled={runtimeEditorState.dirty || runtimeEditorState.saving} title={runtimeEditorState.dirty ? 'Save or discard runtime edits first' : undefined} onClick={() => setRuntimesSectionOpen(false)}>Close</button>
+      </div>
       {selectedProfile && <p className="profile-usage">Used by {dayNameList(profileDays.length ? profileDays.map((day) => day.name) : [selectedDay?.name ?? 'this service day'])} for {selectedPattern?.name}.</p>}
-      {routeMethodChange && <RouteRuntimeMethodDialog routeName={aggregate.route.name || 'this Route'} method={routeMethodChange.method} impact={routeMethodChange.impact} busy={routeMethodChange.busy} onConfirm={() => void confirmRouteMethodChange()} onClose={() => setRouteMethodChange(undefined)} />}
       {selectedProfile && selectedPattern ? <RuntimeEditor2 ref={runtimeEditorRef} service={service} profile={selectedProfile} pattern={selectedPattern} nodes={aggregate.nodes} onStateChange={setRuntimeEditorState} onSaved={async () => onRuntimeChanged()} onError={onError} /> : <p className="runtime-status">Loading runtimes…</p>}
+      </div>}
+      {routeMethodChange && <RouteRuntimeMethodDialog routeName={aggregate.route.name || 'this Route'} method={routeMethodChange.method} impact={routeMethodChange.impact} busy={routeMethodChange.busy} onConfirm={() => void confirmRouteMethodChange()} onClose={() => setRouteMethodChange(undefined)} />}
+      {runtimesOpen && runtimeEditorState.dirty && <SaveBar message="Unsaved changes in this runtime profile" saveLabel={runtimeEditorState.saving ? 'Saving…' : 'Save'} busy={runtimeEditorState.saving || tripProfileBusy} onSave={() => saveRuntimeThen(() => { window.setTimeout(() => runtimeCopyButtonRef.current?.focus()); })} onDiscard={() => { runtimeEditorRef.current?.discard(); window.setTimeout(() => runtimeCopyButtonRef.current?.focus()); }} />}
     </section>
-    <section className="workflow-section" aria-label="Trips section">
-      <div className="section-title"><div><h2>Trips</h2></div><div className="section-actions section-header-actions"><MenuButton fieldLabel="Profile" label={selectedTripProfile?.name ?? 'Select profile'} menuLabel="Trip Profile" groups={tripProfileMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} /><MenuButton fieldLabel="Blocking Scenario" label={selectedBlockingScenario?.name ?? 'No Blocking Scenario'} menuLabel="Blocking Scenario" groups={tripBlockingScenarioMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} /><span className="action-separator" aria-hidden="true" /><MenuButton label="Actions" menuLabel="Trip actions" groups={tripActionsMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} triggerRef={tripsActionsRef} /></div></div>
-      {tripsWithChangedRuntimes.length > 0 && <p className="section-status"><span className="runtime-change-indicator">Run Times Have Changed</span></p>}
-      {staleReasons && <p className="section-status" role="status">{staleTripNoticeText(staleReasons)}</p>}
-      {tripBlockAssignmentStatus && <p className="section-status" role="status">{tripBlockAssignmentStatus}</p>}
+    <WorkSurface title="Trips" count={trips.length} ariaLabel="Trips section" className="trips-surface"
+      context={<>
+        <MenuButton fieldLabel="Trip profile" label={selectedTripProfile?.name ?? 'Select profile'} menuLabel="Trip Profile" groups={tripProfileMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} menuAlign="start" />
+        <MenuButton fieldLabel="Blocking scenario" label={selectedBlockingScenario?.name ?? 'No Blocking Scenario'} menuLabel="Blocking Scenario" groups={tripBlockingScenarioMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} menuAlign="start" />
+      </>}
+      actions={<>
+        <MenuButton label="View" menuLabel="View" groups={viewMenu} />
+        <button type="button" disabled={Boolean(draftTrip) || tripProfileBusy || shiftOperations.length > 0} title={shiftOperations.length ? 'Discard the staged shift first.' : undefined} onClick={() => setDraftTrip({ patternId: '', firstTrip: '' })}>Add trip</button>
+        <button type="button" ref={buildTripsButtonRef} className="primary" disabled={tripProfileBusy || shiftOperations.length > 0 || buildOpen} title={buildOpen ? 'The Build Trips drawer is already open.' : shiftOperations.length ? 'Discard the staged shift first.' : undefined} onClick={() => setBuildOpen(true)}>Build trips…</button>
+        <MenuButton label="Actions" menuLabel="Trip actions" groups={tripActionsMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} triggerRef={tripsActionsRef} />
+      </>}>
+      {tripsWithChangedRuntimes.length > 0 && <InlineNote kind="warn"><b>Run times have changed</b> for {tripsWithChangedRuntimes.length} {tripsWithChangedRuntimes.length === 1 ? 'trip' : 'trips'}. <button type="button" className="small" disabled={busy || tripProfileBusy} onClick={selectTripsWithChangedRuntimes}>Select these trips</button></InlineNote>}
+      {staleReasons && <InlineNote kind="warn" live>{staleTripNoticeText(staleReasons)}</InlineNote>}
+      {tripBlockAssignmentStatus && <InlineNote kind="ok" live>{tripBlockAssignmentStatus}</InlineNote>}
+      {selectedTripIds.length > 0 && <SelectionBar count={selectedTripIds.length} noun="trip" ariaLabel="Selected trips" onClear={clearTripSelection}>
+        <button type="button" disabled={busy || tripProfileBusy || shiftDrawerOpen} title={shiftDrawerOpen ? 'The Shift drawer is already open.' : undefined} onClick={() => void openShiftDrawer()}>Shift…</button>
+        <button type="button" disabled={busy || tripProfileBusy || shiftOperations.length > 0} title={shiftOperations.length ? 'Discard the staged shift first.' : undefined} onClick={() => (selectedTrips.length === 1 ? setTripPatternChangeOpen(true) : setBatchPatternChangeOpen(true))}>Change pattern…</button>
+        <button type="button" disabled={busy || tripProfileBusy || shiftOperations.length > 0 || !selectedChangedRuntimeTripIds.length} title={shiftOperations.length ? 'Discard the staged shift first.' : !selectedChangedRuntimeTripIds.length ? 'Select trips with changed runtimes.' : undefined} onClick={() => setRecalculationTripIds([...selectedChangedRuntimeTripIds])}>Regenerate…</button>
+        <button type="button" disabled={!selectedBlockingScenario || tripBlockingBlocksBusy || !tripBlockOptions.length || !hasAssignableTripBlock || busy || tripProfileBusy || shiftOperations.length > 0 || shiftDrawerOpen} title={!selectedBlockingScenario ? 'Select a Blocking Scenario first.' : tripBlockingBlocksBusy ? 'Loading Blocks.' : !tripBlockOptions.length ? 'Create a Block in the selected Blocking Scenario first.' : !hasAssignableTripBlock ? 'No Blocks can accept Trips from the selected Route.' : shiftOperations.length || shiftDrawerOpen ? 'Finish or discard the staged shift first.' : undefined} onClick={() => openTripBlockAssignment(selectedTripIds, '', 'actions', tripsActionsRef.current)}>Assign block…</button>
+        <button type="button" disabled={!canUnassignSelected || !selectedBlockingScenario || tripBlockingBlocksBusy || busy || tripProfileBusy || shiftOperations.length > 0 || shiftDrawerOpen} title={!canUnassignSelected ? 'Select at least one assigned Trip.' : !selectedBlockingScenario ? 'Select a Blocking Scenario first.' : shiftOperations.length || shiftDrawerOpen ? 'Finish or discard the staged shift first.' : undefined} onClick={() => openTripBlockAssignment(selectedTripIds, '', 'actions', tripsActionsRef.current, 'unassign')}>Unassign…</button>
+        <button type="button" className="subtle-danger" disabled={busy || tripProfileBusy || shiftOperations.length > 0} title={shiftOperations.length ? 'Discard the staged shift first.' : undefined} onClick={() => void requestTripDeletion(selectedTripIds)}>Delete…</button>
+      </SelectionBar>}
       <ScheduleTable trips={trips} previewTrips={shiftPreview?.shiftedTrips} stagedShiftSeconds={shiftPreview?.netOffsetSeconds} draft={draftTrip} patterns={patterns} direction={directions.find((direction) => directionId === direction.id)!} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} showRuntimeBands={showRuntimeBands} showHeadways={showHeadways} roundDisplayedTimes={roundDisplayedTimes} blockAssignments={tripBlockByTripId} tripConnections={tripConnections} blockWarnings={tripBlockWarnings} blockOptions={tripBlockOptions} blockAssignmentDisabled={busy || tripProfileBusy || tripBlockingBlocksBusy || shiftOperations.length > 0 || shiftDrawerOpen || Boolean(tripBlockAssignment)} onAssignBlock={(trip, blockId, trigger) => openTripBlockAssignment([trip.id], blockId, 'pill', trigger)} onUnassignBlock={(trip, trigger) => openTripBlockAssignment([trip.id], '', 'pill', trigger, 'unassign')} selectedIds={selectedTripIds} changedRuntimeTripIds={changedRuntimeTripIds} onToggle={(id, index, shiftKey) => requestShiftScopeChange(() => {
         setSelectedTripIds((current) => {
           const anchorIndex = selectionAnchorId.current ? trips.findIndex((trip) => trip.id === selectionAnchorId.current) : -1;
@@ -605,8 +658,8 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
           selectionAnchorId.current = id;
           return current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
         });
-      })} onSelectAll={(selected) => requestShiftScopeChange(() => { selectionAnchorId.current = undefined; setSelectedTripIds(selected ? trips.map((trip) => trip.id) : []); })} onDelete={(trip) => requestShiftScopeChange(() => void requestTripDeletion([trip.id]))} onPatternChange={(trip, targetPatternId) => requestShiftScopeChange(() => void changeTripPattern(trip, targetPatternId))} onDraftChange={setDraftTrip} onDraftSave={() => void saveDraftTrip()} onDraftCancel={() => setDraftTrip(undefined)} busy={busy || tripProfileBusy} />
-    </section>
+      })} onSelectAll={(selected) => requestShiftScopeChange(() => { selectionAnchorId.current = undefined; setSelectedTripIds(selected ? trips.map((trip) => trip.id) : []); })} onDelete={(trip) => requestShiftScopeChange(() => void requestTripDeletion([trip.id]))} onDraftChange={setDraftTrip} onDraftSave={() => void saveDraftTrip()} onDraftCancel={() => setDraftTrip(undefined)} busy={busy || tripProfileBusy} />
+    </WorkSurface>
     {shiftDrawerOpen && <aside ref={shiftDrawerRef} className="shift-drawer shift-drawer--compact" role="complementary" aria-labelledby="shift-drawer-title" onClickCapture={(event) => { const control = (event.target as HTMLElement).closest('button'); if (control) lastShiftControl.current = control; }}>
       <header><h2 id="shift-drawer-title">Shift selected Trips</h2><button className="icon-button" type="button" aria-label="Close Shift drawer" title="Close Shift drawer" onClick={requestCloseShiftDrawer} disabled={busy}>×</button></header>
       <p className="shift-net" role="status"><strong>{netShiftLabel}</strong><span>{shiftPreview?.selectedTripIds.length ?? selectedTripIds.length} selected</span></p>
@@ -628,6 +681,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
     {recalculationTripIds.length > 0 && <RecalculationDialog tripService={tripService} tripIds={recalculationTripIds} trips={trips} patterns={aggregate.patterns} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} onDone={finishRecalculation} onClose={() => setRecalculationTripIds([])} />}
     {runtimeCopyOpen && selectedDay && <RuntimeDayCopyDialog tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} routeName={aggregate.route.name || 'Untitled route'} targetDay={selectedDay} days={days} patterns={aggregate.patterns.filter(isUsablePattern)} onDone={completeRuntimeCopy} onClose={closeRuntimeCopy} onError={onError} />}
     {tripCopyOpen && selectedDay && <TripDayCopyDialog tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} tripProfileId={tripProfileId} routeName={aggregate.route.name || 'Untitled route'} tripProfileName={(records.tripProfiles ?? []).find((profile) => profile.id === tripProfileId)?.name || 'Trip Profile'} targetDay={selectedDay} days={days} patterns={aggregate.patterns} onDone={completeTripCopy} onClose={closeTripCopy} onError={onError} />}
+    {tripPatternChangeOpen && selectedTrips.length === 1 && <TripPatternChangeDialog tripService={tripService} trip={selectedTrips[0]!} directionId={directionId} patterns={patterns} onDone={completeTripCopy} onClose={closeTripPatternChange} />}
     {batchPatternChangeOpen && <BatchPatternChangeDialog tripService={tripService} tripIds={selectedTripIds} patterns={patterns} trips={trips} onDone={completeTripCopy} onClose={closeBatchPatternChange} onError={onError} />}
   </div>;
 }

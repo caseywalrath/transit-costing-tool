@@ -10,7 +10,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
-import { scopeField } from './support/ui';
+import { runCommand, scopeField } from './support/ui';
 
 test.setTimeout(240_000);
 const SLOW = 30_000;
@@ -78,8 +78,7 @@ test('a full browser store is reported in plain words, and the save status shows
   // Trips write: Build Trips.
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Build trips…' }).click();
+  await runCommand(page, 'trips.build');
   const drawer = page.getByRole('complementary', { name: 'Build Trips' });
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
   await drawer.getByLabel('First Trip').fill('23:00');
@@ -165,8 +164,7 @@ test('a write of each service shows "Saving locally…" in the one indicator in 
 
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Build trips…' }).click();
+  await runCommand(page, 'trips.build');
   const drawer = page.getByRole('complementary', { name: 'Build Trips' });
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
   await drawer.getByLabel('First Trip').fill('23:00');

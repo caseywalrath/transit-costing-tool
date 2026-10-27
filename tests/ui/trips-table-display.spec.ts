@@ -4,6 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule } from './support/tripsWorkspace';
+import { runCommand } from './support/ui';
 
 test.setTimeout(90_000);
 
@@ -15,11 +16,11 @@ const columnTexts = (page: Page, column: number) => rows(page).evaluateAll((trs,
 /** One timepoint cell: row index, then column (0 = A, 1 = B). */
 const cell = (page: Page, row: number, column: number) => rows(page).nth(row).locator('td.trip-timepoint-column').nth(column);
 
-/** Toggles a Display item in the Trip actions menu. The role differs between menu item kinds, so match by label. */
+/** Toggles an item in the View menu. The role differs between menu item kinds, so match by label. */
 async function toggleDisplay(page: Page, label: string) {
-  await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).locator('[role^="menuitem"]', { hasText: label }).click();
-  await expect(page.getByRole('menu', { name: 'Trip actions' })).toHaveCount(0);
+  await tripsSection(page).getByRole('button', { name: 'View', exact: true }).click();
+  await page.getByRole('menu', { name: 'View' }).locator('[role^="menuitem"]', { hasText: label }).click();
+  await expect(page.getByRole('menu', { name: 'View' })).toHaveCount(0);
 }
 
 test('rounds displayed times to the minute and keeps the exact time in the cell title', async ({ page }) => {
@@ -87,8 +88,7 @@ test('flags a duplicate departure and warns on both Trips when a Block overlaps 
   await expect(page.locator('.duplicate-note')).toHaveCount(0);
 
   // A third Trip at 06:00 duplicates the first.
-  await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Add trip…' }).click();
+  await runCommand(page, 'trips.add');
   await rows(page).first().getByLabel('New trip pattern').selectOption({ index: 1 });
   await rows(page).first().getByLabel('First trip time').fill('06:00');
   await rows(page).first().getByRole('button', { name: 'Save', exact: true }).click();
@@ -134,8 +134,7 @@ test('discards a Shift whose net offset is zero without writing any Trip', async
   expect(before).toHaveLength(3);
 
   const openShift = async () => {
-    await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
-    await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
+    await runCommand(page, 'trips.shift');
     return page.getByRole('complementary', { name: 'Shift selected Trips' });
   };
   await rows(page).first().getByRole('checkbox').check();

@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule, openGoldenTrips } from './support/tripsWorkspace';
-import { scopeField } from './support/ui';
+import { openRuntimes, runCommand, scopeField } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
@@ -21,6 +21,7 @@ const firstSegment = (page: Page) => runtimeSection(page).getByLabel('Time band 
 
 /** Types a new first-segment runtime and leaves the field, which makes the Runtime editor draft dirty. */
 async function dirtyRuntime(page: Page, value = ':09') {
+  await openRuntimes(page);
   await firstSegment(page).fill(value);
   await firstSegment(page).press('Tab');
   await expect(runtimeSection(page).getByRole('button', { name: 'Save', exact: true })).toBeVisible();
@@ -30,8 +31,7 @@ const dayOption = (page: Page) => scopeField(page, 'Day').evaluate((select: HTML
 
 async function startStagedShift(page: Page) {
   await page.locator('.schedule-table tbody input[type="checkbox"]').first().check();
-  await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
+  await runCommand(page, 'trips.shift');
   const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
   await drawer.getByRole('button', { name: /min earlier/ }).click();
   await expect(page.getByText('Staged 1 minute earlier')).toBeVisible();
@@ -154,8 +154,7 @@ test('a staged Shift is guarded on a tab change, and a dirty Runtime draft is as
 
 test('Build Trips closes without a prompt and shows its values again when it is reopened', async ({ page }) => {
   await createShiftReadySchedule(page);
-  const actions = tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true });
-  const open = async () => { await actions.click(); await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Build trips…' }).click(); };
+  const open = () => runCommand(page, 'trips.build');
   const drawer = page.getByRole('complementary', { name: 'Build Trips' });
 
   await open();
@@ -234,6 +233,7 @@ test('Escape in a number field and in a Runtime time field restores the saved va
   await expect.poll(() => runInPage(page, "return (await e.db.serviceDays.toArray()).find((day) => day.kind === 'weekday').annualServiceDays")).toBe(254);
 
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
+  await openRuntimes(page);
   await expect(firstSegment(page)).toBeVisible({ timeout: 30_000 });
   const saved = await firstSegment(page).inputValue();
   await firstSegment(page).fill(':13');

@@ -3,6 +3,7 @@
 // vertical scrolling; a fixed duplicate heading row appears once the real headings scroll above the viewport.
 import { expect, test, type Page } from '@playwright/test';
 import { createShiftReadySchedule, openGoldenTrips, settleFrames } from './support/tripsWorkspace';
+import { runCommand } from './support/ui';
 
 test.setTimeout(90_000);
 
@@ -11,37 +12,41 @@ const grid = (page: Page) => page.locator('.trips-workspace .schedule-table');
 const duplicateHeading = (page: Page) => page.getByRole('region', { name: 'Trips table headings while scrolling' });
 const scrollY = (page: Page) => page.evaluate(() => window.scrollY);
 
-test('keeps the Trips Pattern column no wider than its compact selector', async ({ page }) => {
+// UR-6c: the per-row Pattern selector became a chip (Label, or the name without its direction prefix). The old assertions were
+// "selector width <= 96.5 px, font size 12px"; the chip must fit inside its column (which is now 188 px) and use the chip font size.
+test('shows each trip’s Pattern as a chip that fits the Pattern column, and no per-row selector', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await createShiftReadySchedule(page, '06:20');
 
   const patternColumn = page.locator('.trips-workspace th.trip-pattern-column');
-  const patternSelector = page.getByLabel('Trip pattern', { exact: true }).first();
+  const chip = grid(page).locator('tbody td.trip-pattern-column .chip').first();
   const table = grid(page).locator('table');
+  await expect(page.getByLabel('Trip pattern', { exact: true })).toHaveCount(0);
+  // The chip carries the full Pattern name as its tooltip.
+  await expect(chip).toHaveAttribute('title', /.+/);
 
-  const [columnBox, selectorBox, tableBox, regionBox, fontSize] = await Promise.all([
+  const [columnBox, chipBox, tableBox, regionBox, fontSize] = await Promise.all([
     patternColumn.boundingBox(),
-    patternSelector.boundingBox(),
+    chip.boundingBox(),
     table.boundingBox(),
     grid(page).boundingBox(),
-    patternSelector.evaluate((element) => getComputedStyle(element).fontSize),
+    chip.evaluate((element) => getComputedStyle(element).fontSize),
   ]);
 
   expect(columnBox).not.toBeNull();
-  expect(selectorBox).not.toBeNull();
+  expect(chipBox).not.toBeNull();
   expect(tableBox).not.toBeNull();
   expect(regionBox).not.toBeNull();
-  expect(columnBox!.width).toBeLessThanOrEqual(selectorBox!.width + 1);
-  expect(selectorBox!.width).toBeLessThanOrEqual(96.5);
+  expect(chipBox!.width).toBeLessThanOrEqual(columnBox!.width);
+  expect(columnBox!.width).toBeLessThanOrEqual(188.5);
   // A short schedule must use its content width rather than stretching across the scroll region.
   expect(tableBox!.width).toBeLessThan(regionBox!.width);
-  expect(fontSize).toBe('12px');
+  expect(fontSize).toBe('12.5px');
 });
 
 test('places an unsaved new trip before the saved schedule rows', async ({ page }) => {
   await createShiftReadySchedule(page, '06:10');
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Add trip…' }).click();
+  await runCommand(page, 'trips.add');
 
   const rows = grid(page).locator('tbody > tr');
   await expect(rows).toHaveCount(3);
@@ -101,8 +106,7 @@ test('restores the page and horizontal grid position after committing a Shift', 
   await grid(page).locator('tbody input[type="checkbox"]').nth(60).check();
   const shiftedRow = grid(page).locator('tbody tr').nth(60);
   const rowBefore = await shiftedRow.innerText();
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
+  await runCommand(page, 'trips.shift');
   const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
   await drawer.getByRole('button', { name: /min later/ }).click();
   await expect(page.getByText('Staged 1 minute later')).toBeVisible();

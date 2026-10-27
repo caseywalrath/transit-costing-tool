@@ -2,7 +2,7 @@
 // Trip Profile, or tab changes. It asks Cancel or Discard first; an empty row is dropped without a question.
 import { expect, test, type Page } from '@playwright/test';
 import { createShiftReadySchedule } from './support/tripsWorkspace';
-import { scopeField } from './support/ui';
+import { runCommand, scopeField } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
@@ -16,8 +16,7 @@ const shiftDialog = (page: Page) => page.getByRole('heading', { name: 'Discard s
 const profileMenuButton = (page: Page) => tripsSection(page).locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button');
 
 async function openDraft(page: Page, enter: 'pattern' | 'time' | 'nothing') {
-  await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Add trip…' }).click();
+  await runCommand(page, 'trips.add');
   await expect(draftRow(page)).toHaveCount(1);
   if (enter === 'nothing') return;
   await draftRow(page).getByLabel('New trip pattern').selectOption({ index: 1 });
@@ -98,8 +97,7 @@ test('with a staged Shift and an entered row open, each press asks one question:
   await openDraft(page, 'time');
   // A staged Shift needs a selected Trip, and Add trip is disabled while one is staged, so stage first with the row already open.
   await page.locator('.schedule-table tbody input[type="checkbox"]').first().check();
-  await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
+  await runCommand(page, 'trips.shift');
   await page.getByRole('complementary', { name: 'Shift selected Trips' }).getByRole('button', { name: /min earlier/ }).click();
   await expect(page.getByText('Staged 1 minute earlier')).toBeVisible();
 

@@ -76,9 +76,10 @@
 .schedule-table th, .schedule-table td { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .schedule-table .trip-selection-column { width: 34px; min-width: 34px; padding: var(--space-1) 7px; text-align: center; }
 .schedule-table .trip-selection-column input { width: 15px; min-height: 15px; vertical-align: middle; }
-.schedule-table .trip-pattern-column { position: sticky; left: 34px; z-index: 1; min-width: 96px; width: 96px; max-width: 96px; padding-left: 0; padding-right: 0; background: var(--color-surface); }
+.schedule-table .trip-pattern-column { position: sticky; left: 34px; z-index: 1; min-width: 188px; width: 188px; max-width: 188px; padding-left: 0; padding-right: var(--space-2); background: var(--color-surface); }
 .schedule-table th.trip-pattern-column { z-index: 3; background: var(--color-surface-2); }
-.schedule-table .trip-pattern-column .trip-pattern-select { display: block; min-width: 0; width: 96px; max-width: 96px; overflow: hidden; text-overflow: ellipsis; font-size: var(--font-size-label); }
+.schedule-table .trip-pattern-column .chip { display: flex; max-width: 100%; }
+.schedule-table .trip-pattern-column .trip-pattern-select { display: block; min-width: 0; width: 148px; max-width: 148px; overflow: hidden; text-overflow: ellipsis; font-size: var(--font-size-label); }
 .schedule-table .trip-timepoint-column { min-width: 76px; width: 76px; text-align: center; }
 .schedule-table td.trip-headway-first { color: var(--color-accent); font-weight: var(--font-weight-bold); box-shadow: inset 3px 0 var(--color-accent); }
 .schedule-table th.trip-timepoint-column { white-space: normal; line-height: 1.15; }
@@ -92,14 +93,9 @@
 .trip-block-content { display: flex; align-items: center; gap: 5px; }
 .trip-block-warning { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 17px; height: 17px; border: 1px solid var(--color-warn-border); border-radius: 50%; background: var(--color-warn-soft); color: var(--color-warn); font-size: var(--font-size-caption); font-weight: 800; line-height: 1; cursor: help; }
 .trip-block-warning:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
-.block-pill { display: inline-flex; align-items: center; min-height: 20px; border: 1px solid; border-radius: var(--radius-pill); padding: 1px 7px; font-size: var(--font-size-caption); font-weight: var(--font-weight-bold); line-height: 1.2; white-space: nowrap; }
-.block-pill-0 { border-color: var(--color-block-0-border); background: var(--color-block-0-bg); color: var(--color-block-0-text); }
-.block-pill-1 { border-color: var(--color-block-1-border); background: var(--color-block-1-bg); color: var(--color-block-1-text); }
-.block-pill-2 { border-color: var(--color-block-2-border); background: var(--color-block-2-bg); color: var(--color-block-2-text); }
-.block-pill-3 { border-color: var(--color-block-3-border); background: var(--color-block-3-bg); color: var(--color-block-3-text); }
-.block-pill-4 { border-color: var(--color-block-4-border); background: var(--color-block-4-bg); color: var(--color-block-4-text); }
-.block-pill-5 { border-color: var(--color-block-5-border); background: var(--color-block-5-bg); color: var(--color-block-5-text); }
-.menu-trigger.trip-block-assignment-trigger { min-height: 20px; max-width: 100%; padding: 1px 7px; border-radius: var(--radius-pill); font-size: var(--font-size-caption); font-weight: var(--font-weight-bold); line-height: 1.2; }
+.menu-trigger.trip-block-assignment-trigger { max-width: 100%; }
+.menu-trigger.block-pill { min-height: 22px; padding: 0 var(--space-2) 0 6px; color: var(--color-text); }
+.menu-trigger.block-pill .menu-chevron { display: none; }
 .menu-trigger.trip-block-unassigned-trigger { min-height: 20px; border: 0; background: transparent; color: var(--color-accent); padding: 1px 2px; font-size: var(--font-size-caption); text-decoration: underline; }
 .trip-block-assignment-dialog { width: min(480px, 100%); }
 .trip-block-assignment-dialog .dialog-field { margin: var(--space-3) 0; }

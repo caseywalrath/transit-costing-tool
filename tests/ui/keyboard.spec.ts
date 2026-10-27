@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule, openGoldenTrips } from './support/tripsWorkspace';
-import { projectSwitcher, scopeField } from './support/ui';
+import { openRuntimes, projectSwitcher, runCommand, scopeField } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
@@ -101,6 +101,7 @@ test('Tab and Shift+Tab stay inside an open modal dialog', async ({ page }) => {
 
 test('the Runtime profile dialog has an accessible name and closes on Escape', async ({ page }) => {
   await openGoldenTrips(page);
+  await openRuntimes(page);
   await page.locator('[aria-label="Runtimes section"] .menu-field').filter({ hasText: 'Profile' }).getByRole('button').click();
   await page.getByRole('menuitem', { name: 'Rename profile…' }).click();
   const dialog = page.getByRole('dialog', { name: /runtime profile/i });
@@ -109,26 +110,24 @@ test('the Runtime profile dialog has an accessible name and closes on Escape', a
   await expect(page.locator('[role=dialog]')).toHaveCount(0);
 });
 
-test('Delete trips closes on Escape and returns focus to Trip actions', async ({ page }) => {
+test('Delete trips closes on Escape and returns focus to the Delete button, and a confirmed delete moves it to Trip actions', async ({ page }) => {
   await openGoldenTrips(page);
   await page.locator('.trips-workspace .schedule-table tbody input[type=checkbox]').first().check();
-  const actions = page.getByRole('button', { name: 'Trip actions', exact: true });
-  await actions.click();
-  await page.getByRole('menuitem', { name: 'Delete selected…' }).click();
+  const deleteSelected = page.getByRole('button', { name: 'Delete…', exact: true });
+  await deleteSelected.click();
   const dialog = page.getByRole('alertdialog');
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'Cancel' }).focus();
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
-  await expect(actions).toBeFocused();
+  await expect(deleteSelected).toBeFocused();
 
-  // Confirming a delete returns focus to the same control.
-  await actions.click();
-  await page.getByRole('menuitem', { name: 'Delete selected…' }).click();
+  // Confirming a delete clears the selection, which removes the selection bar, so the focus moves to the Trip actions menu.
+  await deleteSelected.click();
   await dialog.getByRole('button', { name: /^Delete/ }).last().click();
   await expect(dialog).toHaveCount(0);
   await expect.poll(() => active(page)).not.toBe('BODY');
-  await expect(actions).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Trip actions', exact: true })).toBeFocused();
 });
 
 test('every dialog opened from the screens has an accessible name, and the axe dialog, label, landmark, and heading rules pass on each screen', async ({ page }) => {
@@ -153,6 +152,8 @@ test('every dialog opened from the screens has an accessible name, and the axe d
   await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
   await expect(page.locator('.trips-workspace .schedule-table tbody tr').first()).toBeVisible({ timeout: 30_000 });
   expect(await axeViolations(page)).toEqual([]);
+  await openRuntimes(page);
+  expect(await axeViolations(page)).toEqual([]);
   await page.locator('[aria-label="Runtimes section"] .menu-field').filter({ hasText: 'Profile' }).getByRole('button').click();
   await page.getByRole('menuitem', { name: 'Rename profile…' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
@@ -160,8 +161,8 @@ test('every dialog opened from the screens has an accessible name, and the axe d
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.locator('.trips-workspace .schedule-table tbody input[type=checkbox]').first().check();
-  await page.getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Delete selected…' }).click();
+  expect(await axeViolations(page)).toEqual([]);
+  await runCommand(page, 'trips.delete');
   await expect(page.getByRole('alertdialog')).toBeVisible();
   expect(await axeViolations(page)).toEqual([]);
   await page.keyboard.press('Escape');
@@ -178,8 +179,7 @@ test('every dialog opened from the screens has an accessible name, and the axe d
 test('Shift drawer steps keep keyboard focus inside the drawer', async ({ page }) => {
   await openGoldenTrips(page);
   await page.locator('.trips-workspace .schedule-table tbody input[type=checkbox]').first().check();
-  await page.getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Shift selected…' }).click();
+  await runCommand(page, 'trips.shift');
   const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
   const forward = drawer.getByRole('button', { name: /min later/ });
   await forward.focus();
@@ -206,9 +206,7 @@ test('focus returns to the Block pill after confirming an assignment, and to Tri
   expect(await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? '')).toMatch(/^Block assignment/);
 
   await page.locator('.trips-workspace .schedule-table tbody input[type=checkbox]').first().check();
-  const actions = page.getByRole('button', { name: 'Trip actions', exact: true });
-  await actions.click();
-  await page.getByRole('menuitem', { name: 'Unassign from Block…', exact: true }).click();
+  await runCommand(page, 'trips.unassignBlock');
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: /^Unassign/ }).last().click();
   await expect(dialog).toHaveCount(0);
@@ -217,9 +215,9 @@ test('focus returns to the Block pill after confirming an assignment, and to Tri
 
 test('focus is not lost after Discard in the Runtime editor or in the Node editor', async ({ page }) => {
   await openGoldenTrips(page);
+  await openRuntimes(page);
   const runtimeActions = page.getByRole('button', { name: 'Runtime actions', exact: true });
-  await runtimeActions.click();
-  await page.getByRole('menuitem', { name: 'Add Time Band' }).click();
+  await runCommand(page, 'runtime.addBand');
   const discard = page.locator('[aria-label="Runtimes section"]').getByRole('button', { name: 'Discard', exact: true });
   await discard.focus();
   await page.keyboard.press('Enter');
@@ -239,6 +237,7 @@ test('focus is not lost after Discard in the Runtime editor or in the Node edito
 
 test('Escape returns focus to the menu trigger at once, so the next control focused keeps its focus', async ({ page }) => {
   await createShiftReadySchedule(page, '06:10');
+  await openRuntimes(page);
   const runtimeActions = page.getByRole('button', { name: 'Runtime actions', exact: true });
   await runtimeActions.click();
   await expect(page.getByRole('menu', { name: 'Runtime actions' })).toBeVisible();
@@ -254,11 +253,12 @@ test('Escape returns focus to the menu trigger at once, so the next control focu
   expect(focus).toEqual({ atOnce: true, later: 'Trip actions' });
 });
 
-test('independent Display toggles are menu item checkboxes, and Tab closes an open menu', async ({ page }) => {
+test('independent View toggles are menu item checkboxes, and Tab closes an open menu', async ({ page }) => {
   await createShiftReadySchedule(page, '06:20');
-  const actions = page.getByRole('button', { name: 'Trip actions', exact: true });
+  await openRuntimes(page);
+  const actions = page.getByRole('button', { name: 'View', exact: true });
   await actions.click();
-  const menu = page.getByRole('menu', { name: 'Trip actions' });
+  const menu = page.getByRole('menu', { name: 'View' });
   for (const name of ['Show runtime bands', 'Show headways', 'Round displayed times']) {
     await expect(menu.getByRole('menuitemcheckbox', { name })).toHaveAttribute('aria-checked', /true|false/);
     await expect(menu.getByRole('menuitemradio', { name })).toHaveCount(0);
@@ -294,8 +294,7 @@ test('fields with an error are marked invalid and point at the message', async (
 
 test('Build Trips marks the fields it cannot use, and the Runtime profile dialog marks its Name', async ({ page }) => {
   await createShiftReadySchedule(page, '06:10');
-  await page.getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Build trips…' }).click();
+  await runCommand(page, 'trips.build');
   const drawer = page.getByRole('complementary', { name: 'Build Trips' });
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
   await expect(drawer.getByRole('alert')).toBeVisible();

@@ -1,6 +1,6 @@
 // Test seams for the interface revision (plan UR-0). Specs reach scope selectors, panels, and menu commands through these helpers, so a
 // package that moves a control changes this file and not every spec. Later packages change only the maps below.
-import type { Locator, Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 /** The scope selectors. The names are the revised ones (T1-A); `todayLabel` is the label the control carries now. */
 export type ScopeFieldName = 'Route' | 'Day' | 'Direction' | 'Trip profile' | 'Blocking scenario' | 'View year';
@@ -46,6 +46,16 @@ const regionToday: Record<RegionId, string> = {
 /** Returns the panel with this id. */
 export const region = (page: Page, id: RegionId): Locator => page.locator(`[aria-label="${regionToday[id]}"]`);
 
+/**
+ * Opens the Runtimes section on the Trips tab (R-A). It is collapsed by default, and every spec that edits or reads the Runtime editor,
+ * profile, or actions calls this first. Does nothing when the section is already open.
+ */
+export async function openRuntimes(page: Page) {
+  const toggle = region(page, 'runtimes').getByRole('button', { name: 'Runtimes', exact: true });
+  if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+}
+
 type Command = {
   /** The accessible name of the menu trigger, which is also the menu's name. */
   menu: string;
@@ -57,29 +67,32 @@ type Command = {
   role?: 'menuitem' | 'menuitemradio' | 'menuitemcheckbox';
 };
 
-/** Commands that are a plain button, not a menu item. */
-const buttonCommands = { 'costing.exportCsv': 'Export costing CSV' } as const;
+/** Commands that are a plain button, not a menu item. `within` is the panel that holds the button. */
+const buttonCommands = {
+  'costing.exportCsv': { name: 'Export costing CSV' },
+  // UR-6c: Build trips and Add trip are header buttons; the commands that need a selection are buttons in the selection bar.
+  'trips.build': { name: 'Build trips…', within: 'trips' },
+  'trips.add': { name: 'Add trip', within: 'trips' },
+  'trips.shift': { name: 'Shift…', within: 'trips' },
+  // Decision 0046: always present while trips are selected, and disabled until a selected Trip has changed runtimes.
+  'trips.regenerate': { name: 'Regenerate…', within: 'trips' },
+  'trips.changePattern': { name: 'Change pattern…', within: 'trips' },
+  'trips.assignBlock': { name: 'Assign block…', within: 'trips' },
+  'trips.unassignBlock': { name: 'Unassign…', within: 'trips' },
+  'trips.delete': { name: 'Delete…', within: 'trips' },
+  'runtime.addBand': { name: 'Add time band', within: 'runtimes' },
+} satisfies Record<string, { name: string; within?: RegionId }>;
 
 /** How each menu command is run today. Section 7, UR-0 of `docs/implementation/ui-revision-plan.md` lists the ids. */
 const commands = {
-  'trips.build': { menu: 'Trip actions', within: 'trips', item: 'Build trips…' },
-  'trips.add': { menu: 'Trip actions', within: 'trips', item: 'Add trip…' },
-  'trips.shift': { menu: 'Trip actions', within: 'trips', item: 'Shift selected…' },
-  // Decision 0046: always listed, and disabled until a selected Trip has changed runtimes.
-  'trips.regenerate': { menu: 'Trip actions', within: 'trips', item: 'Regenerate selected…' },
-  // A separate item, listed only while the saved undo applies. Its name is "Undo last regeneration (N Trips)".
+  // A separate item, listed only while the saved undo applies. Its name is "Undo last regeneration (N trips)".
   'trips.undoRegeneration': { menu: 'Trip actions', within: 'trips', item: 'Undo last regeneration' },
-  'trips.changePattern': { menu: 'Trip actions', within: 'trips', item: 'Change pattern…' },
-  'trips.assignBlock': { menu: 'Trip actions', within: 'trips', item: 'Assign Block…' },
-  'trips.unassignBlock': { menu: 'Trip actions', within: 'trips', item: 'Unassign from Block…' },
-  'trips.delete': { menu: 'Trip actions', within: 'trips', item: 'Delete selected…' },
-  'trips.copyDay': { menu: 'Trip actions', within: 'trips', item: 'Copy Trips from day…' },
-  'trips.exportCsv': { menu: 'Trip actions', within: 'trips', item: 'Export Trips CSV' },
-  'trips.toggleHeadways': { menu: 'Trip actions', within: 'trips', item: 'Show headways', role: 'menuitemcheckbox' },
-  'trips.toggleBands': { menu: 'Trip actions', within: 'trips', item: 'Show runtime bands', role: 'menuitemcheckbox' },
-  'trips.toggleRounding': { menu: 'Trip actions', within: 'trips', item: 'Round displayed times', role: 'menuitemcheckbox' },
-  'runtime.addBand': { menu: 'Runtime actions', within: 'runtimes', item: 'Add Time Band' },
-  'runtime.copyDay': { menu: 'Runtime actions', within: 'runtimes', item: 'Copy runtimes from day…' },
+  'trips.copyDay': { menu: 'Trip actions', within: 'trips', item: 'Copy trips from another day…' },
+  'trips.exportCsv': { menu: 'Trip actions', within: 'trips', item: 'Export trips CSV' },
+  'trips.toggleHeadways': { menu: 'View', within: 'trips', item: 'Show headways', role: 'menuitemcheckbox' },
+  'trips.toggleBands': { menu: 'View', within: 'trips', item: 'Show runtime bands', role: 'menuitemcheckbox' },
+  'trips.toggleRounding': { menu: 'View', within: 'trips', item: 'Round displayed times', role: 'menuitemcheckbox' },
+  'runtime.copyDay': { menu: 'Runtime actions', within: 'runtimes', item: 'Copy runtimes from another day…' },
   'runtime.exportCsv': { menu: 'Runtime actions', within: 'runtimes', item: 'Export profile CSV' },
   'runtime.method.singleBand': { menu: 'Runtime actions', within: 'runtimes', item: 'Single band for trip', role: 'menuitemradio' },
   'runtime.method.segmentStart': { menu: 'Runtime actions', within: 'runtimes', item: 'Band at segment start', role: 'menuitemradio' },
@@ -120,7 +133,11 @@ export type CommandId = keyof typeof commands | keyof typeof buttonCommands;
 
 /** Opens the command's menu and chooses its item. Item names match exactly, except the Undo item, whose name ends in "(N Trips)". */
 export async function runCommand(page: Page, id: CommandId) {
-  if (id in buttonCommands) { await page.getByRole('button', { name: buttonCommands[id as keyof typeof buttonCommands], exact: true }).click(); return; }
+  if (id in buttonCommands) {
+    const button: { name: string; within?: RegionId } = buttonCommands[id as keyof typeof buttonCommands];
+    await (button.within ? region(page, button.within) : page).getByRole('button', { name: button.name, exact: true }).click();
+    return;
+  }
   const command: Command = commands[id as keyof typeof commands];
   const scope = command.within ? region(page, command.within) : page;
   await scope.getByRole('button', command.trigger ? { name: command.trigger } : { name: command.menu, exact: true }).click();

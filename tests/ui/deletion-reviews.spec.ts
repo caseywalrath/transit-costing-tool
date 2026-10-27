@@ -3,7 +3,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule } from './support/tripsWorkspace';
-import { runCommand, scenarioSwitcher } from './support/ui';
+import { openRuntimes, runCommand, scenarioSwitcher } from './support/ui';
 
 test.setTimeout(90_000);
 
@@ -75,8 +75,7 @@ test('Delete selected removes the selected Trips after the review and is refused
   await createShiftReadySchedule(page, '06:20');
   const rows = page.locator('.schedule-table tbody tr');
   const deleteSelected = async () => {
-    await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Delete selected…', exact: true }).click();
+    await runCommand(page, 'trips.delete');
     await expect(page.getByRole('alertdialog')).toContainText('These trips are not assigned to a block');
   };
   await rows.first().locator('input[type="checkbox"]').check();
@@ -93,8 +92,7 @@ test('Delete selected removes the selected Trips after the review and is refused
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await error(page).getByRole('button', { name: 'Dismiss message' }).click();
   await rows.first().locator('input[type="checkbox"]').check();
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Delete selected…', exact: true }).click();
+  await runCommand(page, 'trips.delete');
   await expect(page.getByRole('alertdialog')).toContainText('This will also remove their revenue activities from 1 block');
   await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect.poll(() => count(page, 'trips')).toBe(2);
@@ -106,6 +104,7 @@ test('Delete runtime profile replaces the assignments after the review and is re
   await runInPage(page, "const [pattern] = await e.db.patterns.toArray(); await e.service.ensureDefaultRuntimeProfile(pattern); await e.service.createDefaultRuntimeProfile(pattern, 'Alternative');");
   await page.reload();
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
+  await openRuntimes(page);
   const runtimeSection = page.locator('[aria-label="Runtimes section"]');
   const profileButton = runtimeSection.locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button', { name: 'Default' });
   await expect(profileButton).toBeVisible();

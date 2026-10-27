@@ -5,7 +5,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { goldenRaw, goldenWithAltProfile } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
-import { runCommand } from './support/ui';
+import { openRuntimes, runCommand } from './support/ui';
 
 test.setTimeout(120000);
 test.use({ actionTimeout: 15000 });
@@ -92,6 +92,7 @@ test('a Runtime band value saved in the active tab survives a different band val
   const { active, readOnly } = await twoTabs(browser);
   for (const page of [active, readOnly]) {
     await page.getByRole('button', { name: 'Trips', exact: true }).click();
+    await openRuntimes(page);
     await expect(page.getByLabel('Time band 1 segment 1')).toBeVisible({ timeout: 20000 });
   }
   const segments = "return (await e.db.runtimeProfiles.toArray()).filter((profile) => profile.name === 'Weekday workbook runtimes').map((profile) => profile.id + ':' + profile.bands[0].segmentRuntimeSeconds.join(',')).sort().join('|')";
@@ -165,6 +166,7 @@ async function buildThreeTrips(page: Page) {
 async function openTripsInBothTabs(active: Page, readOnly: Page) {
   for (const page of [active, readOnly]) {
     await page.getByRole('button', { name: 'Trips', exact: true }).click();
+    await openRuntimes(page);
     await expect(page.getByLabel('Time band 1 segment 1')).toBeVisible({ timeout: 20000 });
   }
 }
