@@ -5,7 +5,7 @@ button, input, select, textarea { font: inherit; }
 table, input, .shift-net { font-variant-numeric: tabular-nums; }
 button { cursor: pointer; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); min-height: var(--control-height); padding: var(--space-1) var(--space-2); }
 button:hover:not(:disabled) { background: var(--color-surface-2); }
-button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 1px; }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 button:disabled { cursor: not-allowed; color: var(--color-text-subtle); background: var(--color-sunken); }
 input, select { width: 100%; min-height: var(--control-height); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); padding: 3px 6px; color: inherit; }
 input[type=number] { min-width: 6em; }

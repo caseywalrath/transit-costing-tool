@@ -14,7 +14,7 @@ test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
 
 const AXE_SOURCE = readFileSync(fileURLToPath(new URL('../../node_modules/axe-core/axe.min.js', import.meta.url)), 'utf8');
-const AXE_RULES = ['aria-dialog-name', 'label', 'landmark-one-main', 'landmark-no-duplicate-main', 'landmark-main-is-top-level', 'landmark-unique', 'page-has-heading-one', 'aria-allowed-role', 'html-has-lang', 'document-title', 'scope-attr-valid'];
+const AXE_RULES = ['aria-dialog-name', 'label', 'landmark-one-main', 'landmark-no-duplicate-main', 'landmark-main-is-top-level', 'landmark-unique', 'page-has-heading-one', 'aria-allowed-role', 'html-has-lang', 'document-title', 'scope-attr-valid', 'color-contrast', 'target-size'];
 
 async function axeViolations(page: Page, context?: string): Promise<string[]> {
   if (!(await page.evaluate(() => 'axe' in window))) await page.addScriptTag({ content: AXE_SOURCE });
