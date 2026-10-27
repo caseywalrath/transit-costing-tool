@@ -29,7 +29,7 @@ test('database version 9 preserves a Dexie version 4 project and adds operationa
   });
 
   await page.goto('/');
-  await expect(page.getByRole('option', { name: 'Migration Project' })).toBeAttached();
+  await expect(page.getByRole('button', { name: 'Project: Migration Project', exact: true })).toBeVisible();
   const migrated = await page.evaluate(async () => new Promise<{ version: number; stores: string[]; projectCount: number; scenarioCount: number; assumptionsCount: number; undoCount: number; legacyCostPlanCount: number; tripProfileCount: number; blockCount: number }>((resolve, reject) => {
     const request = indexedDB.open('transit-costing-tool');
     request.onsuccess = () => {

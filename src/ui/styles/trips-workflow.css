@@ -19,8 +19,6 @@
 .action-separator { align-self: stretch; width: 1px; min-height: var(--control-height); margin: 0 3px; background: var(--color-border); }
 .menu-button { position: relative; flex: 0 0 auto; }
 .menu-trigger--icon { display: inline-grid; place-items: center; width: 36px; min-width: 36px; min-height: var(--control-height); padding: var(--space-1) 7px; }
-.context-bar > .menu-button .menu-trigger--icon, .route-picker > .menu-button .menu-trigger--icon, .module-toolbar > .menu-button .menu-trigger--icon { min-height: 34px; border-color: var(--color-border); border-radius: var(--radius-control); }
-.context-bar > .menu-button .menu-trigger--icon:hover:not(:disabled), .route-picker > .menu-button .menu-trigger--icon:hover:not(:disabled), .module-toolbar > .menu-button .menu-trigger--icon:hover:not(:disabled) { border-color: var(--color-text-subtle); background: var(--color-surface); }
 .menu-field { display: grid; flex: 0 1 180px; gap: 3px; color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
 .menu-field-label { line-height: 1.1; }
 .menu-field .menu-trigger { width: 100%; min-width: 145px; text-align: left; }

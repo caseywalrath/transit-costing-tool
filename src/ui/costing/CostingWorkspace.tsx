@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { CostingCommands, CostingQueries } from '../../application/ports';
 import { ModalDialog } from '../ModalDialog';
 import type { CostingAssumptionsInput, CostingBlockExclusionReason, CostingCalculationResult } from '../../domain/costing';
@@ -6,9 +7,11 @@ import { DEFAULT_COSTING_ESCALATION } from '../../domain/costing';
 import { formatHours, formatMoney } from '../format';
 import type { BlockingScenario, CostingAssumptions, Scenario, ServiceDayDefinition, TripProfile, ValidationFinding } from '../../domain/types';
 import { createCsvArchive } from '../../application/csvDownload';
-import { MenuButton, type MenuGroup } from '../MenuButton';
+import { ContextField } from '../shared/ContextField';
 
 type Props = {
+  /** The element in the header's scope bar that receives the scope selectors (UR-5). */
+  scopeSlot: HTMLElement | null;
   costingService: CostingCommands & CostingQueries;
   scenario: Scenario;
   serviceDays: ServiceDayDefinition[];
@@ -95,7 +98,7 @@ const annualHours = (value: number) => formatHours(value, 'annual');
 const rate = (value: number) => formatMoney(value, { cents: true });
 const money = (value: number) => formatMoney(value);
 
-export function CostingWorkspace({ costingService, scenario, serviceDays, tripProfiles, onError, onRegisterNavigationGuard }: Props) {
+export function CostingWorkspace({ scopeSlot, costingService, scenario, serviceDays, tripProfiles, onError, onRegisterNavigationGuard }: Props) {
   const [blockingScenarios, setBlockingScenarios] = useState<BlockingScenario[]>([]);
   const [blockingScenarioId, setBlockingScenarioId] = useState('');
   const [assumptions, setAssumptions] = useState<CostingAssumptionsInput>(() => initialAssumptions());
@@ -211,11 +214,10 @@ export function CostingWorkspace({ costingService, scenario, serviceDays, tripPr
   if (!blockingScenarios.length) return <section className="costing-workspace"><div className="prerequisite"><h1>Costing</h1><p>Create a Blocking Scenario before estimating annual service cost.</p></div></section>;
 
   const annualDays = costingService.summarizeServiceDays(serviceDays);
-  const costingActions: MenuGroup[] = [{ label: 'Data', items: [{ id: 'export-costing', label: 'Export Costing CSV (ZIP)', disabled: saving || !result, onSelect: () => { void exportCsv(); } }] }];
 
   return <div className="costing-workspace">
     <h1 className="visually-hidden">Cost estimate</h1>
-    <section className="module-toolbar" aria-label="Costing controls"><label>Blocking Scenario<select value={blockingScenarioId} onChange={(event) => { setBlockingScenarioId(event.target.value); window.setTimeout(() => estimateHeading.current?.focus(), 0); }}>{blockingScenarios.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><div className="toolbar-readonly"><span>Trip Profile</span><strong>{tripProfile?.name ?? 'Unavailable'}</strong></div><label>View year<select value={selectedYear} onChange={(event) => setViewYear(Number(event.target.value))}>{years.map((year) => <option key={year}>{year}</option>)}</select></label><MenuButton label="Actions" triggerAriaLabel="Costing actions" menuLabel="Costing actions" groups={costingActions} /></section>
+    {scopeSlot && createPortal(<><ContextField label="Blocking scenario" maxWidth={210}><select aria-label="Blocking scenario" value={blockingScenarioId} onChange={(event) => { setBlockingScenarioId(event.target.value); window.setTimeout(() => estimateHeading.current?.focus(), 0); }}>{blockingScenarios.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></ContextField><ContextField label="Trip profile"><span className="context-field__value">{tripProfile?.name ?? 'Unavailable'}</span></ContextField><ContextField label="View year"><select aria-label="View year" value={selectedYear} onChange={(event) => setViewYear(Number(event.target.value))}>{years.map((year) => <option key={year}>{year}</option>)}</select></ContextField><span className="scope-bar__spacer" /><button type="button" disabled={saving || !result} onClick={() => { void exportCsv(); }}>Export costing CSV</button></>, scopeSlot)}
     <section className="workflow-section" aria-labelledby="costing-assumptions-title">
       <div className="section-title"><div><h2 id="costing-assumptions-title">Costing Assumptions</h2></div><div className="section-header-actions"><button className="primary" disabled={saving || !dirty || validation.length > 0} onClick={() => void save()}>{saving ? 'Saving…' : 'Save'}</button></div></div>
       <div className="costing-assumptions-grid">

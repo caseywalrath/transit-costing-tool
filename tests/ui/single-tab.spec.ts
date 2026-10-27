@@ -140,8 +140,8 @@ test('a Project deleted in the active tab is not resurrected by a Route edit in 
   const readOnly = await context.newPage();
   await load(readOnly);
 
-  await active.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await active.getByRole('menuitem', { name: 'Delete project', exact: true }).click();
+  await active.getByRole('button', { name: /^Project: / }).click();
+  await active.getByRole('menuitem', { name: 'Delete project…', exact: true }).click();
   await active.getByRole('button', { name: 'Delete project', exact: true }).last().click();
   await expect.poll(() => runInPage(active, 'return await e.db.projects.count()')).toBe(1);
 
@@ -288,7 +288,7 @@ test('a read-only tab can still run a database upgrade', async ({ browser }) => 
   });
 
   await page.goto('/');
-  await expect(page.getByRole('option', { name: 'Upgrade Project' })).toBeAttached({ timeout: 30000 });
+  await expect(page.getByRole('button', { name: 'Project: Upgrade Project', exact: true })).toBeVisible({ timeout: 30000 });
   const upgraded = await page.evaluate(async () => new Promise<{ version: number; tripProfiles: number }>((resolve, reject) => {
     const request = indexedDB.open('transit-costing-tool');
     request.onsuccess = () => {
@@ -302,8 +302,8 @@ test('a read-only tab can still run a database upgrade', async ({ browser }) => 
   expect(upgraded.version).toBeGreaterThanOrEqual(6);
   expect(upgraded.tripProfiles).toBe(1);
   // The tab is read-only: the upgrade was allowed, ordinary saves are not.
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Should not save');
   await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
   await expectRejected(page);

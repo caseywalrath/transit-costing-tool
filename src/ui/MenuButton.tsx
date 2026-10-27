@@ -1,11 +1,11 @@
-import { Fragment, useEffect, useId, useRef, useState } from 'react';
+import { Fragment, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { rememberDialogInvoker } from './ModalDialog';
 
 export type MenuItem = { id: string; label: string; onSelect: () => void; disabled?: boolean; title?: string; checked?: boolean; /** With `checked`: `checkbox` for a toggle that is independent of the other items; the default `radio` marks one choice of a group. */ kind?: 'radio' | 'checkbox'; destructive?: boolean; restoreFocus?: boolean; wrapLabel?: boolean; /** Plain text shown under the item and read as its description (for example the time of the last backup). An array shows one line each. */ note?: string | string[] };
 export type MenuGroup = { label?: string; items: MenuItem[] };
 
 /** Compact, keyboard-operable action menu used by workspace headers. */
-export function MenuButton({ label, menuLabel, groups, disabled = false, fieldLabel, triggerRef: externalTriggerRef, selectionStyle = 'check', triggerClassName, triggerAriaLabel }: { label: string; menuLabel: string; groups: MenuGroup[]; disabled?: boolean; fieldLabel?: string; triggerRef?: { current: HTMLButtonElement | null }; selectionStyle?: 'check' | 'highlight'; triggerClassName?: string; triggerAriaLabel?: string }) {
+export function MenuButton({ label, menuLabel, groups, disabled = false, fieldLabel, triggerRef: externalTriggerRef, selectionStyle = 'check', triggerClassName, triggerAriaLabel, triggerContent, menuAlign = 'end' }: { label: string; menuLabel: string; groups: MenuGroup[]; disabled?: boolean; fieldLabel?: string; triggerRef?: { current: HTMLButtonElement | null }; selectionStyle?: 'check' | 'highlight'; triggerClassName?: string; triggerAriaLabel?: string; /** Replaces the label text inside the trigger (the header switchers show a caption and a name). */ triggerContent?: ReactNode; /** Which edge of the trigger the menu lines up with. */ menuAlign?: 'start' | 'end' }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -34,8 +34,8 @@ export function MenuButton({ label, menuLabel, groups, disabled = false, fieldLa
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); setOpen(true); focusItem(event.key === 'ArrowDown' ? 0 : items.length - 1); }
       if (event.key === 'Escape' && open) { event.preventDefault(); dismiss(); }
       if (event.key === 'Tab' && open) setOpen(false);
-    }}>{iconOnly ? <EllipsisIcon /> : <>{label}<span aria-hidden="true"> ▾</span></>}</button>
-    {open && <div id={menuId} className="action-menu" role="menu" aria-label={menuLabel} onKeyDown={(event) => {
+    }}>{iconOnly ? <EllipsisIcon /> : <>{triggerContent ?? label}<span aria-hidden="true" className="menu-chevron"> ▾</span></>}</button>
+    {open && <div id={menuId} className={menuAlign === 'start' ? 'action-menu action-menu--start' : 'action-menu'} role="menu" aria-label={menuLabel} onKeyDown={(event) => {
       const menuItems = [...rootRef.current?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)') ?? []];
       const current = menuItems.indexOf(document.activeElement as HTMLButtonElement);
       if (event.key === 'Escape') { event.preventDefault(); dismiss(); }

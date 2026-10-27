@@ -4,6 +4,14 @@
 
 The Runtime and Trip header-action conventions below are implemented and accepted through Phase 3R. They retain separate Runtime and Trip scopes, preserve the existing shared workflow-section system, and do not establish a convention for top-level Scenario/Data menus or Route-tab Node/Pattern menus.
 
+## Application header (UR-5, Decision 0047)
+
+- The header has two rows. Row 1 (`app-bar`) holds the application name, the primary tabs (`aria-current="page"` on the active one), and one status line. Row 2 (`scope-bar`, region "Scope") holds the Project and Scenario switchers, a divider, the active tab's scope selectors, and the tab's "⋯" menu. Row 2 never wraps: below 1280 px the switcher captions are hidden, and long names are cut with an ellipsis.
+- The Project and Scenario switchers are menu buttons named "Project: <name>" and "Scenario: <name>". Their menus list the choices as radio items, then the actions on the current item. Choosing another project or scenario passes through the same unsaved-changes guard as a tab change.
+- Scope selectors are native `<select>` elements inside `ContextField`, each with an explicit `aria-label` equal to its visible label (sentence case): Route; Day and Direction on Trips; Trip profile, Blocking scenario, and Day on Blocking; Blocking scenario, Trip profile (read-only), and View year on Costing. Blocking and Costing render theirs into the scope bar through a portal (`scopeSlot` prop).
+- A route's selector text is its short name, or "short — name" when another route has the same short name. The selector's `title` is the full route name.
+- The status line, by priority: "Read-only: open in another tab"; "Local save failed"; "Saving locally…"; otherwise "Saved locally · backup N days old" (or "no backup yet"), in the warning colour when the backup is older than seven days or missing. The logic is `headerStatus` in `src/ui/shell/headerStatus.ts`.
+
 ## Phase 4 implemented Blocking conventions
 
 - Blocking uses Trip Profile, Blocking Scenario, selected Route, and Day as context. The selected Route filters candidate Trips but never hides or truncates activities in the selected Block.

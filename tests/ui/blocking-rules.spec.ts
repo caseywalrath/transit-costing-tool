@@ -21,7 +21,7 @@ async function openBlockingWithTrips(page: Page, tripCount: number) {
   const scenarioDialog = page.getByRole('dialog', { name: 'New Blocking Scenario' });
   await scenarioDialog.getByLabel('Name').fill('Rules');
   await scenarioDialog.getByRole('button', { name: 'Create', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Blocking controls' }).getByRole('combobox', { name: 'Blocking Scenario' })).toHaveValue(/.+/);
+  await expect(page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Blocking scenario' })).toHaveValue(/.+/);
 }
 
 async function newBlock(page: Page, name?: string) {

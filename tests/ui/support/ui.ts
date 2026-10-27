@@ -9,17 +9,27 @@ const scopeFieldToday: Record<ScopeFieldName, string> = {
   Route: 'Route',
   Day: 'Day',
   Direction: 'Direction',
-  'Trip profile': 'Trip Profile',
-  'Blocking scenario': 'Blocking Scenario',
+  'Trip profile': 'Trip profile',
+  'Blocking scenario': 'Blocking scenario',
   'View year': 'View year',
 };
 
-/** Returns the scope selector with this label. Today these sit in the route picker and the module toolbars. */
-export const scopeField = (page: Page, label: ScopeFieldName): Locator => page.locator('.route-picker, .module-toolbar').getByLabel(scopeFieldToday[label]);
+/** Returns the scope selector with this label. The selectors sit in row 2 of the header (the scope bar). */
+export const scopeField = (page: Page, label: ScopeFieldName): Locator => page.getByRole('region', { name: 'Scope', exact: true }).getByLabel(scopeFieldToday[label], { exact: true });
 
-/** The global Project and Scenario selectors. Packages UR-5 turns them into switchers; this is the one place that changes. */
-export const projectSelect = (page: Page): Locator => page.locator('.context-bar select').first();
-export const scenarioSelect = (page: Page): Locator => page.locator('.context-bar select').nth(1);
+/** The Project and Scenario switchers in the header: the menu buttons whose names are "Project: <name>" and "Scenario: <name>". */
+export const projectSwitcher = (page: Page): Locator => page.getByRole('button', { name: /^Project: / });
+export const scenarioSwitcher = (page: Page): Locator => page.getByRole('button', { name: /^Scenario: / });
+
+/** Chooses a project or scenario from its switcher menu. */
+export async function chooseProject(page: Page, name: string) {
+  await projectSwitcher(page).click();
+  await page.getByRole('menu', { name: 'Project actions', exact: true }).getByRole('menuitemradio', { name, exact: true }).click();
+}
+export async function chooseScenario(page: Page, name: string) {
+  await scenarioSwitcher(page).click();
+  await page.getByRole('menu', { name: 'Scenario actions', exact: true }).getByRole('menuitemradio', { name, exact: true }).click();
+}
 
 export type RegionId = 'unassignedTrips' | 'currentBlock' | 'runtimes' | 'trips' | 'blockingControls' | 'routeControls' | 'costingControls';
 
@@ -28,9 +38,9 @@ const regionToday: Record<RegionId, string> = {
   currentBlock: 'Current Block',
   runtimes: 'Runtimes section',
   trips: 'Trips section',
-  blockingControls: 'Blocking controls',
-  routeControls: 'Route controls',
-  costingControls: 'Costing controls',
+  blockingControls: 'Scope',
+  routeControls: 'Scope',
+  costingControls: 'Scope',
 };
 
 /** Returns the panel with this id. */
@@ -39,13 +49,18 @@ export const region = (page: Page, id: RegionId): Locator => page.locator(`[aria
 type Command = {
   /** The accessible name of the menu trigger, which is also the menu's name. */
   menu: string;
+  /** The trigger's accessible name when it differs from the menu's: the header switchers read "Project: <name>". */
+  trigger?: RegExp;
   /** The panel that holds the trigger. Omitted when the trigger is unique on the page. */
   within?: RegionId;
   item: string;
   role?: 'menuitem' | 'menuitemradio' | 'menuitemcheckbox';
 };
 
-/** How each command is run today. Section 7, UR-0 of `docs/implementation/ui-revision-plan.md` lists the ids. */
+/** Commands that are a plain button, not a menu item. */
+const buttonCommands = { 'costing.exportCsv': 'Export costing CSV' } as const;
+
+/** How each menu command is run today. Section 7, UR-0 of `docs/implementation/ui-revision-plan.md` lists the ids. */
 const commands = {
   'trips.build': { menu: 'Trip actions', within: 'trips', item: 'Build trips…' },
   'trips.add': { menu: 'Trip actions', within: 'trips', item: 'Add trip…' },
@@ -68,15 +83,15 @@ const commands = {
   'runtime.exportCsv': { menu: 'Runtime actions', within: 'runtimes', item: 'Export profile CSV' },
   'runtime.method.singleBand': { menu: 'Runtime actions', within: 'runtimes', item: 'Single band for trip', role: 'menuitemradio' },
   'runtime.method.segmentStart': { menu: 'Runtime actions', within: 'runtimes', item: 'Band at segment start', role: 'menuitemradio' },
-  'project.new': { menu: 'Project actions', item: 'New project' },
-  'project.rename': { menu: 'Project actions', item: 'Rename project' },
-  'project.delete': { menu: 'Project actions', item: 'Delete project' },
-  'project.backup': { menu: 'Project actions', item: 'Backup project JSON' },
-  'project.restore': { menu: 'Project actions', item: 'Restore project JSON' },
-  'scenario.new': { menu: 'Scenario actions', item: 'New scenario' },
-  'scenario.rename': { menu: 'Scenario actions', item: 'Rename scenario' },
-  'scenario.duplicate': { menu: 'Scenario actions', item: 'Duplicate scenario' },
-  'scenario.delete': { menu: 'Scenario actions', item: 'Delete scenario' },
+  'project.new': { menu: 'Project actions', trigger: /^Project: /, item: 'New project…' },
+  'project.rename': { menu: 'Project actions', trigger: /^Project: /, item: 'Rename project…' },
+  'project.delete': { menu: 'Project actions', trigger: /^Project: /, item: 'Delete project…' },
+  'project.backup': { menu: 'Project actions', trigger: /^Project: /, item: 'Back up project (JSON)' },
+  'project.restore': { menu: 'Project actions', trigger: /^Project: /, item: 'Restore project from backup…' },
+  'scenario.new': { menu: 'Scenario actions', trigger: /^Scenario: /, item: 'New scenario…' },
+  'scenario.rename': { menu: 'Scenario actions', trigger: /^Scenario: /, item: 'Rename scenario…' },
+  'scenario.duplicate': { menu: 'Scenario actions', trigger: /^Scenario: /, item: 'Duplicate scenario…' },
+  'scenario.delete': { menu: 'Scenario actions', trigger: /^Scenario: /, item: 'Delete scenario…' },
   'route.new': { menu: 'Route actions', item: 'New route' },
   'route.rename': { menu: 'Route actions', item: 'Rename route' },
   'route.duplicate': { menu: 'Route actions', item: 'Duplicate route' },
@@ -97,15 +112,15 @@ const commands = {
   'block.removeTrips': { menu: 'Current Block actions', within: 'currentBlock', item: 'Remove Trips…' },
   'unassigned.compatibleOnly': { menu: 'Unassigned Trip actions', within: 'unassignedTrips', item: 'Compatible only', role: 'menuitemcheckbox' },
   'unassigned.clearFilters': { menu: 'Unassigned Trip actions', within: 'unassignedTrips', item: 'Clear filters' },
-  'costing.exportCsv': { menu: 'Costing actions', item: 'Export Costing CSV (ZIP)' },
 } satisfies Record<string, Command>;
 
-export type CommandId = keyof typeof commands;
+export type CommandId = keyof typeof commands | keyof typeof buttonCommands;
 
 /** Opens the command's menu and chooses its item. Item names match exactly, except the Undo item, whose name ends in "(N Trips)". */
 export async function runCommand(page: Page, id: CommandId) {
-  const command: Command = commands[id];
+  if (id in buttonCommands) { await page.getByRole('button', { name: buttonCommands[id as keyof typeof buttonCommands], exact: true }).click(); return; }
+  const command: Command = commands[id as keyof typeof commands];
   const scope = command.within ? region(page, command.within) : page;
-  await scope.getByRole('button', { name: command.menu, exact: true }).click();
+  await scope.getByRole('button', command.trigger ? { name: command.trigger } : { name: command.menu, exact: true }).click();
   await page.getByRole('menu', { name: command.menu, exact: true }).getByRole(command.role ?? 'menuitem', { name: command.item, exact: id !== 'trips.undoRegeneration' }).click();
 }

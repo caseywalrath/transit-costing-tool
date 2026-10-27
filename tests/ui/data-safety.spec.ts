@@ -4,7 +4,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
-import { scenarioSelect } from './support/ui';
+import { scopeField } from './support/ui';
 
 test.setTimeout(120_000);
 test.use({ actionTimeout: 15_000 });
@@ -34,10 +34,10 @@ test('a read-only tab says so in the notice banner and the header, keeps its edi
   const { context, active, readOnly } = await twoTabs(browser);
 
   await expect(active.getByText(READ_ONLY_BANNER)).toHaveCount(0);
-  await expect(active.locator('.save-status')).toHaveCount(0);
+  await expect(active.locator('.save-status')).toContainText('Saved locally');
 
   await expect(readOnly.locator('.notice.info')).toHaveText(READ_ONLY_BANNER);
-  await expect(readOnly.locator('.save-status')).toHaveText('Read-only');
+  await expect(readOnly.locator('.save-status')).toHaveText('Read-only: open in another tab');
   await expect(readOnly.getByRole('textbox', { name: 'Weekday name' })).toBeEnabled();
   await expect(readOnly.getByLabel('Weekday annual service days')).toBeEnabled();
 
@@ -46,16 +46,16 @@ test('a read-only tab says so in the notice banner and the header, keeps its edi
   await days.fill('254');
   await days.press('Enter');
   await expect(readOnly.locator('.notice.error')).toContainText(/read-only/i);
-  await expect(readOnly.locator('.save-status')).toHaveText('Read-only');
+  await expect(readOnly.locator('.save-status')).toHaveText('Read-only: open in another tab');
   await expect(readOnly.getByText('Local save failed')).toHaveCount(0);
   await context.close();
 });
 
 test('the Project menu shows when the last backup was exported, or that none was', async ({ page }) => {
   await openGolden(page);
-  const menuItem = () => page.getByRole('menuitem', { name: 'Backup project JSON', exact: true });
+  const menuItem = () => page.getByRole('menuitem', { name: 'Back up project (JSON)', exact: true });
 
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
   await expect(menuItem()).toHaveAccessibleDescription('No backup exported yet');
   await expect(page.getByRole('menu', { name: 'Project actions' })).toContainText('No backup exported yet');
 
@@ -66,7 +66,7 @@ test('the Project menu shows when the last backup was exported, or that none was
   expect(stored).toBeTruthy();
   const expected = await page.evaluate((iso) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }), stored);
 
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
   await expect(menuItem()).toHaveAccessibleDescription(`Last backup: ${expected}`);
   await expect(page.getByRole('menu', { name: 'Project actions' })).not.toContainText('No backup exported yet');
 });
@@ -146,13 +146,13 @@ test('selection reloads and exports that fail show the error banner with a next 
   // Delete the database under the open page: its connection closes, so every later read fails with a browser error.
   await runInPage(page, 'e.db.close(); await e.db.delete();');
 
-  await scenarioSelect(page).selectOption({ label: 'Select scenario' });
+  await scopeField(page, 'Route').selectOption({ label: 'No route selected' });
   await expect(banner(page).filter({ hasText: 'Unable to load that selection. Reload this page and try again.' })).toHaveCount(1);
   await expect(banner(page).filter({ hasText: /Dexie|IndexedDB|database|closed/i }).filter({ hasNotText: 'upgraded in another tab' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Dismiss message' }).click();
 
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Backup project JSON', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'Back up project (JSON)', exact: true }).click();
   await expect(banner(page).filter({ hasText: 'Unable to export the project backup. Your data was not changed. Try again.' })).toHaveCount(1);
   await expect(banner(page).filter({ hasText: /Dexie|IndexedDB|DatabaseClosed|closed/i }).filter({ hasNotText: 'upgraded in another tab' })).toHaveCount(0);
 });

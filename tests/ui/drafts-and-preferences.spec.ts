@@ -88,7 +88,7 @@ test('a dirty Runtime draft is also guarded on a tab change, and Cancel stays on
 
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await leaveDialog(page).getByRole('button', { name: 'Discard', exact: true }).click();
-  await expect(page.getByLabel('Blocking controls')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Scope' })).toBeVisible();
 });
 
 test('a dirty Runtime draft is guarded when the Runtime profile changes, and a reload raises the leave prompt', async ({ page }) => {
@@ -149,7 +149,7 @@ test('a staged Shift is guarded on a tab change, and a dirty Runtime draft is as
   await leaveDialog(page).getByRole('button', { name: 'Discard', exact: true }).click();
   await expect(shiftDialog(page)).toBeVisible();
   await page.getByRole('button', { name: 'Discard', exact: true }).last().click();
-  await expect(page.getByLabel('Blocking controls')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Scope' })).toBeVisible();
 });
 
 test('Build Trips closes without a prompt and shows its values again when it is reopened', async ({ page }) => {
@@ -253,8 +253,8 @@ for (const [name, route, blocking] of [
     await page.goto('/');
     await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
     await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-    await expect(page.getByLabel('Blocking controls')).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Blocking controls' }).getByRole('combobox', { name: 'Blocking Scenario' })).toHaveValue(/.+/);
+    await expect(page.getByRole('region', { name: 'Scope' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Blocking scenario' })).toHaveValue(/.+/);
     await expect(page.locator('.notice')).toHaveCount(0);
   });
 }
@@ -284,7 +284,7 @@ test('the remembered Blocking Scenario survives a Trip Profile change and is res
   const initial = (await scenarioMenu.innerText()).replace('▾', '').trim();
   const chosen = initial === 'Second blocks' ? 'Workbook Blocks' : 'Second blocks';
   await scenarioMenu.click();
-  await page.getByRole('menu', { name: 'Blocking Scenario' }).getByRole('menuitemradio', { name: chosen, exact: true }).click();
+  await page.getByRole('menu', { name: 'Blocking scenario' }).getByRole('menuitemradio', { name: chosen, exact: true }).click();
   await expect(scenarioMenu).toContainText(chosen);
 
   // Change the Trip Profile and back: the choice for the Default profile is still the one made.
@@ -297,8 +297,8 @@ test('the remembered Blocking Scenario survives a Trip Profile change and is res
 
   // Blocking: choose the non-first Scenario, reload, and open Blocking again. It is restored, not replaced by the first one listed.
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  const blockingScenario = page.getByRole('region', { name: 'Blocking controls' }).getByRole('combobox', { name: 'Blocking Scenario' });
-  const profileSelect = page.getByRole('region', { name: 'Blocking controls' }).getByRole('combobox', { name: 'Trip Profile' });
+  const blockingScenario = page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Blocking scenario' });
+  const profileSelect = page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Trip profile' });
   await profileSelect.selectOption({ label: 'Default' });
   await expect(blockingScenario).toHaveValue(/.+/);
   const shown = await blockingScenario.locator('option:checked').innerText();

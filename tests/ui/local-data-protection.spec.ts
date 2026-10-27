@@ -48,14 +48,14 @@ const refusal = (page: Page) => page.getByText(FULL).first();
  * published by this write, not left over from an earlier step.
  */
 async function failThenRecover(page: Page, write: () => Promise<void>, retry: () => Promise<void>, timeout = 5000) {
-  await expect(status(page)).toHaveCount(0);
+  await expect(status(page)).toContainText('Saved locally');
   const endSimulation = await fillStore(page);
   await write();
   await expect(refusal(page)).toBeVisible({ timeout });
   await expect(status(page)).toHaveText('Local save failed', { timeout });
   await endSimulation();
   await retry();
-  await expect(status(page)).toHaveCount(0, { timeout });
+  await expect(status(page)).toContainText('Saved locally', { timeout });
   const dismiss = page.getByRole('button', { name: 'Dismiss message' });
   if (await dismiss.count()) await dismiss.click();
 }
@@ -156,7 +156,7 @@ test('a write of each service shows "Saving locally…" in the one indicator in 
     await holdStore(page, 800);
     await action();
     await expect.poll(() => page.evaluate(() => (window as unknown as { __statusSeen: string[] }).__statusSeen.includes('Saving locally…')), { timeout }).toBe(true);
-    await expect(status(page)).toHaveCount(0, { timeout });
+    await expect(status(page)).toContainText('Saved locally', { timeout });
   };
 
   const description = page.getByLabel('Description').first();
@@ -199,7 +199,7 @@ test('the browser is asked once to keep the store, after the first successful sa
     Object.defineProperty(navigator.storage, 'persist', { configurable: true, value: async () => { w.__persistCalls += 1; return true; } });
   });
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Project actions', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Project: / })).toBeVisible();
   const calls = () => page.evaluate(() => (window as unknown as { __persistCalls: number }).__persistCalls);
   const record = () => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null'), PROTECTION_KEY);
   // Opening the app saves nothing, so nothing is asked yet.
@@ -207,8 +207,8 @@ test('the browser is asked once to keep the store, after the first successful sa
   expect(await record()).toBeNull();
 
   // The first save.
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Persistence');
   await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
   await expect.poll(calls).toBe(1);
@@ -243,8 +243,8 @@ test('a refusal to keep the store is recorded and not repeated, and a browser wi
       }
     }, mode);
     await page.goto('/');
-    await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
+    await page.getByRole('button', { name: /^Project: / }).click();
+    await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
     await page.locator('#dialog-name').fill(`Persistence ${mode}`);
     await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
     await expect.poll(() => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null')?.persistentStorage, PROTECTION_KEY)).toBe(mode);
@@ -276,19 +276,19 @@ test('the Project menu warns that the browser may clear local data only when the
     await page.goto('/');
     const projectMenu = () => page.getByRole('menu', { name: 'Project actions' });
     // Not yet known: nothing has been saved, so the browser has not been asked and no line is added.
-    await page.getByRole('button', { name: 'Project actions', exact: true }).click();
+    await page.getByRole('button', { name: /^Project: / }).click();
     await expect(projectMenu()).toContainText('No backup exported yet');
     await expect(projectMenu()).not.toContainText(CLEAR_WARNING);
-    await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
     await page.locator('#dialog-name').fill(`Persistence ${mode}`);
     await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
     await expect.poll(() => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null')?.persistentStorage, PROTECTION_KEY)).toBe(mode);
 
-    await page.getByRole('button', { name: 'Project actions', exact: true }).click();
+    await page.getByRole('button', { name: /^Project: / }).click();
     await expect(projectMenu()).toContainText('No backup exported yet');
     if (warned) {
       await expect(projectMenu().locator('.action-menu-note')).toHaveText(['No backup exported yet', CLEAR_WARNING]);
-      await expect(projectMenu().getByRole('menuitem', { name: 'Backup project JSON', exact: true })).toHaveAccessibleDescription(`No backup exported yet ${CLEAR_WARNING}`);
+      await expect(projectMenu().getByRole('menuitem', { name: 'Back up project (JSON)', exact: true })).toHaveAccessibleDescription(`No backup exported yet ${CLEAR_WARNING}`);
     } else {
       await expect(projectMenu().locator('.action-menu-note')).toHaveText(['No backup exported yet']);
     }
@@ -302,8 +302,8 @@ test('exporting a project backup records the time on this device, and nothing el
   expect(await read()).toBeNull();
   const before = Date.now();
   const download = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Backup project JSON', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'Back up project (JSON)', exact: true }).click();
   await download;
   await expect.poll(read).not.toBeNull();
   const recorded = Date.parse((await read()) as string);

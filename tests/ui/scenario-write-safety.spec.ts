@@ -67,8 +67,8 @@ test('a Trip edit, a new Block, and a Runtime profile rename made after load sur
 test('Rename scenario keeps Trips built after load', async ({ page }) => {
   await open(page);
   const built = await buildThreeTrips(page);
-  await page.getByRole('button', { name: 'Scenario actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Rename scenario', exact: true }).click();
+  await page.getByRole('button', { name: /^Scenario: / }).click();
+  await page.getByRole('menuitem', { name: 'Rename scenario…', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Rename scenario' });
   await dialog.getByLabel('Scenario name').fill('Renamed scenario');
   await dialog.getByRole('button', { name: 'Rename', exact: true }).click();
@@ -102,8 +102,8 @@ test('Duplicate route keeps Trips built after load and copies them with the Rout
 test('Duplicate scenario copies the stored Trips, including Trips built after load', async ({ page }) => {
   await open(page);
   const built = await buildThreeTrips(page);
-  await page.getByRole('button', { name: 'Scenario actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Duplicate scenario', exact: true }).click();
+  await page.getByRole('button', { name: /^Scenario: / }).click();
+  await page.getByRole('menuitem', { name: 'Duplicate scenario…', exact: true }).click();
   await page.getByRole('dialog', { name: 'Duplicate scenario' }).getByRole('button', { name: 'Duplicate', exact: true }).click();
   await expect.poll(() => runInPage(page, 'return await e.db.scenarios.count()')).toBe(2);
   expect(await tripCount(page)).toBe(built * 2);

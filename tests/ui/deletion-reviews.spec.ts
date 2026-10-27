@@ -3,7 +3,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule } from './support/tripsWorkspace';
-import { scenarioSelect } from './support/ui';
+import { scenarioSwitcher } from './support/ui';
 
 test.setTimeout(90_000);
 
@@ -47,16 +47,16 @@ test('Delete route is refused when the Route changed after the review, and nothi
 
 test('Delete scenario removes the Scenario after the review and is refused when its data changed after it', async ({ page }) => {
   await createRouteWithPattern(page, 'Scenario deletion reviews');
-  await page.getByRole('button', { name: 'Scenario actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New scenario', exact: true }).click();
+  await page.getByRole('button', { name: /^Scenario: / }).click();
+  await page.getByRole('menuitem', { name: 'New scenario…', exact: true }).click();
   await page.locator('#dialog-name').fill('Alternative');
   await page.getByRole('button', { name: 'Create scenario', exact: true }).click();
   await expect.poll(() => count(page, 'scenarios')).toBe(2);
-  await expect(scenarioSelect(page).locator('option:checked')).toHaveText('Alternative');
+  await expect(scenarioSwitcher(page)).toHaveAccessibleName('Scenario: Alternative');
 
   // The review is taken for the selected (new) Scenario; a Service day of it changes before the planner confirms.
-  await page.getByRole('button', { name: 'Scenario actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Delete scenario', exact: true }).click();
+  await page.getByRole('button', { name: /^Scenario: / }).click();
+  await page.getByRole('menuitem', { name: 'Delete scenario…', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Delete scenario?' })).toBeVisible();
   await runInPage(page, "const scenario = (await e.db.scenarios.toArray()).find((item) => item.name === 'Alternative'); const day = (await e.db.serviceDays.where('scenarioId').equals(scenario.id).toArray())[0]; await e.db.serviceDays.put({ ...day, name: 'Renamed after the review' });");
   await page.getByRole('button', { name: 'Delete scenario', exact: true }).last().click();
@@ -64,8 +64,8 @@ test('Delete scenario removes the Scenario after the review and is refused when 
   expect(await count(page, 'scenarios')).toBe(2);
 
   await error(page).getByRole('button', { name: 'Dismiss message' }).click();
-  await page.getByRole('button', { name: 'Scenario actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Delete scenario', exact: true }).click();
+  await page.getByRole('button', { name: /^Scenario: / }).click();
+  await page.getByRole('menuitem', { name: 'Delete scenario…', exact: true }).click();
   await page.getByRole('button', { name: 'Delete scenario', exact: true }).last().click();
   await expect.poll(() => count(page, 'scenarios')).toBe(1);
   await expect(error(page)).toHaveCount(0);

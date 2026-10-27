@@ -7,7 +7,7 @@ test.setTimeout(90_000);
 
 test('the page is a standards-mode HTML document with a language, charset, viewport, and title', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Project actions', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Project: / })).toBeVisible();
 
   const document = await page.evaluate(() => ({
     compatMode: window.document.compatMode,

@@ -101,7 +101,7 @@ test('creates an empty Blocking Scenario and an empty Block, then exposes its Tr
   const discardRouteChanges = page.getByRole('button', { name: 'Discard', exact: true });
   // No Route draft is open, so there is nothing to discard. A conditional click here would hide a stray unsaved-Route banner.
   await expect(discardRouteChanges).toHaveCount(0);
-  await expect(page.getByLabel('Blocking controls')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Scope' })).toBeVisible();
   const blockingActions = page.getByRole('button', { name: 'Blocking actions', exact: true });
   await blockingActions.click();
   await page.getByRole('menuitem', { name: 'New Blocking Scenario…', exact: true }).click();
@@ -113,7 +113,7 @@ test('creates an empty Blocking Scenario and an empty Block, then exposes its Tr
   await page.getByRole('menuitem', { name: 'New Blocking Scenario…', exact: true }).click();
   await scenarioDialog.getByLabel('Name').fill('Base blocks');
   await scenarioDialog.getByRole('button', { name: 'Create', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Blocking controls' }).getByRole('combobox', { name: 'Blocking Scenario' })).toHaveValue(/.+/);
+  await expect(page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Blocking scenario' })).toHaveValue(/.+/);
   await expect(page.getByRole('heading', { name: 'Weekday Summary' })).toBeVisible();
   const currentBlock = page.getByLabel('Current Block');
   await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();

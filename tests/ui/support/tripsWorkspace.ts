@@ -13,8 +13,8 @@ import { scopeField } from './ui';
  */
 export async function createRouteWithPattern(page: Page, projectName: string) {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill(projectName);
   await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
   await page.getByRole('button', { name: 'Route actions', exact: true }).click();

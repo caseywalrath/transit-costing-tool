@@ -5,8 +5,8 @@ import { runInPage } from './support/dexieEnv';
 
 test('keeps Node and Pattern drafts local until their explicit saves', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Draft verification');
   await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
   await page.getByRole('button', { name: 'Route actions', exact: true }).click();
@@ -64,8 +64,8 @@ test('keeps Node and Pattern drafts local until their explicit saves', async ({ 
 
 test('renames and duplicates a Route from the module Actions menu', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Route lifecycle');
   await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
   const routeActions = page.getByRole('button', { name: 'Route actions', exact: true });
@@ -76,7 +76,7 @@ test('renames and duplicates a Route from the module Actions menu', async ({ pag
   await page.getByRole('menuitem', { name: 'Rename route', exact: true }).click();
   await page.getByRole('dialog', { name: 'Rename route' }).getByLabel('Route name').fill('Federal');
   await page.getByRole('dialog', { name: 'Rename route' }).getByRole('button', { name: 'Rename', exact: true }).click();
-  const routeSelect = page.getByRole('region', { name: 'Route controls' }).getByRole('combobox', { name: 'Route' });
+  const routeSelect = page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Route' });
   await expect(routeSelect).toHaveValue(/.+/);
   await expect(routeSelect.locator('option:checked')).toHaveText('Federal');
 

@@ -5,7 +5,7 @@ import { expect, type Page } from '@playwright/test';
 export async function seedCostingFixture(page: Page): Promise<void> {
   await page.goto('/');
   // The app creates the database when it starts; wait for it before seeding the stores directly.
-  await expect(page.getByRole('button', { name: 'Project actions', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Project: / })).toBeVisible();
   await page.evaluate(async () => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open('transit-costing-tool');
