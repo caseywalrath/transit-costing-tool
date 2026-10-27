@@ -52,6 +52,31 @@ describe('the Trips table view', () => {
   });
 });
 
+describe('headway change markers (UR-8)', () => {
+  // Pattern b serves only col-0, so it skips the col-1 timepoint.
+  const a = pattern('a');
+  const b: RoutePattern = { ...pattern('b'), points: [{ id: 'b-0', nodeId: 'n0', sequence: 0, cumulativeMiles: 0, directionColumnId: 'col-0' }] };
+  const base = { patterns: [a, b], runtimeProfiles: new Map(), changedRuntimeTripIds: new Set<string>(), showRuntimeBands: false, showHeadways: true };
+  const changedIn = (trips: Trip[], columnId: string) => [...buildTripTableView({ ...base, savedTrips: trips }).headways.get(columnId)!].map(([id, cell]) => [id, cell.changed]);
+
+  it('marks a cell whose headway differs from the previous headway, and never the first two cells', () => {
+    const trips = [trip('t1', 'a', [0, 100]), trip('t2', 'a', [900, 1000]), trip('t3', 'a', [1800, 1900]), trip('t4', 'a', [2400, 2500]), trip('t5', 'a', [3000, 3100])];
+    expect(changedIn(trips, 'col-0')).toEqual([['t1', false], ['t2', false], ['t3', false], ['t4', true], ['t5', false]]);
+  });
+
+  it('compares headways within one column, so a Trip that skips a timepoint does not count there', () => {
+    const trips = [trip('t1', 'a', [0, 100]), trip('s1', 'b', [300]), trip('t2', 'a', [600, 700]), trip('t3', 'a', [1200, 1300])];
+    // col-0 headways: 300, 300, 600 → t3 changed. col-1 (no s1): 600, 600 → nothing changed.
+    expect(changedIn(trips, 'col-0')).toEqual([['t1', false], ['s1', false], ['t2', false], ['t3', true]]);
+    expect(changedIn(trips, 'col-1')).toEqual([['t1', false], ['t2', false], ['t3', false]]);
+  });
+
+  it('does not mark when headways are equal, including a zero headway that repeats', () => {
+    const trips = [trip('t1', 'a', [600, 700]), trip('t2', 'a', [600, 700]), trip('t3', 'a', [600, 700])];
+    expect(changedIn(trips, 'col-0')).toEqual([['t1', false], ['t2', false], ['t3', false]]);
+  });
+});
+
 describe('the Build Trips form', () => {
   const context = { scenarioId: 's', routeId: 'r', serviceDayId: 'wd', tripProfileId: 'tp' };
   const values = (overrides: Partial<BuildTripsFormValues> = {}): BuildTripsFormValues => ({ patternId: 'a', firstTrip: '6:00', headway: '10', tripCount: '', lastTrip: '7:00', ...overrides });

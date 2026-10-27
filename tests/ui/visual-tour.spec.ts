@@ -2,7 +2,7 @@
 import { test, expect } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { openGoldenTrips } from './support/tripsWorkspace';
-import { editRuntimeCell, openRuntimes, runtimeCell } from './support/ui';
+import { editRuntimeCell, openRuntimes, runCommand, runtimeCell, scopeField } from './support/ui';
 
 test.skip(!process.env.UI_TOUR, 'Set UI_TOUR=1 to capture the tour.');
 
@@ -60,6 +60,18 @@ for (const width of [1024, 1440]) {
     await page.keyboard.press('Enter');
     await runtimes.scrollIntoViewIfNeeded();
     await page.screenshot({ path: out('trips-runtime-grid'), fullPage: false });
-    // Packages add states here, for example headways on.
+    // UR-8: headways on (pinned Departs column, changed-headway markers), scrolled down and right to show the pinned columns and headings.
+    await page.reload();
+    await page.getByRole('button', { name: 'Trips', exact: true }).click();
+    await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
+    await expect(page.locator('.trips-workspace .schedule-table tbody tr')).toHaveCount(138, { timeout: 30_000 });
+    await runCommand(page, 'trips.toggleHeadways');
+    const schedule = page.locator('.trips-workspace .schedule-table');
+    await expect(schedule.locator('th.trip-departs-column')).toBeVisible();
+    await schedule.locator('td.trip-headway-changed').nth(2).evaluate((element) => element.scrollIntoView({ block: 'center' }));
+    await page.evaluate(() => window.scrollBy(0, 1));
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: out('trips-headways'), fullPage: false });
+    // Packages add states here.
   });
 }

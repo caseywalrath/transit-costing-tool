@@ -55,7 +55,26 @@ export function tripPatternChipText(pattern: Pick<RoutePattern, 'name' | 'direct
 }
 
 export interface TripRowView { runTimeSeconds?: number; duplicate: boolean; singleBand?: RuntimeBand; segments?: BlendedSegment[] }
-export type TripHeadways = ReturnType<typeof calculateTimepointHeadways>;
+/**
+ * One Trip's visit to a timetable column. `changed` (UR-8, HW-X) is true when this headway and the previous headway in the same column
+ * are both defined and differ: the row where the service frequency changes.
+ */
+export interface TripHeadwayCell { time: ServiceSeconds; previousTime?: ServiceSeconds; changed: boolean }
+export type TripHeadways = Map<string, Map<string, TripHeadwayCell>>;
+
+/** The column headways of `calculateTimepointHeadways`, with each cell's `changed` marker. */
+export function markHeadwayChanges(headways: ReturnType<typeof calculateTimepointHeadways>): TripHeadways {
+  return new Map([...headways].map(([columnId, column]) => {
+    let previousHeadway: number | undefined;
+    const cells = new Map<string, TripHeadwayCell>();
+    for (const [tripId, visit] of column) {
+      const headway = visit.previousTime === undefined ? undefined : visit.time - visit.previousTime;
+      cells.set(tripId, { ...visit, changed: headway !== undefined && previousHeadway !== undefined && headway !== previousHeadway });
+      previousHeadway = headway;
+    }
+    return [columnId, cells];
+  }));
+}
 export interface TripTableView { rows: Map<string, TripRowView>; headways: TripHeadways }
 export interface TripTableViewInput {
   /** The saved Trips of the schedule, in table order. */
@@ -86,7 +105,7 @@ export function buildTripTableView(input: TripTableViewInput): TripTableView {
     const runTimeSeconds = tripRunTimeSeconds(trip);
     rows.set(saved.id, { ...(runTimeSeconds === undefined ? {} : { runTimeSeconds }), duplicate: duplicates.has(`${saved.patternId}:${saved.stopTimes[0]?.time}`), ...shading });
   }
-  return { rows, headways: input.showHeadways ? calculateTimepointHeadways(input.savedTrips.map(shown), input.patterns) : new Map() };
+  return { rows, headways: input.showHeadways ? markHeadwayChanges(calculateTimepointHeadways(input.savedTrips.map(shown), input.patterns)) : new Map() };
 }
 
 export interface BuildTripsFormValues { patternId: string; firstTrip: string; headway: string; tripCount: string; lastTrip: string }

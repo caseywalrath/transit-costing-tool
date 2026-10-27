@@ -76,12 +76,21 @@
 .schedule-table th, .schedule-table td { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .schedule-table .trip-selection-column { width: 34px; min-width: 34px; padding: var(--space-1) 7px; text-align: center; }
 .schedule-table .trip-selection-column input { width: 15px; min-height: 15px; vertical-align: middle; }
-.schedule-table .trip-pattern-column { position: sticky; left: 34px; z-index: 1; min-width: 188px; width: 188px; max-width: 188px; padding-left: 0; padding-right: var(--space-2); background: var(--color-surface); }
+/* The selection column renders 36 px wide (34 px plus its borders), so Pattern pins at 36 px. */
+.schedule-table .trip-pattern-column { position: sticky; left: 36px; z-index: 1; min-width: 188px; width: 188px; max-width: 188px; padding-left: 0; padding-right: var(--space-2); background: var(--color-surface); }
 .schedule-table th.trip-pattern-column { z-index: 3; background: var(--color-surface-2); }
 .schedule-table .trip-pattern-column .chip { display: flex; max-width: 100%; }
 .schedule-table .trip-pattern-column .trip-pattern-select { display: block; min-width: 0; width: 148px; max-width: 148px; overflow: hidden; text-overflow: ellipsis; font-size: var(--font-size-label); }
 .schedule-table .trip-timepoint-column { min-width: 76px; width: 76px; text-align: center; }
 .schedule-table td.trip-headway-first { color: var(--color-accent); font-weight: var(--font-weight-bold); box-shadow: inset 3px 0 var(--color-accent); }
+/* UR-8 (HW-X): the row where a column's headway changes. */
+.schedule-table td.trip-headway-changed,
+.schedule-table tbody tr:nth-child(even):not(.trip-row-selected):not(.trip-row-warning):not(.timepoint-detail) td.trip-headway-changed { background-color: var(--color-warn-soft); box-shadow: inset 3px 0 var(--color-warn-border); }
+/* UR-8 (HW-B): Departs is pinned after Pattern (36 px selection + 188 px Pattern). The last pinned column carries a 1 px right shadow. */
+.schedule-table .trip-departs-column { position: sticky; left: 224px; z-index: 1; min-width: 64px; width: 64px; text-align: center; background: var(--color-surface); }
+.schedule-table td.trip-departs-column { font-weight: var(--font-weight-bold); }
+.schedule-table th.trip-departs-column { z-index: 3; background: var(--color-surface-2); }
+.schedule-table .trip-pinned-last { box-shadow: 1px 0 0 var(--color-border); }
 .schedule-table th.trip-timepoint-column { white-space: normal; line-height: 1.15; }
 .schedule-table .trip-run-time-column { min-width: 78px; width: 78px; text-align: center; }
 .schedule-table .trip-connection-column { min-width: 78px; width: 78px; text-align: center; }
