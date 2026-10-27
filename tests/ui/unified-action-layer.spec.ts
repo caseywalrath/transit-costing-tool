@@ -106,8 +106,59 @@ test('keeps one regeneration undo through reload and restores the prior trip tim
   const menu = page.getByRole('menu', { name: 'Trip actions' });
   const undo = menu.getByRole('menuitem', { name: 'Undo last regeneration (1 Trips)', exact: true });
   await expect(undo).toBeEnabled();
+  // Undo is its own item; Regenerate stays in the menu beside it (Decision 0046).
+  await expect(menu.getByRole('menuitem', { name: 'Regenerate selected…' })).toBeVisible();
   await undo.click();
   await expect(page.locator('.schedule-table')).toContainText('6:07');
+  await actions.click();
+  await expect(page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: /^Undo last regeneration/ })).toHaveCount(0);
+});
+
+test('Regenerate stays available while an undo is saved, regenerates only the Trips whose runtimes changed, and replaces the undo', async ({ page }) => {
+  await createShiftReadySchedule(page, '06:20');
+  const runtimeSection = page.locator('[aria-label="Runtimes section"]');
+  await runtimeSection.getByLabel('Time band 1 segment 1').fill(':10:30');
+  await runtimeSection.getByLabel('Time band 1 segment 1').press('Tab');
+  await runtimeSection.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByText('Run Times Have Changed')).toBeVisible();
+
+  const tripsSection = page.locator('[aria-label="Trips section"]');
+  const openMenu = async () => {
+    await tripsSection.getByRole('button', { name: 'Trip actions', exact: true }).click();
+    return page.getByRole('menu', { name: 'Trip actions' });
+  };
+  // No regeneration has happened yet, so there is nothing to undo and the menu shows no Undo item.
+  let menu = await openMenu();
+  await expect(menu.getByRole('menuitem', { name: /^Undo last regeneration/ })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  // Regenerate one Trip; the other two still have changed runtimes.
+  await page.locator('.schedule-table tbody input[type="checkbox"]').first().check();
+  menu = await openMenu();
+  await menu.getByRole('menuitem', { name: 'Regenerate selected…' }).click();
+  await page.getByRole('dialog', { name: 'Regenerate selected trips' }).getByRole('button', { name: 'Regenerate trips', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Regenerate selected trips' })).toHaveCount(0);
+
+  // The undo is offered, and Regenerate is still in the menu; it is disabled only until a Trip with changed runtimes is selected.
+  menu = await openMenu();
+  await expect(menu.getByRole('menuitem', { name: 'Undo last regeneration (1 Trips)', exact: true })).toBeEnabled();
+  await expect(menu.getByRole('menuitem', { name: 'Regenerate selected…' })).toBeDisabled();
+  await page.keyboard.press('Escape');
+
+  // Select all, which includes the Trip that no longer needs it: only the two Trips with changed runtimes are regenerated.
+  await page.getByRole('checkbox', { name: 'Select all trips' }).check();
+  menu = await openMenu();
+  await expect(menu.getByRole('menuitem', { name: 'Regenerate selected…' })).toBeEnabled();
+  await menu.getByRole('menuitem', { name: 'Regenerate selected…' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Regenerate selected trips' });
+  await expect(dialog.locator('.preview-times tbody tr')).toHaveCount(2);
+  await dialog.getByRole('button', { name: 'Regenerate trips', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText('Run Times Have Changed')).toHaveCount(0);
+
+  // The new regeneration replaced the earlier undo.
+  menu = await openMenu();
+  await expect(menu.getByRole('menuitem', { name: 'Undo last regeneration (2 Trips)', exact: true })).toBeEnabled();
 });
 
 test('restores the page scroll position after committing a shift', async ({ page }) => {
