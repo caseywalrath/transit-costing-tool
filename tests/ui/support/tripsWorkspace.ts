@@ -35,12 +35,12 @@ export async function createRouteWithPattern(page: Page, projectName: string) {
   // "Add pattern" stays disabled until the Node save and its reload are done (review package F1, finding L-16), so the click waits for it.
   await page.getByRole('button', { name: 'Add pattern', exact: true }).click();
   await expect(page.getByText('New Pattern — not saved')).toBeVisible();
-  await page.getByRole('button', { name: 'Add node', exact: true }).click();
+  await page.getByRole('button', { name: 'Add node to pattern', exact: true }).click();
   await expect(page.getByLabel('Point 1 node')).toBeVisible();
-  await page.getByRole('button', { name: 'Add node', exact: true }).click();
+  await page.getByRole('button', { name: 'Add node to pattern', exact: true }).click();
   await expect(page.getByLabel('Point 2 node')).toBeVisible();
   await page.getByLabel('Point 2 node').selectOption({ label: 'B' });
-  await page.getByRole('button', { name: 'Save Pattern', exact: true }).click();
+  await page.getByRole('button', { name: 'Review and save', exact: true }).click();
   await page.getByRole('button', { name: 'Save and rebalance', exact: true }).click();
   await expect(page.getByText('New Pattern — not saved')).toHaveCount(0);
 

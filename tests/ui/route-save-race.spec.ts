@@ -57,7 +57,7 @@ test('Add pattern is disabled while Save Pattern is running', async ({ page }) =
   await expect(addPattern(page)).toBeEnabled();
 
   await slowSaves(page, 600);
-  await page.getByRole('button', { name: 'Save Pattern', exact: true }).click();
+  await page.getByRole('button', { name: 'Review and save', exact: true }).click();
   const confirm = page.getByRole('button', { name: 'Save and rebalance', exact: true });
   if (await confirm.isVisible()) await confirm.click();
   await expect(addPattern(page)).toBeDisabled();

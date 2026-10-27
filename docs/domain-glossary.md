@@ -228,7 +228,7 @@ Additional vehicles added through a spare ratio or explicit input. This is defer
 
 ### Costing assumptions
 
-The single Scenario-owned set of entered USD/Revenue-Hour rate, source year, service year, and annual escalation inputs. It applies to whichever Blocking Scenario is selected. The Phase 5 implementation plan specifies its persistence lifecycle.
+The single Scenario-owned set of entered USD/Revenue-Hour rate, source year, service year, and annual escalation inputs. It applies to whichever Blocking Scenario is selected. The Phase 5 implementation plan specifies its persistence lifecycle. The interface labels annual escalation as **Inflation rate (%)**.
 
 ### Cost estimate
 

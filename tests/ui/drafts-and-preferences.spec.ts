@@ -187,7 +187,7 @@ test('saving Nodes keeps an unsaved Pattern draft, and saving a Pattern keeps un
   const patternName = page.getByLabel('Pattern name');
   const nodeNames = page.getByLabel('Node name');
   const saveNodes = page.getByRole('button', { name: 'Save nodes', exact: true });
-  const savePattern = page.getByRole('button', { name: 'Save Pattern', exact: true });
+  const savePattern = page.getByRole('button', { name: 'Review and save', exact: true });
 
   // Unsaved Pattern edit, then a Node save.
   await patternName.fill('Edited pattern, not saved');
@@ -195,7 +195,8 @@ test('saving Nodes keeps an unsaved Pattern draft, and saving a Pattern keeps un
   const nodeInput = async (name: string) => nodeNames.nth(await nodeNames.evaluateAll((inputs, wanted) => inputs.findIndex((input) => (input as HTMLInputElement).value === wanted), name));
   await (await nodeInput('A')).fill('A renamed');
   await saveNodes.click();
-  await expect(saveNodes).toBeDisabled();
+  // The save bar disappears once the Node draft is saved.
+  await expect(saveNodes).toHaveCount(0);
   await expect.poll(() => runInPage(page, "return (await e.db.nodes.toArray()).map((node) => node.name).sort().join(',')")).toBe('A renamed,B');
   await expect(patternName).toHaveValue('Edited pattern, not saved');
   await expect(savePattern).toBeEnabled();

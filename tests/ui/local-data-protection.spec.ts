@@ -115,9 +115,9 @@ test('a full browser store is reported in plain words, and the save status shows
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await page.getByLabel('Operating cost per Revenue Hour in USD').fill('151.25');
   await failThenRecover(page, async () => {
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.getByRole('button', { name: 'Save assumptions', exact: true }).click();
   }, async () => {
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.getByRole('button', { name: 'Save assumptions', exact: true }).click();
     await expect.poll(() => runInPage(page, 'return (await e.db.costingAssumptions.toArray())[0]?.enteredRate ?? null'), { timeout: SLOW }).toBe(151.25);
   }, SLOW);
 });
@@ -187,7 +187,7 @@ test('a write of each service shows "Saving locally…" in the one indicator in 
 
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await page.getByLabel('Operating cost per Revenue Hour in USD').fill('151.25');
-  await startWatching(() => page.getByRole('button', { name: 'Save', exact: true }).click(), SLOW);
+  await startWatching(() => page.getByRole('button', { name: 'Save assumptions', exact: true }).click(), SLOW);
   await expect.poll(() => runInPage(page, 'return (await e.db.costingAssumptions.toArray())[0]?.enteredRate ?? null'), { timeout: SLOW }).toBe(151.25);
 });
 

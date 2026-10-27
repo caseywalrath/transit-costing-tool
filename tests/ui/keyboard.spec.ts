@@ -229,10 +229,11 @@ test('focus is not lost after Discard in the Runtime editor or in the Node edito
 
   await page.getByRole('button', { name: 'Route', exact: true }).click();
   await page.getByLabel('Node name').first().fill('Edited node name');
-  const discardNodes = page.getByRole('button', { name: 'Discard changes' }).first();
+  const discardNodes = page.getByRole('button', { name: 'Discard', exact: true }).first();
   await discardNodes.focus();
   await page.keyboard.press('Enter');
-  await expect(discardNodes).toBeDisabled();
+  // The save bar goes away with the draft, and the focus lands on the button that starts the next entry.
+  await expect(discardNodes).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'New node', exact: true })).toBeFocused();
 });
 

@@ -1,11 +1,12 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 
-/** Level 1: the panel the planner works in. One primary action at most, in `actions`. */
-export function WorkSurface({ title, count, subtitle, actions, footer, ariaLabel, className, children }: { title: string; count?: number; subtitle?: ReactNode; actions?: ReactNode; footer?: ReactNode; ariaLabel?: string; className?: string; children: ReactNode }) {
+/** Level 1: the panel the planner works in. One primary action at most, in `actions`. `titleRef` makes the title focusable by script; `badge` sits beside the title. */
+export function WorkSurface({ title, titleRef, count, badge, subtitle, actions, footer, ariaLabel, className, children }: { title: string; titleRef?: Ref<HTMLHeadingElement>; count?: number; badge?: ReactNode; subtitle?: ReactNode; actions?: ReactNode; footer?: ReactNode; ariaLabel?: string; className?: string; children: ReactNode }) {
   return <section className={['work-surface', className].filter(Boolean).join(' ')} aria-label={ariaLabel}>
     <header className="work-surface__header">
-      <h2 className="work-surface__title">{title}</h2>
+      <h2 className="work-surface__title" ref={titleRef} tabIndex={titleRef ? -1 : undefined}>{title}</h2>
       {count !== undefined && <span className="work-surface__count">{count}</span>}
+      {badge}
       {subtitle && <span className="work-surface__subtitle">{subtitle}</span>}
       {actions && <div className="work-surface__actions">{actions}</div>}
     </header>

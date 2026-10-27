@@ -115,11 +115,11 @@ test('Costing assumptions saved in the active tab survive a save attempted in th
     await expect(page.getByLabel('Operating cost per Revenue Hour in USD')).toBeVisible({ timeout: 20000 });
   }
   await active.getByLabel('Operating cost per Revenue Hour in USD').fill('200');
-  await active.getByRole('button', { name: 'Save', exact: true }).click();
+  await active.getByRole('button', { name: 'Save assumptions', exact: true }).click();
   await expect.poll(() => runInPage(active, 'return (await e.db.costingAssumptions.toArray())[0]?.enteredRate')).toBe(200);
 
-  await readOnly.getByLabel('Inflation Rate (%)').fill('5');
-  await readOnly.getByRole('button', { name: 'Save', exact: true }).click();
+  await readOnly.getByLabel('Inflation rate (%)').fill('5');
+  await readOnly.getByRole('button', { name: 'Save assumptions', exact: true }).click();
   await expectRejected(readOnly);
   const stored = await runInPage(active, 'const assumptions = (await e.db.costingAssumptions.toArray())[0]; return { rate: assumptions.enteredRate, escalation: assumptions.annualEscalation }');
   expect(stored.rate).toBe(200);

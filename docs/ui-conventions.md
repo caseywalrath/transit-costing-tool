@@ -12,6 +12,22 @@ The Runtime and Trip header-action conventions below are implemented and accepte
 - A route's selector text is its short name, or "short — name" when another route has the same short name. The selector's `title` is the full route name.
 - The status line, by priority: "Read-only: open in another tab"; "Local save failed"; "Saving locally…"; otherwise "Saved locally · backup N days old" (or "no backup yet"), in the warning colour when the backup is older than seven days or missing. The logic is `headerStatus` in `src/ui/shell/headerStatus.ts`.
 
+## Route tab layout (UR-6a, Decision 0047)
+
+- The top row is two supporting panels: **Route details** (Route name, Short name, Description on one line) and **Annual service days** (the Service days table, a "Total N of 365" line, and the note "Saves when you leave a field"). The Service-day name stays an editable field, so the table form is kept; the plan's four-field strip would have needed a new rename interaction.
+- Below, **Nodes** and **Patterns** are work surfaces. "+ New node" and "+ Add node to pattern" are the last row of their tables.
+- **Save rule.** Standalone fields (route details, service-day counts) save when the field is left. A table or grouped form collects edits and shows a `SaveBar` at the bottom of its panel, only while there are unsaved edits: Nodes ("N unsaved changes in Nodes", **Discard**, **Save nodes**) and the Pattern editor (**Discard**, **Review and save**, which still opens the impact review).
+- The Pattern list is grouped by direction with caption rows. The editor header shows the Pattern name, "Direction · N points · total mi", the visible **Reverse** button, and a "⋯" menu named **Pattern actions** (Duplicate pattern, Delete pattern…; a new unsaved Pattern offers Discard new pattern instead).
+- Below 1100 px wide the top row and the Nodes and Patterns panels stack.
+
+## Costing tab layout (UR-6b, Decision 0047)
+
+- **Costing assumptions** is a work surface (subtitle: "Shared by every blocking scenario in <scenario>"). Its fields are a three-column form labelled in sentence case, with **Inflation rate (%)**. A line under the form lists the annual service days and ends "edit on the Route tab".
+- Its save bar ("N unsaved changes · the estimate below already includes them", or "Not saved yet · …" when the Scenario has no saved assumptions) appears while the form differs from the saved record. **Discard** puts the last saved values back in the form and writes nothing; **Save assumptions** keeps its validation rule. The estimate is calculated from the form, so the message says it already includes the unsaved values.
+- **Cost breakdown · <year>** is a work surface. Its table headings are "Daily revenue (h)", "Daily platform (h)", "Daily cost", "Annual revenue (h)", "Annual platform (h)", and "Annual cost". "No estimate yet", "Partial estimate", and "Invalid inputs" are badges beside the title; the warning and rounding notes are inline notes.
+- **Exclusions** and **Yearly outlook** are supporting panels.
+- "Export costing CSV" is a visible button in header row 2 (UR-5); the Costing actions menu no longer exists.
+
 ## Phase 4 implemented Blocking conventions
 
 - Blocking uses Trip Profile, Blocking Scenario, selected Route, and Day as context. The selected Route filters candidate Trips but never hides or truncates activities in the selected Block.
@@ -32,7 +48,7 @@ The Runtime and Trip header-action conventions below are implemented and accepte
 - Dense tables commit text and numeric edits on blur. This avoids local-save writes racing with active keyboard entry. Enter commits numeric values; Escape restores the saved value. Select changes and explicit actions commit immediately.
 - Numeric fields retain their last saved value when blank or invalid input is left in the field, show an announced inline error, and treat zero as a valid value.
 - Wide tables scroll horizontally on narrow screens. The left identifying column remains frozen on desktop table scroll.
-- Removing a Node or a Pattern point is a draft change, not a modal confirmation. A removed Node row shows **Will be deleted** with **Undo**; the removal is applied by **Save nodes** or **Save Pattern**, whose review states the effect on Patterns, Runtimes, Trips, and Blocks, and **Discard changes** restores the saved collection (see the Route conventions in this document, Decision 0014, and Decision 0041). The older modal confirmation for a single removal no longer exists.
+- Removing a Node or a Pattern point is a draft change, not a modal confirmation. A removed Node row shows **Will be deleted** with **Undo**; the removal is applied by **Save nodes** or **Review and save** (Pattern), whose review states the effect on Patterns, Runtimes, Trips, and Blocks, and **Discard** restores the saved collection (see the Route conventions in this document, Decision 0014, and Decision 0041). The older modal confirmation for a single removal no longer exists.
 - Pattern point order uses visible up and down controls. Repeated node selections are valid and are described in the empty state. Add-node and add-point actions appear after their respective lists, preserving an uninterrupted entry sequence.
 - Validation is calculated by the domain layer, but message keys and rule identifiers are never shown to users. Findings are translated into concise planner-facing text. Route-level findings appear with the affected field. New blank node and pattern drafts use a required-field placeholder rather than immediate validation messages; validation remains available to later workflow checks.
 - A primary tab whose prerequisite is missing is disabled with an explanatory title (Trips needs a Pattern with at least two points; Blocking needs a Route and a Trip Profile; Costing needs a Scenario). A disabled tab does not imply missing route data.
@@ -43,13 +59,13 @@ The Runtime and Trip header-action conventions below are implemented and accepte
 
 ## Phase 2R safe route editing
 
-- Nodes are edited as a local table draft. **Save nodes** is the only write action. Pending deletion rows state **Will be deleted** and offer **Undo**; **Discard changes** returns the saved collection.
-- Patterns are edited one at a time as a local draft. A new, duplicated, or reverse Pattern is marked **Unsaved** and does not change Runtimes or Trips until **Save Pattern** succeeds. **Save Pattern** and **Discard changes** are disabled when the selected Pattern has no unsaved edits. New Nodes are not available in a Pattern selector until their Node draft is saved.
+- Nodes are edited as a local table draft. **Save nodes** (in the Nodes save bar) is the only write action. Pending deletion rows state **Will be deleted** and offer **Undo**; **Discard** returns the saved collection and moves the focus to **New node**.
+- Patterns are edited one at a time as a local draft. A new, duplicated, or reverse Pattern is marked **Unsaved** and does not change Runtimes or Trips until **Review and save** succeeds. The Pattern save bar ("N unsaved changes in this pattern", or "New pattern — not saved") and its **Discard** and **Review and save** buttons appear only while the selected Pattern has unsaved edits. New Nodes are not available in a Pattern selector until their Node draft is saved.
 - The **Add pattern** action is placed at the bottom of the Pattern list so the list reads top-to-bottom as existing Patterns followed by the creation action. **New node** and **Add pattern** are disabled while a Node or Pattern save is running, so a draft is never opened in the middle of a save whose reload follows.
 - Changing the Route, project, scenario, primary tab, or adding a route while a Node or Pattern draft is dirty opens **Save route changes before leaving?** with **Save**, **Discard**, and **Cancel**. Save follows the ordinary impact review; Pattern work is resolved before Node work.
 - Deterministic Pattern structure changes open a **Save and rebalance** decision. New inserted points receive their predecessor's scheduled time and a zero first segment; removing an intermediate point merges the adjacent runtime segments.
 - A reordered or broadly replaced Pattern opens the destructive **Save and reset service** decision. It removes only profiles, assignments, trips, historical generation records, and revenue-trip block activities owned by that Pattern. Empty blocks remain.
-- A timetable-order conflict appears beside **Save Pattern** and names the conflicting Patterns and timepoints. It is not a global banner and cannot be overridden by deleting service.
+- A timetable-order conflict appears above the Pattern save bar and names the conflicting Patterns and timepoints. It is not a global banner and cannot be overridden by deleting service.
 
 ## Phase 2 runtime editor
 

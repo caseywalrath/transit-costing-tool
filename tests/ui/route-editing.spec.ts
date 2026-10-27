@@ -14,7 +14,7 @@ test('keeps Node and Pattern drafts local until their explicit saves', async ({ 
 
   await page.getByRole('button', { name: 'New node', exact: true }).click();
   await page.getByLabel('Node name').fill('Unsaved node');
-  await page.getByRole('button', { name: 'Discard changes', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Discard', exact: true }).first().click();
   await expect(page.getByLabel('Node name')).toHaveCount(0);
   expect(await runInPage(page, 'return await e.db.nodes.count()')).toBe(0);
 
@@ -37,12 +37,12 @@ test('keeps Node and Pattern drafts local until their explicit saves', async ({ 
 
   await page.getByRole('button', { name: 'Add pattern', exact: true }).click();
   await expect(page.getByText('New Pattern — not saved')).toBeVisible();
-  await page.getByRole('button', { name: 'Add node', exact: true }).click();
+  await page.getByRole('button', { name: 'Add node to pattern', exact: true }).click();
   await expect(page.getByLabel('Point 1 node')).toBeVisible();
-  await page.getByRole('button', { name: 'Add node', exact: true }).click();
+  await page.getByRole('button', { name: 'Add node to pattern', exact: true }).click();
   await expect(page.getByLabel('Point 2 node')).toBeVisible();
   await page.getByLabel('Point 2 node').selectOption({ label: 'B' });
-  await page.getByRole('button', { name: 'Save Pattern', exact: true }).click();
+  await page.getByRole('button', { name: 'Review and save', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Save Pattern and rebalance?' })).toBeVisible();
   await page.getByRole('button', { name: 'Save and rebalance', exact: true }).click();
   await expect(page.getByText('New Pattern — not saved')).toHaveCount(0);

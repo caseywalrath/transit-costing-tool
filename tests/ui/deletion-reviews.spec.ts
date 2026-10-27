@@ -3,7 +3,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule } from './support/tripsWorkspace';
-import { scenarioSwitcher } from './support/ui';
+import { runCommand, scenarioSwitcher } from './support/ui';
 
 test.setTimeout(90_000);
 
@@ -134,7 +134,7 @@ test('Delete Pattern removes the Pattern and its Trips after the review and is r
   await createShiftReadySchedule(page, '06:20');
   await page.getByRole('button', { name: 'Route', exact: true }).click();
   const openDelete = async (trips: string) => {
-    await page.getByRole('button', { name: /^Delete Pattern/ }).click();
+    await runCommand(page, 'pattern.delete');
     await expect(page.getByRole('alertdialog', { name: 'Delete Pattern?' })).toContainText(trips);
   };
   await openDelete('3 trips');

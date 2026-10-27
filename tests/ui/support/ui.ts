@@ -92,6 +92,8 @@ const commands = {
   'scenario.rename': { menu: 'Scenario actions', trigger: /^Scenario: /, item: 'Rename scenario…' },
   'scenario.duplicate': { menu: 'Scenario actions', trigger: /^Scenario: /, item: 'Duplicate scenario…' },
   'scenario.delete': { menu: 'Scenario actions', trigger: /^Scenario: /, item: 'Delete scenario…' },
+  'pattern.duplicate': { menu: 'Pattern actions', item: 'Duplicate pattern' },
+  'pattern.delete': { menu: 'Pattern actions', item: 'Delete pattern…' },
   'route.new': { menu: 'Route actions', item: 'New route' },
   'route.rename': { menu: 'Route actions', item: 'Rename route' },
   'route.duplicate': { menu: 'Route actions', item: 'Duplicate route' },

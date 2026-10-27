@@ -1,6 +1,6 @@
 # UI revision plan (Phase UR)
 
-- Status: Approved design; UR-0, UR-1, UR-3, and UR-4 done; UR-2 awaits its visual review gate; UR-5 implemented and awaits its gate.
+- Status: Approved design; UR-0, UR-1, UR-3, and UR-4 done; UR-2 awaits its visual review gate; UR-5 implemented and awaits its gate; UR-6a and UR-6b implemented and await their shared gate.
 - Date: 2026-10-27
 - Decision record: `docs/decisions/0047-interface-revision-design-system.md`
 - Base: `main` at the merge of PR #30 (`fd42c5d`, Decision 0046: Regenerate selected and Undo last regeneration are separate Trips actions). This plan keeps that behaviour (section 3, row "Regenerate and undo").

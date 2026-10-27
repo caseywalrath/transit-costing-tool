@@ -1,5 +1,3 @@
-.route-overview-grid { display: grid; grid-template-columns: minmax(440px, 1.2fr) minmax(360px, .8fr); gap: 14px; }
-.route-details, .route-overview-grid > section, .definition-grid > section { border: 1px solid var(--color-border); border-top: 3px solid var(--color-accent); background: var(--color-surface); padding: var(--space-3); }
 .field-grid { display: grid; grid-template-columns: repeat(2, minmax(150px, 1fr)); gap: var(--space-2) 14px; margin-top: 10px; align-items: start; }
 .field-grid label { display: grid; gap: var(--space-1); color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
 .field-grid .wide { grid-column: 1 / -1; }
@@ -7,8 +5,6 @@
 .section-title { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); }
 .section-title > span { color: var(--color-text-muted); font-size: var(--font-size-label); }
 .section-title > div { display: flex; gap: var(--space-1); }
-.definition-grid { display: grid; grid-template-columns: minmax(460px, .9fr) minmax(560px, 1.1fr); gap: 14px; }
-.definition-grid > section { min-width: 0; }
 .table-scroll { overflow-x: auto; border: 1px solid var(--color-border); }
 table { border-collapse: collapse; width: 100%; min-width: 510px; }
 .service-days-table table { min-width: 0; }

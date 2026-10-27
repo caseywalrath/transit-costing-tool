@@ -4,6 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
+import { runCommand } from './support/ui';
 
 test.setTimeout(120_000);
 test.use({ actionTimeout: 15_000 });
@@ -137,13 +138,11 @@ test('Delete Blocking Scenario shows its Blocks and activities, and is refused i
   await expect.poll(() => runInPage(page, 'return [await e.db.blockingScenarios.count(), await e.db.blocks.count()]')).toEqual([0, 0]);
 });
 
-test('the Delete Pattern button and its confirmation both read "Delete Pattern"', async ({ page }) => {
+test('the Pattern actions menu offers "Delete pattern…" and its confirmation reads "Delete Pattern"', async ({ page }) => {
   await seedSnapshot(page, { ...goldenRaw(), generationSets: [] });
   await page.goto('/');
-  const button = page.getByRole('button', { name: /^Delete Pattern/ });
-  await expect(button).toBeVisible({ timeout: 30_000 });
-  await expect(button).toHaveText('Delete Pattern');
-  await button.click();
+  await expect(page.getByRole('button', { name: 'Pattern actions', exact: true })).toBeVisible({ timeout: 30_000 });
+  await runCommand(page, 'pattern.delete');
   const confirm = page.getByRole('alertdialog', { name: 'Delete Pattern?' });
   await expect(confirm).toBeVisible();
   await expect(confirm.getByRole('button', { name: 'Delete Pattern', exact: true })).toBeVisible();
