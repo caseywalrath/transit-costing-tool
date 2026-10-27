@@ -23,13 +23,13 @@ test('keeps Node and Pattern drafts local until their explicit saves', async ({ 
   await page.getByRole('button', { name: 'New node', exact: true }).click();
   await page.getByLabel('Node name').fill('A');
   await saveNodes.click();
-  await expect(saveNodes).toBeDisabled();
+  await expect(saveNodes).toHaveCount(0); // the save bar goes away once the draft is saved
   await expect(page.getByRole('button', { name: 'Remove A', exact: true })).toBeVisible();
   await expect.poll(() => runInPage(page, 'return await e.db.nodes.count()')).toBe(1);
   await page.getByRole('button', { name: 'New node', exact: true }).click();
   await page.getByLabel('Node name').last().fill('B');
   await saveNodes.click();
-  await expect(saveNodes).toBeDisabled();
+  await expect(saveNodes).toHaveCount(0); // the save bar goes away once the draft is saved
   await expect(page.getByRole('button', { name: 'Remove B', exact: true })).toBeVisible();
   // "Save nodes" is disabled from the moment the save starts, so it does not show that the save has finished. Wait for the stored rows;
   // "Add pattern" is also disabled until the save's reload has landed (finding L-16).

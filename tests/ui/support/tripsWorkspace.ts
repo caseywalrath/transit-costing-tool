@@ -24,12 +24,12 @@ export async function createRouteWithPattern(page: Page, projectName: string) {
   await page.getByRole('button', { name: 'New node', exact: true }).click();
   await page.getByLabel('Node name').fill('A');
   await saveNodes.click();
-  await expect(saveNodes).toBeDisabled();
+  await expect(saveNodes).toHaveCount(0); // the save bar goes away once the draft is saved
   await expect(page.getByRole('button', { name: 'Remove A', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'New node', exact: true }).click();
   await page.getByLabel('Node name').last().fill('B');
   await saveNodes.click();
-  await expect(saveNodes).toBeDisabled();
+  await expect(saveNodes).toHaveCount(0); // the save bar goes away once the draft is saved
   await expect(page.getByRole('button', { name: 'Remove B', exact: true })).toBeVisible();
 
   // "Add pattern" stays disabled until the Node save and its reload are done (review package F1, finding L-16), so the click waits for it.
