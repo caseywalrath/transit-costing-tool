@@ -3,7 +3,7 @@
 - Status: Accepted and implemented
 - Date: 2026-10-21 (the date of the first commit of this record)
 - Supersedes: Decision 0004's statement that undo is not included (item 3 adds a one-step regeneration undo); Decision 0032's default for new profiles (item 1)
-- Superseded in part by: Decision 0044 (item 2: the Trips CSV mirrors the Trips table and is output only); Decision 0045 (item 1: a new profile takes its Route's method, and Runtime profile CSV is output only)
+- Superseded in part by: Decision 0044 (item 2: the Trips CSV mirrors the Trips table and is output only); Decision 0045 (item 1: a new profile takes its Route's method, and Runtime profile CSV is output only); Decision 0046 (item 4: Undo last regeneration is a separate menu item and no longer replaces Regenerate selected)
 
 ## Context
 

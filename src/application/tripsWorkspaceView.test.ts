@@ -2,8 +2,8 @@
 // the Build Trips form) is computed here, not in App.tsx.
 import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
-import type { BlockActivity, BlockingBlock, RoutePattern, RuntimeBand, RuntimeProfile, Trip } from '../domain/types';
-import { buildTripTableView, buildTripsFieldProblems, parseBuildTripsForm, tripBlockAssignmentImpact, tripBlockUnassignmentImpact, type BuildTripsFormValues } from './tripsWorkspaceView';
+import type { BlockActivity, BlockingBlock, RoutePattern, RuntimeBand, RuntimeProfile, Trip, TripRegenerationUndo } from '../domain/types';
+import { buildTripTableView, buildTripsFieldProblems, parseBuildTripsForm, regenerationUndoApplies, tripBlockAssignmentImpact, tripBlockUnassignmentImpact, type BuildTripsFormValues } from './tripsWorkspaceView';
 
 const stamp = metadata('2026-10-23T00:00:00.000Z');
 const pattern = (id: string): RoutePattern => ({ ...stamp, id, scenarioId: 's', routeId: 'r', name: id, directionId: 'out', points: [0, 1].map((index) => ({ id: `${id}-${index}`, nodeId: `n${index}`, sequence: index, cumulativeMiles: index, directionColumnId: `col-${index}` })) });
@@ -121,5 +121,25 @@ describe('Block assignment impact counts', () => {
     expect(impact.sourceBlockLabels).toEqual(['1']);
     expect(impact.deadheadCount).toBe(1);
     expect(tripBlockUnassignmentImpact(['t2'], blocks, assignments).deadheadCount).toBe(2);
+  });
+});
+
+describe('when the regeneration undo applies to the schedule on screen (Decision 0046)', () => {
+  const shown = [trip('t1', 'a', [100, 700]), trip('t2', 'a', [200, 800])];
+  const undo = (overrides: Partial<TripRegenerationUndo> = {}): TripRegenerationUndo => ({ id: 'last', scenarioId: 's', tripProfileId: 'tp', createdAt: stamp.createdAt, beforeTrips: [shown[0]], afterTrips: [shown[0]], ...overrides });
+
+  it('applies when it belongs to the Scenario and Trip Profile and every Trip it covers is shown', () => {
+    expect(regenerationUndoApplies(undo(), 's', 'tp', shown)).toBe(true);
+    expect(regenerationUndoApplies(undo({ afterTrips: shown }), 's', 'tp', shown)).toBe(true);
+  });
+
+  it.each([
+    ['there is none', undefined, 's', 'tp'],
+    ['it belongs to another Scenario', undo(), 'other', 'tp'],
+    ['it belongs to another Trip Profile', undo(), 's', 'other'],
+    ['it covers no Trip', undo({ afterTrips: [] }), 's', 'tp'],
+    ['a Trip it covers is not shown', undo({ afterTrips: [...shown, trip('t3', 'a', [300, 900])] }), 's', 'tp'],
+  ])('does not apply when %s', (_label, snapshot, scenarioId, tripProfileId) => {
+    expect(regenerationUndoApplies(snapshot, scenarioId, tripProfileId, shown)).toBe(false);
   });
 });

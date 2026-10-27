@@ -9,7 +9,7 @@ import { addRuntimeBand, describeTripBandShading, duplicateRuntimeBand, removeRu
 import { formatServiceTime, parseServiceTime } from '../domain/time';
 import { formatNetShift, formatStagedShift, parseShiftSeconds } from '../domain/tripShift';
 import { MAX_TRIPS_PER_GENERATION, calculateTimepointHeadways, duplicateDepartureKeys, roundServiceTimeToMinute, tripRunTimeSeconds, validateGenerateTripsRequest } from '../domain/trips';
-import type { BlockingBlock, GenerateTripsRequest, RoutePattern, RuntimeBand, RuntimeProfile, ServiceSeconds, Trip } from '../domain/types';
+import type { BlockingBlock, GenerateTripsRequest, RoutePattern, RuntimeBand, RuntimeProfile, ServiceSeconds, Trip, TripRegenerationUndo } from '../domain/types';
 import { removeSelectedTripsFromBlock } from './blockingService';
 
 export {
@@ -20,6 +20,17 @@ export type { BlendedSegment, RuntimeCalculationMethod };
 
 /** A layover, deadhead, or headway as the Trips table shows it: `H:MM`, with seconds when not whole minutes, and a leading minus when negative. */
 export function formatTripConnectionDuration(seconds?: number) { return seconds === undefined || !Number.isInteger(seconds) ? '' : `${seconds < 0 ? '−' : ''}${formatServiceTime(Math.abs(seconds), seconds % 60 !== 0)}`; }
+
+/**
+ * Whether the saved one-step regeneration undo applies to the schedule on screen: it belongs to this Scenario and Trip Profile, covers at
+ * least one Trip, and every Trip it covers is shown. Trips Actions lists **Undo last regeneration** only while this is true (Decision 0046).
+ * Whether a covered Trip still has its regenerated times is checked when the undo runs.
+ */
+export function regenerationUndoApplies(undo: TripRegenerationUndo | undefined, scenarioId: string, tripProfileId: string, shownTrips: Trip[]): undo is TripRegenerationUndo {
+  if (!undo || undo.scenarioId !== scenarioId || undo.tripProfileId !== tripProfileId || undo.afterTrips.length === 0) return false;
+  const shownIds = new Set(shownTrips.map((trip) => trip.id));
+  return undo.afterTrips.every((trip) => shownIds.has(trip.id));
+}
 
 export interface TripRowView { runTimeSeconds?: number; duplicate: boolean; singleBand?: RuntimeBand; segments?: BlendedSegment[] }
 export type TripHeadways = ReturnType<typeof calculateTimepointHeadways>;
