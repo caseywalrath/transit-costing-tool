@@ -87,8 +87,7 @@ test('after a stale-source refusal Blocking reloads its data and shows the messa
   expect(changed).toBeGreaterThan(0);
 
   const blocksBefore = await runInPage(page, 'return await e.db.blocks.count()');
-  await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New Block…', exact: true }).click();
+  await currentBlock.getByRole('button', { name: 'New block', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'New Block' });
   await dialog.getByLabel('Name').fill('Block 900');
   await dialog.getByRole('button', { name: 'Create Block', exact: true }).click();
@@ -120,8 +119,7 @@ test('a typed Blocking refusal is shown once, as written', async ({ page }) => {
   await page.getByLabel('Blocks', { exact: true }).locator('.link-button').filter({ hasText: /^26$/ }).click();
   await expect(blockMenu).toContainText('26');
 
-  await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New Block…', exact: true }).click();
+  await currentBlock.getByRole('button', { name: 'New block', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'New Block' });
   await dialog.getByLabel('Name').fill('26');
   await dialog.getByRole('button', { name: 'Create Block', exact: true }).click();

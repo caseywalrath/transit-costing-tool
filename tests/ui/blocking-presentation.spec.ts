@@ -74,7 +74,7 @@ test('Delete Block shows what it removes, deletes with the reviewed source, and 
   await selectBlock(page, '26');
   const counts = await runInPage(page, "const day = (await e.db.serviceDays.toArray()).find((item) => item.kind === 'weekday'); const block = (await e.db.blocks.toArray()).find((item) => item.label === '26' && item.serviceDayId === day.id); return { trips: block.activities.filter((a) => a.type === 'revenueTrip').length, deadheads: block.activities.filter((a) => a.type === 'deadhead').length, activities: block.activities.length };");
   const confirm = page.getByRole('alertdialog');
-  const open = async () => { await currentBlock(page).getByRole('button', { name: 'Current Block actions', exact: true }).click(); await page.getByRole('menuitem', { name: 'Delete Block…', exact: true }).click(); };
+  const open = async () => { await currentBlock(page).getByRole('button', { name: 'Current Block actions', exact: true }).click(); await page.getByRole('menuitem', { name: 'Delete block…', exact: true }).click(); };
 
   await open();
   await expect(confirm.getByRole('heading', { name: 'Delete Block?' })).toBeVisible();
@@ -104,7 +104,7 @@ test('Delete Block uses the source it reviewed, even when the screen was loaded 
   // Another path changes a Block after the screen loaded it. The review reads the stored data, so deleting what was reviewed works.
   await runInPage(page, "const day = (await e.db.serviceDays.toArray()).find((item) => item.kind === 'weekday'); const block = (await e.db.blocks.toArray()).find((item) => item.label === '26' && item.serviceDayId === day.id); await e.db.blocks.put({ ...block, notes: 'Changed before the review' });");
   await currentBlock(page).getByRole('button', { name: 'Current Block actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Delete Block…', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Delete block…', exact: true }).click();
   const confirm = page.getByRole('alertdialog');
   await confirm.getByRole('button', { name: 'Delete Block', exact: true }).click();
   await expect(confirm).toHaveCount(0);
@@ -175,7 +175,7 @@ test('a Trip from another Route shows that Route in its Pattern pill and resolve
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await selectBlock(page, 'Cross');
 
-  const rows = currentBlock(page).locator('tbody tr');
+  const rows = currentBlock(page).locator('tbody tr:not(.blocking-add-row)');
   await expect(rows).toHaveCount(2);
   const ownPill = rows.nth(0).locator('.pattern-pill');
   const otherPill = rows.nth(1).locator('.pattern-pill');

@@ -104,8 +104,7 @@ test('flags a duplicate departure and warns on both Trips when a Block overlaps 
   await page.getByRole('dialog', { name: 'New Blocking Scenario' }).getByLabel('Name').fill('Overlap check');
   await page.getByRole('dialog', { name: 'New Blocking Scenario' }).getByRole('button', { name: 'Create', exact: true }).click();
   const currentBlock = page.getByLabel('Current Block');
-  await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New Block…', exact: true }).click();
+  await currentBlock.getByRole('button', { name: 'New block', exact: true }).click();
   await page.getByRole('dialog', { name: 'New Block' }).getByLabel('Name').fill('Block 1');
   await page.getByRole('dialog', { name: 'New Block' }).getByRole('button', { name: 'Create Block', exact: true }).click();
   await expect(currentBlock.getByRole('button', { name: /Block 1/ })).toBeVisible();

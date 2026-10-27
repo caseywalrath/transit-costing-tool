@@ -96,8 +96,7 @@ test('a full browser store is reported in plain words, and the save status shows
 
   // Blocking write: New Block.
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await page.getByLabel('Current Block').getByRole('button', { name: 'Current Block actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New Block…', exact: true }).click();
+  await page.getByLabel('Current Block').getByRole('button', { name: 'New block', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'New Block' });
   await dialog.getByLabel('Name').fill('QuotaBlock');
   const blocksBefore = await runInPage(page, 'return await e.db.blocks.count()');
@@ -175,8 +174,7 @@ test('a write of each service shows "Saving locally…" in the one indicator in 
   await expect.poll(() => runInPage(page, 'return await e.db.trips.count()')).toBe(tripsBefore + 2);
 
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await page.getByLabel('Current Block').getByRole('button', { name: 'Current Block actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New Block…', exact: true }).click();
+  await page.getByLabel('Current Block').getByRole('button', { name: 'New block', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'New Block' });
   await dialog.getByLabel('Name').fill('IndicatorBlock');
   const blocksBefore = await runInPage(page, 'return await e.db.blocks.count()');

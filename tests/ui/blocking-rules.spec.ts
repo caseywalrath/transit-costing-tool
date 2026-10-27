@@ -26,8 +26,7 @@ async function openBlockingWithTrips(page: Page, tripCount: number) {
 
 async function newBlock(page: Page, name?: string) {
   const currentBlock = page.getByLabel('Current Block');
-  await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New Block…', exact: true }).click();
+  await currentBlock.getByRole('button', { name: 'New block', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'New Block' });
   if (name !== undefined) await dialog.getByLabel('Name').fill(name);
   return dialog;
@@ -43,7 +42,7 @@ test('apply to all similar Trips adds a deadhead to every matching connection: 5
     await expect(unassigned.locator('.assign-button')).toHaveCount(4 - index);
   }
   const currentBlock = page.getByLabel('Current Block');
-  await expect(currentBlock.locator('tbody tr')).toHaveCount(5);
+  await expect(currentBlock.locator('tbody tr:not(.blocking-add-row)')).toHaveCount(5);
   await currentBlock.getByRole('button', { name: 'Add deadhead' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Add Deadhead' });
   await dialog.getByLabel('Deadhead duration (minutes)').fill('3');
@@ -56,13 +55,14 @@ test('apply to all similar Trips adds a deadhead to every matching connection: 5
 });
 
 test('a blank minutes field is refused for a deadhead, a bulk pull-out, and a minimum layover', async ({ page }) => {
-  await openBlockingWithTrips(page, 2);
+  // A third Trip stays unassigned: with none left the panel is a rail, and the minimum layover (in the panel's menu) is checked at the end.
+  await openBlockingWithTrips(page, 3);
   await (await newBlock(page)).getByRole('button', { name: 'Create Block', exact: true }).click();
   const unassigned = page.getByLabel('Unassigned Trips');
   for (let index = 0; index < 2; index += 1) {
     await expect(unassigned.locator('.assign-button').first()).toBeEnabled();
     await unassigned.locator('.assign-button').first().click();
-    await expect(unassigned.locator('.assign-button')).toHaveCount(1 - index);
+    await expect(unassigned.locator('.assign-button')).toHaveCount(2 - index);
   }
   const currentBlock = page.getByLabel('Current Block');
   const error = page.locator('.notice.error');
@@ -77,8 +77,7 @@ test('a blank minutes field is refused for a deadhead, a bulk pull-out, and a mi
   await expect(currentBlock.locator('.deadhead-value')).toHaveCount(0);
   await error.getByRole('button', { name: 'Dismiss message' }).click();
 
-  await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Add pull-out…' }).click();
+  await currentBlock.getByRole('button', { name: '+ Add pull-out', exact: true }).click();
   const pullOut = page.getByRole('dialog', { name: 'Add Pull-out' });
   await pullOut.getByLabel('Minutes before first Trip').fill('');
   await pullOut.getByRole('combobox', { name: 'To', exact: true }).selectOption({ label: 'A' });
@@ -93,7 +92,7 @@ test('a blank minutes field is refused for a deadhead, a bulk pull-out, and a mi
   await expect(currentBlock.getByRole('cell', { name: 'Pull-out', exact: true })).toHaveCount(0);
 
   await page.getByLabel('Unassigned Trips').getByRole('button', { name: 'Unassigned Trip actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: /Minimum layover/ }).click();
+  await page.getByRole('menuitem', { name: /^Minimum layover/ }).click();
   const layover = page.getByRole('dialog', { name: 'Minimum layover' });
   await layover.getByLabel('Minutes', { exact: true }).fill('');
   await expect(layover.getByRole('alert')).toBeVisible();
@@ -129,7 +128,7 @@ test('a Block label is unique on its service day, and New Block proposes the fir
   await currentBlock.getByRole('button', { name: /^Block 3/ }).click();
   await page.getByRole('menuitemradio', { name: 'Block 2', exact: true }).click();
   await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Delete Block…' }).click();
+  await page.getByRole('menuitem', { name: 'Delete block…' }).click();
   await page.getByRole('alertdialog', { name: 'Delete Block?' }).getByRole('button', { name: /^Delete/ }).last().click();
   await expect(page.getByRole('alertdialog', { name: 'Delete Block?' })).toBeHidden();
   expect(await blockNames()).toEqual(['Block 1', 'Block 3']);
@@ -141,7 +140,7 @@ test('a Block label is unique on its service day, and New Block proposes the fir
 
   // A rename to another Block's label is refused; the Block keeps its name.
   await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Rename Block…' }).click();
+  await page.getByRole('menuitem', { name: 'Rename block…' }).click();
   const rename = page.getByRole('dialog', { name: 'Rename Block' });
   await rename.getByLabel('Name').fill('Block 1');
   await rename.getByRole('button', { name: /Rename|Save/ }).click();

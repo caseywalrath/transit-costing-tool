@@ -1,5 +1,6 @@
 // Screenshot tour for visual review. Skipped unless UI_TOUR=1. Output: test-results/ui-tour/<width>/<tab>.png
 import { test, expect } from '@playwright/test';
+import { runInPage } from './support/dexieEnv';
 import { openGoldenTrips } from './support/tripsWorkspace';
 import { openRuntimes } from './support/ui';
 
@@ -33,6 +34,21 @@ for (const width of [1024, 1440]) {
     await page.evaluate(() => window.scrollBy(0, 200));
     await page.waitForTimeout(300);
     await page.screenshot({ path: out('trips-selection-scrolled'), fullPage: false });
-    // Packages add states here, for example headways on, Blocking with unassigned trips.
+    // UR-6d: Blocking with unassigned trips (Block 11 deleted, so its Trips are unassigned), with selections in both tables. The shot above
+    // (`blocking`) is the rail, because every weekday Trip of the golden project is assigned.
+    await runInPage(page, "const day = (await e.db.serviceDays.toArray()).find((item) => item.kind === 'weekday'); const block = (await e.db.blocks.toArray()).find((item) => item.label === '11' && item.serviceDayId === day.id); await e.db.blocks.delete(block.id);");
+    await page.reload();
+    await page.getByRole('button', { name: 'Blocking', exact: true }).click();
+    const unassigned = page.getByLabel('Unassigned Trips', { exact: true });
+    await expect(unassigned).toBeVisible();
+    const block = page.getByRole('region', { name: 'Current Block', exact: true });
+    await block.locator('.menu-field').getByRole('button').first().click();
+    await page.getByRole('menuitemradio', { name: '26', exact: true }).click();
+    await unassigned.locator('tbody input[type="checkbox"]').nth(0).check();
+    await block.locator('tbody input[type="checkbox"]').nth(2).check();
+    await block.locator('tbody input[type="checkbox"]').nth(3).check();
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: out('blocking-unassigned'), fullPage: true });
+    // Packages add states here, for example headways on.
   });
 }

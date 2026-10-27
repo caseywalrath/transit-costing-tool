@@ -1,15 +1,40 @@
 /* Phase 4 blocking workspace: route-scoped candidates and complete Block detail. */
 .blocking-workspace { display: grid; gap: 14px; max-width: 100%; }
 .blocking-workspace h1 { margin: 0; font-size: var(--font-size-title); }
-.blocking-editor-grid { display: grid; grid-template-columns: minmax(380px, .72fr) minmax(650px, 1.28fr); gap: 14px; min-width: 0; }
-.blocking-lower-grid { display: grid; grid-template-columns: minmax(430px, 2.2fr) minmax(280px, .9fr); gap: 14px; min-width: 0; }
-.blocking-editor-grid > section, .blocking-lower-grid > section { min-width: 0; }
+/* BL-A. Side mode gives the Unassigned trips panel 34% of the width (at least 420px); rail mode narrows it to a 46px button. The first track is
+   `max(420px, 34%)`, not `minmax(…)`, because a track list animates only between lengths, and the column change takes 200ms. */
+.blocking-top { display: grid; grid-template-columns: max(420px, 34%) minmax(0, 1fr); gap: 14px; align-items: start; min-width: 0; transition: grid-template-columns 200ms ease; }
+.blocking-top--rail { grid-template-columns: 46px minmax(0, 1fr); }
+.blocking-top > * { min-width: 0; }
+@media (prefers-reduced-motion: reduce) { .blocking-top { transition: none; } }
+.unassigned-rail { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 46px; min-height: 180px; border: 1px solid var(--color-border); border-radius: var(--radius-panel); background: var(--color-surface); padding: var(--space-2) 0; color: var(--color-text-muted); cursor: pointer; }
+.unassigned-rail:hover { background: var(--color-sunken); }
+.unassigned-rail__arrow { font-size: var(--font-size-label); }
+.unassigned-rail__badge { min-width: 24px; border: 1px solid; border-radius: var(--radius-pill); padding: 1px 6px; font-size: var(--font-size-label); font-weight: var(--font-weight-bold); line-height: 1.3; }
+.unassigned-rail__badge--ok { border-color: var(--color-ok); background: var(--color-ok-soft); color: var(--color-ok); }
+.unassigned-rail__badge--warn { border-color: var(--color-warn-border); background: var(--color-warn-soft); color: var(--color-warn); }
+.unassigned-rail__label { writing-mode: vertical-rl; transform: rotate(180deg); font-size: var(--font-size-note); font-weight: var(--font-weight-bold); white-space: nowrap; }
+.toggle-button { border-radius: var(--radius-pill); }
+.toggle-button[aria-pressed="true"] { border-color: var(--color-accent); background: var(--color-selection); color: var(--color-accent-strong); font-weight: var(--font-weight-bold); }
+.blocking-workspace .work-surface__context .menu-field { display: inline-flex; flex-direction: row; align-items: center; flex: none; gap: 6px; }
+.blocking-workspace .work-surface__context .menu-field .menu-trigger { width: auto; min-width: 0; }
+.blocking-workspace .selection-bar { margin-bottom: var(--space-2); }
+.blocking-workspace .selection-bar .subtle-danger { color: var(--color-danger); }
+.blocking-add-row td { padding: var(--space-1) var(--space-2); }
+.blocking-add-row .link-button { text-decoration: none; }
+.blocking-add-row .link-button:hover:not(:disabled) { text-decoration: underline; }
+.blocking-workspace .inline-note { margin-top: var(--space-2); }
+.stat-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin: 0; }
+.stat-strip > div { border-left: 1px solid var(--color-border-soft); padding: 0 var(--space-3); }
+.stat-strip > div:first-child { border-left: 0; padding-left: 0; }
+.stat-strip dt { color: var(--color-text-muted); font-size: var(--font-size-label); }
+.stat-strip dd { margin: 2px 0 0; font-size: var(--font-size-title); font-variant-numeric: tabular-nums; font-weight: var(--font-weight-bold); }
 .blocking-trips-table table { width: 100%; min-width: 0; table-layout: fixed; }
 .blocking-trips-table .blocking-selection-column { width: 34px; min-width: 34px; padding: var(--space-1) 7px; text-align: center; }
 .blocking-trips-table .blocking-selection-column input { width: 15px; min-height: 15px; vertical-align: middle; }
 .block-activities-table table { width: 100%; min-width: 0; table-layout: fixed; }
-.block-activities-table .blocking-pattern-column { width: 13%; }
-.block-activities-table .blocking-node-column { width: 17%; overflow: hidden; text-overflow: ellipsis; }
+.block-activities-table .blocking-pattern-column { width: 20%; }
+.block-activities-table .blocking-node-column { width: 11%; overflow: hidden; text-overflow: ellipsis; }
 .blocking-blocks-table table { width: 100%; min-width: 1040px; table-layout: fixed; }
 .blocking-blocks-table .blocking-block-name-column { width: 9.5%; }
 .blocking-blocks-table .blocking-block-trips-column { width: 5.5%; }
@@ -27,12 +52,12 @@
 .blocking-block-status--invalid { border-color: var(--color-danger); background: var(--color-danger-soft); color: var(--color-danger); }
 .blocking-block-status:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .blocking-blocks-table tfoot { background: var(--color-sunken); font-weight: var(--font-weight-bold); }
-.blocking-blocks-table tfoot th { text-align: left; }
+.blocking-blocks-table tfoot th { background: var(--color-sunken); font-size: var(--font-size-body); text-align: left; }
 .blocking-workspace .data-grid th, .blocking-workspace .data-grid td { font-variant-numeric: tabular-nums; }
 .blocking-trips-table th, .blocking-trips-table td, .block-activities-table th, .block-activities-table td, .blocking-blocks-table th, .blocking-blocks-table td { white-space: nowrap; }
-.blocking-trips-table .blocking-pattern-column { width: 20%; }
-.blocking-trips-table .blocking-node-column { width: 16%; overflow: hidden; text-overflow: ellipsis; }
-.blocking-trips-table .blocking-time-column { width: 13%; text-align: center; }
+.blocking-trips-table .blocking-pattern-column { width: 21%; }
+.blocking-trips-table .blocking-node-column { width: 11%; overflow: hidden; text-overflow: ellipsis; }
+.blocking-trips-table .blocking-time-column { width: 14%; text-align: center; }
 .blocking-trips-table .blocking-assign-column { width: 16%; text-align: right; }
 .blocking-trips-table .assign-button { width: 100%; max-width: 78px; min-width: 0; padding: 3px var(--space-1); font-size: var(--font-size-caption); white-space: nowrap; }
 .blocking-trips-table .sortable-filter-header { padding: 0; vertical-align: bottom; }
@@ -84,14 +109,6 @@
 .runtime-band-legend i { display: inline-block; width: 13px; height: 13px; border: 1px solid var(--color-border); }
 .link-button { min-height: 0; border: 0; padding: 0; color: var(--color-accent-strong); background: transparent; text-decoration: underline; font: inherit; font-weight: var(--font-weight-bold); }
 .link-button:hover { color: var(--color-accent); }
-.blocking-no-issues { margin: var(--space-2) 0 0; color: var(--color-text-muted); font-size: var(--font-size-label); }
 .blocking-findings { margin: var(--space-2) 0 0; border-left: 3px solid var(--color-warn-border); background: var(--color-warn-soft); padding: var(--space-2); color: var(--color-warn); font-size: var(--font-size-label); }
 .blocking-findings ul { margin: 5px 0 0; padding-left: 17px; }
 .blocking-findings li + li { margin-top: 3px; }
-.blocking-mileage-notes { margin: var(--space-2) 0 0; border-left: 3px solid var(--color-border); background: var(--color-surface-2); padding: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-label); }
-.blocking-mileage-notes ul { margin: 5px 0 0; padding-left: 17px; }
-.blocking-mileage-notes li + li { margin-top: 3px; }
-.blocking-summary { display: grid; grid-template-columns: repeat(2, minmax(135px, 1fr)); gap: var(--space-2); margin: var(--space-2) 0 0; }
-.blocking-summary > div { border: 1px solid var(--color-border-soft); padding: var(--space-2); }
-.blocking-summary dt { color: var(--color-text-muted); font-size: var(--font-size-caption); font-weight: var(--font-weight-bold); }
-.blocking-summary dd { margin: 3px 0 0; font-variant-numeric: tabular-nums; font-weight: var(--font-weight-bold); }

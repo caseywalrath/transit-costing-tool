@@ -81,7 +81,16 @@ const buttonCommands = {
   'trips.unassignBlock': { name: 'Unassign…', within: 'selectionBar' },
   'trips.delete': { name: 'Delete…', within: 'selectionBar' },
   'runtime.addBand': { name: 'Add time band', within: 'runtimes' },
-} satisfies Record<string, { name: string; within?: RegionId | 'selectionBar' }>;
+  // UR-6d: New block and the unassigned filters are visible buttons; the selected-trip commands are in the block's selection bar.
+  'block.new': { name: 'New block', within: 'currentBlock' },
+  'block.addPullOut': { name: '+ Add pull-out', within: 'currentBlock' },
+  'block.addPullIn': { name: '+ Add pull-in', within: 'currentBlock' },
+  'unassigned.compatibleOnly': { name: 'Compatible only', within: 'unassignedTrips' },
+  'unassigned.clearFilters': { name: 'Clear filters', within: 'unassignedTrips' },
+  'block.removeTrips': { name: 'Remove from block…', within: 'blockSelectionBar' },
+  'block.reassignTrips': { name: 'Move to block…', within: 'blockSelectionBar' },
+  'unassigned.assignSelected': { name: /^Assign to Block /, within: 'unassignedSelectionBar' },
+} satisfies Record<string, { name: string | RegExp; within?: RegionId | 'selectionBar' | 'blockSelectionBar' | 'unassignedSelectionBar' }>;
 
 /** How each menu command is run today. Section 7, UR-0 of `docs/implementation/ui-revision-plan.md` lists the ids. */
 const commands = {
@@ -117,16 +126,10 @@ const commands = {
   'blockingScenario.duplicate': { menu: 'Blocking actions', item: 'Duplicate Blocking Scenario…' },
   'blockingScenario.delete': { menu: 'Blocking actions', item: 'Delete Blocking Scenario…' },
   'blockingScenario.exportCsv': { menu: 'Blocking actions', item: 'Export Blocking CSV (ZIP)' },
-  'block.new': { menu: 'Current Block actions', within: 'currentBlock', item: 'New Block…' },
-  'block.rename': { menu: 'Current Block actions', within: 'currentBlock', item: 'Rename Block…' },
+  'block.rename': { menu: 'Current Block actions', within: 'currentBlock', item: 'Rename block…' },
   'block.notes': { menu: 'Current Block actions', within: 'currentBlock', item: 'Edit notes…' },
-  'block.delete': { menu: 'Current Block actions', within: 'currentBlock', item: 'Delete Block…' },
-  'block.addPullOut': { menu: 'Current Block actions', within: 'currentBlock', item: 'Add pull-out…' },
-  'block.addPullIn': { menu: 'Current Block actions', within: 'currentBlock', item: 'Add pull-in…' },
-  'block.reassignTrips': { menu: 'Current Block actions', within: 'currentBlock', item: 'Reassign Trips…' },
-  'block.removeTrips': { menu: 'Current Block actions', within: 'currentBlock', item: 'Remove Trips…' },
-  'unassigned.compatibleOnly': { menu: 'Unassigned Trip actions', within: 'unassignedTrips', item: 'Compatible only', role: 'menuitemcheckbox' },
-  'unassigned.clearFilters': { menu: 'Unassigned Trip actions', within: 'unassignedTrips', item: 'Clear filters' },
+  'block.delete': { menu: 'Current Block actions', within: 'currentBlock', item: 'Delete block…' },
+  'unassigned.minimumLayover': { menu: 'Unassigned Trip actions', within: 'unassignedTrips', item: 'Minimum layover…' },
 } satisfies Record<string, Command>;
 
 export type CommandId = keyof typeof commands | keyof typeof buttonCommands;
@@ -134,10 +137,11 @@ export type CommandId = keyof typeof commands | keyof typeof buttonCommands;
 /** Opens the command's menu and chooses its item. Item names match exactly, except the Undo item, whose name ends in "(N Trips)". */
 export async function runCommand(page: Page, id: CommandId) {
   if (id in buttonCommands) {
-    const button: { name: string; within?: RegionId | 'selectionBar' } = buttonCommands[id as keyof typeof buttonCommands];
-    // The selection bar is above the table, or pinned above the table headings (outside the Trips section) while the page is scrolled.
-    const scope = button.within === 'selectionBar' ? page.getByRole('toolbar', { name: 'Selected trips' }) : button.within ? region(page, button.within) : page;
-    await scope.getByRole('button', { name: button.name, exact: true }).click();
+    const button: { name: string | RegExp; within?: RegionId | 'selectionBar' | 'blockSelectionBar' | 'unassignedSelectionBar' } = buttonCommands[id as keyof typeof buttonCommands];
+    // The Trips selection bar is above the table, or pinned above the table headings (outside the Trips section) while the page is scrolled.
+    const toolbars = { selectionBar: 'Selected trips', blockSelectionBar: 'Selected block trips', unassignedSelectionBar: 'Selected unassigned trips' } as const;
+    const scope = button.within && button.within in toolbars ? page.getByRole('toolbar', { name: toolbars[button.within as keyof typeof toolbars] }) : button.within ? region(page, button.within as RegionId) : page;
+    await scope.getByRole('button', typeof button.name === 'string' ? { name: button.name, exact: true } : { name: button.name }).click();
     return;
   }
   const command: Command = commands[id as keyof typeof commands];
