@@ -1,19 +1,32 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useEffect, useId, useImperativeHandle, useRef, useState } from 'react';
 import { ModalDialog } from '../ModalDialog';
 import { type RouteDefinitionApplication } from '../../application/routeDefinitionService';
 import { formatDuration } from '../format';
 import { addRuntimeBand, duplicateRuntimeBand, removeRuntimeBand, runtimeBandTotalSeconds, updateRuntimeBand, type RuntimeCalculationMethod } from '../../application/tripsWorkspaceView';
-import { type Node, type Route, type RoutePattern, type RuntimeProfile, type Trip, type ValidationFinding } from '../../domain/types';
+import { formatRuntimeDuration, parseRuntimeDuration } from '../../domain/durations';
+import { formatServiceTime, parseServiceTime } from '../../domain/time';
+import { type Node, type RoutePattern, type RuntimeProfile, type ValidationFinding } from '../../domain/types';
 import { userMessage } from '../shared/messages';
-import { RuntimeTimeInput } from '../shared/fields';
+import { useGridNavigation } from '../shared/useGridNavigation';
 import { TrashIcon, CopyIcon } from '../shared/icons';
 
+type RuntimeBand = RuntimeProfile['bands'][number];
 export type RuntimeEditorHandle = { addBand: () => void; discard: () => void; /** Resolves to true when the profile was validated and saved. */ save: () => Promise<boolean> };
-export type RuntimeEditorState = { dirty: boolean; saving: boolean };
+/** `changeCount` counts the edited cells (From, To, and segments) against the saved profile, plus one for each removed band. */
+export type RuntimeEditorState = { dirty: boolean; saving: boolean; changeCount: number };
+
+export function countRuntimeChanges(saved: RuntimeProfile, draft: RuntimeProfile): number {
+  const savedBands = new Map(saved.bands.map((band) => [band.id, band]));
+  const draftIds = new Set(draft.bands.map((band) => band.id));
+  const cells = (band: RuntimeBand) => [band.startTime, band.endTime, ...band.segmentRuntimeSeconds];
+  const edited = draft.bands.reduce((total, band) => { const before = savedBands.get(band.id); const after = cells(band); return total + (before ? after.filter((value, index) => cells(before)[index] !== value).length : after.length); }, 0);
+  return edited + saved.bands.filter((band) => !draftIds.has(band.id)).length;
+}
 export const RuntimeEditor2 = forwardRef<RuntimeEditorHandle, { service: RouteDefinitionApplication; profile: RuntimeProfile; pattern: RoutePattern; nodes: Node[]; onStateChange: (state: RuntimeEditorState) => void; onSaved: () => Promise<void>; onError: (error: unknown) => void }>(function RuntimeEditor2({ service, profile, pattern, nodes, onStateChange, onSaved, onError }, ref) {
   const [draft, setDraft] = useState(profile);
   const [findings, setFindings] = useState<ValidationFinding[]>([]);
   const [saving, setSaving] = useState(false);
+  const messageId = useId();
   const profileSignature = JSON.stringify(profile);
   const lastProfileSignature = useRef(profileSignature);
   useEffect(() => {
@@ -36,18 +49,47 @@ export const RuntimeEditor2 = forwardRef<RuntimeEditorHandle, { service: RouteDe
     try { await service.saveRuntimeProfile(draft); await onSaved(); return true; } catch (error) { onError(error); return false; } finally { setSaving(false); }
   }
   useImperativeHandle(ref, () => ({ addBand, discard, save }), [draft, profile, pattern]);
-  useEffect(() => onStateChange({ dirty, saving }), [dirty, saving, onStateChange]);
+  const changeCount = countRuntimeChanges(profile, draft);
+  useEffect(() => onStateChange({ dirty, saving, changeCount }), [dirty, saving, changeCount, onStateChange]);
+  // Grid columns: 0 is From, 1 is To, then one column per segment.
+  const segmentCount = pattern.points.length - 1;
+  const cellValue = (band: RuntimeBand, c: number) => c === 0 ? band.startTime : c === 1 ? band.endTime : band.segmentRuntimeSeconds[c - 2];
+  const cellText = (r: number, c: number) => { const value = cellValue(draft.bands[r], c); return c < 2 ? formatServiceTime(value, value % 60 !== 0) : formatRuntimeDuration(value); };
+  const cellLabel = (r: number, c: number) => `Time band ${r + 1} ${c === 0 ? 'start' : c === 1 ? 'end' : `segment ${c - 1}`}`;
+  const grid = useGridNavigation({
+    rowCount: draft.bands.length, colCount: segmentCount + 2, isEditable: () => !saving, cellText,
+    onCommit: (r, c, text) => {
+      const duration = c >= 2;
+      if (!text.trim()) return duration ? 'Enter a runtime. Zero is valid.' : 'Enter a time.';
+      let next: number | undefined;
+      try { next = duration ? parseRuntimeDuration(text) : parseServiceTime(text); } catch { next = undefined; }
+      if (next === undefined) return duration ? 'Use minutes such as 7, :07, or 7:30.' : 'Use a time such as 6:30 or 25:00.';
+      const value = next;
+      updateBand(r, c === 0 ? { startTime: value } : c === 1 ? { endTime: value } : { segmentRuntimeSeconds: draft.bands[r].segmentRuntimeSeconds.map((item, index) => index === c - 2 ? value : item) });
+      return undefined;
+    },
+  });
+  // "+ Add time band" focuses the new band's first cell once it renders.
+  const focusNewBand = useRef(false);
+  useEffect(() => { if (!focusNewBand.current) return; focusNewBand.current = false; grid.moveTo({ r: draft.bands.length - 1, c: 0 }); }, [draft.bands.length]);
+  const savedBands = new Map(profile.bands.map((band) => [band.id, band]));
   return <div className="runtime-editor">
-    <div className="table-scroll data-grid runtime-table"><table>
+    <div className="table-scroll data-grid runtime-table"><table role="grid" aria-label="Runtimes">
       <thead><tr><th scope="col">From</th><th scope="col">To</th>{pattern.points.slice(1).map((point, index) => <th scope="col" key={point.id}><span className="segment-header">{nodeName(pattern.points[index].nodeId)} → {nodeName(point.nodeId)}</span></th>)}<th scope="col" className="runtime-total-heading">Total</th><th scope="col"><span className="visually-hidden">Time band actions</span></th></tr></thead>
       <tbody>{draft.bands.map((band, bandIndex) => <tr key={band.id} className={findings.some((finding) => finding.parameters?.bandId === band.id || finding.parameters?.previousBandId === band.id) ? 'runtime-row-error' : undefined}>
-        <td><RuntimeTimeInput label={`Time band ${bandIndex + 1} start`} value={band.startTime} onCommit={(value) => updateBand(bandIndex, { startTime: value })} /></td>
-        <td><RuntimeTimeInput label={`Time band ${bandIndex + 1} end`} value={band.endTime} onCommit={(value) => updateBand(bandIndex, { endTime: value })} /></td>
-        {band.segmentRuntimeSeconds.map((value, segmentIndex) => <td key={`${band.id}-${segmentIndex}`}><RuntimeTimeInput label={`Time band ${bandIndex + 1} segment ${segmentIndex + 1}`} value={value} duration onCommit={(next) => updateBand(bandIndex, { segmentRuntimeSeconds: band.segmentRuntimeSeconds.map((item, index) => index === segmentIndex ? next : item) })} /></td>)}
+        {Array.from({ length: segmentCount + 2 }, (_, c) => {
+          const saved = savedBands.get(band.id);
+          const edited = !saved || cellValue(saved, c) !== cellValue(band, c);
+          const editing = grid.editing?.r === bandIndex && grid.editing.c === c;
+          return <td key={c} {...grid.cellProps(bandIndex, c)} className={edited ? 'grid-cell grid-cell--edited' : 'grid-cell'} data-cell={cellLabel(bandIndex, c)}>
+            {editing ? <input {...grid.inputProps} className="grid-cell__input" aria-label={cellLabel(bandIndex, c)} aria-describedby={grid.message ? messageId : undefined} /> : <span>{cellText(bandIndex, c)}</span>}
+          </td>;
+        })}
         <td className="runtime-total">{formatDuration(runtimeBandTotalSeconds(band))}</td>
         <td><div className="row-actions"><button className="icon-button" onClick={() => duplicateBand(bandIndex)} aria-label={`Duplicate time band ${bandIndex + 1}`} title="Duplicate time band"><CopyIcon /></button><button className="icon-button icon-button--danger" onClick={() => setDraft((current) => removeRuntimeBand(current, bandIndex))} aria-label={`Remove time band ${bandIndex + 1}`} title="Remove time band"><TrashIcon /></button></div></td>
-      </tr>)}{draft.bands.length === 0 && <tr><td colSpan={pattern.points.length + 3} className="table-empty">Add a time band to enter runtimes.</td></tr>}<tr className="table-add-row"><td colSpan={pattern.points.length + 3}><button type="button" className="ghost" disabled={saving} onClick={addBand}><span aria-hidden="true">+ </span>Add time band</button></td></tr></tbody>
+      </tr>)}{draft.bands.length === 0 && <tr><td colSpan={pattern.points.length + 3} className="table-empty">Add a time band to enter runtimes.</td></tr>}<tr className="table-add-row"><td colSpan={pattern.points.length + 3}><button type="button" className="ghost" disabled={saving} onClick={() => { focusNewBand.current = true; addBand(); }}><span aria-hidden="true">+ </span>Add time band</button></td></tr></tbody>
     </table></div>
+    <p id={messageId} className="grid-message" role="status" aria-live="polite">{grid.message}</p>
     {findings.length > 0 && <p className="field-error" role="alert">{[...new Set(findings.map(userMessage))].join(' ')}</p>}
   </div>;
 });

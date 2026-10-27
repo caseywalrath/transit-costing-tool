@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule, openGoldenTrips } from './support/tripsWorkspace';
-import { openRuntimes, runCommand, scopeField } from './support/ui';
+import { editRuntimeCell, openRuntimes, runCommand, runtimeCell, scopeField } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
@@ -17,13 +17,12 @@ const runtimeSection = (page: Page) => page.locator('[aria-label="Runtimes secti
 const tripsSection = (page: Page) => page.locator('[aria-label="Trips section"]');
 const leaveDialog = (page: Page) => page.getByRole('alertdialog', { name: 'Save Runtime changes before leaving?' });
 const shiftDialog = (page: Page) => page.getByRole('heading', { name: 'Discard staged shift?' });
-const firstSegment = (page: Page) => runtimeSection(page).getByLabel('Time band 1 segment 1');
+const firstSegment = (page: Page) => runtimeCell(runtimeSection(page), 'Time band 1 segment 1');
 
-/** Types a new first-segment runtime and leaves the field, which makes the Runtime editor draft dirty. */
+/** Types a new first-segment runtime and commits the cell, which makes the Runtime editor draft dirty. */
 async function dirtyRuntime(page: Page, value = ':09') {
   await openRuntimes(page);
-  await firstSegment(page).fill(value);
-  await firstSegment(page).press('Tab');
+  await editRuntimeCell(runtimeSection(page), 'Time band 1 segment 1', value);
   await expect(runtimeSection(page).getByRole('button', { name: 'Save', exact: true })).toBeVisible();
 }
 
@@ -52,7 +51,7 @@ test('a dirty Runtime draft asks Save, Discard, or Cancel before the service day
   await leaveDialog(page).getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(leaveDialog(page)).toHaveCount(0);
   expect(await dayOption(page)).toBe(original);
-  await expect(firstSegment(page)).toHaveValue(':09');
+  await expect(firstSegment(page)).toHaveText(':09');
 
   // Discard changes the day and drops the draft; the saved value is untouched.
   await day.selectOption({ index: 1 });
@@ -84,7 +83,7 @@ test('a dirty Runtime draft is also guarded on a tab change, and Cancel stays on
   await expect(leaveDialog(page)).toBeVisible();
   await leaveDialog(page).getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(runtimeSection(page)).toBeVisible();
-  await expect(firstSegment(page)).toHaveValue(':09');
+  await expect(firstSegment(page)).toHaveText(':09');
 
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await leaveDialog(page).getByRole('button', { name: 'Discard', exact: true }).click();
@@ -102,7 +101,7 @@ test('a dirty Runtime draft is guarded when the Runtime profile changes, and a r
   await expect(leaveDialog(page)).toBeVisible();
   await leaveDialog(page).getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(pattern).toHaveValue(currentPattern);
-  await expect(firstSegment(page)).toHaveValue(':09');
+  await expect(firstSegment(page)).toHaveText(':09');
 
   await runtimeSection(page).locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button').click();
   await page.getByRole('menu', { name: 'Runtime profile' }).getByRole('menuitem', { name: 'Rename profile…' }).click();
@@ -235,10 +234,12 @@ test('Escape in a number field and in a Runtime time field restores the saved va
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await openRuntimes(page);
   await expect(firstSegment(page)).toBeVisible({ timeout: 30_000 });
-  const saved = await firstSegment(page).inputValue();
-  await firstSegment(page).fill(':13');
-  await firstSegment(page).press('Escape');
-  await expect(firstSegment(page)).toHaveValue(saved);
+  const saved = await firstSegment(page).textContent() ?? '';
+  await firstSegment(page).dblclick();
+  const field = runtimeSection(page).getByRole('textbox', { name: 'Time band 1 segment 1', exact: true });
+  await field.fill(':13');
+  await field.press('Escape');
+  await expect(firstSegment(page)).toHaveText(saved);
   await expect(runtimeSection(page).getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
 });
 

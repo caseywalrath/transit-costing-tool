@@ -2,7 +2,7 @@
 // Trip Profile, or tab changes. It asks Cancel or Discard first; an empty row is dropped without a question.
 import { expect, test, type Page } from '@playwright/test';
 import { createShiftReadySchedule } from './support/tripsWorkspace';
-import { runCommand, scopeField } from './support/ui';
+import { editRuntimeCell, runCommand, scopeField } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
@@ -119,12 +119,10 @@ test('saving the Runtime profile keeps an entered Add-trip row', async ({ page }
   await createShiftReadySchedule(page, '06:10');
   await openDraft(page, 'time');
   const runtimeSection = page.locator('[aria-label="Runtimes section"]');
-  const firstSegment = runtimeSection.getByLabel('Time band 1 segment 1');
-  await firstSegment.fill(':09');
-  await firstSegment.press('Tab');
+  await editRuntimeCell(runtimeSection, 'Time band 1 segment 1', ':09');
   await runtimeSection.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(runtimeSection.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => document.querySelector<HTMLInputElement>('[aria-label="Time band 1 segment 1"]')?.value)).toBe(':09');
+  await expect.poll(() => page.evaluate(() => document.querySelector('[data-cell="Time band 1 segment 1"]')?.textContent)).toBe(':09');
   // The save's reload of the Trips follows the write; give it time to land before looking at the row.
   await page.waitForTimeout(1500);
   await expect(draftDialog(page)).toHaveCount(0);

@@ -96,7 +96,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   const shiftDrawerRef = useRef<HTMLElement>(null);
   const lastShiftControl = useRef<HTMLButtonElement | null>(null);
   const buildValues = useRef<BuildTripsValues>(EMPTY_BUILD_VALUES);
-  const [runtimeEditorState, setRuntimeEditorState] = useState<RuntimeEditorState>({ dirty: false, saving: false });
+  const [runtimeEditorState, setRuntimeEditorState] = useState<RuntimeEditorState>({ dirty: false, saving: false, changeCount: 0 });
   const [showRuntimeBands, setShowRuntimeBands] = useState(false);
   const [showHeadways, setShowHeadways] = useState(false);
   const [roundDisplayedTimes, setRoundDisplayedTimes] = useState(false);
@@ -536,7 +536,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   /** Opens or closes the Runtimes section and remembers the choice. Closing is refused while the editor has unsaved edits. */
   function setRuntimesSectionOpen(open: boolean) {
     if (!open && (runtimeEditorState.dirty || runtimeEditorState.saving)) return;
-    if (!open) setRuntimeEditorState({ dirty: false, saving: false });
+    if (!open) setRuntimeEditorState({ dirty: false, saving: false, changeCount: 0 });
     setRuntimesOpen(open); rememberRuntimesOpen(open);
     window.setTimeout(() => (open ? runtimeCopyButtonRef : runtimesToggleRef).current?.focus());
   }
@@ -633,7 +633,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
       {selectedProfile && selectedPattern ? <RuntimeEditor2 ref={runtimeEditorRef} service={service} profile={selectedProfile} pattern={selectedPattern} nodes={aggregate.nodes} onStateChange={setRuntimeEditorState} onSaved={async () => onRuntimeChanged()} onError={onError} /> : <p className="runtime-status">Loading runtimes…</p>}
       </div>}
       {routeMethodChange && <RouteRuntimeMethodDialog routeName={aggregate.route.name || 'this Route'} method={routeMethodChange.method} impact={routeMethodChange.impact} busy={routeMethodChange.busy} onConfirm={() => void confirmRouteMethodChange()} onClose={() => setRouteMethodChange(undefined)} />}
-      {runtimesOpen && runtimeEditorState.dirty && <SaveBar message="Unsaved changes in this runtime profile" saveLabel={runtimeEditorState.saving ? 'Saving…' : 'Save'} busy={runtimeEditorState.saving || tripProfileBusy} onSave={() => saveRuntimeThen(() => { window.setTimeout(() => runtimeCopyButtonRef.current?.focus()); })} onDiscard={() => { runtimeEditorRef.current?.discard(); window.setTimeout(() => runtimeCopyButtonRef.current?.focus()); }} />}
+      {runtimesOpen && runtimeEditorState.dirty && <SaveBar message={runtimeEditorState.changeCount ? `${runtimeEditorState.changeCount} unsaved change${runtimeEditorState.changeCount === 1 ? '' : 's'} in Runtimes` : 'Unsaved changes in Runtimes'} saveLabel={runtimeEditorState.saving ? 'Saving…' : 'Save'} busy={runtimeEditorState.saving || tripProfileBusy} onSave={() => saveRuntimeThen(() => { window.setTimeout(() => runtimeCopyButtonRef.current?.focus()); })} onDiscard={() => { runtimeEditorRef.current?.discard(); window.setTimeout(() => runtimeCopyButtonRef.current?.focus()); }} />}
     </section>
     <WorkSurface title="Trips" count={trips.length} ariaLabel="Trips section" className="trips-surface"
       context={<>

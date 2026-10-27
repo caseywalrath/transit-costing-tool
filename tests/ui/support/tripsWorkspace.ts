@@ -2,7 +2,7 @@
 import { expect, type Page } from '@playwright/test';
 import { goldenRaw } from './goldenFixture';
 import { runInPage, seedSnapshot } from './dexieEnv';
-import { openRuntimes, scopeField } from './ui';
+import { editRuntimeCell, openRuntimes, runtimeCell, scopeField } from './ui';
 
 /**
  * Creates a project with one Route that has Nodes A and B and one saved Pattern (A to B, rebalanced) and its Default Runtime profile.
@@ -61,11 +61,10 @@ export async function createShiftReadySchedule(page: Page, lastTrip = '06:00', s
 
   const runtimeSection = page.locator('[aria-label="Runtimes section"]');
   await expect(runtimeSection.locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button', { name: 'Default' })).toBeVisible();
-  await runtimeSection.getByLabel('Time band 1 segment 1').fill(segment);
-  await runtimeSection.getByLabel('Time band 1 segment 1').press('Tab');
-  await expect(runtimeSection.getByLabel('Time band 1 segment 1')).toHaveValue(segment);
+  await editRuntimeCell(runtimeSection, 'Time band 1 segment 1', segment);
+  await expect(runtimeCell(runtimeSection, 'Time band 1 segment 1')).toHaveText(segment);
   await expect(runtimeSection.getByRole('columnheader', { name: 'Total', exact: true })).toBeVisible();
-  await expect(runtimeSection.getByText(segment, { exact: true })).toBeVisible();
+  await expect(runtimeSection.locator('.runtime-total')).toHaveText(segment);
   await expect(runtimeSection.locator('.runtime-table thead th')).toHaveText(['From', 'To', 'A → B', 'Total', 'Time band actions']);
   await runtimeSection.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(runtimeSection.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
@@ -75,7 +74,7 @@ export async function createShiftReadySchedule(page: Page, lastTrip = '06:00', s
   // Saving a Runtime profile reloads the Runtime section once, and the menus stay disabled until it is done. Wait for that before the
   // steps below open a menu.
   await expect(runtimeSection.getByRole('button', { name: 'Runtime actions', exact: true })).toBeEnabled();
-  await expect(runtimeSection.getByLabel('Time band 1 segment 1')).toHaveValue(segment);
+  await expect(runtimeCell(runtimeSection, 'Time band 1 segment 1')).toHaveText(segment);
 
   const tripsSection = page.locator('[aria-label="Trips section"]');
   await runtimeSection.getByRole('button', { name: 'Runtime actions', exact: true }).click();

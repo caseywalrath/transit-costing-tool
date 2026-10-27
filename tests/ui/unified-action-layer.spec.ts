@@ -1,26 +1,26 @@
 import { expect, test } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { createShiftReadySchedule, settleFrames } from './support/tripsWorkspace';
-import { runCommand, scopeField } from './support/ui';
+import { editRuntimeCell, runCommand, runtimeCell, scopeField } from './support/ui';
 
 test.setTimeout(60_000);
 
 test('duplicates a Runtime time band into the draft and discards it without saving', async ({ page }) => {
   await createShiftReadySchedule(page);
   const runtimeSection = page.locator('[aria-label="Runtimes section"]');
-  await expect(runtimeSection.getByLabel('Time band 1 segment 1')).toHaveValue(':07');
-  const firstBandStart = await runtimeSection.getByLabel('Time band 1 start').inputValue();
-  const firstBandEnd = await runtimeSection.getByLabel('Time band 1 end').inputValue();
+  await expect(runtimeCell(runtimeSection, 'Time band 1 segment 1')).toHaveText(':07');
+  const firstBandStart = await runtimeCell(runtimeSection, 'Time band 1 start').textContent() ?? '';
+  const firstBandEnd = await runtimeCell(runtimeSection, 'Time band 1 end').textContent() ?? '';
 
   await runtimeSection.getByRole('button', { name: 'Duplicate time band 1' }).click();
-  await expect(runtimeSection.getByLabel('Time band 2 start')).toHaveValue(firstBandStart);
-  await expect(runtimeSection.getByLabel('Time band 2 end')).toHaveValue(firstBandEnd);
-  await expect(runtimeSection.getByLabel('Time band 2 segment 1')).toHaveValue(':07');
+  await expect(runtimeCell(runtimeSection, 'Time band 2 start')).toHaveText(firstBandStart);
+  await expect(runtimeCell(runtimeSection, 'Time band 2 end')).toHaveText(firstBandEnd);
+  await expect(runtimeCell(runtimeSection, 'Time band 2 segment 1')).toHaveText(':07');
   await expect(runtimeSection.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
   expect(await runInPage(page, 'return (await e.db.runtimeProfiles.toArray()).map((profile) => profile.bands.length)')).toEqual([1]);
 
   await runtimeSection.getByRole('button', { name: 'Discard', exact: true }).click();
-  await expect(runtimeSection.getByLabel('Time band 2 start')).toHaveCount(0);
+  await expect(runtimeCell(runtimeSection, 'Time band 2 start')).toHaveCount(0);
   await expect(runtimeSection.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
   expect(await runInPage(page, 'return (await e.db.runtimeProfiles.toArray()).map((profile) => profile.bands.length)')).toEqual([1]);
 });
@@ -55,8 +55,7 @@ test('Build Trips uses a right drawer and supports inclusive last-trip and count
 test('regeneration preview shows signed time and Run Time changes for each anchor', async ({ page }) => {
   await createShiftReadySchedule(page);
   const runtimeSection = page.locator('[aria-label="Runtimes section"]');
-  await runtimeSection.getByLabel('Time band 1 segment 1').fill(':10:30');
-  await runtimeSection.getByLabel('Time band 1 segment 1').press('Tab');
+  await editRuntimeCell(runtimeSection, 'Time band 1 segment 1', ':10:30');
   await runtimeSection.getByRole('button', { name: 'Save', exact: true }).click();
 
   await expect(page.getByText('Run times have changed')).toBeVisible();
@@ -82,8 +81,7 @@ test('regeneration preview shows signed time and Run Time changes for each ancho
 test('keeps one regeneration undo through reload and restores the prior trip times', async ({ page }) => {
   await createShiftReadySchedule(page);
   const runtimeSection = page.locator('[aria-label="Runtimes section"]');
-  await runtimeSection.getByLabel('Time band 1 segment 1').fill(':10:30');
-  await runtimeSection.getByLabel('Time band 1 segment 1').press('Tab');
+  await editRuntimeCell(runtimeSection, 'Time band 1 segment 1', ':10:30');
   await runtimeSection.getByRole('button', { name: 'Save', exact: true }).click();
 
   await expect(page.getByText('Run times have changed')).toBeVisible();
@@ -113,8 +111,7 @@ test('keeps one regeneration undo through reload and restores the prior trip tim
 test('Regenerate stays available while an undo is saved, regenerates only the Trips whose runtimes changed, and replaces the undo', async ({ page }) => {
   await createShiftReadySchedule(page, '06:20');
   const runtimeSection = page.locator('[aria-label="Runtimes section"]');
-  await runtimeSection.getByLabel('Time band 1 segment 1').fill(':10:30');
-  await runtimeSection.getByLabel('Time band 1 segment 1').press('Tab');
+  await editRuntimeCell(runtimeSection, 'Time band 1 segment 1', ':10:30');
   await runtimeSection.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByText('Run times have changed')).toBeVisible();
 

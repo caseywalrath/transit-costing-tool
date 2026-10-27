@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { createShiftReadySchedule } from './support/tripsWorkspace';
+import { editRuntimeCell } from './support/ui';
 
 // U09: the "Run times have changed" notice says why a Trip cannot be recalculated.
 const reasonLine = (page: import('@playwright/test').Page) => page.locator('[aria-label="Trips section"]').getByText(/cannot be recalculated/);
@@ -35,8 +36,7 @@ test('names why Trips cannot be recalculated, once, and shows nothing when they 
 test('a Runtime change that every Trip can follow shows the indicator without a reason line', async ({ page }) => {
   await createShiftReadySchedule(page, '06:20');
   const runtimeSection = page.locator('[aria-label="Runtimes section"]');
-  await runtimeSection.getByLabel('Time band 1 segment 1').fill(':10');
-  await runtimeSection.getByLabel('Time band 1 segment 1').press('Tab');
+  await editRuntimeCell(runtimeSection, 'Time band 1 segment 1', ':10');
   await runtimeSection.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByText('Run times have changed')).toBeVisible();
   await expect(reasonLine(page)).toHaveCount(0);

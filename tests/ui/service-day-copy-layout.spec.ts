@@ -3,6 +3,7 @@
 // actions sit in the header of their work surfaces; an unsaved Runtime edit adds a save bar at the bottom of the Runtimes section.
 import { expect, test } from '@playwright/test';
 import { createShiftReadySchedule } from './support/tripsWorkspace';
+import { editRuntimeCell } from './support/ui';
 
 test.setTimeout(60_000);
 
@@ -25,8 +26,7 @@ test('uses unified Runtime and Trips header action layers', async ({ page }) => 
   await expect(runtimeSection.getByRole('region', { name: 'Unsaved changes' })).toHaveCount(0);
 
   // An unsaved Runtime edit adds Discard and Save to a save bar at the bottom of the section, not to a second toolbar in the header.
-  await runtimeSection.getByLabel('Time band 1 segment 1').fill(':09');
-  await runtimeSection.getByLabel('Time band 1 segment 1').press('Tab');
+  await editRuntimeCell(runtimeSection, 'Time band 1 segment 1', ':09');
   const saveBar = runtimeSection.getByRole('region', { name: 'Unsaved changes' });
   await expect(saveBar.getByRole('button')).toHaveText(['Discard', 'Save']);
   await expect(runtimeSection.locator('.runtime-editor-toolbar')).toHaveCount(0);

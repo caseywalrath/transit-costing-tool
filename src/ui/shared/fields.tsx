@@ -1,22 +1,7 @@
 import { cloneElement, isValidElement, type ReactElement, type ReactNode, useEffect, useId, useRef, useState } from 'react';
-import { formatRuntimeDuration, parseRuntimeDuration } from '../../domain/durations';
-import { formatServiceTime, parseServiceTime } from '../../domain/time';
-import { messages } from './messages';
 
 export function DurationField({ label, value, onChange, disabled = false, invalid = false, describedBy }: { label: string; value: string; onChange: (value: string) => void; disabled?: boolean; invalid?: boolean; describedBy?: string }) { return <label className="dialog-field">{label}<input value={value} inputMode="decimal" disabled={disabled} aria-invalid={invalid} aria-describedby={invalid ? describedBy : undefined} onChange={(event) => onChange(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') event.currentTarget.blur(); }} /></label>; }
 export function ClockField({ label, value, onChange, disabled = false, invalid = false, describedBy }: { label: string; value: string; onChange: (value: string) => void; disabled?: boolean; invalid?: boolean; describedBy?: string }) { return <label className="dialog-field">{label}<input className="time-input" value={value} disabled={disabled} aria-invalid={invalid} aria-describedby={invalid ? describedBy : undefined} onChange={(event) => onChange(event.target.value)} /></label>; }
-
-export function RuntimeTimeInput({ label, value, duration = false, onCommit }: { label: string; value: number; duration?: boolean; onCommit: (value: number) => void }) {
-  const display = (next: number) => duration ? formatRuntimeDuration(next) : formatServiceTime(next, next % 60 !== 0);
-  const [draft, setDraft] = useState(() => display(value));
-  const [error, setError] = useState('');
-  // Escape cancels the edit. Its blur must not commit the typed text, which the blur handler still holds (finding 5-024).
-  const cancelled = useRef(false);
-  useEffect(() => { setDraft(display(value)); }, [value, duration]);
-  function commit() {
-    if (cancelled.current) { cancelled.current = false; return; } if (!draft.trim()) { setError(duration ? 'Enter a runtime. Zero is valid.' : 'Enter a time.'); return; } try { const next = duration ? parseRuntimeDuration(draft) : parseServiceTime(draft); if (next === undefined) throw new Error(); setError(''); onCommit(next); setDraft(display(next)); } catch { setError(duration ? 'Use minutes such as 7, :07, or 7:30.' : 'Use a time such as 6:30 or 25:00.'); } }
-  return <><input className="time-input" aria-label={label} aria-invalid={Boolean(error)} value={draft} onChange={(event) => { setDraft(event.target.value); setError(''); }} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { cancelled.current = true; setDraft(display(value)); setError(''); event.currentTarget.blur(); } }} />{error && <small className="field-error" role="alert">{error}</small>}</>;
-}
 
 export function Field({ label, required, errors = [], wide, children }: { label: string; required?: boolean; errors?: string[]; wide?: boolean; children: ReactNode }) {
   const id = useId();

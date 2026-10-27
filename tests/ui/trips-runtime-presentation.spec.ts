@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule } from './support/tripsWorkspace';
-import { openRuntimes, runCommand, scopeField } from './support/ui';
+import { editRuntimeCell, openRuntimes, runCommand, runtimeCell, scopeField } from './support/ui';
 
 test.setTimeout(120_000);
 
@@ -63,7 +63,7 @@ test('Runtime band totals of 60 minutes or more use the same duration format as 
   await openGoldenTripsAfter(page, '');
   // The golden Weekday profile has totals of 53, 61, 65, and 57 minutes. Display-only totals read h:mm from an hour (F2-A, UR-3); the editable segment cells keep :MM (O-3).
   await expect(runtimeSection(page).locator('.runtime-total')).toHaveText([':53', '1:01', '1:05', ':57']);
-  await expect(runtimeSection(page).getByLabel('Time band 2 segment 1')).toHaveValue(':06');
+  await expect(runtimeCell(runtimeSection(page), 'Time band 2 segment 1')).toHaveText(':06');
 });
 
 test('the Runtime Method applies to every Pattern on the Route after a confirmation, and Paste and CSV import are gone', async ({ page }) => {
@@ -71,7 +71,7 @@ test('the Runtime Method applies to every Pattern on the Route after a confirmat
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await openRuntimes(page);
   const section = runtimeSection(page);
-  await expect(section.getByLabel('Time band 1 segment 1')).toBeVisible();
+  await expect(runtimeCell(section, 'Time band 1 segment 1')).toBeVisible();
   const storedMethod = () => runInPage(page, 'return (await e.db.runtimeProfiles.toArray()).map((profile) => profile.calculationMethod)');
   expect(await storedMethod()).toEqual(['segmentStart']);
 
@@ -191,9 +191,7 @@ test('Show runtime bands follows a Runtime profile saved in the same session, wi
   const legend = page.getByLabel('Runtime band legend');
   await expect(legend).toContainText('0:00–30:00');
 
-  const end = runtimeSection(page).getByLabel('Time band 1 end');
-  await end.fill('28:00');
-  await end.press('Tab');
+  await editRuntimeCell(runtimeSection(page), 'Time band 1 end', '28:00');
   await runtimeSection(page).getByRole('button', { name: 'Save', exact: true }).click();
   await expect(runtimeSection(page).getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
   await expect(legend).toContainText('0:00–28:00');
@@ -261,7 +259,7 @@ test('the first visit to Trips creates one Default Runtime profile and one assig
   expect(await runInPage(page, 'return [await e.db.runtimeProfiles.count(), await e.db.runtimeAssignments.count()]')).toEqual([0, 0]);
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await openRuntimes(page);
-  await expect(runtimeSection(page).getByLabel('Time band 1 segment 1')).toBeVisible();
+  await expect(runtimeCell(runtimeSection(page), 'Time band 1 segment 1')).toBeVisible();
   await expect(runtimeSection(page).getByRole('button', { name: 'Runtime actions', exact: true })).toBeEnabled();
   await expect(page.locator('.notice')).toHaveCount(0);
   expect(await runInPage(page, 'return [await e.db.runtimeProfiles.count(), await e.db.runtimeAssignments.count()]')).toEqual([1, 4]);

@@ -2,7 +2,7 @@
 import { test, expect } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { openGoldenTrips } from './support/tripsWorkspace';
-import { openRuntimes } from './support/ui';
+import { editRuntimeCell, openRuntimes, runtimeCell } from './support/ui';
 
 test.skip(!process.env.UI_TOUR, 'Set UI_TOUR=1 to capture the tour.');
 
@@ -49,6 +49,17 @@ for (const width of [1024, 1440]) {
     await block.locator('tbody input[type="checkbox"]').nth(3).check();
     await page.waitForTimeout(500);
     await page.screenshot({ path: out('blocking-unassigned'), fullPage: true });
+    // UR-7: the Runtimes grid with two edited cells (corner marks and the save bar) and a third cell refused while editing.
+    await page.getByRole('button', { name: 'Trips', exact: true }).click();
+    await openRuntimes(page);
+    const runtimes = page.getByRole('region', { name: 'Runtimes section' });
+    await editRuntimeCell(runtimes, 'Time band 2 segment 3', ':14');
+    await editRuntimeCell(runtimes, 'Time band 3 segment 3', ':09');
+    await runtimeCell(runtimes, 'Time band 3 segment 5').dblclick();
+    await runtimes.getByRole('textbox', { name: 'Time band 3 segment 5', exact: true }).fill('abc');
+    await page.keyboard.press('Enter');
+    await runtimes.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: out('trips-runtime-grid'), fullPage: false });
     // Packages add states here, for example headways on.
   });
 }

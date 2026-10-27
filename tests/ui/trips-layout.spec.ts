@@ -2,7 +2,7 @@
 // Pattern column is a chip. These checks drive the real app, as the other Trips specs do.
 import { expect, test } from '@playwright/test';
 import { createShiftReadySchedule, openGoldenTrips } from './support/tripsWorkspace';
-import { openRuntimes, region, runCommand } from './support/ui';
+import { editRuntimeCell, openRuntimes, region, runCommand, runtimeCell } from './support/ui';
 
 test.setTimeout(90_000);
 
@@ -13,18 +13,18 @@ test('Runtimes starts collapsed with a one-line summary, and its open state is k
   await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
   // "<Pattern> · <Runtime profile> · N bands · run time <min>–<max> · <method>", from the band totals (:53, 1:01, 1:05, :57).
   await expect(region(page, 'runtimes').locator('.runtimes-summary')).toHaveText(/^Southbound: Wagon Road to Evans · .+ · 4 bands · run time :53–1:05 · (band at segment start|single band for trip|continuous blend \(legacy\))$/);
-  await expect(region(page, 'runtimes').getByLabel('Time band 1 segment 1')).toHaveCount(0);
+  await expect(runtimeCell(region(page, 'runtimes'), 'Time band 1 segment 1')).toHaveCount(0);
 
   await region(page, 'runtimes').getByRole('button', { name: 'Edit runtimes', exact: true }).click();
   await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
-  await expect(region(page, 'runtimes').getByLabel('Time band 1 segment 1')).toBeVisible();
+  await expect(runtimeCell(region(page, 'runtimes'), 'Time band 1 segment 1')).toBeVisible();
   await expect(region(page, 'runtimes').getByRole('button', { name: 'Add time band', exact: true })).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('transit-costing-tool.runtimes-open.v1'))).toBe('{"open":true}');
 
   await page.reload();
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
-  await expect(region(page, 'runtimes').getByLabel('Time band 1 segment 1')).toBeVisible();
+  await expect(runtimeCell(region(page, 'runtimes'), 'Time band 1 segment 1')).toBeVisible();
 
   await region(page, 'runtimes').getByRole('button', { name: 'Close', exact: true }).click();
   await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
@@ -45,8 +45,7 @@ test('Close is disabled while the Runtime editor has unsaved edits, and the save
   const close = runtimes.getByRole('button', { name: 'Close', exact: true });
   await expect(close).toBeEnabled();
 
-  await runtimes.getByLabel('Time band 1 segment 1').fill(':09');
-  await runtimes.getByLabel('Time band 1 segment 1').press('Tab');
+  await editRuntimeCell(runtimes, 'Time band 1 segment 1', ':09');
   await expect(runtimes.getByRole('region', { name: 'Unsaved changes' })).toBeVisible();
   await expect(close).toBeDisabled();
   await expect(close).toHaveAttribute('title', 'Save or discard runtime edits first');
@@ -108,8 +107,7 @@ test('Change pattern with one trip opens the single-trip review, and with severa
 test('"Select these trips" selects exactly the trips marked "Run times changed"', async ({ page }) => {
   await createShiftReadySchedule(page, '06:20');
   const runtimes = region(page, 'runtimes');
-  await runtimes.getByLabel('Time band 1 segment 1').fill(':10:30');
-  await runtimes.getByLabel('Time band 1 segment 1').press('Tab');
+  await editRuntimeCell(runtimes, 'Time band 1 segment 1', ':10:30');
   await runtimes.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByText('Run times have changed')).toBeVisible();
 

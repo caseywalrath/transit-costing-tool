@@ -5,7 +5,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { goldenRaw, goldenWithAltProfile } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
-import { openRuntimes, runCommand } from './support/ui';
+import { editRuntimeCell, openRuntimes, runCommand, runtimeCell } from './support/ui';
 
 test.setTimeout(120000);
 test.use({ actionTimeout: 15000 });
@@ -93,17 +93,17 @@ test('a Runtime band value saved in the active tab survives a different band val
   for (const page of [active, readOnly]) {
     await page.getByRole('button', { name: 'Trips', exact: true }).click();
     await openRuntimes(page);
-    await expect(page.getByLabel('Time band 1 segment 1')).toBeVisible({ timeout: 20000 });
+    await expect(runtimeCell(page, 'Time band 1 segment 1')).toBeVisible({ timeout: 20000 });
   }
   const segments = "return (await e.db.runtimeProfiles.toArray()).filter((profile) => profile.name === 'Weekday workbook runtimes').map((profile) => profile.id + ':' + profile.bands[0].segmentRuntimeSeconds.join(',')).sort().join('|')";
   const before = await runInPage(active, segments);
-  const first = active.getByLabel('Time band 1 segment 1'); await first.fill(':09'); await first.press('Enter');
+  await editRuntimeCell(active, 'Time band 1 segment 1', ':09', 'Enter');
   await active.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(() => runInPage(active, segments)).not.toBe(before);
   const afterActive = await runInPage(active, segments);
   expect(afterActive).toContain('540');
 
-  const second = readOnly.getByLabel('Time band 1 segment 2'); await second.fill(':03'); await second.press('Enter');
+  await editRuntimeCell(readOnly, 'Time band 1 segment 2', ':03', 'Enter');
   await readOnly.getByRole('button', { name: 'Save', exact: true }).click();
   await expectRejected(readOnly);
   expect(await runInPage(active, segments)).toBe(afterActive);
@@ -167,7 +167,7 @@ async function openTripsInBothTabs(active: Page, readOnly: Page) {
   for (const page of [active, readOnly]) {
     await page.getByRole('button', { name: 'Trips', exact: true }).click();
     await openRuntimes(page);
-    await expect(page.getByLabel('Time band 1 segment 1')).toBeVisible({ timeout: 20000 });
+    await expect(runtimeCell(page, 'Time band 1 segment 1')).toBeVisible({ timeout: 20000 });
   }
 }
 

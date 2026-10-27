@@ -56,6 +56,20 @@ export async function openRuntimes(page: Page) {
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 }
 
+/**
+ * A cell of the Runtimes grid (UR-7), named as its editing field is: "Time band 1 start", "Time band 1 end", "Time band 2 segment 3".
+ * At rest the cell shows its value as text; use `toHaveText` where specs used `toHaveValue` on the old inputs.
+ */
+export const runtimeCell = (scope: Page | Locator, name: string) => scope.locator(`[role="gridcell"][data-cell="${name}"]`);
+
+/** Edits a Runtimes grid cell: double-click opens its field, the text is typed, and `key` commits (Tab moves right, Enter moves down). */
+export async function editRuntimeCell(scope: Page | Locator, name: string, text: string, key: 'Tab' | 'Enter' = 'Tab') {
+  await runtimeCell(scope, name).dblclick();
+  const field = scope.getByRole('textbox', { name, exact: true });
+  await field.fill(text);
+  await field.press(key);
+}
+
 type Command = {
   /** The accessible name of the menu trigger, which is also the menu's name. */
   menu: string;

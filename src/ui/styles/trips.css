@@ -18,7 +18,6 @@
 .runtime-table th { vertical-align: bottom; }
 .runtime-table td { min-width: 105px; }
 .runtime-table td:first-child { min-width: 145px; }
-.runtime-table .time-input { min-width: 78px; width: 100%; }
 .segment-header { display: block; min-width: 128px; white-space: normal; line-height: 1.2; }
 .runtime-row-error td { background: var(--color-warn-soft); }
 .runtime-row-error td:first-child { background: var(--color-warn-soft); }
