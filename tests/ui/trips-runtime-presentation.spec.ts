@@ -62,60 +62,38 @@ test('Runtime band totals of 60 minutes or more use the same duration format as 
   await expect(runtimeSection(page).getByLabel('Time band 2 segment 1')).toHaveValue(':06');
 });
 
-test('the Runtime paste preview shows the calculation method it will apply, and Append keeps the profile\'s own', async ({ page }) => {
-  await createRouteWithPattern(page, 'Runtime paste method');
+test('the Runtime Method applies to every Pattern on the Route after a confirmation, and Paste and CSV import are gone', async ({ page }) => {
+  await createRouteWithPattern(page, 'Route method');
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   const section = runtimeSection(page);
   await expect(section.getByLabel('Time band 1 segment 1')).toBeVisible();
   const storedMethod = () => runInPage(page, 'return (await e.db.runtimeProfiles.toArray()).map((profile) => profile.calculationMethod)');
-  const storedBands = () => runInPage(page, 'return (await e.db.runtimeProfiles.toArray()).map((profile) => profile.bands.map((band) => band.segmentRuntimeSeconds[0]))');
-  const openPaste = async () => {
-    await section.getByRole('button', { name: 'Runtime actions', exact: true }).click();
-    await page.getByRole('menu', { name: 'Runtime actions' }).getByRole('menuitem', { name: 'Paste rows…' }).click();
-    return page.getByRole('dialog', { name: 'Paste runtime rows' });
-  };
-  // Make the stored method single band, so a pasted method is a change.
-  await runInPage(page, 'const [profile] = await e.db.runtimeProfiles.toArray(); await e.service.saveRuntimeProfile({ ...profile, calculationMethod: "singleBand" });');
-  await page.reload();
-  await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await expect(section.getByLabel('Time band 1 segment 1')).toBeVisible();
-  expect(await storedMethod()).toEqual(['singleBand']);
+  expect(await storedMethod()).toEqual(['segmentStart']);
 
-  // Rows with no Calculation Method column: Replace leaves the method as it is, and the preview says so.
-  let dialog = await openPaste();
-  await dialog.getByLabel('Spreadsheet or CSV rows').fill('From\tTo\tSegment 1\n05:00\t09:00\t12');
-  await dialog.getByRole('button', { name: 'Review rows', exact: true }).click();
-  await expect(dialog.getByLabel('Runtime row preview')).toContainText('Calculation method: Single band for trip (unchanged).');
+  await section.getByRole('button', { name: 'Runtime actions', exact: true }).click();
+  const menu = page.getByRole('menu', { name: 'Runtime actions' });
+  await expect(menu.getByText('Method (all Patterns on this Route)', { exact: true })).toBeVisible();
+  await expect(menu.getByRole('menuitemradio', { name: 'Band at segment start' })).toHaveAttribute('aria-checked', 'true');
+  await expect(menu.getByRole('menuitem', { name: 'Paste rows…' })).toHaveCount(0);
+  await expect(menu.getByRole('menuitem', { name: 'Import profile CSV…' })).toHaveCount(0);
+
+  // Cancel leaves the method as it is.
+  await menu.getByRole('menuitemradio', { name: 'Single band for trip' }).click();
+  let dialog = page.getByRole('dialog', { name: /^Use Single band for trip for .+\?$/ });
+  await expect(dialog.getByRole('status')).toContainText('1 Runtime profile will change. 0 Trips will be marked Run times changed');
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await storedMethod()).toEqual(['segmentStart']);
 
-  // Rows that name segmentStart: Replace applies it, and the preview says it will.
-  dialog = await openPaste();
-  const named = 'Band,From,To,Calculation Method,Segment 1\nEarly,05:00,09:00,segmentStart,12';
-  await dialog.getByLabel('Spreadsheet or CSV rows').fill(named);
-  await dialog.getByRole('button', { name: 'Review rows', exact: true }).click();
-  await expect(dialog.getByLabel('Runtime row preview')).toContainText('Calculation method: Band at segment start (from the pasted rows, replacing Single band for trip).');
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-
-  // Make room for an appended band: replace the draft with one band that ends at 9:00 (no method column, so the method stays) and save it.
-  dialog = await openPaste();
-  await dialog.getByLabel('Spreadsheet or CSV rows').fill('From\tTo\tSegment 1\n00:00\t09:00\t12');
-  await dialog.getByRole('button', { name: 'Review rows', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Replace with 1 rows', exact: true }).click();
-  await section.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(section.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
-  await expect.poll(storedBands).toEqual([[720]]);
-
-  // Append keeps the profile's method, and the preview says that the pasted method is not applied.
-  dialog = await openPaste();
-  await dialog.getByLabel('Spreadsheet or CSV rows').fill('Band,From,To,Calculation Method,Segment 1\nLate,09:00,30:00,segmentStart,15');
-  await dialog.getByRole('radio', { name: /Append after/ }).check();
-  await dialog.getByRole('button', { name: 'Review rows', exact: true }).click();
-  await expect(dialog.getByLabel('Runtime row preview')).toContainText('Calculation method: Single band for trip (kept; Append does not change the method, and the pasted rows name Band at segment start).');
-  await dialog.getByRole('button', { name: 'Append 1 rows', exact: true }).click();
-  await section.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(section.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
-  await expect.poll(storedBands).toEqual([[720, 900]]);
-  expect(await storedMethod()).toEqual(['singleBand']);
+  // Change method writes the Route's method to its profiles.
+  await section.getByRole('button', { name: 'Runtime actions', exact: true }).click();
+  await page.getByRole('menu', { name: 'Runtime actions' }).getByRole('menuitemradio', { name: 'Single band for trip' }).click();
+  dialog = page.getByRole('dialog', { name: /^Use Single band for trip for .+\?$/ });
+  await dialog.getByRole('button', { name: 'Change method', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(storedMethod).toEqual(['singleBand']);
+  await section.getByRole('button', { name: 'Runtime actions', exact: true }).click();
+  await expect(page.getByRole('menu', { name: 'Runtime actions' }).getByRole('menuitemradio', { name: 'Single band for trip' })).toHaveAttribute('aria-checked', 'true');
 });
 
 test('Undo and Redo change the Shift history only after the preview resolves', async ({ page }) => {

@@ -27,6 +27,7 @@ import { assertTripProfileReferences } from '../domain/trips';
 import { validateBlockingAssignments, validateBlockingBlock } from '../domain/blocking';
 import { MAX_COSTING_FUTURE_YEARS, MAX_COSTING_YEAR, MIN_COSTING_YEAR, validatePersistedCostingAssumptions } from '../domain/costing';
 import { recoverScenarioCopyNodeReferences } from '../domain/scenarioCopyRecovery';
+import { unifyRouteRuntimeCalculationMethods } from '../domain/runtime';
 
 export const PROJECT_BACKUP_FORMAT = 'transit-costing-tool.project' as const;
 export const PROJECT_BACKUP_SCHEMA_VERSION = 6 as const;
@@ -114,6 +115,8 @@ export interface BackupImportReport {
   recoveryFindings: ValidationFinding[];
   /** Pre-Phase-4 placeholder Blocks (no Blocking Scenario) that were left out of the import (Decision 0019 item 13). */
   discardedPlaceholderBlocks: number;
+  /** Runtime profiles whose calculation method was changed to the method of their Route (Decision 0045). */
+  unifiedRuntimeProfiles: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -544,9 +547,12 @@ function parseValidatedBackup(payload: string): { snapshot: ProjectSnapshot; rep
     nodes,
   );
   const patterns = validatePatterns(rawPatterns, routeById, nodes, directions);
-  const runtimeProfiles = parsed.exportSchemaVersion === LEGACY_PROJECT_BACKUP_SCHEMA_VERSION
+  // Every Runtime profile of a Route uses one calculation method (Decision 0045). A file with mixed methods on a Route takes the method
+  // most of that Route's profiles use; the profiles that change get the next calculation revision, and their Trips keep their times.
+  const unifiedRuntime = unifyRouteRuntimeCalculationMethods(parsed.exportSchemaVersion === LEGACY_PROJECT_BACKUP_SCHEMA_VERSION
     ? []
-    : validateRuntimeProfiles(requiredArray(parsed.runtimeProfiles, 'runtimeProfiles'), patterns);
+    : validateRuntimeProfiles(requiredArray(parsed.runtimeProfiles, 'runtimeProfiles'), patterns), new Date().toISOString());
+  const runtimeProfiles = unifiedRuntime.profiles;
   const runtimeAssignments = parsed.exportSchemaVersion === LEGACY_PROJECT_BACKUP_SCHEMA_VERSION
     ? []
     : validateRuntimeAssignments(requiredArray(parsed.runtimeAssignments, 'runtimeAssignments'));
@@ -595,7 +601,7 @@ function parseValidatedBackup(payload: string): { snapshot: ProjectSnapshot; rep
   const normalizedBlocks = blocks.map(({ tripProfileId: _derivedFromBlockingScenario, ...block }) => block);
   return {
     snapshot: { project, scenarios, serviceDays, routes, nodes, patterns, ...(directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions.length ? { costingAssumptions } : {}), generationSets, trips: normalizedTrips, blocks: normalizedBlocks },
-    report: { recoveredNodeReferences: recovery.recoveredReferences, recoveryFindings: recovery.findings, discardedPlaceholderBlocks: blockValues.length - keptBlockEntries.length },
+    report: { recoveredNodeReferences: recovery.recoveredReferences, recoveryFindings: recovery.findings, discardedPlaceholderBlocks: blockValues.length - keptBlockEntries.length, unifiedRuntimeProfiles: unifiedRuntime.changedProfileIds.length },
   };
 }
 

@@ -5,7 +5,7 @@ import { createBlockingScenarioSourceSignature } from '../domain/blocking';
 import { isUsablePattern, orderDirections, usableDirectionPatterns } from '../domain/directions';
 import { parseRuntimeDuration, RuntimeDurationError } from '../domain/durations';
 import { patternTotalMiles } from '../domain/patterns';
-import { addRuntimeBand, applyPastedRuntimeRows, describeTripBandShading, duplicateRuntimeBand, removeRuntimeBand, reverseRuntimeCandidates, runtimeBandTotalSeconds, updateRuntimeBand, type BlendedSegment, type PastedRuntimeRow } from '../domain/runtime';
+import { addRuntimeBand, describeTripBandShading, duplicateRuntimeBand, removeRuntimeBand, reverseRuntimeCandidates, routeRuntimeCalculationMethod, runtimeBandTotalSeconds, updateRuntimeBand, type BlendedSegment, type RuntimeCalculationMethod } from '../domain/runtime';
 import { formatServiceTime, parseServiceTime } from '../domain/time';
 import { formatNetShift, formatStagedShift, parseShiftSeconds } from '../domain/tripShift';
 import { MAX_TRIPS_PER_GENERATION, calculateTimepointHeadways, duplicateDepartureKeys, roundServiceTimeToMinute, tripRunTimeSeconds, validateGenerateTripsRequest } from '../domain/trips';
@@ -13,10 +13,10 @@ import type { BlockingBlock, GenerateTripsRequest, RoutePattern, RuntimeBand, Ru
 import { removeSelectedTripsFromBlock } from './blockingService';
 
 export {
-  addRuntimeBand, applyPastedRuntimeRows, createBlockingScenarioSourceSignature, duplicateRuntimeBand, formatNetShift, formatStagedShift, isUsablePattern, MAX_TRIPS_PER_GENERATION, orderDirections, parseShiftSeconds,
-  patternTotalMiles, removeRuntimeBand, reverseRuntimeCandidates, roundServiceTimeToMinute, runtimeBandTotalSeconds, sortServiceDays, tripRunTimeSeconds, updateRuntimeBand, usableDirectionPatterns,
+  addRuntimeBand, createBlockingScenarioSourceSignature, duplicateRuntimeBand, formatNetShift, formatStagedShift, isUsablePattern, MAX_TRIPS_PER_GENERATION, orderDirections, parseShiftSeconds,
+  patternTotalMiles, removeRuntimeBand, reverseRuntimeCandidates, roundServiceTimeToMinute, routeRuntimeCalculationMethod, runtimeBandTotalSeconds, sortServiceDays, tripRunTimeSeconds, updateRuntimeBand, usableDirectionPatterns,
 };
-export type { BlendedSegment, PastedRuntimeRow };
+export type { BlendedSegment, RuntimeCalculationMethod };
 
 /** A layover, deadhead, or headway as the Trips table shows it: `H:MM`, with seconds when not whole minutes, and a leading minus when negative. */
 export function formatTripConnectionDuration(seconds?: number) { return seconds === undefined || !Number.isInteger(seconds) ? '' : `${seconds < 0 ? '−' : ''}${formatServiceTime(Math.abs(seconds), seconds % 60 !== 0)}`; }

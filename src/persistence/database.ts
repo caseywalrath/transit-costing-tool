@@ -2,6 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import type { DatabaseRecordMap } from '../domain/types';
 import { metadata, newId } from '../domain/ids';
 import { recoverScenarioCopyNodeReferences } from '../domain/scenarioCopyRecovery';
+import { unifyRouteRuntimeCalculationMethods } from '../domain/runtime';
 import type { WriteGuard } from './tabGuard';
 export class TransitDatabase extends Dexie {
   projects!: Table<DatabaseRecordMap['projects'], string>; scenarios!: Table<DatabaseRecordMap['scenarios'], string>; serviceDays!: Table<DatabaseRecordMap['serviceDays'], string>; routes!: Table<DatabaseRecordMap['routes'], string>; nodes!: Table<DatabaseRecordMap['nodes'], string>; patterns!: Table<DatabaseRecordMap['patterns'], string>; directions!: Table<DatabaseRecordMap['directions'], string>; runtimeProfiles!: Table<DatabaseRecordMap['runtimeProfiles'], string>; runtimeAssignments!: Table<DatabaseRecordMap['runtimeAssignments'], string>; generationSets!: Table<DatabaseRecordMap['generationSets'], string>; tripProfiles!: Table<DatabaseRecordMap['tripProfiles'], string>; blockingScenarios!: Table<DatabaseRecordMap['blockingScenarios'], string>; trips!: Table<DatabaseRecordMap['trips'], string>; tripRegenerationUndo!: Table<DatabaseRecordMap['tripRegenerationUndo'], string>; blocks!: Table<DatabaseRecordMap['blocks'], string>; costingAssumptions!: Table<DatabaseRecordMap['costingAssumptions'], string>; /** @deprecated Kept untyped and unused so the upgrade does not discard any data in the preliminary table. */ costPlans!: Table<Record<string, unknown>, string>; appMetadata!: Table<DatabaseRecordMap['appMetadata'], string>;
@@ -79,6 +80,22 @@ export class TransitDatabase extends Dexie {
         if (placeholderIds.length) await tx.table('blocks').bulkDelete(placeholderIds);
       } catch (error) {
         console.warn('Placeholder Block clean-up was skipped.', error);
+      }
+    });
+    // Version 9 changes no store. Every Runtime profile of a Route now uses one calculation method (Decision 0045): a Route whose profiles
+    // disagree takes the method most of them use (a tie goes to segment start). Only profiles whose method changes are written; each gets
+    // the next calculation revision, so its Trips show as having changed runtimes. Trip times are not rewritten. A failure leaves the
+    // data as it was (as in version 7).
+    this.version(9).stores({}).upgrade(async (tx) => {
+      try {
+        const profiles = await tx.table('runtimeProfiles').toArray();
+        const unified = unifyRouteRuntimeCalculationMethods(profiles, new Date().toISOString());
+        if (unified.changedProfileIds.length) {
+          const changed = new Set(unified.changedProfileIds);
+          await tx.table('runtimeProfiles').bulkPut(unified.profiles.filter((profile) => changed.has(profile.id)));
+        }
+      } catch (error) {
+        console.warn('Runtime calculation method unification was skipped.', error);
       }
     });
   }

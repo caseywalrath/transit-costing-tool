@@ -122,6 +122,24 @@ describe('1-010: placeholder Blocks of version 3 and 4 backups are discarded (De
   });
 });
 
+describe('one runtime calculation method per Route on import (Decision 0045)', () => {
+  it('leaves the golden backup, whose profiles agree, unchanged', () => {
+    const { snapshot, report } = parseProjectBackupWithReport(goldenJson());
+    expect(report.unifiedRuntimeProfiles).toBe(0);
+    expect(snapshot.runtimeProfiles).toEqual(goldenRaw().runtimeProfiles);
+  });
+
+  it('gives the profiles of a Route with mixed methods the method most of them use and the next calculation revision', () => {
+    const file = goldenRaw();
+    file.runtimeProfiles[0].calculationMethod = 'segmentStart';
+    const { snapshot, report } = parseProjectBackupWithReport(JSON.stringify(file));
+    expect(report.unifiedRuntimeProfiles).toBe(1);
+    expect(snapshot.runtimeProfiles[0]).toMatchObject({ calculationMethod: 'singleBand', calculationRevision: 1 });
+    expect(new Set(snapshot.runtimeProfiles.map((profile) => profile.calculationMethod ?? 'singleBand'))).toEqual(new Set(['singleBand']));
+    expect(snapshot.trips).toEqual(parseProjectBackupWithReport(goldenJson()).snapshot.trips);
+  });
+});
+
 describe('versions 1 to 6 still import', () => {
   for (const version of [1, 2, 3, 4, 5, 6]) {
     it(`imports a version ${version} backup through the app path and normalizes it`, async () => {

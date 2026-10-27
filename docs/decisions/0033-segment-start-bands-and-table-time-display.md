@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-21
 - Supersedes: Decision 0003 item 4 (one band for the full trip) for `segmentStart` profiles
+- Annotated by: Decision 0045 (the method is chosen once per Route, for every profile of the Route)
 
 ## Decision
 

@@ -3,7 +3,7 @@
 - Status: Superseded for new profiles by Decisions 0033 and 0035 item 1; retained for saved legacy profiles
 - Date: 2026-10-21
 - Supersedes: Decision 0003 item 4 (one band for the full trip) for blend profiles
-- Superseded in part by: Decision 0033 adds the `segmentStart` method; Decision 0035 item 1 makes `segmentStart` the default for new profiles
+- Superseded in part by: Decision 0033 adds the `segmentStart` method; Decision 0035 item 1 makes `segmentStart` the default for new profiles; Decision 0045 makes every profile of a Route use one method
 
 ## Decision
 

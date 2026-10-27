@@ -16,9 +16,9 @@ describe('route-definition persistence', () => {
     expect(await repository.getRouteDefinition(route.id)).toEqual({ route, nodes: [], patterns: [] });
   });
 
-  it('defines IndexedDB schema version 8 with Costing, Blocking Scenario, normalized Block lookups, and regeneration undo', () => {
+  it('defines IndexedDB schema version 9 with Costing, Blocking Scenario, normalized Block lookups, and regeneration undo', () => {
     const database = new TransitDatabase(`transit-costing-test-${Date.now()}`);
-    expect(database.verno).toBe(8);
+    expect(database.verno).toBe(9);
     expect(database.tables.map((table) => table.name)).toEqual(expect.arrayContaining(['runtimeProfiles', 'runtimeAssignments', 'tripProfiles', 'blockingScenarios', 'costingAssumptions', 'tripRegenerationUndo']));
     expect(database.runtimeAssignments.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['runtimeProfileId']));
     expect(database.blockingScenarios.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['tripProfileId', '[scenarioId+name]', '[tripProfileId+name]']));
@@ -40,8 +40,8 @@ describe('route-definition persistence', () => {
     const migrated = new TransitDatabase(name);
     try {
       await migrated.open();
-      expect(migrated.verno).toBe(8);
-      expect((await indexedDB.databases()).find((database) => database.name === name)?.version).toBe(80);
+      expect(migrated.verno).toBe(9);
+      expect((await indexedDB.databases()).find((database) => database.name === name)?.version).toBe(90);
       expect(await migrated.tripProfiles.get('profile')).toBeDefined();
       expect(await migrated.trips.get('trip')).toBeDefined();
       expect(await migrated.blocks.get('placeholder')).toBeUndefined();

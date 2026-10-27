@@ -18,11 +18,11 @@ import { TripShiftValidationError, type TripShiftPreview } from '../domain/tripS
 import { AnchorBandChoiceError, TripGenerationError, type AnchorBandChoice, type RecalculationPreview } from '../domain/trips';
 import { metadata, newId } from '../domain/ids';
 import { formatRuntimeDuration, parseRuntimeDuration } from '../domain/durations';
-import { addRuntimeBand, applyPastedRuntimeRows, buildTripTableView, buildTripsFieldProblems, createBlockingScenarioSourceSignature, duplicateRuntimeBand, formatNetShift, formatStagedShift, formatTripConnectionDuration, isUsablePattern, MAX_TRIPS_PER_GENERATION, orderDirections, parseBuildTripsForm, parseShiftSeconds, patternTotalMiles, removeRuntimeBand, reverseRuntimeCandidates, roundServiceTimeToMinute, runtimeBandTotalSeconds, sortServiceDays, tripBlockAssignmentImpact, tripBlockUnassignmentImpact, tripRunTimeSeconds, updateRuntimeBand, usableDirectionPatterns } from '../application/tripsWorkspaceView';
+import { addRuntimeBand, buildTripTableView, buildTripsFieldProblems, createBlockingScenarioSourceSignature, duplicateRuntimeBand, formatNetShift, formatStagedShift, formatTripConnectionDuration, isUsablePattern, MAX_TRIPS_PER_GENERATION, orderDirections, parseBuildTripsForm, parseShiftSeconds, patternTotalMiles, removeRuntimeBand, reverseRuntimeCandidates, roundServiceTimeToMinute, routeRuntimeCalculationMethod, runtimeBandTotalSeconds, sortServiceDays, tripBlockAssignmentImpact, tripBlockUnassignmentImpact, tripRunTimeSeconds, updateRuntimeBand, usableDirectionPatterns, type RuntimeCalculationMethod } from '../application/tripsWorkspaceView';
 import { formatServiceTime, parseServiceTime } from '../domain/time';
 import type { BlockingBlock, Node, NodeKind, Project, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, ServiceDayDefinition, Trip, ValidationFinding } from '../domain/types';
 import type { BlockConnection } from '../domain/blocking';
-import { parseRuntimePaste, RuntimePasteParseError, runtimeProfileCsv, type RuntimePasteRow } from './runtimePaste';
+import { runtimeProfileCsv } from './runtimeProfileCsv';
 import { tripTableCsv } from '../application/tripTableCsv';
 
 import type { CostingCommands, CostingQueries } from '../application/ports';
@@ -34,7 +34,7 @@ type Confirmation = { title: string; text: string; action: () => void; confirmLa
 type ActiveTab = 'route' | 'trips' | 'blocking' | 'costing';
 type SelectionPreference = { projectId?: string; scenarioId?: string; routeId?: string };
 type RouteNavigationGuard = (action: () => void) => void;
-type RuntimeEditorHandle = { addBand: () => void; discard: () => void; pasteRows: () => void; importRows: (contents: string) => void; /** Resolves to true when the profile was validated and saved. */ save: () => Promise<boolean> };
+type RuntimeEditorHandle = { addBand: () => void; discard: () => void; /** Resolves to true when the profile was validated and saved. */ save: () => Promise<boolean> };
 type BuildTripsValues = { patternId: string; firstTrip: string; headway: string; tripCount: string; lastTrip: string };
 const EMPTY_BUILD_VALUES: BuildTripsValues = { patternId: '', firstTrip: '', headway: '', tripCount: '', lastTrip: '' };
 type RuntimeEditorState = { dirty: boolean; saving: boolean };
@@ -631,6 +631,7 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
   const [roundDisplayedTimes, setRoundDisplayedTimes] = useState(false);
   const [busy, setBusy] = useState(false);
   const [runtimeCopyOpen, setRuntimeCopyOpen] = useState(false);
+  const [routeMethodChange, setRouteMethodChange] = useState<{ method: RuntimeCalculationMethod; impact?: { profileCount: number; tripCount: number }; busy: boolean }>();
   const [tripCopyOpen, setTripCopyOpen] = useState(false);
   const [batchPatternChangeOpen, setBatchPatternChangeOpen] = useState(false);
   const [blockingScenarios, setBlockingScenarios] = useState<import('../domain/types').BlockingScenario[]>([]);
@@ -644,7 +645,6 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
   const [tripBlockAssignmentStatus, setTripBlockAssignmentStatus] = useState('');
   const runtimeCopyButtonRef = useRef<HTMLButtonElement>(null);
   const tripsActionsRef = useRef<HTMLButtonElement>(null);
-  const runtimeCsvInputRef = useRef<HTMLInputElement>(null);
   const tripsTableScrollRef = useRef<HTMLDivElement>(null);
   const tripBlockAssignmentFocusRef = useRef<HTMLElement | null>(null);
   const runtimeEditorRef = useRef<RuntimeEditorHandle>(null);
@@ -659,6 +659,8 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
   const selectedDay = days.find((day) => day.id === serviceDayId);
   // The Runtime section's own reads win over the records the page loaded at the start, which a Runtime save does not refresh.
   const runtimeSource = routeRuntime ?? { profiles: records.runtimeProfiles, assignments: records.runtimeAssignments };
+  // Every Runtime profile of the Route uses one calculation method (Decision 0045).
+  const routeMethod = routeRuntimeCalculationMethod(runtimeSource.profiles.filter((profile) => profile.routeId === aggregate.route.id));
   const activeRuntimeProfiles = new Map(runtimeSource.assignments.filter((assignment) => assignment.serviceDayId === serviceDayId).map((assignment) => [assignment.patternId, runtimeSource.profiles.find((profile) => profile.id === assignment.runtimeProfileId)] as const));
   const patternName = (id: string) => aggregate.patterns.find((pattern) => pattern.id === id)?.name || 'Unnamed pattern';
 
@@ -1025,17 +1027,17 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
     catch (error) { setTripDeletion(undefined); onError(error); } finally { setBusy(false); }
   }
   async function completeRuntimeCopy() { onRuntimeChanged(); }
-  async function setRuntimeCalculationMethod(method: 'singleBand' | 'segmentStart') {
-    if (!selectedProfile || runtimeEditorState.dirty) return;
-    try { await service.saveRuntimeProfile({ ...selectedProfile, calculationMethod: method }); onRuntimeChanged(); }
-    catch (error) { onError(error); }
+  async function requestRouteMethodChange(method: RuntimeCalculationMethod) {
+    if (method === routeMethod || runtimeEditorState.dirty) return;
+    setRouteMethodChange({ method, busy: false });
+    try { const impact = await service.getRouteRuntimeCalculationMethodImpact(aggregate.route.id, method); setRouteMethodChange((current) => current?.method === method ? { ...current, impact } : current); }
+    catch (error) { setRouteMethodChange(undefined); onError(error); }
   }
-  async function importRuntimeCsv(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.currentTarget.files?.[0];
-    event.currentTarget.value = '';
-    if (!file) return;
-    try { runtimeEditorRef.current?.importRows(await file.text()); }
-    catch (error) { onError(error, 'Unable to read the Runtime profile CSV. Check that it has the Runtime profile columns, then try again.'); }
+  async function confirmRouteMethodChange() {
+    if (!routeMethodChange) return;
+    setRouteMethodChange({ ...routeMethodChange, busy: true });
+    try { await service.setRouteRuntimeCalculationMethod(aggregate.route.id, routeMethodChange.method); setRouteMethodChange(undefined); onRuntimeChanged(); }
+    catch (error) { setRouteMethodChange(undefined); onError(error); }
   }
   function exportRuntimeCsv() {
     if (!selectedProfile) return;
@@ -1108,17 +1110,15 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
         {runtimeEditorState.dirty && <><span className="action-separator" aria-hidden="true" /><button onClick={() => { runtimeEditorRef.current?.discard(); window.setTimeout(() => runtimeCopyButtonRef.current?.focus()); }} disabled={runtimeEditorState.saving || tripProfileBusy}>Discard</button><button className="primary" onClick={() => saveRuntimeThen(() => { window.setTimeout(() => runtimeCopyButtonRef.current?.focus()); })} disabled={runtimeEditorState.saving || tripProfileBusy}>{runtimeEditorState.saving ? 'Saving…' : 'Save'}</button></>}
         <span className="action-separator" aria-hidden="true" />
         <MenuButton label="Actions" menuLabel="Runtime actions" groups={[
-          { label: 'Calculation', items: [
-            { id: 'single-band', label: 'Single band for trip', checked: selectedProfile?.calculationMethod === 'singleBand' || selectedProfile?.calculationMethod === undefined, disabled: !selectedProfile || runtimeEditorState.dirty || runtimeEditorState.saving || tripProfileBusy, onSelect: () => void setRuntimeCalculationMethod('singleBand') },
-            { id: 'segment-start', label: 'Band at segment start', checked: selectedProfile?.calculationMethod === 'segmentStart', disabled: !selectedProfile || runtimeEditorState.dirty || runtimeEditorState.saving || tripProfileBusy, onSelect: () => void setRuntimeCalculationMethod('segmentStart') },
-            ...(selectedProfile?.calculationMethod === 'blendSegments' ? [{ id: 'legacy-blend', label: 'Legacy continuous blend', checked: true, disabled: true, onSelect: () => {} }] : []),
+          { label: 'Method (all Patterns on this Route)', items: [
+            { id: 'single-band', label: 'Single band for trip', checked: routeMethod === 'singleBand', disabled: !selectedProfile || runtimeEditorState.dirty || runtimeEditorState.saving || tripProfileBusy, title: runtimeEditorState.dirty ? 'Save or discard runtime edits before changing the method.' : undefined, onSelect: () => void requestRouteMethodChange('singleBand') },
+            { id: 'segment-start', label: 'Band at segment start', checked: routeMethod === 'segmentStart', disabled: !selectedProfile || runtimeEditorState.dirty || runtimeEditorState.saving || tripProfileBusy, title: runtimeEditorState.dirty ? 'Save or discard runtime edits before changing the method.' : undefined, onSelect: () => void requestRouteMethodChange('segmentStart') },
+            ...(routeMethod === 'blendSegments' ? [{ id: 'legacy-blend', label: 'Legacy continuous blend', checked: true, disabled: true, onSelect: () => {} }] : []),
           ] },
           { label: 'Edit runtimes', items: [
             { id: 'add-time-band', label: 'Add Time Band', disabled: !selectedProfile || runtimeEditorState.saving || tripProfileBusy, onSelect: () => runtimeEditorRef.current?.addBand() },
-            { id: 'paste-runtime-rows', label: 'Paste rows…', disabled: !selectedProfile || runtimeEditorState.saving || tripProfileBusy, onSelect: () => runtimeEditorRef.current?.pasteRows() },
           ] },
           { label: 'Data', items: [
-            { id: 'import-runtime-csv', label: 'Import profile CSV…', disabled: !selectedProfile || runtimeEditorState.dirty || runtimeEditorState.saving || tripProfileBusy, onSelect: () => runtimeCsvInputRef.current?.click() },
             { id: 'export-runtime-csv', label: 'Export profile CSV', disabled: !selectedProfile || runtimeEditorState.dirty || runtimeEditorState.saving, title: runtimeEditorState.dirty ? 'Save or discard runtime edits before exporting.' : runtimeEditorState.saving ? 'Wait for runtime changes to finish saving.' : undefined, onSelect: exportRuntimeCsv },
           ] },
           { label: 'Service day', items: [
@@ -1127,7 +1127,7 @@ function TripsWorkspace({ service, tripService, blockingService, aggregate, reco
         ]} disabled={loading || tripProfileBusy} triggerRef={runtimeCopyButtonRef} />
       </div></div>
       {selectedProfile && <p className="profile-usage">Used by {dayNameList(profileDays.length ? profileDays.map((day) => day.name) : [selectedDay?.name ?? 'this service day'])} for {selectedPattern?.name}.</p>}
-      <input ref={runtimeCsvInputRef} className="visually-hidden" tabIndex={-1} type="file" accept=".csv,text/csv" aria-label="Import Runtime profile CSV" onChange={(event) => void importRuntimeCsv(event)} />
+      {routeMethodChange && <RouteRuntimeMethodDialog routeName={aggregate.route.name || 'this Route'} method={routeMethodChange.method} impact={routeMethodChange.impact} busy={routeMethodChange.busy} onConfirm={() => void confirmRouteMethodChange()} onClose={() => setRouteMethodChange(undefined)} />}
       {selectedProfile && selectedPattern ? <RuntimeEditor2 ref={runtimeEditorRef} service={service} profile={selectedProfile} pattern={selectedPattern} nodes={aggregate.nodes} onStateChange={setRuntimeEditorState} onSaved={async () => onRuntimeChanged()} onError={onError} /> : <p className="runtime-status">Loading runtimes…</p>}
     </section>
     <section className="workflow-section" aria-label="Trips section">
@@ -1176,8 +1176,6 @@ const RuntimeEditor2 = forwardRef<RuntimeEditorHandle, { service: RouteDefinitio
   const [draft, setDraft] = useState(profile);
   const [findings, setFindings] = useState<ValidationFinding[]>([]);
   const [saving, setSaving] = useState(false);
-  const [pasteRowsOpen, setPasteRowsOpen] = useState(false);
-  const [pasteInitialText, setPasteInitialText] = useState('');
   const profileSignature = JSON.stringify(profile);
   const lastProfileSignature = useRef(profileSignature);
   useEffect(() => {
@@ -1192,12 +1190,6 @@ const RuntimeEditor2 = forwardRef<RuntimeEditorHandle, { service: RouteDefinitio
   const addBand = () => setDraft((current) => addRuntimeBand(current, pattern.points.length - 1));
   const duplicateBand = (index: number) => setDraft((current) => duplicateRuntimeBand(current, index));
   const discard = () => { setDraft(profile); setFindings([]); };
-  const openPasteRows = (initialText = '') => { setPasteInitialText(initialText); setPasteRowsOpen(true); };
-  function applyPastedProfile(nextProfile: RuntimeProfile) {
-    setDraft(nextProfile);
-    setFindings([]);
-    setPasteRowsOpen(false);
-  }
   async function save(): Promise<boolean> {
     const nextFindings = await service.validateRuntimeProfile(draft, pattern);
     setFindings(nextFindings);
@@ -1205,7 +1197,7 @@ const RuntimeEditor2 = forwardRef<RuntimeEditorHandle, { service: RouteDefinitio
     setSaving(true);
     try { await service.saveRuntimeProfile(draft); await onSaved(); return true; } catch (error) { onError(error); return false; } finally { setSaving(false); }
   }
-  useImperativeHandle(ref, () => ({ addBand, discard, pasteRows: () => openPasteRows(), importRows: (contents) => openPasteRows(contents), save }), [draft, profile, pattern]);
+  useImperativeHandle(ref, () => ({ addBand, discard, save }), [draft, profile, pattern]);
   useEffect(() => onStateChange({ dirty, saving }), [dirty, saving, onStateChange]);
   return <div className="runtime-editor">
     <div className="table-scroll data-grid runtime-table"><table>
@@ -1219,100 +1211,21 @@ const RuntimeEditor2 = forwardRef<RuntimeEditorHandle, { service: RouteDefinitio
       </tr>)}{draft.bands.length === 0 && <tr><td colSpan={pattern.points.length + 3} className="table-empty">Add a time band to enter runtimes.</td></tr>}</tbody>
     </table></div>
     {findings.length > 0 && <p className="field-error" role="alert">{[...new Set(findings.map(userMessage))].join(' ')}</p>}
-    {pasteRowsOpen && <RuntimePasteDialog service={service} baseProfile={draft} pattern={pattern} nodes={nodes} initialText={pasteInitialText} onApply={applyPastedProfile} onClose={() => setPasteRowsOpen(false)} />}
   </div>;
 });
 
 const CALCULATION_METHOD_LABELS: Record<NonNullable<RuntimeProfile['calculationMethod']>, string> = { singleBand: 'Single band for trip', segmentStart: 'Band at segment start', blendSegments: 'Legacy continuous blend' };
 const methodLabel = (method: RuntimeProfile['calculationMethod']) => CALCULATION_METHOD_LABELS[method ?? 'singleBand'];
-/** The line of the Runtime paste preview that names the calculation method the profile will have after the rows are applied. */
-function pasteMethodText(mode: 'replace' | 'append', current: RuntimeProfile['calculationMethod'], pasted: RuntimeProfile['calculationMethod']): string {
-  const kept = methodLabel(current);
-  if (mode === 'append') return `Calculation method: ${kept} (kept; Append does not change the method${pasted && pasted !== (current ?? 'singleBand') ? `, and the pasted rows name ${methodLabel(pasted)}` : ''}).`;
-  if (pasted && pasted !== (current ?? 'singleBand')) return `Calculation method: ${methodLabel(pasted)} (from the pasted rows, replacing ${kept}).`;
-  return `Calculation method: ${kept} (${pasted ? 'as pasted' : 'unchanged'}).`;
-}
-
-function RuntimePasteDialog({ service, baseProfile, pattern, nodes, initialText, onApply, onClose }: { service: RouteDefinitionApplication; baseProfile: RuntimeProfile; pattern: RoutePattern; nodes: Node[]; initialText: string; onApply: (profile: RuntimeProfile) => void; onClose: () => void }) {
-  const [text, setText] = useState(initialText);
-  const [mode, setMode] = useState<'replace' | 'append'>('replace');
-  const [parseIssues, setParseIssues] = useState<string[]>([]);
-  const [parsedRows, setParsedRows] = useState<RuntimePasteRow[]>([]);
-  const [candidate, setCandidate] = useState<RuntimeProfile>();
-  const [pastedMethod, setPastedMethod] = useState<RuntimeProfile['calculationMethod']>();
-  const [findings, setFindings] = useState<ValidationFinding[]>([]);
-  const [reviewing, setReviewing] = useState(false);
-  const segmentCount = Math.max(0, pattern.points.length - 1);
-  const hasValidationErrors = findings.some((finding) => finding.severity === 'error');
-  const previewBands = candidate ? (mode === 'append' ? candidate.bands.slice(baseProfile.bands.length) : candidate.bands) : [];
-  const segmentName = (index: number) => {
-    const from = nodes.find((node) => node.id === pattern.points[index]?.nodeId);
-    const to = nodes.find((node) => node.id === pattern.points[index + 1]?.nodeId);
-    const fromName = from?.shortName || from?.name || 'Unnamed point';
-    const toName = to?.shortName || to?.name || 'Unnamed point';
-    return `${fromName} → ${toName}`;
-  };
-
-  function clearReview() {
-    setParseIssues([]);
-    setParsedRows([]);
-    setCandidate(undefined);
-    setFindings([]);
-  }
-
-  async function reviewRows() {
-    setReviewing(true);
-    clearReview();
-    try {
-      const rows = parseRuntimePaste(text, segmentCount);
-      // Replace applies the method that the pasted rows name, else keeps the profile's own. Append never changes the method (finding 4-025).
-      const { profile: nextProfile, pastedMethod } = applyPastedRuntimeRows(baseProfile, rows, mode);
-      setPastedMethod(pastedMethod);
-      const nextFindings = await service.validateRuntimeProfile(nextProfile, pattern);
-      setParsedRows(rows);
-      setCandidate(nextProfile);
-      setFindings(nextFindings);
-    } catch (error) {
-      setParseIssues(error instanceof RuntimePasteParseError ? error.issues : ['Unable to read the pasted runtime rows. Copy the rows from the spreadsheet again and paste them again.']);
-    } finally {
-      setReviewing(false);
-    }
-  }
-
-  function changeText(value: string) {
-    setText(value);
-    clearReview();
-  }
-
-  function changeMode(value: 'replace' | 'append') {
-    setMode(value);
-    clearReview();
-  }
-
-  const canApply = Boolean(candidate && parsedRows.length && !hasValidationErrors && !parseIssues.length && !reviewing);
-  return <ModalDialog labelledBy="runtime-paste-title" className="confirm-dialog runtime-paste-dialog" onClose={onClose} busy={reviewing}>
-    <h2 id="runtime-paste-title">Paste runtime rows</h2>
-    <p>Paste rows with From, To, and one runtime for each segment in the selected Pattern. Use tabs copied from a spreadsheet or comma-separated CSV. A header row is optional; Band and calculated Total columns are accepted when named in the header.</p>
-    <fieldset className="copy-mode">
-      <legend>Apply pasted rows</legend>
-      <label><input type="radio" name="runtime-paste-mode" checked={mode === 'replace'} onChange={() => changeMode('replace')} /> Replace all {baseProfile.bands.length} current time band{baseProfile.bands.length === 1 ? '' : 's'}</label>
-      <small>The pasted rows become the complete runtime profile.</small>
-      <label><input type="radio" name="runtime-paste-mode" checked={mode === 'append'} onChange={() => changeMode('append')} /> Append after the {baseProfile.bands.length} current time band{baseProfile.bands.length === 1 ? '' : 's'}</label>
-      <small>Existing time bands stay in the draft. The combined profile must still pass validation.</small>
-    </fieldset>
-    <label className="dialog-field" htmlFor="runtime-paste-text">Spreadsheet or CSV rows<textarea id="runtime-paste-text" className="runtime-paste-input" autoFocus value={text} onChange={(event) => changeText(event.target.value)} placeholder={'From\tTo\tSegment 1\tSegment 2\n05:00\t06:00\t12\t15'} /></label>
-    <p className="copy-scope">Times may exceed 24:00. Segment runtimes accept minutes or MM:SS. Total is calculated and is not imported.</p>
-    {parseIssues.length > 0 && <section className="runtime-findings" role="alert"><strong>Fix the pasted rows</strong><ul>{parseIssues.map((issue) => <li key={issue}>{issue}</li>)}</ul></section>}
-    {findings.length > 0 && <section className={hasValidationErrors ? 'runtime-findings' : 'runtime-paste-notes'} role={hasValidationErrors ? 'alert' : 'status'}><strong>{hasValidationErrors ? 'The pasted profile has validation errors' : 'Review profile findings'}</strong><ul>{[...new Set(findings.map(userMessage))].map((message) => <li key={message}>{message}</li>)}</ul></section>}
-    {candidate && <section className="runtime-paste-preview" aria-label="Runtime row preview">
-      <h3>{previewBands.length} pasted time band{previewBands.length === 1 ? '' : 's'}</h3>
-      <p className="runtime-paste-method">{pasteMethodText(mode, baseProfile.calculationMethod, pastedMethod)}</p>
-      <div className="table-scroll"><table><thead><tr><th scope="col">Source row</th><th scope="col">From</th><th scope="col">To</th>{Array.from({ length: segmentCount }, (_, index) => <th scope="col" key={index}><span className="segment-header">{segmentName(index)}</span></th>)}<th scope="col" className="runtime-total-heading">Total</th></tr></thead>
-        <tbody>{previewBands.map((band, index) => <tr key={band.id}><td>{parsedRows[index]?.sourceRowNumber ?? '—'}</td><td>{formatServiceTime(band.startTime)}</td><td>{formatServiceTime(band.endTime)}</td>{band.segmentRuntimeSeconds.map((duration, segmentIndex) => <td key={`${band.id}-${segmentIndex}`}>{formatRuntimeDuration(duration)}</td>)}<td className="runtime-total">{formatRuntimeDuration(runtimeBandTotalSeconds(band))}</td></tr>)}</tbody>
-      </table></div>
-      <p>Applying changes the editor draft only. Use Save in the Runtimes header to save the profile.</p>
-    </section>}
-    <div className="dialog-actions"><button type="button" onClick={onClose} disabled={reviewing}>Cancel</button><button type="button" onClick={() => void reviewRows()} disabled={reviewing || !text.trim()}>{reviewing ? 'Reviewing…' : 'Review rows'}</button>{candidate && <button className="primary" type="button" onClick={() => onApply(candidate)} disabled={!canApply}>{mode === 'replace' ? `Replace with ${previewBands.length} rows` : `Append ${previewBands.length} rows`}</button>}</div>
+/**
+ * Confirms a change of the Route's runtime calculation method (Decision 0045). The method applies to every Runtime profile of every
+ * Pattern on the Route; the Trips calculated from a profile whose method changes are reported as having changed runtimes.
+ */
+function RouteRuntimeMethodDialog({ routeName, method, impact, busy, onConfirm, onClose }: { routeName: string; method: RuntimeCalculationMethod; impact?: { profileCount: number; tripCount: number }; busy: boolean; onConfirm: () => void; onClose: () => void }) {
+  return <ModalDialog labelledBy="route-runtime-method-title" className="confirm-dialog" onClose={onClose} busy={busy}>
+    <h2 id="route-runtime-method-title">Use {methodLabel(method)} for {routeName}?</h2>
+    <p>The calculation method applies to every Runtime profile of every Pattern on this Route, on every service day and Trip Profile.</p>
+    {impact ? <p role="status">{impact.profileCount} Runtime profile{impact.profileCount === 1 ? '' : 's'} will change. {impact.tripCount} Trip{impact.tripCount === 1 ? '' : 's'} will be marked Run times changed; their saved times stay as they are until you regenerate them.</p> : <p role="status">Reviewing the change…</p>}
+    <div className="dialog-actions"><button type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="primary" type="button" onClick={onConfirm} disabled={busy || !impact}>{busy ? 'Changing…' : 'Change method'}</button></div>
   </ModalDialog>;
 }
 

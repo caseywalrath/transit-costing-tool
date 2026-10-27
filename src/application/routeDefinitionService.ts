@@ -5,7 +5,7 @@ import { duplicatePattern, getSegmentMiles, normalizePattern, reversePattern, va
 import { createManagedDirections, ensureManagedDirections, oppositeDirectionGroup } from '../domain/directions';
 import { classifyPatternEdit, describePatternPointChange, getPatternServiceImpact, rebalanceRuntimeProfile, rebalanceTripForPattern, reconcileRouteTimetables, resetPatternService, type DirectionOrderConflict, type PatternServiceImpact, type RouteEditClassification, type RouteEditMode } from '../domain/safeRouteEditing';
 import { sortServiceDays } from '../domain/serviceDays';
-import { copyRuntimeProfile, normalizeRuntimeProfile, reverseCopyRuntimeProfile, validateRuntimeProfile, withRuntimeCalculationRevision, RuntimeProfileDeletionError } from '../domain/runtime';
+import { copyRuntimeProfile, normalizeRuntimeProfile, reverseCopyRuntimeProfile, routeRuntimeCalculationMethod, unifyRouteRuntimeCalculationMethods, validateRuntimeProfile, withRuntimeCalculationRevision, RuntimeProfileDeletionError, type RuntimeCalculationMethod } from '../domain/runtime';
 import type { Block, BlockActivity, Node, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, ValidationFinding } from '../domain/types';
 import { validateNodeDeletion, validateRouteDefinition } from '../domain/validation';
 import { adjustBlockReferences } from '../domain/trips';
@@ -643,22 +643,64 @@ export class RouteDefinitionService {
   async createDefaultRuntimeProfile(pattern: RoutePattern, name = 'Default'): Promise<RuntimeProfile> {
     const profile: RuntimeProfile = {
       id: newId(), scenarioId: pattern.scenarioId, routeId: pattern.routeId, patternId: pattern.id, name: name.trim(),
-      calculationMethod: 'segmentStart',
+      calculationMethod: routeRuntimeCalculationMethod(await this.repository.listRuntimeProfiles(pattern.routeId)),
       calculationRevision: 0,
       bands: [{ id: newId(), label: 'All service', sequence: 0, startTime: 0, endTime: 30 * 60 * 60, segmentRuntimeSeconds: Array(Math.max(0, pattern.points.length - 1)).fill(0) }],
       ...metadata(this.now()),
     };
     return this.save(async () => { await this.repository.saveRuntimeProfile(profile); return profile; });
   }
+  /**
+   * Saves one profile. Every profile of a Route uses one calculation method (Decision 0045): a profile that changes its method changes
+   * the method of every profile of the Route in the same write (as `setRouteRuntimeCalculationMethod` does); any other profile is saved
+   * with the method the Route's other profiles use.
+   */
   async saveRuntimeProfile(profile: RuntimeProfile): Promise<RuntimeProfile> {
     const aggregate = await this.repository.getRouteDefinition(profile.routeId);
     const pattern = aggregate?.patterns.find((item) => item.id === profile.patternId);
-    if (!pattern) throw new Error('The selected pattern is no longer available.');
+    if (!pattern || !aggregate) throw new Error('The selected pattern is no longer available.');
     const previous = await this.repository.getRuntimeProfile(profile.id);
-    const normalized = withRuntimeCalculationRevision(previous, withUpdatedAt(normalizeRuntimeProfile(profile), this.now()));
+    const others = (await this.repository.listRuntimeProfiles(profile.routeId)).filter((item) => item.id !== profile.id);
+    const methodChanged = previous !== undefined && (previous.calculationMethod ?? 'singleBand') !== (profile.calculationMethod ?? 'singleBand');
+    const method = methodChanged || !others.length ? profile.calculationMethod : routeRuntimeCalculationMethod(others);
+    const normalized = withRuntimeCalculationRevision(previous, withUpdatedAt(normalizeRuntimeProfile({ ...profile, ...(method ? { calculationMethod: method } : {}) }), this.now()));
     const errors = validateRuntimeProfile(normalized, pattern).filter((finding) => finding.severity === 'error');
     if (errors.length) throw new Error('Review the runtime profile before saving it.');
-    return this.save(async () => { await this.repository.saveRuntimeProfile(normalized); return normalized; });
+    if (!methodChanged || !others.length) return this.save(async () => { await this.repository.saveRuntimeProfile(normalized); return normalized; });
+    await this.updateScenarioRecords(aggregate.route.scenarioId, (current) => this.withRouteRuntimeCalculationMethod({ ...current, runtimeProfiles: current.runtimeProfiles.map((item) => item.id === normalized.id ? normalized : item) }, profile.routeId, normalized.calculationMethod ?? 'singleBand').records);
+    return normalized;
+  }
+
+  /** What changing the Route's calculation method to `method` changes: the profiles whose method changes and the Trips calculated from them. */
+  async getRouteRuntimeCalculationMethodImpact(routeId: string, method: RuntimeCalculationMethod): Promise<{ profileCount: number; tripCount: number }> {
+    const aggregate = await this.repository.getRouteDefinition(routeId);
+    if (!aggregate) throw new Error('The selected route is no longer available.');
+    const records = await this.repository.getScenarioRecords(aggregate.route.scenarioId);
+    if (!records) throw new Error('The selected scenario is no longer available.');
+    const { changedProfileIds, tripCount } = this.withRouteRuntimeCalculationMethod(records, routeId, method);
+    return { profileCount: changedProfileIds.length, tripCount };
+  }
+
+  /**
+   * Gives every Runtime profile of the Route the calculation method `method`, in one write. A profile whose method changes gets the next
+   * calculation revision, so the Trips calculated from it are reported as having changed runtimes; saved Trip times are not rewritten.
+   */
+  async setRouteRuntimeCalculationMethod(routeId: string, method: RuntimeCalculationMethod): Promise<void> {
+    const aggregate = await this.repository.getRouteDefinition(routeId);
+    if (!aggregate) throw new Error('The selected route is no longer available.');
+    const stored = await this.repository.getScenarioRecords(aggregate.route.scenarioId);
+    if (!stored) throw new Error('The selected scenario is no longer available.');
+    if (!this.withRouteRuntimeCalculationMethod(stored, routeId, method).changedProfileIds.length) return;
+    await this.updateScenarioRecords(aggregate.route.scenarioId, (current) => this.withRouteRuntimeCalculationMethod(current, routeId, method).records);
+  }
+
+  private withRouteRuntimeCalculationMethod(records: ScenarioRecords, routeId: string, method: RuntimeCalculationMethod): { records: ScenarioRecords; changedProfileIds: string[]; tripCount: number } {
+    const routeProfiles = records.runtimeProfiles.filter((profile) => profile.routeId === routeId);
+    const { profiles, changedProfileIds } = unifyRouteRuntimeCalculationMethods(routeProfiles, this.now(), method);
+    const changed = new Set(changedProfileIds);
+    const byId = new Map(profiles.map((profile) => [profile.id, profile]));
+    const tripCount = records.trips.filter((trip) => changed.has(trip.provenance.calculationSource?.runtimeProfileId ?? trip.provenance.runtimeProfileId ?? '')).length;
+    return { records: changed.size ? { ...records, runtimeProfiles: records.runtimeProfiles.map((profile) => byId.get(profile.id) ?? profile) } : records, changedProfileIds, tripCount };
   }
   async renameRuntimeProfile(profileId: string, name: string): Promise<RuntimeProfile> {
     const profile = await this.repository.getRuntimeProfile(profileId);
@@ -705,7 +747,7 @@ export class RouteDefinitionService {
     if (!profile) {
       profile = {
         id: newId(), scenarioId: pattern.scenarioId, routeId: pattern.routeId, patternId: pattern.id, name: 'Default',
-        calculationMethod: 'segmentStart',
+        calculationMethod: routeRuntimeCalculationMethod(records.runtimeProfiles.filter((candidate) => candidate.routeId === pattern.routeId)),
         calculationRevision: 0,
         bands: [{ id: newId(), label: 'All service', sequence: 0, startTime: 0, endTime: 30 * 60 * 60, segmentRuntimeSeconds: Array(expected).fill(0) }],
         ...metadata(now),
@@ -1098,6 +1140,8 @@ export type RouteDefinitionApplication = Pick<RouteDefinitionService,
   | 'renameRuntimeProfile'
   | 'ensureDefaultRuntimeProfile'
   | 'saveRuntimeProfile'
+  | 'getRouteRuntimeCalculationMethodImpact'
+  | 'setRouteRuntimeCalculationMethod'
   | 'assignRuntimeProfile'
   | 'copyRuntimeProfile'
   | 'reverseCopyRuntimeProfile'
