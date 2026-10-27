@@ -62,6 +62,17 @@ export async function openRuntimes(page: Page) {
  */
 export const runtimeCell = (scope: Page | Locator, name: string) => scope.locator(`[role="gridcell"][data-cell="${name}"]`);
 
+/** A cell of the Nodes grid or the Pattern points grid (UR-7b), by its `data-cell` name, for example "Node name" or "Point 2 cumulative miles". */
+export const gridCell = (scope: Page | Locator, name: string) => scope.locator(`[role="gridcell"][data-cell="${name}"]`);
+
+/** Edits any grid cell (a locator for the cell): double-click opens its field, `text` replaces the value, and `key` commits. */
+export async function editGridCell(cell: Locator, text: string, key: 'Tab' | 'Enter' = 'Tab') {
+  await cell.dblclick();
+  const field = cell.locator('input');
+  await field.fill(text);
+  await field.press(key);
+}
+
 /** Edits a Runtimes grid cell: double-click opens its field, the text is typed, and `key` commits (Tab moves right, Enter moves down). */
 export async function editRuntimeCell(scope: Page | Locator, name: string, text: string, key: 'Tab' | 'Enter' = 'Tab') {
   await runtimeCell(scope, name).dblclick();

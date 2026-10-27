@@ -1,4 +1,4 @@
-import { type ChangeEvent, type FocusEvent, type KeyboardEvent, useLayoutEffect, useRef, useState } from 'react';
+import { type ChangeEvent, type FocusEvent, type KeyboardEvent, type MouseEvent, useLayoutEffect, useRef, useState } from 'react';
 
 export type GridCell = { r: number; c: number };
 type Editing = GridCell & { text: string; initial: string; selectAll: boolean };
@@ -30,7 +30,11 @@ export function useGridNavigation({ rowCount, colCount, isEditable, cellText, on
       input.current.focus();
       const length = input.current.value.length;
       if (editingRef.current?.selectAll) input.current.select(); else input.current.setSelectionRange(length, length);
-    } else cells.current.get(`${activeCell.r}:${activeCell.c}`)?.focus();
+    } else {
+      // A cell that holds a native control (a select) hands focus to it; the control carries `data-grid-control`.
+      const cellElement = cells.current.get(`${activeCell.r}:${activeCell.c}`);
+      (cellElement?.querySelector<HTMLElement>('[data-grid-control]') ?? cellElement)?.focus();
+    }
   });
 
   function moveTo(cell: GridCell, focus = true) { setActive(clamp(cell)); if (focus) pendingFocus.current = 'cell'; }
@@ -57,6 +61,8 @@ export function useGridNavigation({ rowCount, colCount, isEditable, cellText, on
   function onCellKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (editingRef.current) return;
     const { r, c } = activeCell;
+    // Keys from a native control inside a cell stay with it, except Tab, which moves between cells.
+    if (event.target !== event.currentTarget && event.key !== 'Tab') return;
     const moves: Record<string, GridCell> = { ArrowUp: { r: r - 1, c }, ArrowDown: { r: r + 1, c }, ArrowLeft: { r, c: c - 1 }, ArrowRight: { r, c: c + 1 }, Home: { r, c: 0 }, End: { r, c: colCount - 1 } };
     if (moves[event.key]) { event.preventDefault(); moveTo(moves[event.key]); return; }
     if (event.key === 'Tab') {
@@ -80,8 +86,8 @@ export function useGridNavigation({ rowCount, colCount, isEditable, cellText, on
       'data-invalid': (isEditing && Boolean(message)) || undefined,
       ref: (element: HTMLElement | null) => { if (element) cells.current.set(`${r}:${c}`, element); else cells.current.delete(`${r}:${c}`); },
       onKeyDown: onCellKeyDown,
-      onFocus: (event: FocusEvent<HTMLElement>) => { if (event.target === event.currentTarget && !isActive) setActive({ r, c }); },
-      onClick: () => { if (!isEditing) moveTo({ r, c }); },
+      onFocus: (event: FocusEvent<HTMLElement>) => { if (!isActive) setActive({ r, c }); },
+      onClick: (event: MouseEvent<HTMLElement>) => { if (isEditing) return; if (event.target === event.currentTarget || !(event.target as HTMLElement).closest('[data-grid-control]')) moveTo({ r, c }); else setActive({ r, c }); },
       onDoubleClick: () => { if (!isEditing) startEdit(undefined, { r, c }); },
     };
   }

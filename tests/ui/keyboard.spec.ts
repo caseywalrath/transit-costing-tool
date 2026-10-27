@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule, openGoldenTrips } from './support/tripsWorkspace';
-import { openRuntimes, projectSwitcher, runCommand, scopeField } from './support/ui';
+import { editGridCell, gridCell, openRuntimes, projectSwitcher, runCommand, scopeField } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
@@ -226,7 +226,7 @@ test('focus is not lost after Discard in the Runtime editor or in the Node edito
   await expect(runtimeActions).toBeFocused();
 
   await page.getByRole('button', { name: 'Route', exact: true }).click();
-  await page.getByLabel('Node name').first().fill('Edited node name');
+  await editGridCell(gridCell(page, 'Node name').first(), 'Edited node name');
   const discardNodes = page.getByRole('button', { name: 'Discard', exact: true }).first();
   await discardNodes.focus();
   await page.keyboard.press('Enter');

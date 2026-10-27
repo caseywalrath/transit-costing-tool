@@ -9,6 +9,7 @@
 // A slowed save makes the window wide: every read-write and read transaction of the app's database waits before it starts.
 import { expect, test, type Page } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
+import { editGridCell, gridCell } from './support/ui';
 import { createRouteWithPattern } from './support/tripsWorkspace';
 
 test.setTimeout(60_000);
@@ -36,7 +37,7 @@ test('Add pattern is disabled while Save nodes is running, then opens a Pattern 
   await page.getByRole('button', { name: 'Route actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
   await page.getByRole('button', { name: 'New node', exact: true }).click();
-  await page.getByLabel('Node name').fill('A');
+  await editGridCell(gridCell(page, 'Node name'), 'A');
   await expect(addPattern(page)).toBeEnabled();
 
   await slowSaves(page, 600);

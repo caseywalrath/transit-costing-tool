@@ -2,7 +2,7 @@
 import { expect, type Page } from '@playwright/test';
 import { goldenRaw } from './goldenFixture';
 import { runInPage, seedSnapshot } from './dexieEnv';
-import { editRuntimeCell, openRuntimes, runtimeCell, scopeField } from './ui';
+import { editGridCell, editRuntimeCell, gridCell, openRuntimes, runtimeCell, scopeField } from './ui';
 
 /**
  * Creates a project with one Route that has Nodes A and B and one saved Pattern (A to B, rebalanced) and its Default Runtime profile.
@@ -22,12 +22,12 @@ export async function createRouteWithPattern(page: Page, projectName: string) {
 
   const saveNodes = page.getByRole('button', { name: 'Save nodes', exact: true });
   await page.getByRole('button', { name: 'New node', exact: true }).click();
-  await page.getByLabel('Node name').fill('A');
+  await editGridCell(gridCell(page, 'Node name'), 'A');
   await saveNodes.click();
   await expect(saveNodes).toHaveCount(0); // the save bar goes away once the draft is saved
   await expect(page.getByRole('button', { name: 'Remove A', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'New node', exact: true }).click();
-  await page.getByLabel('Node name').last().fill('B');
+  await editGridCell(gridCell(page, 'Node name').last(), 'B');
   await saveNodes.click();
   await expect(saveNodes).toHaveCount(0); // the save bar goes away once the draft is saved
   await expect(page.getByRole('button', { name: 'Remove B', exact: true })).toBeVisible();

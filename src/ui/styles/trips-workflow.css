@@ -142,15 +142,25 @@
 .runtime-table th, .runtime-table td { min-width: 72px; width: 72px; }
 .runtime-table th:nth-child(1), .runtime-table td:nth-child(1), .runtime-table th:nth-child(2), .runtime-table td:nth-child(2) { min-width: 70px; width: 70px; }
 /* Spreadsheet grid cells (UR-7, useGridNavigation): borderless values, a focus outline on the active cell, a corner mark on edited cells. */
-.runtime-table td.grid-cell { position: relative; padding: 0; height: 30px; border-right: 1px solid var(--color-border-soft); cursor: cell; font-variant-numeric: tabular-nums; }
-.runtime-table td.grid-cell > span { display: block; padding: 0 var(--space-2); line-height: 30px; white-space: nowrap; }
-.runtime-table td.grid-cell:hover { box-shadow: inset 0 0 0 1px var(--color-border); }
-.runtime-table td.grid-cell[data-active] { box-shadow: inset 0 0 0 2px var(--color-focus); }
-.runtime-table td.grid-cell:focus { outline: none; }
-.runtime-table td.grid-cell--edited::after { content: ""; position: absolute; top: 0; right: 0; border-style: solid; border-width: 0 7px 7px 0; border-color: transparent var(--color-warn-border) transparent transparent; pointer-events: none; }
-.runtime-table td.grid-cell .grid-cell__input { position: absolute; inset: 0; width: 100%; min-width: 0; height: 100%; border: 0; border-radius: 0; padding: 0 var(--space-2); background: var(--color-surface); box-shadow: inset 0 0 0 2px var(--color-focus); outline: none; font: inherit; font-variant-numeric: tabular-nums; }
-.runtime-table td.grid-cell[data-invalid] { background: var(--color-danger-soft); }
-.runtime-table td.grid-cell[data-invalid] .grid-cell__input { box-shadow: inset 0 0 0 2px var(--color-danger); }
+.grid-table td.grid-cell { position: relative; padding: 0; height: 30px; border-right: 1px solid var(--color-border-soft); cursor: cell; font-variant-numeric: tabular-nums; }
+.grid-table td.grid-cell > span { display: block; padding: 0 var(--space-2); line-height: 30px; white-space: nowrap; }
+.grid-table td.grid-cell:hover { box-shadow: inset 0 0 0 1px var(--color-border); }
+.grid-table td.grid-cell:focus, .grid-table td.grid-cell:focus-within { box-shadow: inset 0 0 0 2px var(--color-focus); }
+.grid-table td.grid-cell select { width: 100%; min-width: 0; border-color: transparent; background-color: transparent; }
+.grid-table td.grid-cell select:hover, .grid-table td.grid-cell select:focus { border-color: var(--color-border); }
+.grid-cell__placeholder { color: var(--color-text-muted); }
+.route-nodes .grid-table { min-width: 0; table-layout: fixed; }
+.route-nodes .grid-table th:nth-child(1) { width: 36%; }
+.route-nodes .grid-table th:nth-child(2) { width: 16%; }
+.route-nodes .grid-table th:nth-child(3) { width: 104px; }
+.route-nodes .grid-table th:nth-child(5) { width: 48px; }
+.route-nodes .grid-table td.grid-cell > span { overflow: hidden; text-overflow: ellipsis; }
+.route-nodes td select { min-width: 0; }
+.grid-table td.grid-cell:focus { outline: none; }
+.grid-table td.grid-cell--edited::after { content: ""; position: absolute; top: 0; right: 0; border-style: solid; border-width: 0 7px 7px 0; border-color: transparent var(--color-warn-border) transparent transparent; pointer-events: none; }
+.grid-table td.grid-cell .grid-cell__input { position: absolute; inset: 0; width: 100%; min-width: 0; height: 100%; border: 0; border-radius: 0; padding: 0 var(--space-2); background: var(--color-surface); box-shadow: inset 0 0 0 2px var(--color-focus); outline: none; font: inherit; font-variant-numeric: tabular-nums; }
+.grid-table td.grid-cell[data-invalid] { background: var(--color-danger-soft); }
+.grid-table td.grid-cell[data-invalid] .grid-cell__input { box-shadow: inset 0 0 0 2px var(--color-danger); }
 .grid-message { min-height: 1.5em; margin: var(--space-1) 0 0; color: var(--color-danger); font-size: var(--font-size-label); }
 .grid-message:empty { min-height: 0; margin: 0; }
 .runtime-table .segment-header { min-width: 72px; max-width: 88px; }

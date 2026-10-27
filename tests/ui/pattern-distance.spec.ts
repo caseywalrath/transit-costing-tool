@@ -2,6 +2,7 @@
 // Blocking uses for incomplete mileage, P12) shows "incomplete" for its segment miles instead of "0.00". Every other value is unchanged.
 import { expect, test } from '@playwright/test';
 import { createRouteWithPattern } from './support/tripsWorkspace';
+import { editGridCell, gridCell } from './support/ui';
 
 test.setTimeout(120_000);
 
@@ -11,13 +12,11 @@ test('a Pattern with no distance shows "incomplete" for its segment miles, and t
   await expect(segments).toHaveText(['incomplete', 'incomplete']);
   await expect(page.locator('.pattern-editor')).not.toContainText('0.00');
 
-  const distance = page.getByLabel('Point 2 cumulative miles');
-  await distance.fill('4.5');
-  await distance.press('Tab');
+  const distance = gridCell(page, 'Point 2 cumulative miles');
+  await editGridCell(distance, '4.5');
   // The first point has no segment before it; its 0.00 is unchanged.
   await expect(segments).toHaveText(['0.00', '4.50']);
 
-  await distance.fill('0');
-  await distance.press('Tab');
+  await editGridCell(distance, '0');
   await expect(segments).toHaveText(['incomplete', 'incomplete']);
 });

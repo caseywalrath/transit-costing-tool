@@ -5,7 +5,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { goldenRaw, goldenWithAltProfile } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
-import { editRuntimeCell, openRuntimes, runCommand, runtimeCell } from './support/ui';
+import { editGridCell, editRuntimeCell, gridCell, openRuntimes, runCommand, runtimeCell } from './support/ui';
 
 test.setTimeout(120000);
 test.use({ actionTimeout: 15000 });
@@ -37,7 +37,7 @@ async function expectRejected(page: Page) {
 test('a Node added in the active tab survives a Route edit attempted in the read-only tab', async ({ browser }) => {
   const { active, readOnly } = await twoTabs(browser);
   await active.getByRole('button', { name: 'New node', exact: true }).click();
-  await active.getByLabel('Node name').last().fill('Active-added-node');
+  await editGridCell(gridCell(active, 'Node name').last(), 'Active-added-node');
   await active.getByRole('button', { name: 'Save nodes', exact: true }).click();
   await expect.poll(() => runInPage(active, "return (await e.db.nodes.toArray()).some((node) => node.name === 'Active-added-node')")).toBe(true);
 

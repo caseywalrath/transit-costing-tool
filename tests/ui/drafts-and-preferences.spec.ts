@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule, openGoldenTrips } from './support/tripsWorkspace';
-import { editRuntimeCell, openRuntimes, runCommand, runtimeCell, scopeField } from './support/ui';
+import { editGridCell, editRuntimeCell, gridCell, openRuntimes, runCommand, runtimeCell, scopeField } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
@@ -183,15 +183,15 @@ test('Build Trips closes without a prompt and shows its values again when it is 
 test('saving Nodes keeps an unsaved Pattern draft, and saving a Pattern keeps unsaved Node edits', async ({ page }) => {
   await createRouteWithPattern(page, 'Draft preservation');
   const patternName = page.getByLabel('Pattern name');
-  const nodeNames = page.getByLabel('Node name');
+  // A cell is found by its text once, as an index, because an edited cell shows an input instead of its text.
+  const nodeCell = async (name: string) => gridCell(page, 'Node name').nth((await gridCell(page, 'Node name').allTextContents()).indexOf(name));
   const saveNodes = page.getByRole('button', { name: 'Save nodes', exact: true });
   const savePattern = page.getByRole('button', { name: 'Review and save', exact: true });
 
   // Unsaved Pattern edit, then a Node save.
   await patternName.fill('Edited pattern, not saved');
   await expect(savePattern).toBeEnabled();
-  const nodeInput = async (name: string) => nodeNames.nth(await nodeNames.evaluateAll((inputs, wanted) => inputs.findIndex((input) => (input as HTMLInputElement).value === wanted), name));
-  await (await nodeInput('A')).fill('A renamed');
+  await editGridCell(await nodeCell('A'), 'A renamed');
   await saveNodes.click();
   // The save bar disappears once the Node draft is saved.
   await expect(saveNodes).toHaveCount(0);
@@ -200,13 +200,13 @@ test('saving Nodes keeps an unsaved Pattern draft, and saving a Pattern keeps un
   await expect(savePattern).toBeEnabled();
 
   // Unsaved Node edit, then a Pattern save.
-  await (await nodeInput('B')).fill('B edited, not saved');
+  await editGridCell(await nodeCell('B'), 'B edited, not saved');
   await expect(saveNodes).toBeEnabled();
   await savePattern.click();
   const rebalance = page.getByRole('button', { name: 'Save and rebalance', exact: true });
   if (await rebalance.isVisible().catch(() => false)) await rebalance.click();
   await expect.poll(() => runInPage(page, 'return (await e.db.patterns.toArray()).map((pattern) => pattern.name).join(",")')).toBe('Edited pattern, not saved');
-  await expect(await nodeInput('B edited, not saved')).toHaveValue('B edited, not saved');
+  await expect(gridCell(page, 'Node name').filter({ hasText: 'B edited, not saved' })).toHaveCount(1);
   await expect(saveNodes).toBeEnabled();
   expect(await runInPage(page, "return (await e.db.nodes.toArray()).map((node) => node.name).sort().join(',')")).toBe('A renamed,B');
 });

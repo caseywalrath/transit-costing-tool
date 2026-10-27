@@ -2,6 +2,7 @@
 // not only against what the page shows.
 import { expect, test } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
+import { editGridCell, gridCell } from './support/ui';
 
 test('keeps Node and Pattern drafts local until their explicit saves', async ({ page }) => {
   await page.goto('/');
@@ -13,21 +14,21 @@ test('keeps Node and Pattern drafts local until their explicit saves', async ({ 
   await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
 
   await page.getByRole('button', { name: 'New node', exact: true }).click();
-  await page.getByLabel('Node name').fill('Unsaved node');
+  await editGridCell(gridCell(page, 'Node name'), 'Unsaved node');
   await page.getByRole('button', { name: 'Discard', exact: true }).first().click();
-  await expect(page.getByLabel('Node name')).toHaveCount(0);
+  await expect(gridCell(page, 'Node name')).toHaveCount(0);
   expect(await runInPage(page, 'return await e.db.nodes.count()')).toBe(0);
 
   // Wait for each save to settle before the next step: a late reload would replace the draft the next step just created (L-16).
   const saveNodes = page.getByRole('button', { name: 'Save nodes', exact: true });
   await page.getByRole('button', { name: 'New node', exact: true }).click();
-  await page.getByLabel('Node name').fill('A');
+  await editGridCell(gridCell(page, 'Node name'), 'A');
   await saveNodes.click();
   await expect(saveNodes).toHaveCount(0); // the save bar goes away once the draft is saved
   await expect(page.getByRole('button', { name: 'Remove A', exact: true })).toBeVisible();
   await expect.poll(() => runInPage(page, 'return await e.db.nodes.count()')).toBe(1);
   await page.getByRole('button', { name: 'New node', exact: true }).click();
-  await page.getByLabel('Node name').last().fill('B');
+  await editGridCell(gridCell(page, 'Node name').last(), 'B');
   await saveNodes.click();
   await expect(saveNodes).toHaveCount(0); // the save bar goes away once the draft is saved
   await expect(page.getByRole('button', { name: 'Remove B', exact: true })).toBeVisible();
@@ -50,8 +51,8 @@ test('keeps Node and Pattern drafts local until their explicit saves', async ({ 
   // The saves reached IndexedDB and survive a reload.
   expect(await runInPage(page, 'return [(await e.db.nodes.toArray()).map((node) => node.name).sort(), await e.db.patterns.count()]')).toEqual([['A', 'B'], 1]);
   await page.reload();
-  await expect(page.getByLabel('Node name')).toHaveCount(2);
-  expect((await page.getByLabel('Node name').evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value))).sort()).toEqual(['A', 'B']);
+  await expect(gridCell(page, 'Node name')).toHaveCount(2);
+  expect((await gridCell(page, 'Node name').allTextContents()).sort()).toEqual(['A', 'B']);
   await expect(page.getByLabel('Point 2 node').locator('option:checked')).toHaveText('B');
   await expect(page.getByRole('complementary', { name: 'Patterns' }).getByRole('button')).toHaveCount(2); // the Pattern, then Add pattern
 
