@@ -4,7 +4,7 @@ import { staleTripNotice, staleTripNoticeText } from './staleTripReasons';
 
 const finding = (entityId: string, messageKey: string): ValidationFinding => ({ ruleId: messageKey, severity: 'error', entityType: 'trip', entityId, messageKey });
 const fallback = (item: ValidationFinding) => `Fallback for ${item.messageKey}.`;
-const NO_BAND = 'No Runtime band covers its first departure. Add or extend a Runtime band.';
+const NO_BAND = 'No runtime band covers its first departure. Add or extend a runtime band.';
 
 describe('staleTripNotice', () => {
   it('is empty when no shown Trip carries a finding', () => {

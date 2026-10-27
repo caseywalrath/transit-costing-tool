@@ -5,6 +5,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { goldenRaw, goldenWithAltProfile } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
+import { editGridCell, editRuntimeCell, gridCell, openRuntimes, runCommand, runtimeCell } from './support/ui';
 
 test.setTimeout(120000);
 test.use({ actionTimeout: 15000 });
@@ -36,7 +37,7 @@ async function expectRejected(page: Page) {
 test('a Node added in the active tab survives a Route edit attempted in the read-only tab', async ({ browser }) => {
   const { active, readOnly } = await twoTabs(browser);
   await active.getByRole('button', { name: 'New node', exact: true }).click();
-  await active.getByLabel('Node name').last().fill('Active-added-node');
+  await editGridCell(gridCell(active, 'Node name').last(), 'Active-added-node');
   await active.getByRole('button', { name: 'Save nodes', exact: true }).click();
   await expect.poll(() => runInPage(active, "return (await e.db.nodes.toArray()).some((node) => node.name === 'Active-added-node')")).toBe(true);
 
@@ -74,7 +75,7 @@ test('a Route added in the active tab survives an annual-count edit attempted in
 test('a Block reorder in the active tab survives an annual-count edit attempted in the read-only tab', async ({ browser }) => {
   const { active, readOnly } = await twoTabs(browser);
   await active.getByRole('button', { name: 'Blocking', exact: true }).click();
-  const current = active.getByLabel('Current Block');
+  const current = active.getByLabel('Current block');
   await expect(current.locator('tbody tr').first()).toBeVisible({ timeout: 30000 });
   const order = "const block = (await e.db.blocks.toArray()).filter((candidate) => candidate.activities.length > 3)[0]; return block.activities.slice(0, 4).map((activity) => activity.id).join(',')";
   const before = await runInPage(active, order);
@@ -91,17 +92,18 @@ test('a Runtime band value saved in the active tab survives a different band val
   const { active, readOnly } = await twoTabs(browser);
   for (const page of [active, readOnly]) {
     await page.getByRole('button', { name: 'Trips', exact: true }).click();
-    await expect(page.getByLabel('Time band 1 segment 1')).toBeVisible({ timeout: 20000 });
+    await openRuntimes(page);
+    await expect(runtimeCell(page, 'Time band 1 segment 1')).toBeVisible({ timeout: 20000 });
   }
   const segments = "return (await e.db.runtimeProfiles.toArray()).filter((profile) => profile.name === 'Weekday workbook runtimes').map((profile) => profile.id + ':' + profile.bands[0].segmentRuntimeSeconds.join(',')).sort().join('|')";
   const before = await runInPage(active, segments);
-  const first = active.getByLabel('Time band 1 segment 1'); await first.fill(':09'); await first.press('Enter');
+  await editRuntimeCell(active, 'Time band 1 segment 1', ':09', 'Enter');
   await active.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(() => runInPage(active, segments)).not.toBe(before);
   const afterActive = await runInPage(active, segments);
   expect(afterActive).toContain('540');
 
-  const second = readOnly.getByLabel('Time band 1 segment 2'); await second.fill(':03'); await second.press('Enter');
+  await editRuntimeCell(readOnly, 'Time band 1 segment 2', ':03', 'Enter');
   await readOnly.getByRole('button', { name: 'Save', exact: true }).click();
   await expectRejected(readOnly);
   expect(await runInPage(active, segments)).toBe(afterActive);
@@ -114,11 +116,11 @@ test('Costing assumptions saved in the active tab survive a save attempted in th
     await expect(page.getByLabel('Operating cost per Revenue Hour in USD')).toBeVisible({ timeout: 20000 });
   }
   await active.getByLabel('Operating cost per Revenue Hour in USD').fill('200');
-  await active.getByRole('button', { name: 'Save', exact: true }).click();
+  await active.getByRole('button', { name: 'Save assumptions', exact: true }).click();
   await expect.poll(() => runInPage(active, 'return (await e.db.costingAssumptions.toArray())[0]?.enteredRate')).toBe(200);
 
-  await readOnly.getByLabel('Inflation Rate (%)').fill('5');
-  await readOnly.getByRole('button', { name: 'Save', exact: true }).click();
+  await readOnly.getByLabel('Inflation rate (%)').fill('5');
+  await readOnly.getByRole('button', { name: 'Save assumptions', exact: true }).click();
   await expectRejected(readOnly);
   const stored = await runInPage(active, 'const assumptions = (await e.db.costingAssumptions.toArray())[0]; return { rate: assumptions.enteredRate, escalation: assumptions.annualEscalation }');
   expect(stored.rate).toBe(200);
@@ -139,8 +141,8 @@ test('a Project deleted in the active tab is not resurrected by a Route edit in 
   const readOnly = await context.newPage();
   await load(readOnly);
 
-  await active.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await active.getByRole('menuitem', { name: 'Delete project', exact: true }).click();
+  await active.getByRole('button', { name: /^Project: / }).click();
+  await active.getByRole('menuitem', { name: 'Delete project…', exact: true }).click();
   await active.getByRole('button', { name: 'Delete project', exact: true }).last().click();
   await expect.poll(() => runInPage(active, 'return await e.db.projects.count()')).toBe(1);
 
@@ -152,20 +154,20 @@ test('a Project deleted in the active tab is not resurrected by a Route edit in 
 });
 
 async function buildThreeTrips(page: Page) {
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Build trips…' }).click();
-  const drawer = page.getByRole('complementary', { name: 'Build Trips' });
+  await runCommand(page, 'trips.build');
+  const drawer = page.getByRole('complementary', { name: 'Build trips' });
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
-  await drawer.getByLabel('First Trip').fill('03:00');
+  await drawer.getByLabel('First trip').fill('03:00');
   await drawer.getByLabel('Headway').fill('10');
-  await drawer.getByLabel('Number of Trips').fill('3');
+  await drawer.getByLabel('Number of trips').fill('3');
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
 }
 
 async function openTripsInBothTabs(active: Page, readOnly: Page) {
   for (const page of [active, readOnly]) {
     await page.getByRole('button', { name: 'Trips', exact: true }).click();
-    await expect(page.getByLabel('Time band 1 segment 1')).toBeVisible({ timeout: 20000 });
+    await openRuntimes(page);
+    await expect(runtimeCell(page, 'Time band 1 segment 1')).toBeVisible({ timeout: 20000 });
   }
 }
 
@@ -249,7 +251,7 @@ test('control: a Blocking edit made from a stale view of the active tab is still
   await seedSnapshot(page, goldenRaw());
   await load(page);
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  const current = page.getByLabel('Current Block');
+  const current = page.getByLabel('Current block');
   await expect(current.locator('tbody tr').first()).toBeVisible({ timeout: 30000 });
   const order = "const block = (await e.db.blocks.toArray()).filter((candidate) => candidate.activities.length > 3)[0]; return block.activities.slice(0, 4).map((activity) => activity.id).join(',')";
   // A write that did not come through this tab's guarded connection changes the Blocking Scenario after the view was loaded.
@@ -259,19 +261,19 @@ test('control: a Blocking edit made from a stale view of the active tab is still
     await e.db.blocks.put({ ...block, activities: [second, first, ...rest].map((activity, index) => ({ ...activity, sequence: index })) });`);
   const changed = await runInPage(page, order);
   await current.getByRole('button', { name: /Move.*down/i }).nth(2).click();
-  await expect(page.getByText('Blocking Scenario changed since the operation was reviewed')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('Blocking scenario changed since the operation was reviewed')).toBeVisible({ timeout: 10000 });
   expect(await runInPage(page, order)).toBe(changed);
 });
 
 test('a read-only tab can still run a database upgrade', async ({ browser }) => {
   const context = await browser.newContext();
   const holder = await context.newPage();
-  await holder.goto('/src/styles.css');
+  await holder.goto('/src/ui/styles/index.css');
   // Stand in for an active tab: hold the active-tab lock for the life of this page.
   await holder.evaluate(() => { void navigator.locks.request('transit-costing-tool.active-tab', () => new Promise(() => {})); });
 
   const page = await context.newPage();
-  await page.goto('/src/styles.css');
+  await page.goto('/src/ui/styles/index.css');
   await page.evaluate(async () => {
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open('transit-costing-tool', 4);
@@ -288,7 +290,7 @@ test('a read-only tab can still run a database upgrade', async ({ browser }) => 
   });
 
   await page.goto('/');
-  await expect(page.getByRole('option', { name: 'Upgrade Project' })).toBeAttached({ timeout: 30000 });
+  await expect(page.getByRole('button', { name: 'Project: Upgrade Project', exact: true })).toBeVisible({ timeout: 30000 });
   const upgraded = await page.evaluate(async () => new Promise<{ version: number; tripProfiles: number }>((resolve, reject) => {
     const request = indexedDB.open('transit-costing-tool');
     request.onsuccess = () => {
@@ -302,9 +304,9 @@ test('a read-only tab can still run a database upgrade', async ({ browser }) => 
   expect(upgraded.version).toBeGreaterThanOrEqual(6);
   expect(upgraded.tripProfiles).toBe(1);
   // The tab is read-only: the upgrade was allowed, ordinary saves are not.
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Should not save');
-  await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
+  await page.getByRole('button', { name: 'New project', exact: true }).last().click();
   await expectRejected(page);
 });

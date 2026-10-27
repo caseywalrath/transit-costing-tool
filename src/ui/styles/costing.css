@@ -1,0 +1,40 @@
+/* Phase 5 Costing workspace. */
+.costing-workspace { display: grid; gap: var(--space-4); max-width: 100%; }
+.costing-assumptions-grid { display: grid; grid-template-columns: repeat(3, minmax(170px, 1fr)); gap: 10px var(--space-3); }
+.costing-assumptions-grid label { display: grid; align-content: start; gap: var(--space-1); color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
+.costing-days { display: flex; flex-wrap: wrap; gap: 6px var(--space-4); margin-top: var(--space-3); border-top: 1px solid var(--color-border-soft); padding-top: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-label); font-variant-numeric: tabular-nums; }
+.costing-days .invalid { color: var(--color-danger); }
+.costing-state { align-self: center; border: 1px solid; border-radius: var(--radius-pill); padding: 3px var(--space-2); font-size: var(--font-size-caption); font-weight: var(--font-weight-bold); white-space: nowrap; }
+.costing-state.complete { border-color: var(--color-ok); background: var(--color-ok-soft); color: var(--color-ok); }
+.costing-state.partial, .costing-state.noEstimate { border-color: var(--color-warn-border); background: var(--color-warn-soft); color: var(--color-warn); }
+.costing-state.invalid { border-color: var(--color-danger); background: var(--color-danger-soft); color: var(--color-danger); }
+.costing-alert { margin: 0 0 var(--space-2); border-left: 4px solid; padding: var(--space-2) 10px; line-height: 1.35; }
+.costing-alert.warning { border-color: var(--color-warn-border); background: var(--color-warn-soft); color: var(--color-warn); }
+.costing-alert.error { border-color: var(--color-danger); background: var(--color-danger-soft); color: var(--color-danger); }
+.costing-results-table table { min-width: 0; }
+/* Nine columns fit the 1024 px frame (AC7, issue I-033): headers wrap, cells keep their digits on one line. */
+.costing-results-table thead th { white-space: normal; line-height: 1.2; }
+.costing-results-table th, .costing-results-table td { padding-left: 6px; padding-right: 6px; }
+.costing-alert p { margin: 0; }
+.costing-alert ul { margin: 6px 0 0; padding-left: 20px; }
+.costing-results-table th, .costing-results-table td, .costing-outlook-table th, .costing-outlook-table td { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.costing-results-table td:not(:first-child), .costing-results-table thead th:not(:first-child), .costing-results-table tfoot td { text-align: right; }
+.costing-results-table tbody th[scope='row'], .costing-results-table tfoot th[scope='row'] { text-align: right; vertical-align: middle; font-size: var(--font-size-note); }
+.costing-results-table tfoot, .costing-outlook-table .selected-costing-year { background: var(--color-sunken); font-weight: var(--font-weight-bold); }
+.costing-results-table tfoot th { background: var(--color-sunken); }
+.costing-lower-grid { display: grid; grid-template-columns: minmax(540px, 1.35fr) minmax(360px, .65fr); gap: 14px; min-width: 0; }
+.costing-lower-grid > section { min-width: 0; }
+.costing-exclusions-table table { min-width: 620px; }
+.costing-outlook-table table { min-width: 420px; }
+.activity-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px var(--space-3); }
+.activity-form label { display: grid; gap: var(--space-1); color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
+.activity-form input:not([type='checkbox']), .activity-form select { box-sizing: border-box; width: 100%; min-width: 0; height: 32px; min-height: 32px; }
+.activity-form label.activity-bulk-option { display: flex; grid-column: 1 / -1; align-items: center; justify-self: start; gap: var(--space-2); margin-top: 2px; }
+.activity-bulk-option input[type='checkbox'] { width: 15px; min-width: 15px; height: 15px; min-height: 15px; margin: 0; padding: 0; }
+.activity-dialog .boundary-preview { margin: var(--space-3) 0 0; color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
+
+.costing-workspace .work-surface__body > .inline-note { margin: var(--space-2) 0; }
+.costing-workspace .work-surface__body > .inline-note:first-child { margin-top: 0; }
+.support-panel__aside { color: var(--color-text-muted); font-size: var(--font-size-note); }
+.costing-lower-grid .table-scroll { background: var(--color-surface); }
+.costing-lower-grid .support-panel__header > .support-panel__aside { margin-left: 0; }

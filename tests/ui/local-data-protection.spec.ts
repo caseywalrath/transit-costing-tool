@@ -10,6 +10,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
+import { runCommand, scopeField } from './support/ui';
 
 test.setTimeout(240_000);
 const SLOW = 30_000;
@@ -47,14 +48,14 @@ const refusal = (page: Page) => page.getByText(FULL).first();
  * published by this write, not left over from an earlier step.
  */
 async function failThenRecover(page: Page, write: () => Promise<void>, retry: () => Promise<void>, timeout = 5000) {
-  await expect(status(page)).toHaveCount(0);
+  await expect(status(page)).toContainText('Saved locally');
   const endSimulation = await fillStore(page);
   await write();
   await expect(refusal(page)).toBeVisible({ timeout });
   await expect(status(page)).toHaveText('Local save failed', { timeout });
   await endSimulation();
   await retry();
-  await expect(status(page)).toHaveCount(0, { timeout });
+  await expect(status(page)).toContainText('Saved locally', { timeout });
   const dismiss = page.getByRole('button', { name: 'Dismiss message' });
   if (await dismiss.count()) await dismiss.click();
 }
@@ -76,14 +77,13 @@ test('a full browser store is reported in plain words, and the save status shows
 
   // Trips write: Build Trips.
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await page.locator('.route-picker').getByLabel('Day').selectOption({ label: 'Weekday' });
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Build trips…' }).click();
-  const drawer = page.getByRole('complementary', { name: 'Build Trips' });
+  await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
+  await runCommand(page, 'trips.build');
+  const drawer = page.getByRole('complementary', { name: 'Build trips' });
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
-  await drawer.getByLabel('First Trip').fill('23:00');
+  await drawer.getByLabel('First trip').fill('23:00');
   await drawer.getByLabel('Headway').fill('30');
-  await drawer.getByLabel('Last Trip').fill('23:30');
+  await drawer.getByLabel('Last trip').fill('23:30');
   const tripsBefore = await runInPage(page, 'return await e.db.trips.count()');
   await failThenRecover(page, async () => {
     await drawer.getByRole('button', { name: 'Build', exact: true }).click();
@@ -96,17 +96,16 @@ test('a full browser store is reported in plain words, and the save status shows
 
   // Blocking write: New Block.
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await page.getByLabel('Current Block').getByRole('button', { name: 'Current Block actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New Block…', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'New Block' });
+  await page.getByLabel('Current block').getByRole('button', { name: 'New block', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'New block' });
   await dialog.getByLabel('Name').fill('QuotaBlock');
   const blocksBefore = await runInPage(page, 'return await e.db.blocks.count()');
   await failThenRecover(page, async () => {
-    await dialog.getByRole('button', { name: 'Create Block', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Create block', exact: true }).click();
     await expect(refusal(page)).toBeVisible();
     expect(await runInPage(page, 'return await e.db.blocks.count()')).toBe(blocksBefore);
   }, async () => {
-    await dialog.getByRole('button', { name: 'Create Block', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Create block', exact: true }).click();
     await expect.poll(() => runInPage(page, 'return await e.db.blocks.count()')).toBe(blocksBefore + 1);
   });
 
@@ -114,9 +113,9 @@ test('a full browser store is reported in plain words, and the save status shows
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await page.getByLabel('Operating cost per Revenue Hour in USD').fill('151.25');
   await failThenRecover(page, async () => {
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.getByRole('button', { name: 'Save assumptions', exact: true }).click();
   }, async () => {
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.getByRole('button', { name: 'Save assumptions', exact: true }).click();
     await expect.poll(() => runInPage(page, 'return (await e.db.costingAssumptions.toArray())[0]?.enteredRate ?? null'), { timeout: SLOW }).toBe(151.25);
   }, SLOW);
 });
@@ -155,7 +154,7 @@ test('a write of each service shows "Saving locally…" in the one indicator in 
     await holdStore(page, 800);
     await action();
     await expect.poll(() => page.evaluate(() => (window as unknown as { __statusSeen: string[] }).__statusSeen.includes('Saving locally…')), { timeout }).toBe(true);
-    await expect(status(page)).toHaveCount(0, { timeout });
+    await expect(status(page)).toContainText('Saved locally', { timeout });
   };
 
   const description = page.getByLabel('Description').first();
@@ -163,30 +162,28 @@ test('a write of each service shows "Saving locally…" in the one indicator in 
   await expect.poll(() => runInPage(page, 'return (await e.db.routes.toArray())[0].description ?? null')).toBe('indicator test');
 
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await page.locator('.route-picker').getByLabel('Day').selectOption({ label: 'Weekday' });
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Build trips…' }).click();
-  const drawer = page.getByRole('complementary', { name: 'Build Trips' });
+  await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
+  await runCommand(page, 'trips.build');
+  const drawer = page.getByRole('complementary', { name: 'Build trips' });
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
-  await drawer.getByLabel('First Trip').fill('23:00');
+  await drawer.getByLabel('First trip').fill('23:00');
   await drawer.getByLabel('Headway').fill('30');
-  await drawer.getByLabel('Last Trip').fill('23:30');
+  await drawer.getByLabel('Last trip').fill('23:30');
   const tripsBefore = await runInPage(page, 'return await e.db.trips.count()');
   await startWatching(() => drawer.getByRole('button', { name: 'Build', exact: true }).click());
   await expect.poll(() => runInPage(page, 'return await e.db.trips.count()')).toBe(tripsBefore + 2);
 
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await page.getByLabel('Current Block').getByRole('button', { name: 'Current Block actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New Block…', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'New Block' });
+  await page.getByLabel('Current block').getByRole('button', { name: 'New block', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'New block' });
   await dialog.getByLabel('Name').fill('IndicatorBlock');
   const blocksBefore = await runInPage(page, 'return await e.db.blocks.count()');
-  await startWatching(() => dialog.getByRole('button', { name: 'Create Block', exact: true }).click());
+  await startWatching(() => dialog.getByRole('button', { name: 'Create block', exact: true }).click());
   await expect.poll(() => runInPage(page, 'return await e.db.blocks.count()')).toBe(blocksBefore + 1);
 
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await page.getByLabel('Operating cost per Revenue Hour in USD').fill('151.25');
-  await startWatching(() => page.getByRole('button', { name: 'Save', exact: true }).click(), SLOW);
+  await startWatching(() => page.getByRole('button', { name: 'Save assumptions', exact: true }).click(), SLOW);
   await expect.poll(() => runInPage(page, 'return (await e.db.costingAssumptions.toArray())[0]?.enteredRate ?? null'), { timeout: SLOW }).toBe(151.25);
 });
 
@@ -198,7 +195,7 @@ test('the browser is asked once to keep the store, after the first successful sa
     Object.defineProperty(navigator.storage, 'persist', { configurable: true, value: async () => { w.__persistCalls += 1; return true; } });
   });
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Project actions', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Project: / })).toBeVisible();
   const calls = () => page.evaluate(() => (window as unknown as { __persistCalls: number }).__persistCalls);
   const record = () => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null'), PROTECTION_KEY);
   // Opening the app saves nothing, so nothing is asked yet.
@@ -206,10 +203,10 @@ test('the browser is asked once to keep the store, after the first successful sa
   expect(await record()).toBeNull();
 
   // The first save.
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Persistence');
-  await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
+  await page.getByRole('button', { name: 'New project', exact: true }).last().click();
   await expect.poll(calls).toBe(1);
   await expect.poll(record).toMatchObject({ persistentStorage: 'granted' });
 
@@ -242,10 +239,10 @@ test('a refusal to keep the store is recorded and not repeated, and a browser wi
       }
     }, mode);
     await page.goto('/');
-    await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
+    await page.getByRole('button', { name: /^Project: / }).click();
+    await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
     await page.locator('#dialog-name').fill(`Persistence ${mode}`);
-    await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
+    await page.getByRole('button', { name: 'New project', exact: true }).last().click();
     await expect.poll(() => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null')?.persistentStorage, PROTECTION_KEY)).toBe(mode);
     await context.close();
   }
@@ -275,19 +272,19 @@ test('the Project menu warns that the browser may clear local data only when the
     await page.goto('/');
     const projectMenu = () => page.getByRole('menu', { name: 'Project actions' });
     // Not yet known: nothing has been saved, so the browser has not been asked and no line is added.
-    await page.getByRole('button', { name: 'Project actions', exact: true }).click();
+    await page.getByRole('button', { name: /^Project: / }).click();
     await expect(projectMenu()).toContainText('No backup exported yet');
     await expect(projectMenu()).not.toContainText(CLEAR_WARNING);
-    await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
     await page.locator('#dialog-name').fill(`Persistence ${mode}`);
-    await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
+    await page.getByRole('button', { name: 'New project', exact: true }).last().click();
     await expect.poll(() => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null')?.persistentStorage, PROTECTION_KEY)).toBe(mode);
 
-    await page.getByRole('button', { name: 'Project actions', exact: true }).click();
+    await page.getByRole('button', { name: /^Project: / }).click();
     await expect(projectMenu()).toContainText('No backup exported yet');
     if (warned) {
       await expect(projectMenu().locator('.action-menu-note')).toHaveText(['No backup exported yet', CLEAR_WARNING]);
-      await expect(projectMenu().getByRole('menuitem', { name: 'Backup project JSON', exact: true })).toHaveAccessibleDescription(`No backup exported yet ${CLEAR_WARNING}`);
+      await expect(projectMenu().getByRole('menuitem', { name: 'Back up project (JSON)', exact: true })).toHaveAccessibleDescription(`No backup exported yet ${CLEAR_WARNING}`);
     } else {
       await expect(projectMenu().locator('.action-menu-note')).toHaveText(['No backup exported yet']);
     }
@@ -301,8 +298,8 @@ test('exporting a project backup records the time on this device, and nothing el
   expect(await read()).toBeNull();
   const before = Date.now();
   const download = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Backup project JSON', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'Back up project (JSON)', exact: true }).click();
   await download;
   await expect.poll(read).not.toBeNull();
   const recorded = Date.parse((await read()) as string);

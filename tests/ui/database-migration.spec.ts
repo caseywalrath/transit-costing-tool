@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 // IndexedDB stores Dexie's version times ten, so Dexie version 4 is IndexedDB version 40. Seeding version 4 would be Dexie 0.4, which
 // runs every upgrade from version 1 (review finding 3-014): the Default Trip profile would be created and the Block discarded.
 test('database version 9 preserves a Dexie version 4 project and adds operational stores', async ({ page }) => {
-  await page.goto('/src/styles.css');
+  await page.goto('/src/ui/styles/index.css');
   await page.evaluate(async () => {
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open('transit-costing-tool', 40);
@@ -29,7 +29,7 @@ test('database version 9 preserves a Dexie version 4 project and adds operationa
   });
 
   await page.goto('/');
-  await expect(page.getByRole('option', { name: 'Migration Project' })).toBeAttached();
+  await expect(page.getByRole('button', { name: 'Project: Migration Project', exact: true })).toBeVisible();
   const migrated = await page.evaluate(async () => new Promise<{ version: number; stores: string[]; projectCount: number; scenarioCount: number; assumptionsCount: number; undoCount: number; legacyCostPlanCount: number; tripProfileCount: number; blockCount: number }>((resolve, reject) => {
     const request = indexedDB.open('transit-costing-tool');
     request.onsuccess = () => {

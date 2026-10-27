@@ -3,6 +3,7 @@
 - Status: Accepted and implemented
 - Date: 2026-10-27 (user request)
 - Annotates: Decision 0035 items 3 and 4 (the one-step regeneration undo and where it appears)
+- Placement amended by Decision 0047 (implemented): Regenerate moves to the Trips selection bar and Undo stays a separate Trips Actions item. Items 1 to 5 of this record keep their rules.
 
 ## Context
 

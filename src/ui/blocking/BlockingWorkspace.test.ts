@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { blockingError, formatBlockingDuration } from './BlockingWorkspace';
+import { blockingError } from './BlockingWorkspace';
+import { formatDuration } from '../format';
 
-describe('formatBlockingDuration', () => {
+describe('Blocking durations', () => {
   it('keeps overlapping connection gaps visible without treating them as service times', () => {
-    expect(formatBlockingDuration(-600)).toBe('−0:10');
-    expect(formatBlockingDuration(600)).toBe('0:10');
-    expect(formatBlockingDuration(undefined)).toBe('—');
+    expect(formatDuration(-600)).toBe('−:10');
+    expect(formatDuration(600)).toBe(':10');
+    expect(formatDuration(undefined)).toBe('—');
   });
 });
 
@@ -24,8 +25,8 @@ describe('blockingError', () => {
   });
 
   it('looks up a list of message keys, once each, and uses the fallback for a key that has no sentence', () => {
-    expect(blockingError(new Error('block.multiplePullIn, block.multiplePullIn'), fallback)).toBe('A Block can have only one pull-in.');
-    expect(blockingError(new Error('block.deadheadRequired, block.multiplePullIn'), fallback)).toBe('A deadhead is required between these Trips. A Block can have only one pull-in.');
+    expect(blockingError(new Error('block.multiplePullIn, block.multiplePullIn'), fallback)).toBe('A block can have only one pull-in.');
+    expect(blockingError(new Error('block.deadheadRequired, block.multiplePullIn'), fallback)).toBe('A deadhead is required between these trips. A block can have only one pull-in.');
     expect(blockingError(new Error('block.notAKnownKey'), fallback)).toBe(fallback);
   });
 

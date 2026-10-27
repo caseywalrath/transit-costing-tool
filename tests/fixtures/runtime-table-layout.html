@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="stylesheet" href="/src/ui/styles/index.css" />
     <title>Runtime table layout fixture</title>
   </head>
   <body>
     <main class="app-shell">
       <div class="table-scroll runtime-table">
-        <table>
+        <table class="grid-table" role="grid" aria-label="Runtimes">
           <thead>
             <tr>
               <th>From</th>
@@ -21,10 +21,10 @@
           </thead>
           <tbody>
             <tr>
-              <td><input class="time-input" aria-label="From time" value="06:00" /></td>
-              <td><input class="time-input" aria-label="To time" value="09:00" /></td>
-              <td><input class="time-input" aria-label="First segment runtime" value=":08" /></td>
-              <td><input class="time-input" aria-label="Second segment runtime" value=":11" /></td>
+              <td role="gridcell" class="grid-cell" tabindex="0" data-cell="From time"><span>6:00</span></td>
+              <td role="gridcell" class="grid-cell" tabindex="-1" data-cell="To time"><span>9:00</span></td>
+              <td role="gridcell" class="grid-cell" tabindex="-1" data-cell="First segment runtime"><span>:08</span></td>
+              <td role="gridcell" class="grid-cell" tabindex="-1" data-cell="Second segment runtime"><span>:11</span></td>
               <td>×</td>
             </tr>
           </tbody>

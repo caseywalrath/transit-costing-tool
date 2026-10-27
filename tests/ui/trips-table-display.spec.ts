@@ -4,6 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule } from './support/tripsWorkspace';
+import { runCommand } from './support/ui';
 
 test.setTimeout(90_000);
 
@@ -15,11 +16,11 @@ const columnTexts = (page: Page, column: number) => rows(page).evaluateAll((trs,
 /** One timepoint cell: row index, then column (0 = A, 1 = B). */
 const cell = (page: Page, row: number, column: number) => rows(page).nth(row).locator('td.trip-timepoint-column').nth(column);
 
-/** Toggles a Display item in the Trip actions menu. The role differs between menu item kinds, so match by label. */
+/** Toggles an item in the View menu. The role differs between menu item kinds, so match by label. */
 async function toggleDisplay(page: Page, label: string) {
-  await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).locator('[role^="menuitem"]', { hasText: label }).click();
-  await expect(page.getByRole('menu', { name: 'Trip actions' })).toHaveCount(0);
+  await tripsSection(page).getByRole('button', { name: 'View', exact: true }).click();
+  await page.getByRole('menu', { name: 'View' }).locator('[role^="menuitem"]', { hasText: label }).click();
+  await expect(page.getByRole('menu', { name: 'View' })).toHaveCount(0);
 }
 
 test('rounds displayed times to the minute and keeps the exact time in the cell title', async ({ page }) => {
@@ -44,7 +45,7 @@ test('Show headways replaces each later time with the gap from the previous Trip
   await expect.poll(() => columnTexts(page, 0)).toEqual(['6:00', '6:10', '6:20', '6:30']);
 
   await toggleDisplay(page, 'Show headways');
-  await expect.poll(() => columnTexts(page, 0)).toEqual(['6:00', '0:10', '0:10', '0:10']);
+  await expect.poll(() => columnTexts(page, 0)).toEqual(['6:00', ':10', ':10', ':10']);
   await expect(cell(page, 0, 0)).toHaveClass(/trip-headway-first/);
   await expect(cell(page, 1, 0)).not.toHaveClass(/trip-headway-first/);
   await expect(cell(page, 0, 0)).toHaveAttribute('title', 'First scheduled time: 6:00');
@@ -87,8 +88,7 @@ test('flags a duplicate departure and warns on both Trips when a Block overlaps 
   await expect(page.locator('.duplicate-note')).toHaveCount(0);
 
   // A third Trip at 06:00 duplicates the first.
-  await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Add trip…' }).click();
+  await runCommand(page, 'trips.add');
   await rows(page).first().getByLabel('New trip pattern').selectOption({ index: 1 });
   await rows(page).first().getByLabel('First trip time').fill('06:00');
   await rows(page).first().getByRole('button', { name: 'Save', exact: true }).click();
@@ -100,14 +100,13 @@ test('flags a duplicate departure and warns on both Trips when a Block overlaps 
   // Put both 06:00 Trips in one Block. Each arrives at 6:07, after the other departs at 6:00, so both are warned.
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New Blocking Scenario…', exact: true }).click();
-  await page.getByRole('dialog', { name: 'New Blocking Scenario' }).getByLabel('Name').fill('Overlap check');
-  await page.getByRole('dialog', { name: 'New Blocking Scenario' }).getByRole('button', { name: 'Create', exact: true }).click();
-  const currentBlock = page.getByLabel('Current Block');
-  await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New Block…', exact: true }).click();
-  await page.getByRole('dialog', { name: 'New Block' }).getByLabel('Name').fill('Block 1');
-  await page.getByRole('dialog', { name: 'New Block' }).getByRole('button', { name: 'Create Block', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'New blocking scenario…', exact: true }).click();
+  await page.getByRole('dialog', { name: 'New blocking scenario' }).getByLabel('Name').fill('Overlap check');
+  await page.getByRole('dialog', { name: 'New blocking scenario' }).getByRole('button', { name: 'Create', exact: true }).click();
+  const currentBlock = page.getByLabel('Current block');
+  await currentBlock.getByRole('button', { name: 'New block', exact: true }).click();
+  await page.getByRole('dialog', { name: 'New block' }).getByLabel('Name').fill('Block 1');
+  await page.getByRole('dialog', { name: 'New block' }).getByRole('button', { name: 'Create block', exact: true }).click();
   await expect(currentBlock.getByRole('button', { name: /Block 1/ })).toBeVisible();
 
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
@@ -116,7 +115,7 @@ test('flags a duplicate departure and warns on both Trips when a Block overlaps 
   for (const index of [0, 1]) {
     await rows(page).nth(index).getByRole('button', { name: /Block assignment for/ }).click();
     await page.getByRole('menu', { name: /Block assignment for/ }).getByRole('menuitemradio', { name: 'Block 1', exact: true }).click();
-    await page.getByRole('alertdialog', { name: 'Assign Trip to Block?' }).getByRole('button', { name: 'Assign Trip', exact: true }).click();
+    await page.getByRole('alertdialog', { name: 'Assign trip to block?' }).getByRole('button', { name: 'Assign trip', exact: true }).click();
     await expect(rows(page).nth(index).getByRole('button', { name: /Block assignment for/ })).toContainText('Block 1');
   }
   await expect(page.locator('.trip-block-warning')).toHaveCount(2);
@@ -134,9 +133,8 @@ test('discards a Shift whose net offset is zero without writing any Trip', async
   expect(before).toHaveLength(3);
 
   const openShift = async () => {
-    await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
-    await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
-    return page.getByRole('complementary', { name: 'Shift selected Trips' });
+    await runCommand(page, 'trips.shift');
+    return page.getByRole('complementary', { name: 'Shift selected trips' });
   };
   await rows(page).first().getByRole('checkbox').check();
   const drawer = await openShift();

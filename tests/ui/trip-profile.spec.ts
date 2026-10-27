@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { createRouteWithPattern } from './support/tripsWorkspace';
+import { scopeField } from './support/ui';
 
 test.setTimeout(60_000);
 
@@ -9,7 +10,7 @@ test('places Trip profile selection and lifecycle actions in the Trips header me
 
   const tripsSection = page.locator('[aria-label="Trips section"]');
   const profileButton = tripsSection.locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button');
-  await expect(page.locator('.route-picker').getByLabel('Trip Profile')).toHaveCount(0);
+  await expect(scopeField(page, 'Trip profile')).toHaveCount(0);
   await expect(page.locator('.trip-profile-context')).toHaveCount(0);
   const [profileControlsBox, scheduleTableBox] = await Promise.all([
     profileButton.boundingBox(),
@@ -29,14 +30,14 @@ test('places Trip profile selection and lifecycle actions in the Trips header me
   const menu = page.getByRole('menu', { name: 'Trip profile' });
   await expect(menu.getByRole('menuitemradio', { checked: true })).toHaveCount(1);
   await menu.getByRole('menuitem', { name: 'Copy profile…' }).click();
-  await expect(page.getByRole('heading', { name: 'Copy Trip Profile' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Copy trip profile' })).toBeVisible();
   await page.locator('#dialog-name').fill('Alternative');
   await page.getByRole('button', { name: 'Copy', exact: true }).last().click();
   await expect(profileButton).toContainText('Alternative');
 
   await profileButton.click();
   await page.getByRole('menu', { name: 'Trip profile' }).getByRole('menuitem', { name: 'Delete profile…' }).click();
-  await expect(page.getByRole('heading', { name: 'Delete Trip profile?' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Delete trip profile?' })).toBeVisible();
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Delete Trip profile?' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Delete trip profile?' })).toHaveCount(0);
 });

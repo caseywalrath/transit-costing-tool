@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { seedCostingFixture } from './support/costingFixture';
+import { scopeField } from './support/ui';
 
 test('Costing workspace displays a partial estimate, supports year selection, and remains usable at a narrow width', async ({ page }) => {
   await seedCostingFixture(page);
@@ -9,16 +10,19 @@ test('Costing workspace displays a partial estimate, supports year selection, an
   await expect(page.getByRole('heading', { name: 'Costing', exact: true })).toHaveCount(0);
   await expect(page.getByText('Saved locally', { exact: true })).toHaveCount(0);
   await expect(page.getByText(/Shared across/)).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+  // UR-6b: the save bar shows only while the form differs from the saved assumptions.
+  await expect(page.getByRole('button', { name: 'Save assumptions', exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Cost Breakdown' })).toBeVisible();
   await expect(page.getByText('Partial estimate')).toBeVisible();
-  await expect(page.getByText('0 excluded Blocks · 1 unassigned Trips')).toBeVisible();
+  await expect(page.getByText('0 excluded blocks · 1 unassigned trips')).toBeVisible();
   await expect(page.locator('.costing-results-table tfoot').getByRole('cell', { name: '$40,170' })).toBeVisible();
-  await page.getByLabel('View year').selectOption('2027');
+  await scopeField(page, 'View year').selectOption('2027');
   await expect(page.getByRole('heading', { name: 'Cost Breakdown' })).toBeVisible();
-  await expect(page.getByText('Applied rate 159 USD per Revenue Hour')).toBeVisible();
+  await expect(page.getByText('Applied rate $159.14 per Revenue Hour')).toBeVisible();
   await expect(page.getByText('Service quantities remain constant; only the rate changes.')).toHaveCount(0);
-  expect(await page.locator('.costing-results-table tbody, .costing-results-table tfoot, .costing-outlook-table tbody').allInnerTexts()).not.toEqual(expect.arrayContaining([expect.stringMatching(/\d+\.\d+/)]));
+  // F3, F6 (UR-3): annual hours and annual cost are whole numbers; daily hours have two decimals; the hourly rate shows cents.
+  expect(await page.locator('.costing-results-table tfoot').allInnerTexts()).not.toEqual(expect.arrayContaining([expect.stringMatching(/\d+\.\d+/)]));
+  for (const text of await page.locator('.costing-results-table tbody tr td:nth-child(4)').allInnerTexts()) expect(text).toMatch(/^[\d,]+\.\d{2}$/);
 
   await page.setViewportSize({ width: 1440, height: 900 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
@@ -28,10 +32,12 @@ test('Costing workspace displays a partial estimate, supports year selection, an
   await expect(page.getByRole('heading', { name: 'Yearly outlook' })).toBeVisible();
   // Narrow widths: the page itself never scrolls sideways, and the results and outlook tables stay inside the viewport and keep
   // their content (they scroll inside their own regions). Showing the Annual cost column without any table scroll is package U06's.
+  // An edit shows the save bar, which must also fit at these widths.
+  await page.getByLabel('Operating cost per revenue hour in USD').fill('151');
   for (const width of [1024, 760]) {
     await page.setViewportSize({ width, height: 900 });
     await expect(page.getByRole('heading', { name: 'Cost Breakdown' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Save assumptions', exact: true })).toBeVisible();
     await expect(page.locator('.costing-results-table tfoot')).toContainText('$');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     for (const table of await page.locator('.costing-results-table, .costing-outlook-table').all()) {
@@ -125,7 +131,7 @@ test.describe('Costing estimate display (U06 criteria 2 to 5)', () => {
     await page.getByRole('button', { name: 'Costing', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Costing Assumptions' })).toBeVisible();
     await expect(page.getByText('Calculating estimate…')).toBeVisible();
-    await expect(page.getByText('Select a valid Blocking Scenario to calculate an estimate.')).toHaveCount(0);
+    await expect(page.getByText('Select a valid blocking scenario to calculate an estimate.')).toHaveCount(0);
     await page.evaluate(() => { (window as unknown as { __hold: { release: boolean } }).__hold.release = true; });
     await expect(page.locator('.costing-results-table tbody tr')).toHaveCount(4);
     await expect(page.getByText('Calculating estimate…')).toHaveCount(0);
@@ -146,7 +152,7 @@ test.describe('Costing estimate display (U06 criteria 2 to 5)', () => {
     await expect(cells.nth(5)).toHaveText('260');
     await expect(cells.nth(7)).toHaveText('$40,170');
     await expect(page.getByText('Totals are computed before rounding, so a total can differ by 1 from the sum of the rounded rows.')).toBeVisible();
-    await expect(page.getByText('0 excluded Blocks · 1 unassigned Trip', { exact: true })).toBeVisible();
+    await expect(page.getByText('0 excluded blocks · 1 unassigned trip', { exact: true })).toBeVisible();
   });
 
   test('View year appears once, in the toolbar', async ({ page }) => {
@@ -155,7 +161,7 @@ test.describe('Costing estimate display (U06 criteria 2 to 5)', () => {
     await page.getByRole('button', { name: 'Costing', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Cost Breakdown' })).toBeVisible();
     await expect(page.locator('label', { hasText: /^View year/ })).toHaveCount(1);
-    await expect(page.locator('.module-toolbar').getByLabel('View year')).toHaveCount(1);
+    await expect(scopeField(page, 'View year')).toHaveCount(1);
     await expect(page.locator('section[aria-labelledby="costing-estimate-title"]').getByRole('combobox')).toHaveCount(0);
   });
 });
@@ -172,7 +178,7 @@ test('Annual cost is visible without scrolling the table at 1024 and 1440 px, an
     const table = page.locator('.costing-results-table');
     expect(await table.evaluate((element) => element.scrollWidth <= element.clientWidth), `the results table does not scroll at ${width} px`).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-    const header = await page.getByRole('columnheader', { name: 'Annual Cost (Revenue Hours)' }).first().boundingBox();
+    const header = await page.getByRole('columnheader', { name: 'Annual cost', exact: true }).first().boundingBox();
     const cell = await page.locator('.costing-results-table tbody tr').first().locator('td').last().boundingBox();
     for (const box of [header, cell]) {
       expect(box).not.toBeNull();
@@ -183,4 +189,27 @@ test('Annual cost is visible without scrolling the table at 1024 and 1440 px, an
   // At 768 px the table may scroll inside its own frame, but the page does not.
   await page.setViewportSize({ width: 768, height: 900 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
+test('Discard puts the saved assumptions back in the form and writes nothing (UR-6b)', async ({ page }) => {
+  await seedCostingFixture(page);
+  await page.reload();
+  await page.getByRole('button', { name: 'Costing', exact: true }).click();
+  const rate = page.getByLabel('Operating cost per revenue hour in USD');
+  const save = page.getByRole('button', { name: 'Save assumptions', exact: true });
+  await expect(rate).toBeVisible();
+  const savedRate = await rate.inputValue();
+  const stored = () => runInPage(page, 'return JSON.stringify(await e.db.costingAssumptions.toArray())');
+  const before = await stored();
+
+  await rate.fill('999');
+  await page.getByLabel('Inflation rate (%)').fill('7.7');
+  await expect(save).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Unsaved changes' })).toContainText('2 unsaved changes');
+  await page.getByRole('button', { name: 'Discard', exact: true }).click();
+
+  await expect(rate).toHaveValue(savedRate);
+  await expect(page.getByLabel('Inflation rate (%)')).not.toHaveValue('7.7');
+  await expect(save).toHaveCount(0);
+  expect(await stored()).toBe(before);
 });

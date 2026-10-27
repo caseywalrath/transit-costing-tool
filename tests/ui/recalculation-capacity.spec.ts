@@ -26,7 +26,6 @@ async function openRegenerateDialog(page: Page, width = 1600) {
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await expect.poll(() => page.locator('.schedule-table tbody tr').count(), { timeout: 120_000 }).toBeGreaterThanOrEqual(100);
   await page.locator('.schedule-table thead input[type=checkbox]').first().check();
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
   // Count the reads of the Patterns store from here on.
   await page.evaluate(() => {
     const w = window as unknown as { __patternReads: number };
@@ -35,7 +34,7 @@ async function openRegenerateDialog(page: Page, width = 1600) {
     IDBObjectStore.prototype.get = function (this: IDBObjectStore, ...args: Parameters<IDBObjectStore['get']>) { if (this.name === 'patterns') w.__patternReads += 1; return original.apply(this, args); };
   });
   const reviewMs = await page.evaluate(async () => {
-    const item = [...document.querySelectorAll('[role^=menuitem]')].find((element) => (element.textContent ?? '').includes('Regenerate selected')) as HTMLElement;
+    const item = [...document.querySelectorAll('button')].find((element) => element.textContent === 'Regenerate…') as HTMLElement;
     const ready = () => { const button = [...document.querySelectorAll('button')].find((element) => element.textContent === 'Regenerate trips') as HTMLButtonElement | undefined; return Boolean(button) && !button!.disabled; };
     const started = performance.now();
     item.click();

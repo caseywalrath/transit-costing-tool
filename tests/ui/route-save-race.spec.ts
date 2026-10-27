@@ -9,6 +9,7 @@
 // A slowed save makes the window wide: every read-write and read transaction of the app's database waits before it starts.
 import { expect, test, type Page } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
+import { editGridCell, gridCell } from './support/ui';
 import { createRouteWithPattern } from './support/tripsWorkspace';
 
 test.setTimeout(60_000);
@@ -29,14 +30,14 @@ async function slowSaves(page: Page, milliseconds: number) {
 
 test('Add pattern is disabled while Save nodes is running, then opens a Pattern draft', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Save race verification');
-  await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
+  await page.getByRole('button', { name: 'New project', exact: true }).last().click();
   await page.getByRole('button', { name: 'Route actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
   await page.getByRole('button', { name: 'New node', exact: true }).click();
-  await page.getByLabel('Node name').fill('A');
+  await editGridCell(gridCell(page, 'Node name'), 'A');
   await expect(addPattern(page)).toBeEnabled();
 
   await slowSaves(page, 600);
@@ -57,7 +58,7 @@ test('Add pattern is disabled while Save Pattern is running', async ({ page }) =
   await expect(addPattern(page)).toBeEnabled();
 
   await slowSaves(page, 600);
-  await page.getByRole('button', { name: 'Save Pattern', exact: true }).click();
+  await page.getByRole('button', { name: 'Review and save', exact: true }).click();
   const confirm = page.getByRole('button', { name: 'Save and rebalance', exact: true });
   if (await confirm.isVisible()) await confirm.click();
   await expect(addPattern(page)).toBeDisabled();

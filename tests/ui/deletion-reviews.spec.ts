@@ -3,6 +3,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule } from './support/tripsWorkspace';
+import { openRuntimes, runCommand, scenarioSwitcher } from './support/ui';
 
 test.setTimeout(90_000);
 
@@ -12,7 +13,7 @@ const error = (page: Page) => page.locator('.notice.error');
 async function openRouteDelete(page: Page) {
   await page.getByRole('button', { name: 'Route', exact: true }).click();
   await page.getByRole('button', { name: 'Route actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Delete route', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Delete route…', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Delete route?' })).toBeVisible();
 }
 
@@ -46,16 +47,16 @@ test('Delete route is refused when the Route changed after the review, and nothi
 
 test('Delete scenario removes the Scenario after the review and is refused when its data changed after it', async ({ page }) => {
   await createRouteWithPattern(page, 'Scenario deletion reviews');
-  await page.getByRole('button', { name: 'Scenario actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New scenario', exact: true }).click();
+  await page.getByRole('button', { name: /^Scenario: / }).click();
+  await page.getByRole('menuitem', { name: 'New scenario…', exact: true }).click();
   await page.locator('#dialog-name').fill('Alternative');
   await page.getByRole('button', { name: 'Create scenario', exact: true }).click();
   await expect.poll(() => count(page, 'scenarios')).toBe(2);
-  await expect(page.locator('.context-bar select').nth(1).locator('option:checked')).toHaveText('Alternative');
+  await expect(scenarioSwitcher(page)).toHaveAccessibleName('Scenario: Alternative');
 
   // The review is taken for the selected (new) Scenario; a Service day of it changes before the planner confirms.
-  await page.getByRole('button', { name: 'Scenario actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Delete scenario', exact: true }).click();
+  await page.getByRole('button', { name: /^Scenario: / }).click();
+  await page.getByRole('menuitem', { name: 'Delete scenario…', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Delete scenario?' })).toBeVisible();
   await runInPage(page, "const scenario = (await e.db.scenarios.toArray()).find((item) => item.name === 'Alternative'); const day = (await e.db.serviceDays.where('scenarioId').equals(scenario.id).toArray())[0]; await e.db.serviceDays.put({ ...day, name: 'Renamed after the review' });");
   await page.getByRole('button', { name: 'Delete scenario', exact: true }).last().click();
@@ -63,8 +64,8 @@ test('Delete scenario removes the Scenario after the review and is refused when 
   expect(await count(page, 'scenarios')).toBe(2);
 
   await error(page).getByRole('button', { name: 'Dismiss message' }).click();
-  await page.getByRole('button', { name: 'Scenario actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Delete scenario', exact: true }).click();
+  await page.getByRole('button', { name: /^Scenario: / }).click();
+  await page.getByRole('menuitem', { name: 'Delete scenario…', exact: true }).click();
   await page.getByRole('button', { name: 'Delete scenario', exact: true }).last().click();
   await expect.poll(() => count(page, 'scenarios')).toBe(1);
   await expect(error(page)).toHaveCount(0);
@@ -74,8 +75,7 @@ test('Delete selected removes the selected Trips after the review and is refused
   await createShiftReadySchedule(page, '06:20');
   const rows = page.locator('.schedule-table tbody tr');
   const deleteSelected = async () => {
-    await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Delete selected…', exact: true }).click();
+    await runCommand(page, 'trips.delete');
     await expect(page.getByRole('alertdialog')).toContainText('These trips are not assigned to a block');
   };
   await rows.first().locator('input[type="checkbox"]').check();
@@ -92,8 +92,7 @@ test('Delete selected removes the selected Trips after the review and is refused
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await error(page).getByRole('button', { name: 'Dismiss message' }).click();
   await rows.first().locator('input[type="checkbox"]').check();
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Delete selected…', exact: true }).click();
+  await runCommand(page, 'trips.delete');
   await expect(page.getByRole('alertdialog')).toContainText('This will also remove their revenue activities from 1 block');
   await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect.poll(() => count(page, 'trips')).toBe(2);
@@ -105,6 +104,7 @@ test('Delete runtime profile replaces the assignments after the review and is re
   await runInPage(page, "const [pattern] = await e.db.patterns.toArray(); await e.service.ensureDefaultRuntimeProfile(pattern); await e.service.createDefaultRuntimeProfile(pattern, 'Alternative');");
   await page.reload();
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
+  await openRuntimes(page);
   const runtimeSection = page.locator('[aria-label="Runtimes section"]');
   const profileButton = runtimeSection.locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button', { name: 'Default' });
   await expect(profileButton).toBeVisible();
@@ -133,19 +133,19 @@ test('Delete Pattern removes the Pattern and its Trips after the review and is r
   await createShiftReadySchedule(page, '06:20');
   await page.getByRole('button', { name: 'Route', exact: true }).click();
   const openDelete = async (trips: string) => {
-    await page.getByRole('button', { name: /^Delete Pattern/ }).click();
-    await expect(page.getByRole('alertdialog', { name: 'Delete Pattern?' })).toContainText(trips);
+    await runCommand(page, 'pattern.delete');
+    await expect(page.getByRole('alertdialog', { name: 'Delete pattern?' })).toContainText(trips);
   };
   await openDelete('3 trips');
   await runInPage(page, "const [trip] = await e.db.trips.toArray(); await e.db.trips.put({ ...trip, id: 'added-after-review', stopTimes: trip.stopTimes.map((point) => ({ ...point, time: point.time + 3600 })) });");
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete Pattern', exact: true }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete pattern', exact: true }).click();
   await expect(error(page)).toHaveText(/The pattern deletion review is out of date\. Review the impact again\./);
   expect(await count(page, 'patterns')).toBe(1);
   expect(await count(page, 'trips')).toBe(4);
   // A fresh review shows the added Trip and works.
   await error(page).getByRole('button', { name: 'Dismiss message' }).click();
   await openDelete('4 trips');
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete Pattern', exact: true }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete pattern', exact: true }).click();
   await expect.poll(() => count(page, 'patterns')).toBe(0);
   expect(await count(page, 'trips')).toBe(0);
   await expect(error(page)).toHaveCount(0);

@@ -4,6 +4,7 @@
 import { expect, test } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { createShiftReadySchedule } from './support/tripsWorkspace';
+import { runCommand } from './support/ui';
 
 test('a Shift that would start a Trip before 0:00 is refused in the drawer, and the app stays usable', async ({ page }) => {
   await createShiftReadySchedule(page);
@@ -16,9 +17,8 @@ test('a Shift that would start a Trip before 0:00 is refused in the drawer, and 
 
   const tripsSection = page.locator('[aria-label="Trips section"]');
   await page.locator('.schedule-table tbody input[type="checkbox"]').check();
-  await tripsSection.getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
-  const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
+  await runCommand(page, 'trips.shift');
+  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
   await expect(drawer).toBeVisible();
 
   // Six minutes earlier would be -0:01.
@@ -48,21 +48,20 @@ test('a Shift that would start a Trip before 0:00 is refused in the drawer, and 
 test('Build Trips refuses a Last Trip that would create more than 500 Trips and stores none', async ({ page }) => {
   await createShiftReadySchedule(page);
   const tripsSection = page.locator('[aria-label="Trips section"]');
-  await tripsSection.getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Build trips…' }).click();
-  const drawer = page.getByRole('complementary', { name: 'Build Trips' });
+  await runCommand(page, 'trips.build');
+  const drawer = page.getByRole('complementary', { name: 'Build trips' });
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
   // A departure every minute from 0:00 to 23:59 is 1,440 Trips.
-  await drawer.getByLabel('First Trip').fill('00:00');
+  await drawer.getByLabel('First trip').fill('00:00');
   await drawer.getByLabel('Headway').fill('1');
-  await drawer.getByLabel('Last Trip').fill('23:59');
+  await drawer.getByLabel('Last trip').fill('23:59');
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
-  await expect(drawer.getByRole('alert')).toContainText('Enter 500 Trips or fewer.');
+  await expect(drawer.getByRole('alert')).toContainText('Enter 500 trips or fewer.');
   await expect(drawer).toBeVisible();
   expect(await runInPage(page, 'return await e.db.trips.count()')).toBe(1);
 
   // 500 departures, one a minute from 0:00 to 8:19, is the most a request may build.
-  await drawer.getByLabel('Last Trip').fill('08:19');
+  await drawer.getByLabel('Last trip').fill('08:19');
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
   await expect(drawer).toBeHidden();
   await expect.poll(() => runInPage(page, 'return await e.db.trips.count()')).toBe(501);

@@ -2,6 +2,7 @@
 import { expect, type Page } from '@playwright/test';
 import { goldenRaw } from './goldenFixture';
 import { runInPage, seedSnapshot } from './dexieEnv';
+import { editGridCell, editRuntimeCell, gridCell, openRuntimes, runtimeCell, scopeField } from './ui';
 
 /**
  * Creates a project with one Route that has Nodes A and B and one saved Pattern (A to B, rebalanced) and its Default Runtime profile.
@@ -12,34 +13,34 @@ import { runInPage, seedSnapshot } from './dexieEnv';
  */
 export async function createRouteWithPattern(page: Page, projectName: string) {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill(projectName);
-  await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
+  await page.getByRole('button', { name: 'New project', exact: true }).last().click();
   await page.getByRole('button', { name: 'Route actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
 
   const saveNodes = page.getByRole('button', { name: 'Save nodes', exact: true });
   await page.getByRole('button', { name: 'New node', exact: true }).click();
-  await page.getByLabel('Node name').fill('A');
+  await editGridCell(gridCell(page, 'Node name'), 'A');
   await saveNodes.click();
-  await expect(saveNodes).toBeDisabled();
+  await expect(saveNodes).toHaveCount(0); // the save bar goes away once the draft is saved
   await expect(page.getByRole('button', { name: 'Remove A', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'New node', exact: true }).click();
-  await page.getByLabel('Node name').last().fill('B');
+  await editGridCell(gridCell(page, 'Node name').last(), 'B');
   await saveNodes.click();
-  await expect(saveNodes).toBeDisabled();
+  await expect(saveNodes).toHaveCount(0); // the save bar goes away once the draft is saved
   await expect(page.getByRole('button', { name: 'Remove B', exact: true })).toBeVisible();
 
   // "Add pattern" stays disabled until the Node save and its reload are done (review package F1, finding L-16), so the click waits for it.
   await page.getByRole('button', { name: 'Add pattern', exact: true }).click();
   await expect(page.getByText('New Pattern — not saved')).toBeVisible();
-  await page.getByRole('button', { name: 'Add node', exact: true }).click();
+  await page.getByRole('button', { name: 'Add node to pattern', exact: true }).click();
   await expect(page.getByLabel('Point 1 node')).toBeVisible();
-  await page.getByRole('button', { name: 'Add node', exact: true }).click();
+  await page.getByRole('button', { name: 'Add node to pattern', exact: true }).click();
   await expect(page.getByLabel('Point 2 node')).toBeVisible();
   await page.getByLabel('Point 2 node').selectOption({ label: 'B' });
-  await page.getByRole('button', { name: 'Save Pattern', exact: true }).click();
+  await page.getByRole('button', { name: 'Review and save', exact: true }).click();
   await page.getByRole('button', { name: 'Save and rebalance', exact: true }).click();
   await expect(page.getByText('New Pattern — not saved')).toHaveCount(0);
 
@@ -56,14 +57,14 @@ export async function createRouteWithPattern(page: Page, projectName: string) {
 export async function createShiftReadySchedule(page: Page, lastTrip = '06:00', segment = ':07') {
   await createRouteWithPattern(page, 'Unified action layer verification');
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
+  await openRuntimes(page);
 
   const runtimeSection = page.locator('[aria-label="Runtimes section"]');
   await expect(runtimeSection.locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button', { name: 'Default' })).toBeVisible();
-  await runtimeSection.getByLabel('Time band 1 segment 1').fill(segment);
-  await runtimeSection.getByLabel('Time band 1 segment 1').press('Tab');
-  await expect(runtimeSection.getByLabel('Time band 1 segment 1')).toHaveValue(segment);
+  await editRuntimeCell(runtimeSection, 'Time band 1 segment 1', segment);
+  await expect(runtimeCell(runtimeSection, 'Time band 1 segment 1')).toHaveText(segment);
   await expect(runtimeSection.getByRole('columnheader', { name: 'Total', exact: true })).toBeVisible();
-  await expect(runtimeSection.getByText(segment, { exact: true })).toBeVisible();
+  await expect(runtimeSection.locator('.runtime-total')).toHaveText(segment);
   await expect(runtimeSection.locator('.runtime-table thead th')).toHaveText(['From', 'To', 'A → B', 'Total', 'Time band actions']);
   await runtimeSection.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(runtimeSection.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
@@ -73,7 +74,7 @@ export async function createShiftReadySchedule(page: Page, lastTrip = '06:00', s
   // Saving a Runtime profile reloads the Runtime section once, and the menus stay disabled until it is done. Wait for that before the
   // steps below open a menu.
   await expect(runtimeSection.getByRole('button', { name: 'Runtime actions', exact: true })).toBeEnabled();
-  await expect(runtimeSection.getByLabel('Time band 1 segment 1')).toHaveValue(segment);
+  await expect(runtimeCell(runtimeSection, 'Time band 1 segment 1')).toHaveText(segment);
 
   const tripsSection = page.locator('[aria-label="Trips section"]');
   await runtimeSection.getByRole('button', { name: 'Runtime actions', exact: true }).click();
@@ -82,26 +83,16 @@ export async function createShiftReadySchedule(page: Page, lastTrip = '06:00', s
   const actions = tripsSection.getByRole('button', { name: 'Trip actions', exact: true });
   await actions.focus();
   await actions.press('ArrowDown');
-  const actionMenu = page.getByRole('menu', { name: 'Trip actions' });
-  await expect(actionMenu.getByRole('menuitem')).toHaveText([
-    'Build trips…',
-    'Add trip…',
-    'Regenerate selected…',
-    'Shift selected…',
-    'Change pattern…',
-    'Assign Block…',
-    'Unassign from Block…',
-    'Copy Trips from day…',
-    'Export Trips CSV',
-    'Delete selected…',
-  ]);
-  await actionMenu.getByRole('menuitem', { name: 'Build trips…' }).click();
-  const drawer = page.getByRole('complementary', { name: 'Build Trips' });
+  // UR-6c: Build trips and Add trip are header buttons and the selection commands live in the selection bar; the menu keeps the rest.
+  await expect(page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem')).toHaveText(['Copy trips from another day…', 'Export trips CSV']);
+  await page.keyboard.press('Escape');
+  await tripsSection.getByRole('button', { name: 'Build trips…', exact: true }).click();
+  const drawer = page.getByRole('complementary', { name: 'Build trips' });
   await expect(drawer).toBeVisible();
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
-  await drawer.getByLabel('First Trip').fill('06:00');
+  await drawer.getByLabel('First trip').fill('06:00');
   await drawer.getByLabel('Headway').fill('10');
-  await drawer.getByLabel('Last Trip').fill(lastTrip);
+  await drawer.getByLabel('Last trip').fill(lastTrip);
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
   await expect(drawer).toBeHidden();
   const [lastHours, lastMinutes] = lastTrip.split(':').map(Number);
@@ -118,7 +109,7 @@ export async function openGoldenTrips(page: Page) {
   await page.goto('/');
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30000 });
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await page.locator('.route-picker').getByLabel('Day').selectOption({ label: 'Weekday' });
+  await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
   await expect(page.locator('.trips-workspace .schedule-table tbody tr')).toHaveCount(138, { timeout: 30000 });
 }
 

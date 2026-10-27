@@ -42,6 +42,6 @@ export function runInPage(page: import('@playwright/test').Page, body: string, a
 
 /** Loads a Project snapshot into the app's database before the app starts. */
 export async function seedSnapshot(page: import('@playwright/test').Page, snapshot: unknown): Promise<void> {
-  await page.goto('/src/styles.css');
+  await page.goto('/src/ui/styles/index.css');
   await runInPage(page, 'await e.repository.saveProjectSnapshot({ ...arg, generationSets: arg.generationSets ?? [] })', snapshot);
 }

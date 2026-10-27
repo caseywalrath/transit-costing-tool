@@ -27,7 +27,7 @@ function goldenWithAltBlocking(): any {
 }
 
 test('Scenario duplication with Blocking Scenarios on two Trip Profiles succeeds on IndexedDB and in memory', async ({ page }) => {
-  await page.goto('/src/styles.css');
+  await page.goto('/src/ui/styles/index.css');
   const result = await page.evaluate(async ({ SETUP, snapshot }) => {
     const env = await new Function(SETUP)();
     const dexie = env.make('p03-duplicate');
@@ -104,7 +104,7 @@ const VERSION_6_STORES = `{
 
 /** Creates a version 6 database holding `rows`, then opens it with the current schema and reads the result. */
 async function upgradeFromVersion6(page: Page, name: string, rows: Record<string, any[]>, options: { readOnly?: boolean } = {}) {
-  await page.goto('/src/styles.css');
+  await page.goto('/src/ui/styles/index.css');
   return page.evaluate(async ({ SETUP, name, rows, stores, readOnly }) => {
     const env = await new Function(SETUP)();
     const old = new env.Dexie(name);

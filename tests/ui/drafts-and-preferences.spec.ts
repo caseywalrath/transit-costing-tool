@@ -4,6 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule, openGoldenTrips } from './support/tripsWorkspace';
+import { editGridCell, editRuntimeCell, gridCell, openRuntimes, runCommand, runtimeCell, scopeField } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
@@ -14,24 +15,23 @@ const TRIPS_BLOCKING_KEY = 'transit-costing-tool.trip-blocking-scenario.v1';
 
 const runtimeSection = (page: Page) => page.locator('[aria-label="Runtimes section"]');
 const tripsSection = (page: Page) => page.locator('[aria-label="Trips section"]');
-const leaveDialog = (page: Page) => page.getByRole('alertdialog', { name: 'Save Runtime changes before leaving?' });
+const leaveDialog = (page: Page) => page.getByRole('alertdialog', { name: 'Save runtime changes before leaving?' });
 const shiftDialog = (page: Page) => page.getByRole('heading', { name: 'Discard staged shift?' });
-const firstSegment = (page: Page) => runtimeSection(page).getByLabel('Time band 1 segment 1');
+const firstSegment = (page: Page) => runtimeCell(runtimeSection(page), 'Time band 1 segment 1');
 
-/** Types a new first-segment runtime and leaves the field, which makes the Runtime editor draft dirty. */
+/** Types a new first-segment runtime and commits the cell, which makes the Runtime editor draft dirty. */
 async function dirtyRuntime(page: Page, value = ':09') {
-  await firstSegment(page).fill(value);
-  await firstSegment(page).press('Tab');
+  await openRuntimes(page);
+  await editRuntimeCell(runtimeSection(page), 'Time band 1 segment 1', value);
   await expect(runtimeSection(page).getByRole('button', { name: 'Save', exact: true })).toBeVisible();
 }
 
-const dayOption = (page: Page) => page.locator('.route-picker').getByLabel('Day').evaluate((select: HTMLSelectElement) => select.selectedOptions[0]?.textContent ?? '');
+const dayOption = (page: Page) => scopeField(page, 'Day').evaluate((select: HTMLSelectElement) => select.selectedOptions[0]?.textContent ?? '');
 
 async function startStagedShift(page: Page) {
   await page.locator('.schedule-table tbody input[type="checkbox"]').first().check();
-  await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
-  const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
+  await runCommand(page, 'trips.shift');
+  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
   await drawer.getByRole('button', { name: /min earlier/ }).click();
   await expect(page.getByText('Staged 1 minute earlier')).toBeVisible();
   return drawer;
@@ -39,7 +39,7 @@ async function startStagedShift(page: Page) {
 
 test('a dirty Runtime draft asks Save, Discard, or Cancel before the service day changes', async ({ page }) => {
   await createShiftReadySchedule(page);
-  const day = page.locator('.route-picker').getByLabel('Day');
+  const day = scopeField(page, 'Day');
   const original = await dayOption(page);
   await dirtyRuntime(page);
 
@@ -51,7 +51,7 @@ test('a dirty Runtime draft asks Save, Discard, or Cancel before the service day
   await leaveDialog(page).getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(leaveDialog(page)).toHaveCount(0);
   expect(await dayOption(page)).toBe(original);
-  await expect(firstSegment(page)).toHaveValue(':09');
+  await expect(firstSegment(page)).toHaveText(':09');
 
   // Discard changes the day and drops the draft; the saved value is untouched.
   await day.selectOption({ index: 1 });
@@ -64,7 +64,7 @@ test('a dirty Runtime draft asks Save, Discard, or Cancel before the service day
 
 test('Save in the Runtime leave dialog saves the profile, then changes the service day', async ({ page }) => {
   await createShiftReadySchedule(page);
-  const day = page.locator('.route-picker').getByLabel('Day');
+  const day = scopeField(page, 'Day');
   const original = await dayOption(page);
   await dirtyRuntime(page, ':09');
 
@@ -83,11 +83,11 @@ test('a dirty Runtime draft is also guarded on a tab change, and Cancel stays on
   await expect(leaveDialog(page)).toBeVisible();
   await leaveDialog(page).getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(runtimeSection(page)).toBeVisible();
-  await expect(firstSegment(page)).toHaveValue(':09');
+  await expect(firstSegment(page)).toHaveText(':09');
 
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await leaveDialog(page).getByRole('button', { name: 'Discard', exact: true }).click();
-  await expect(page.getByLabel('Blocking controls')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Scope' })).toBeVisible();
 });
 
 test('a dirty Runtime draft is guarded when the Runtime profile changes, and a reload raises the leave prompt', async ({ page }) => {
@@ -101,7 +101,7 @@ test('a dirty Runtime draft is guarded when the Runtime profile changes, and a r
   await expect(leaveDialog(page)).toBeVisible();
   await leaveDialog(page).getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(pattern).toHaveValue(currentPattern);
-  await expect(firstSegment(page)).toHaveValue(':09');
+  await expect(firstSegment(page)).toHaveText(':09');
 
   await runtimeSection(page).locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button').click();
   await page.getByRole('menu', { name: 'Runtime profile' }).getByRole('menuitem', { name: 'Rename profile…' }).click();
@@ -148,65 +148,65 @@ test('a staged Shift is guarded on a tab change, and a dirty Runtime draft is as
   await leaveDialog(page).getByRole('button', { name: 'Discard', exact: true }).click();
   await expect(shiftDialog(page)).toBeVisible();
   await page.getByRole('button', { name: 'Discard', exact: true }).last().click();
-  await expect(page.getByLabel('Blocking controls')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Scope' })).toBeVisible();
 });
 
 test('Build Trips closes without a prompt and shows its values again when it is reopened', async ({ page }) => {
   await createShiftReadySchedule(page);
-  const actions = tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true });
-  const open = async () => { await actions.click(); await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Build trips…' }).click(); };
-  const drawer = page.getByRole('complementary', { name: 'Build Trips' });
+  const open = () => runCommand(page, 'trips.build');
+  const drawer = page.getByRole('complementary', { name: 'Build trips' });
 
   await open();
-  await expect(drawer.getByLabel('First Trip')).toHaveValue('');
+  await expect(drawer.getByLabel('First trip')).toHaveValue('');
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
-  await drawer.getByLabel('First Trip').fill('07:15');
+  await drawer.getByLabel('First trip').fill('07:15');
   await drawer.getByLabel('Headway').fill('20');
-  await drawer.getByLabel('Number of Trips').fill('3');
+  await drawer.getByLabel('Number of trips').fill('3');
   await drawer.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(drawer).toBeHidden();
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
 
   await open();
-  await expect(drawer.getByLabel('First Trip')).toHaveValue('07:15');
+  await expect(drawer.getByLabel('First trip')).toHaveValue('07:15');
   await expect(drawer.getByLabel('Headway')).toHaveValue('20');
-  await expect(drawer.getByLabel('Number of Trips')).toHaveValue('3');
+  await expect(drawer.getByLabel('Number of trips')).toHaveValue('3');
   await expect(drawer.getByLabel('Pattern')).not.toHaveValue('');
 
   // A successful build clears the values.
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
   await expect(drawer).toBeHidden();
   await open();
-  await expect(drawer.getByLabel('First Trip')).toHaveValue('');
+  await expect(drawer.getByLabel('First trip')).toHaveValue('');
   await expect(drawer.getByLabel('Headway')).toHaveValue('');
 });
 
 test('saving Nodes keeps an unsaved Pattern draft, and saving a Pattern keeps unsaved Node edits', async ({ page }) => {
   await createRouteWithPattern(page, 'Draft preservation');
   const patternName = page.getByLabel('Pattern name');
-  const nodeNames = page.getByLabel('Node name');
+  // A cell is found by its text once, as an index, because an edited cell shows an input instead of its text.
+  const nodeCell = async (name: string) => gridCell(page, 'Node name').nth((await gridCell(page, 'Node name').allTextContents()).indexOf(name));
   const saveNodes = page.getByRole('button', { name: 'Save nodes', exact: true });
-  const savePattern = page.getByRole('button', { name: 'Save Pattern', exact: true });
+  const savePattern = page.getByRole('button', { name: 'Review and save', exact: true });
 
   // Unsaved Pattern edit, then a Node save.
   await patternName.fill('Edited pattern, not saved');
   await expect(savePattern).toBeEnabled();
-  const nodeInput = async (name: string) => nodeNames.nth(await nodeNames.evaluateAll((inputs, wanted) => inputs.findIndex((input) => (input as HTMLInputElement).value === wanted), name));
-  await (await nodeInput('A')).fill('A renamed');
+  await editGridCell(await nodeCell('A'), 'A renamed');
   await saveNodes.click();
-  await expect(saveNodes).toBeDisabled();
+  // The save bar disappears once the Node draft is saved.
+  await expect(saveNodes).toHaveCount(0);
   await expect.poll(() => runInPage(page, "return (await e.db.nodes.toArray()).map((node) => node.name).sort().join(',')")).toBe('A renamed,B');
   await expect(patternName).toHaveValue('Edited pattern, not saved');
   await expect(savePattern).toBeEnabled();
 
   // Unsaved Node edit, then a Pattern save.
-  await (await nodeInput('B')).fill('B edited, not saved');
+  await editGridCell(await nodeCell('B'), 'B edited, not saved');
   await expect(saveNodes).toBeEnabled();
   await savePattern.click();
   const rebalance = page.getByRole('button', { name: 'Save and rebalance', exact: true });
   if (await rebalance.isVisible().catch(() => false)) await rebalance.click();
   await expect.poll(() => runInPage(page, 'return (await e.db.patterns.toArray()).map((pattern) => pattern.name).join(",")')).toBe('Edited pattern, not saved');
-  await expect(await nodeInput('B edited, not saved')).toHaveValue('B edited, not saved');
+  await expect(gridCell(page, 'Node name').filter({ hasText: 'B edited, not saved' })).toHaveCount(1);
   await expect(saveNodes).toBeEnabled();
   expect(await runInPage(page, "return (await e.db.nodes.toArray()).map((node) => node.name).sort().join(',')")).toBe('A renamed,B');
 });
@@ -232,11 +232,14 @@ test('Escape in a number field and in a Runtime time field restores the saved va
   await expect.poll(() => runInPage(page, "return (await e.db.serviceDays.toArray()).find((day) => day.kind === 'weekday').annualServiceDays")).toBe(254);
 
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
+  await openRuntimes(page);
   await expect(firstSegment(page)).toBeVisible({ timeout: 30_000 });
-  const saved = await firstSegment(page).inputValue();
-  await firstSegment(page).fill(':13');
-  await firstSegment(page).press('Escape');
-  await expect(firstSegment(page)).toHaveValue(saved);
+  const saved = await firstSegment(page).textContent() ?? '';
+  await firstSegment(page).dblclick();
+  const field = runtimeSection(page).getByRole('textbox', { name: 'Time band 1 segment 1', exact: true });
+  await field.fill(':13');
+  await field.press('Escape');
+  await expect(firstSegment(page)).toHaveText(saved);
   await expect(runtimeSection(page).getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
 });
 
@@ -252,8 +255,8 @@ for (const [name, route, blocking] of [
     await page.goto('/');
     await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
     await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-    await expect(page.getByLabel('Blocking controls')).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Blocking controls' }).getByRole('combobox', { name: 'Blocking Scenario' })).toHaveValue(/.+/);
+    await expect(page.getByRole('region', { name: 'Scope' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Blocking scenario' })).toHaveValue(/.+/);
     await expect(page.locator('.notice')).toHaveCount(0);
   });
 }
@@ -274,7 +277,7 @@ test('the remembered Blocking Scenario survives a Trip Profile change and is res
 
   // Trips: pick the Blocking Scenario that is not the first one listed.
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await page.locator('.route-picker').getByLabel('Day').selectOption({ label: 'Weekday' });
+  await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
   const scenarioMenu = tripsSection(page).locator('.menu-field').filter({ hasText: 'Scenario' }).getByRole('button');
   const profileMenu = tripsSection(page).locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button');
   await expect(scenarioMenu).toContainText(/blocks/i, { timeout: 30_000 });
@@ -283,7 +286,7 @@ test('the remembered Blocking Scenario survives a Trip Profile change and is res
   const initial = (await scenarioMenu.innerText()).replace('▾', '').trim();
   const chosen = initial === 'Second blocks' ? 'Workbook Blocks' : 'Second blocks';
   await scenarioMenu.click();
-  await page.getByRole('menu', { name: 'Blocking Scenario' }).getByRole('menuitemradio', { name: chosen, exact: true }).click();
+  await page.getByRole('menu', { name: 'Blocking scenario' }).getByRole('menuitemradio', { name: chosen, exact: true }).click();
   await expect(scenarioMenu).toContainText(chosen);
 
   // Change the Trip Profile and back: the choice for the Default profile is still the one made.
@@ -296,8 +299,8 @@ test('the remembered Blocking Scenario survives a Trip Profile change and is res
 
   // Blocking: choose the non-first Scenario, reload, and open Blocking again. It is restored, not replaced by the first one listed.
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  const blockingScenario = page.getByRole('region', { name: 'Blocking controls' }).getByRole('combobox', { name: 'Blocking Scenario' });
-  const profileSelect = page.getByRole('region', { name: 'Blocking controls' }).getByRole('combobox', { name: 'Trip Profile' });
+  const blockingScenario = page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Blocking scenario' });
+  const profileSelect = page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Trip profile' });
   await profileSelect.selectOption({ label: 'Default' });
   await expect(blockingScenario).toHaveValue(/.+/);
   const shown = await blockingScenario.locator('option:checked').innerText();

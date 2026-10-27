@@ -1,10 +1,10 @@
 import type { ValidationFinding } from '../domain/types';
 
-/** Why the Trips marked "Run Times Have Changed" cannot be recalculated (U09). Built from the findings of `inspectStaleTrips`. */
+/** Why the trips marked "Run times have changed" cannot be recalculated (U09). Built from the findings of `inspectStaleTrips`. */
 export interface StaleTripNotice { tripCount: number; reasons: string[]; }
 
 /** The stale-Trip check raises these two keys when no Runtime band covers a Trip's first departure; the anchor wording does not fit a status line. */
-const NO_BAND = 'No Runtime band covers its first departure. Add or extend a Runtime band.';
+const NO_BAND = 'No runtime band covers its first departure. Add or extend a runtime band.';
 const STALE_TRIP_REASONS: Record<string, string> = { 'trip.anchorNoRuntime': NO_BAND, 'runtime.noApplicableBand': NO_BAND };
 
 /**

@@ -4,6 +4,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
+import { scopeField } from './support/ui';
 
 test.setTimeout(120_000);
 test.use({ actionTimeout: 15_000 });
@@ -33,10 +34,10 @@ test('a read-only tab says so in the notice banner and the header, keeps its edi
   const { context, active, readOnly } = await twoTabs(browser);
 
   await expect(active.getByText(READ_ONLY_BANNER)).toHaveCount(0);
-  await expect(active.locator('.save-status')).toHaveCount(0);
+  await expect(active.locator('.save-status')).toContainText('Saved locally');
 
   await expect(readOnly.locator('.notice.info')).toHaveText(READ_ONLY_BANNER);
-  await expect(readOnly.locator('.save-status')).toHaveText('Read-only');
+  await expect(readOnly.locator('.save-status')).toHaveText('Read-only: open in another tab');
   await expect(readOnly.getByRole('textbox', { name: 'Weekday name' })).toBeEnabled();
   await expect(readOnly.getByLabel('Weekday annual service days')).toBeEnabled();
 
@@ -45,16 +46,16 @@ test('a read-only tab says so in the notice banner and the header, keeps its edi
   await days.fill('254');
   await days.press('Enter');
   await expect(readOnly.locator('.notice.error')).toContainText(/read-only/i);
-  await expect(readOnly.locator('.save-status')).toHaveText('Read-only');
+  await expect(readOnly.locator('.save-status')).toHaveText('Read-only: open in another tab');
   await expect(readOnly.getByText('Local save failed')).toHaveCount(0);
   await context.close();
 });
 
 test('the Project menu shows when the last backup was exported, or that none was', async ({ page }) => {
   await openGolden(page);
-  const menuItem = () => page.getByRole('menuitem', { name: 'Backup project JSON', exact: true });
+  const menuItem = () => page.getByRole('menuitem', { name: 'Back up project (JSON)', exact: true });
 
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
   await expect(menuItem()).toHaveAccessibleDescription('No backup exported yet');
   await expect(page.getByRole('menu', { name: 'Project actions' })).toContainText('No backup exported yet');
 
@@ -65,7 +66,7 @@ test('the Project menu shows when the last backup was exported, or that none was
   expect(stored).toBeTruthy();
   const expected = await page.evaluate((iso) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }), stored);
 
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
   await expect(menuItem()).toHaveAccessibleDescription(`Last backup: ${expected}`);
   await expect(page.getByRole('menu', { name: 'Project actions' })).not.toContainText('No backup exported yet');
 });
@@ -74,7 +75,7 @@ test('after a stale-source refusal Blocking reloads its data and shows the messa
   await page.setViewportSize({ width: 1400, height: 1000 });
   await openGolden(page);
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  const currentBlock = page.getByLabel('Current Block');
+  const currentBlock = page.getByLabel('Current block');
   const blockMenu = currentBlock.locator('.menu-field').filter({ hasText: 'Block' }).getByRole('button').first();
   await expect(blockMenu).toBeVisible({ timeout: 30_000 });
   await page.getByLabel('Blocks', { exact: true }).locator('.link-button').filter({ hasText: /^26$/ }).click();
@@ -86,13 +87,12 @@ test('after a stale-source refusal Blocking reloads its data and shows the messa
   expect(changed).toBeGreaterThan(0);
 
   const blocksBefore = await runInPage(page, 'return await e.db.blocks.count()');
-  await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New Block…', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'New Block' });
+  await currentBlock.getByRole('button', { name: 'New block', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'New block' });
   await dialog.getByLabel('Name').fill('Block 900');
-  await dialog.getByRole('button', { name: 'Create Block', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Create block', exact: true }).click();
 
-  const stale = 'Blocking Scenario changed since the operation was reviewed. Nothing was saved, and the latest Blocks are loaded. Review them and try again.';
+  const stale = 'Blocking scenario changed since the operation was reviewed. Nothing was saved, and the latest blocks are loaded. Review them and try again.';
   await expect(banner(page).filter({ hasText: stale })).toHaveCount(1);
   await expect(banner(page)).toHaveCount(1);
   // The screen now shows the stored label: it reloaded.
@@ -101,7 +101,7 @@ test('after a stale-source refusal Blocking reloads its data and shows the messa
 
   // The same action now succeeds, because the source signature was refreshed.
   await expect(dialog.getByLabel('Name')).toHaveValue('Block 900');
-  await dialog.getByRole('button', { name: 'Create Block', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Create block', exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect(blockMenu).toContainText('Block 900');
   // The earlier message stays until it is dismissed; the retry added no second one.
@@ -113,17 +113,16 @@ test('a typed Blocking refusal is shown once, as written', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 1000 });
   await openGolden(page);
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  const currentBlock = page.getByLabel('Current Block');
+  const currentBlock = page.getByLabel('Current block');
   const blockMenu = currentBlock.locator('.menu-field').filter({ hasText: 'Block' }).getByRole('button').first();
   await expect(blockMenu).toBeVisible({ timeout: 30_000 });
   await page.getByLabel('Blocks', { exact: true }).locator('.link-button').filter({ hasText: /^26$/ }).click();
   await expect(blockMenu).toContainText('26');
 
-  await currentBlock.getByRole('button', { name: 'Current Block actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New Block…', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'New Block' });
+  await currentBlock.getByRole('button', { name: 'New block', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'New block' });
   await dialog.getByLabel('Name').fill('26');
-  await dialog.getByRole('button', { name: 'Create Block', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Create block', exact: true }).click();
   await expect(banner(page)).toHaveCount(1);
   await expect(banner(page)).toContainText('Another Block on this service day already uses that label.');
   expect(await banner(page).innerText()).not.toMatch(/\s{2}|^\s/);
@@ -145,13 +144,13 @@ test('selection reloads and exports that fail show the error banner with a next 
   // Delete the database under the open page: its connection closes, so every later read fails with a browser error.
   await runInPage(page, 'e.db.close(); await e.db.delete();');
 
-  await page.locator('.context-bar select').nth(1).selectOption({ label: 'Select scenario' });
+  await scopeField(page, 'Route').selectOption({ label: 'No route selected' });
   await expect(banner(page).filter({ hasText: 'Unable to load that selection. Reload this page and try again.' })).toHaveCount(1);
   await expect(banner(page).filter({ hasText: /Dexie|IndexedDB|database|closed/i }).filter({ hasNotText: 'upgraded in another tab' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Dismiss message' }).click();
 
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Backup project JSON', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'Back up project (JSON)', exact: true }).click();
   await expect(banner(page).filter({ hasText: 'Unable to export the project backup. Your data was not changed. Try again.' })).toHaveCount(1);
   await expect(banner(page).filter({ hasText: /Dexie|IndexedDB|DatabaseClosed|closed/i }).filter({ hasNotText: 'upgraded in another tab' })).toHaveCount(0);
 });

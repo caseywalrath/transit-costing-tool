@@ -2,21 +2,21 @@
 // Trip Profile, or tab changes. It asks Cancel or Discard first; an empty row is dropped without a question.
 import { expect, test, type Page } from '@playwright/test';
 import { createShiftReadySchedule } from './support/tripsWorkspace';
+import { editRuntimeCell, runCommand, scopeField } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
 
 const tripsSection = (page: Page) => page.locator('[aria-label="Trips section"]');
 const draftRow = (page: Page) => page.locator('.schedule-table tbody tr.draft-trip-row');
-const draftDialog = (page: Page) => page.getByRole('heading', { name: 'Discard new Trip?' });
-const draftDialogBox = (page: Page) => page.getByRole('dialog', { name: 'Discard new Trip?' });
+const draftDialog = (page: Page) => page.getByRole('heading', { name: 'Discard new trip?' });
+const draftDialogBox = (page: Page) => page.getByRole('dialog', { name: 'Discard new trip?' });
 const shiftDialogBox = (page: Page) => page.getByRole('dialog', { name: 'Discard staged shift?' });
 const shiftDialog = (page: Page) => page.getByRole('heading', { name: 'Discard staged shift?' });
 const profileMenuButton = (page: Page) => tripsSection(page).locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button');
 
 async function openDraft(page: Page, enter: 'pattern' | 'time' | 'nothing') {
-  await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Add trip…' }).click();
+  await runCommand(page, 'trips.add');
   await expect(draftRow(page)).toHaveCount(1);
   if (enter === 'nothing') return;
   await draftRow(page).getByLabel('New trip pattern').selectOption({ index: 1 });
@@ -24,8 +24,8 @@ async function openDraft(page: Page, enter: 'pattern' | 'time' | 'nothing') {
 }
 
 const scopeChanges: Array<{ name: string; change: (page: Page) => Promise<void>; unchanged: (page: Page) => Promise<unknown> }> = [
-  { name: 'service day', change: (page) => page.locator('.route-picker').getByLabel('Day').selectOption({ index: 1 }).then(() => undefined), unchanged: (page) => page.locator('.route-picker').getByLabel('Day').inputValue() },
-  { name: 'Direction', change: (page) => page.locator('.route-picker').getByLabel('Direction').selectOption({ index: 1 }).then(() => undefined), unchanged: (page) => page.locator('.route-picker').getByLabel('Direction').inputValue() },
+  { name: 'service day', change: (page) => scopeField(page, 'Day').selectOption({ index: 1 }).then(() => undefined), unchanged: (page) => scopeField(page, 'Day').inputValue() },
+  { name: 'Direction', change: (page) => scopeField(page, 'Direction').selectOption({ index: 1 }).then(() => undefined), unchanged: (page) => scopeField(page, 'Direction').inputValue() },
   { name: 'tab', change: (page) => page.getByRole('button', { name: 'Route', exact: true }).click(), unchanged: (page) => page.getByRole('button', { name: 'Trips', exact: true }).getAttribute('class') },
   {
     name: 'Trip Profile',
@@ -74,7 +74,7 @@ for (const scope of scopeChanges) {
 
 test('a Pattern alone counts as entered, and an empty Add-trip row is dropped without a question', async ({ page }) => {
   await createShiftReadySchedule(page, '06:10');
-  const day = page.locator('.route-picker').getByLabel('Day');
+  const day = scopeField(page, 'Day');
   const original = await day.inputValue();
 
   await openDraft(page, 'pattern');
@@ -97,12 +97,11 @@ test('with a staged Shift and an entered row open, each press asks one question:
   await openDraft(page, 'time');
   // A staged Shift needs a selected Trip, and Add trip is disabled while one is staged, so stage first with the row already open.
   await page.locator('.schedule-table tbody input[type="checkbox"]').first().check();
-  await tripsSection(page).getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Shift selected…' }).click();
-  await page.getByRole('complementary', { name: 'Shift selected Trips' }).getByRole('button', { name: /min earlier/ }).click();
+  await runCommand(page, 'trips.shift');
+  await page.getByRole('complementary', { name: 'Shift selected trips' }).getByRole('button', { name: /min earlier/ }).click();
   await expect(page.getByText('Staged 1 minute earlier')).toBeVisible();
 
-  const day = page.locator('.route-picker').getByLabel('Day');
+  const day = scopeField(page, 'Day');
   const original = await day.inputValue();
   await day.selectOption({ index: 1 });
   await expect(shiftDialog(page)).toBeVisible();
@@ -120,12 +119,10 @@ test('saving the Runtime profile keeps an entered Add-trip row', async ({ page }
   await createShiftReadySchedule(page, '06:10');
   await openDraft(page, 'time');
   const runtimeSection = page.locator('[aria-label="Runtimes section"]');
-  const firstSegment = runtimeSection.getByLabel('Time band 1 segment 1');
-  await firstSegment.fill(':09');
-  await firstSegment.press('Tab');
+  await editRuntimeCell(runtimeSection, 'Time band 1 segment 1', ':09');
   await runtimeSection.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(runtimeSection.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => document.querySelector<HTMLInputElement>('[aria-label="Time band 1 segment 1"]')?.value)).toBe(':09');
+  await expect.poll(() => page.evaluate(() => document.querySelector('[data-cell="Time band 1 segment 1"]')?.textContent)).toBe(':09');
   // The save's reload of the Trips follows the write; give it time to land before looking at the row.
   await page.waitForTimeout(1500);
   await expect(draftDialog(page)).toHaveCount(0);

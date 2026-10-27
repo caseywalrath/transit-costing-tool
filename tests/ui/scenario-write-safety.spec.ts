@@ -4,6 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw, goldenWithAltProfile } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
+import { runCommand } from './support/ui';
 
 test.setTimeout(120000);
 
@@ -19,13 +20,12 @@ async function open(page: Page, snapshot: unknown = goldenRaw()) {
 async function buildThreeTrips(page: Page): Promise<number> {
   const before = await tripCount(page);
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Build trips…' }).click();
-  const drawer = page.getByRole('complementary', { name: 'Build Trips' });
+  await runCommand(page, 'trips.build');
+  const drawer = page.getByRole('complementary', { name: 'Build trips' });
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
-  await drawer.getByLabel('First Trip').fill('03:00');
+  await drawer.getByLabel('First trip').fill('03:00');
   await drawer.getByLabel('Headway').fill('10');
-  await drawer.getByLabel('Number of Trips').fill('3');
+  await drawer.getByLabel('Number of trips').fill('3');
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
   await expect(drawer).toBeHidden({ timeout: 15000 });
   await expect.poll(() => tripCount(page)).toBe(before + 3);
@@ -67,8 +67,8 @@ test('a Trip edit, a new Block, and a Runtime profile rename made after load sur
 test('Rename scenario keeps Trips built after load', async ({ page }) => {
   await open(page);
   const built = await buildThreeTrips(page);
-  await page.getByRole('button', { name: 'Scenario actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Rename scenario', exact: true }).click();
+  await page.getByRole('button', { name: /^Scenario: / }).click();
+  await page.getByRole('menuitem', { name: 'Rename scenario…', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Rename scenario' });
   await dialog.getByLabel('Scenario name').fill('Renamed scenario');
   await dialog.getByRole('button', { name: 'Rename', exact: true }).click();
@@ -102,15 +102,15 @@ test('Duplicate route keeps Trips built after load and copies them with the Rout
 test('Duplicate scenario copies the stored Trips, including Trips built after load', async ({ page }) => {
   await open(page);
   const built = await buildThreeTrips(page);
-  await page.getByRole('button', { name: 'Scenario actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Duplicate scenario', exact: true }).click();
+  await page.getByRole('button', { name: /^Scenario: / }).click();
+  await page.getByRole('menuitem', { name: 'Duplicate scenario…', exact: true }).click();
   await page.getByRole('dialog', { name: 'Duplicate scenario' }).getByRole('button', { name: 'Duplicate', exact: true }).click();
   await expect.poll(() => runInPage(page, 'return await e.db.scenarios.count()')).toBe(2);
   expect(await tripCount(page)).toBe(built * 2);
 });
 
 test('Runtime "Copy from day" commits on IndexedDB in independent and shared modes', async ({ page }) => {
-  await page.goto('/src/styles.css');
+  await page.goto('/src/ui/styles/index.css');
   const results = await page.evaluate(async ({ SETUP, raw }: any) => {
     const env = await new Function(SETUP)();
     const out: Record<string, unknown> = {};

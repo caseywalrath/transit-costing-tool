@@ -6,6 +6,8 @@ Phases 1 through 4 are implemented and user-accepted: route definition (Package 
 
 Phase 5 Packages 5A through 5C (Costing) are implemented and the user accepted the Costing workspace on 2026-10-22. The October 2026 code review replaces Package 5D except user acceptance (`docs/implementation/phase-05-costing.md`). The Dexie schema is version 7 and the JSON backup schema is version 6. Code review Stage 4 (issue resolution) is recorded package by package in `docs/implementation/review-fixes.md`; the current status paragraph is in `codex.md`.
 
+Phase UR (interface revision, Decision 0047) is implemented and awaits user acceptance; `docs/implementation/ui-revision-closeout.md` records the integration review. It changes no domain, persistence, or CSV behaviour.
+
 Phase-specific implementation must follow the decision records and implementation plans under `docs/`. Each decision record carries a Status and a Date, and states which earlier decisions or items it supersedes.
 
 ## Product Objective
@@ -319,6 +321,17 @@ Primary navigation is:
 Route | Trips | Blocking | Costing
 ```
 
+The interface revision (Phase UR, Decision 0047) sets the structure every screen follows. `docs/ui-conventions.md`, section "Interface revision", holds the details.
+
+- **Header (H-B).** Row 1 holds the application name, the four tabs, and the local-save status with the backup age. Row 2 (the scope bar) holds the Project and Scenario switchers, which are menus that also hold each level's lifecycle actions, then the active tab's scope selectors. Row 2 never wraps at 1024 px or wider: the switcher captions drop first, then the names truncate.
+- **Surface levels.** A level 1 work surface is the panel the planner works in, with its actions in its header and at most one primary button. A level 2 supporting panel holds context and summaries. A level 3 inline note is one line of status. The components are in `src/ui/shared/`.
+- **Save rule.** A standalone field saves when it is committed. A table or grouped form (Nodes, Pattern, Runtimes, Costing assumptions) collects edits and shows a save bar at the bottom of its panel while it has unsaved edits. Impact reviews and navigation guards are unchanged.
+- **Grid.** Editable tables (Runtimes, Nodes, Pattern points) are spreadsheet grids driven by `useGridNavigation`: arrow keys move, Enter commits and moves down, Tab commits and moves right, and edited cells are marked until saved. Parsing stays in the domain parsers.
+- **Selection.** Actions on selected rows are in a selection bar. Selection criteria (by Pattern, by status, invert) are pure functions in `src/application/tripSelection.ts`; headway change markers are computed in `src/application/tripsWorkspaceView.ts`; save-bar change counts in `src/application/draftChangeCounts.ts`.
+- **Styling.** `src/ui/styles/tokens.css` defines every colour and the type, spacing, and radius scales; the other stylesheets in `src/ui/styles/` use the tokens. Source Sans 3 is bundled. Screens format numbers through `src/ui/format.ts`; CSV and backup formats do not use it and are unchanged.
+- **Minimum width.** Every layout works at 1024 px and wider. Below 1100 px the Route panels and the Blocking panels stack.
+- **Files.** `src/ui/App.tsx` holds the shell state and composes `src/ui/shell/` (header), `src/ui/route/`, `src/ui/trips/`, `src/ui/blocking/`, and `src/ui/costing/`.
+
 Tables must be compact, functional, and suitable for repeated editing. Detailed UI decisions belong to a distinct UI/UX work package and must not be established by structural implementation. Select Luna for tightly specified UI wiring that reuses established components; select Sol for novel or complex UX judgment, as described in `codex.md`.
 
 ## Structural and UI/UX Work Separation
@@ -385,6 +398,10 @@ Approved revised implementation plan: `docs/implementation/phase-04-manual-block
 ### Phase 5: Costing
 
 Add annual service quantities, a Revenue-Hour-based cost estimate, user and NTD source metadata, rate-year adjustment, future-year escalation, and a Blocking-Scenario selector. Platform Hours are shown but are not a second cost basis. Packages 5A through 5C implement pure calculations, Scenario-owned assumptions persistence, versioned backup, CSV/ZIP report files, and the Costing workspace. The review replaces integration Package 5D; user acceptance remains. Decision 0027 records the accepted basis, assumption ownership, forecast defaults, and selector-only UI. The preliminary `CostPlan` shape has been replaced in the domain contract; its unused database table remains inert for data preservation.
+
+### Phase UR: Interface revision (implemented; awaits user acceptance)
+
+Replace the visual system and the screen layouts without changing domain, persistence, or CSV behaviour: design tokens and a bundled Source Sans 3, a two-row header, three surface levels, a unified save bar, spreadsheet-style grids, collapsible Runtimes, headway trip identification, selection by Pattern, and a Blocking layout whose Unassigned panel collapses to a rail. Decision 0047 records the design; `docs/implementation/ui-revision-plan.md` holds the packages, and `docs/implementation/ui-revision-closeout.md` records the integration review. The "UI Structure" section above describes the result.
 
 ### Phase 6: Advanced capabilities
 

@@ -1,0 +1,18 @@
+/* Surface primitives (UR-4, Appendix B): work surface, supporting panel, inline note. Not yet rendered by any tab. */
+.work-surface { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-panel); min-width: 0; position: relative; }
+.work-surface__header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: 10px 14px; border-bottom: 1px solid var(--color-border-soft); }
+.work-surface__title { margin: 0; font-size: var(--font-size-title); font-weight: var(--font-weight-bold); }
+.work-surface__count, .work-surface__subtitle { color: var(--color-text-muted); font-size: var(--font-size-note); }
+.work-surface__actions { margin-left: auto; display: flex; align-items: center; gap: var(--space-2); }
+.work-surface__body { padding: var(--space-3) 14px; }
+.support-panel { display: grid; gap: var(--space-2); min-width: 0; align-content: start; }
+.support-panel__header { display: flex; align-items: center; gap: var(--space-2); }
+.support-panel__header > :not(.support-panel__title) { margin-left: auto; }
+.support-panel__title { margin: 0; font-size: var(--font-size-body); font-weight: var(--font-weight-bold); color: var(--color-text-muted); }
+.support-panel__body { background: var(--color-surface-2); border: 1px solid var(--color-border-soft); border-radius: var(--radius-panel); padding: 10px var(--space-3); }
+.inline-note { display: flex; gap: 6px; align-items: baseline; margin: 0; color: var(--color-text-muted); font-size: var(--font-size-note); }
+.inline-note__icon { display: inline-grid; place-items: center; flex: none; width: 15px; height: 15px; border-radius: 50%; border: 1px solid var(--color-text-subtle); font-size: 10px; font-weight: var(--font-weight-bold); font-style: italic; transform: translateY(2px); }
+.inline-note--warn { color: var(--color-warn); }
+.inline-note--warn .inline-note__icon { font-style: normal; border-color: var(--color-warn-border); background: var(--color-warn-soft); }
+.inline-note--ok { color: var(--color-ok); }
+.inline-note--ok .inline-note__icon { font-style: normal; border-color: var(--color-ok); }

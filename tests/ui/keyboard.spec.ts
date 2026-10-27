@@ -8,12 +8,13 @@ import { fileURLToPath } from 'node:url';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule, openGoldenTrips } from './support/tripsWorkspace';
+import { editGridCell, gridCell, openRuntimes, projectSwitcher, runCommand, scopeField } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
 
 const AXE_SOURCE = readFileSync(fileURLToPath(new URL('../../node_modules/axe-core/axe.min.js', import.meta.url)), 'utf8');
-const AXE_RULES = ['aria-dialog-name', 'label', 'landmark-one-main', 'landmark-no-duplicate-main', 'landmark-main-is-top-level', 'landmark-unique', 'page-has-heading-one', 'aria-allowed-role', 'html-has-lang', 'document-title', 'scope-attr-valid'];
+const AXE_RULES = ['aria-dialog-name', 'label', 'landmark-one-main', 'landmark-no-duplicate-main', 'landmark-main-is-top-level', 'landmark-unique', 'page-has-heading-one', 'aria-allowed-role', 'html-has-lang', 'document-title', 'scope-attr-valid', 'color-contrast', 'target-size'];
 
 async function axeViolations(page: Page, context?: string): Promise<string[]> {
   if (!(await page.evaluate(() => 'axe' in window))) await page.addScriptTag({ content: AXE_SOURCE });
@@ -47,9 +48,9 @@ async function chooseByKeyboard(page: Page, trigger: Locator, label: string) {
 
 test('a name dialog opened from a menu by keyboard takes focus, closes on Escape, and returns focus to the invoker', async ({ page }) => {
   await page.goto('/');
-  const trigger = page.getByRole('button', { name: 'Project actions', exact: true });
-  await chooseByKeyboard(page, trigger, 'New project');
-  const dialog = page.getByRole('dialog', { name: 'New Project' });
+  const trigger = page.getByRole('button', { name: /^Project: / });
+  await chooseByKeyboard(page, trigger, 'New project…');
+  const dialog = page.getByRole('dialog', { name: 'New project' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByLabel('Name')).toBeFocused();
   await page.keyboard.press('Escape');
@@ -59,29 +60,29 @@ test('a name dialog opened from a menu by keyboard takes focus, closes on Escape
 
 test('a menu item that opens a dialog does not refocus the menu trigger, also with the mouse', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
   // Count the times the trigger receives focus from here on: opening a dialog must not give it any.
-  await page.evaluate(() => { const trigger = document.querySelector<HTMLElement>('button[aria-label="Project actions"]')!; (window as unknown as { triggerFocusCount: number }).triggerFocusCount = 0; trigger.addEventListener('focus', () => { (window as unknown as { triggerFocusCount: number }).triggerFocusCount += 1; }); });
-  await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'New Project' });
+  await page.evaluate(() => { const trigger = document.querySelector<HTMLElement>('button[aria-label^="Project: "]')!; (window as unknown as { triggerFocusCount: number }).triggerFocusCount = 0; trigger.addEventListener('focus', () => { (window as unknown as { triggerFocusCount: number }).triggerFocusCount += 1; }); });
+  await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'New project' });
   await expect(dialog).toBeVisible();
   await page.waitForTimeout(250);
   expect(await insideDialog(dialog)).toBe(true);
   expect(await page.evaluate(() => (window as unknown as { triggerFocusCount: number }).triggerFocusCount)).toBe(0);
   await expect(dialog.getByLabel('Name')).toBeFocused();
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Project actions', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: /^Project: / })).toBeFocused();
 });
 
 test('Tab and Shift+Tab stay inside an open modal dialog', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New project', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Trap check');
-  await page.getByRole('button', { name: 'New Project', exact: true }).last().click();
-  await expect(page.locator('.context-bar select').first().locator('option:checked')).toHaveText('Trap check');
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Delete project', exact: true }).click();
+  await page.getByRole('button', { name: 'New project', exact: true }).last().click();
+  await expect(projectSwitcher(page)).toHaveAccessibleName('Project: Trap check');
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'Delete project…', exact: true }).click();
   const dialog = page.getByRole('alertdialog');
   await expect(dialog).toBeVisible();
   for (let press = 0; press < 8; press++) {
@@ -100,6 +101,7 @@ test('Tab and Shift+Tab stay inside an open modal dialog', async ({ page }) => {
 
 test('the Runtime profile dialog has an accessible name and closes on Escape', async ({ page }) => {
   await openGoldenTrips(page);
+  await openRuntimes(page);
   await page.locator('[aria-label="Runtimes section"] .menu-field').filter({ hasText: 'Profile' }).getByRole('button').click();
   await page.getByRole('menuitem', { name: 'Rename profile…' }).click();
   const dialog = page.getByRole('dialog', { name: /runtime profile/i });
@@ -108,26 +110,24 @@ test('the Runtime profile dialog has an accessible name and closes on Escape', a
   await expect(page.locator('[role=dialog]')).toHaveCount(0);
 });
 
-test('Delete trips closes on Escape and returns focus to Trip actions', async ({ page }) => {
+test('Delete trips closes on Escape and returns focus to the Delete button, and a confirmed delete moves it to Trip actions', async ({ page }) => {
   await openGoldenTrips(page);
   await page.locator('.trips-workspace .schedule-table tbody input[type=checkbox]').first().check();
-  const actions = page.getByRole('button', { name: 'Trip actions', exact: true });
-  await actions.click();
-  await page.getByRole('menuitem', { name: 'Delete selected…' }).click();
+  const deleteSelected = page.getByRole('button', { name: 'Delete…', exact: true });
+  await deleteSelected.click();
   const dialog = page.getByRole('alertdialog');
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'Cancel' }).focus();
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
-  await expect(actions).toBeFocused();
+  await expect(deleteSelected).toBeFocused();
 
-  // Confirming a delete returns focus to the same control.
-  await actions.click();
-  await page.getByRole('menuitem', { name: 'Delete selected…' }).click();
+  // Confirming a delete clears the selection, which removes the selection bar, so the focus moves to the Trip actions menu.
+  await deleteSelected.click();
   await dialog.getByRole('button', { name: /^Delete/ }).last().click();
   await expect(dialog).toHaveCount(0);
   await expect.poll(() => active(page)).not.toBe('BODY');
-  await expect(actions).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Trip actions', exact: true })).toBeFocused();
 });
 
 test('every dialog opened from the screens has an accessible name, and the axe dialog, label, landmark, and heading rules pass on each screen', async ({ page }) => {
@@ -135,22 +135,24 @@ test('every dialog opened from the screens has an accessible name, and the axe d
   expect(await axeViolations(page)).toEqual([]);
 
   // Dialogs: New project (name dialog), Delete project (alertdialog), Rename profile (Trips), Delete selected (Trips).
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Rename project', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'Rename project…', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   expect(await axeViolations(page)).toEqual([]);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Project actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Delete project', exact: true }).click();
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'Delete project…', exact: true }).click();
   await expect(page.getByRole('alertdialog')).toBeVisible();
   expect(await axeViolations(page)).toEqual([]);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await page.locator('.route-picker').getByLabel('Day').selectOption({ label: 'Weekday' });
+  await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
   await expect(page.locator('.trips-workspace .schedule-table tbody tr').first()).toBeVisible({ timeout: 30_000 });
+  expect(await axeViolations(page)).toEqual([]);
+  await openRuntimes(page);
   expect(await axeViolations(page)).toEqual([]);
   await page.locator('[aria-label="Runtimes section"] .menu-field').filter({ hasText: 'Profile' }).getByRole('button').click();
   await page.getByRole('menuitem', { name: 'Rename profile…' }).click();
@@ -159,15 +161,15 @@ test('every dialog opened from the screens has an accessible name, and the axe d
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.locator('.trips-workspace .schedule-table tbody input[type=checkbox]').first().check();
-  await page.getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Delete selected…' }).click();
+  expect(await axeViolations(page)).toEqual([]);
+  await runCommand(page, 'trips.delete');
   await expect(page.getByRole('alertdialog')).toBeVisible();
   expect(await axeViolations(page)).toEqual([]);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await expect(page.getByLabel('Blocking controls')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Scope' })).toBeVisible();
   expect(await axeViolations(page)).toEqual([]);
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Costing Assumptions' })).toBeVisible();
@@ -177,9 +179,8 @@ test('every dialog opened from the screens has an accessible name, and the axe d
 test('Shift drawer steps keep keyboard focus inside the drawer', async ({ page }) => {
   await openGoldenTrips(page);
   await page.locator('.trips-workspace .schedule-table tbody input[type=checkbox]').first().check();
-  await page.getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Shift selected…' }).click();
-  const drawer = page.getByRole('complementary', { name: 'Shift selected Trips' });
+  await runCommand(page, 'trips.shift');
+  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
   const forward = drawer.getByRole('button', { name: /min later/ });
   await forward.focus();
   await page.keyboard.press('Enter');
@@ -198,16 +199,14 @@ test('focus returns to the Block pill after confirming an assignment, and to Tri
   await chooseByKeyboard(page, pill, '13');
   const dialog = page.getByRole('alertdialog');
   await expect(dialog).toBeVisible();
-  await dialog.getByRole('button', { name: /Move Trip|Assign Trip/ }).focus();
+  await dialog.getByRole('button', { name: /Move trip|Assign trip/ }).focus();
   await page.keyboard.press('Enter');
   await expect(dialog).toHaveCount(0);
   await expect.poll(() => active(page), { timeout: 10_000 }).not.toBe('BODY');
   expect(await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? '')).toMatch(/^Block assignment/);
 
   await page.locator('.trips-workspace .schedule-table tbody input[type=checkbox]').first().check();
-  const actions = page.getByRole('button', { name: 'Trip actions', exact: true });
-  await actions.click();
-  await page.getByRole('menuitem', { name: 'Unassign from Block…', exact: true }).click();
+  await runCommand(page, 'trips.unassignBlock');
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: /^Unassign/ }).last().click();
   await expect(dialog).toHaveCount(0);
@@ -216,9 +215,9 @@ test('focus returns to the Block pill after confirming an assignment, and to Tri
 
 test('focus is not lost after Discard in the Runtime editor or in the Node editor', async ({ page }) => {
   await openGoldenTrips(page);
+  await openRuntimes(page);
   const runtimeActions = page.getByRole('button', { name: 'Runtime actions', exact: true });
-  await runtimeActions.click();
-  await page.getByRole('menuitem', { name: 'Add Time Band' }).click();
+  await runCommand(page, 'runtime.addBand');
   const discard = page.locator('[aria-label="Runtimes section"]').getByRole('button', { name: 'Discard', exact: true });
   await discard.focus();
   await page.keyboard.press('Enter');
@@ -227,16 +226,18 @@ test('focus is not lost after Discard in the Runtime editor or in the Node edito
   await expect(runtimeActions).toBeFocused();
 
   await page.getByRole('button', { name: 'Route', exact: true }).click();
-  await page.getByLabel('Node name').first().fill('Edited node name');
-  const discardNodes = page.getByRole('button', { name: 'Discard changes' }).first();
+  await editGridCell(gridCell(page, 'Node name').first(), 'Edited node name');
+  const discardNodes = page.getByRole('button', { name: 'Discard', exact: true }).first();
   await discardNodes.focus();
   await page.keyboard.press('Enter');
-  await expect(discardNodes).toBeDisabled();
+  // The save bar goes away with the draft, and the focus lands on the button that starts the next entry.
+  await expect(discardNodes).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'New node', exact: true })).toBeFocused();
 });
 
 test('Escape returns focus to the menu trigger at once, so the next control focused keeps its focus', async ({ page }) => {
   await createShiftReadySchedule(page, '06:10');
+  await openRuntimes(page);
   const runtimeActions = page.getByRole('button', { name: 'Runtime actions', exact: true });
   await runtimeActions.click();
   await expect(page.getByRole('menu', { name: 'Runtime actions' })).toBeVisible();
@@ -252,11 +253,12 @@ test('Escape returns focus to the menu trigger at once, so the next control focu
   expect(focus).toEqual({ atOnce: true, later: 'Trip actions' });
 });
 
-test('independent Display toggles are menu item checkboxes, and Tab closes an open menu', async ({ page }) => {
+test('independent View toggles are menu item checkboxes, and Tab closes an open menu', async ({ page }) => {
   await createShiftReadySchedule(page, '06:20');
-  const actions = page.getByRole('button', { name: 'Trip actions', exact: true });
+  await openRuntimes(page);
+  const actions = page.getByRole('button', { name: 'View', exact: true });
   await actions.click();
-  const menu = page.getByRole('menu', { name: 'Trip actions' });
+  const menu = page.getByRole('menu', { name: 'View' });
   for (const name of ['Show runtime bands', 'Show headways', 'Round displayed times']) {
     await expect(menu.getByRole('menuitemcheckbox', { name })).toHaveAttribute('aria-checked', /true|false/);
     await expect(menu.getByRole('menuitemradio', { name })).toHaveCount(0);
@@ -292,21 +294,20 @@ test('fields with an error are marked invalid and point at the message', async (
 
 test('Build Trips marks the fields it cannot use, and the Runtime profile dialog marks its Name', async ({ page }) => {
   await createShiftReadySchedule(page, '06:10');
-  await page.getByRole('button', { name: 'Trip actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Build trips…' }).click();
-  const drawer = page.getByRole('complementary', { name: 'Build Trips' });
+  await runCommand(page, 'trips.build');
+  const drawer = page.getByRole('complementary', { name: 'Build trips' });
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
   await expect(drawer.getByRole('alert')).toBeVisible();
-  for (const label of ['Pattern', 'First Trip', 'Headway']) await expect(drawer.getByLabel(label)).toHaveAttribute('aria-invalid', 'true');
-  await expect(drawer.getByLabel('First Trip')).toHaveAttribute('aria-describedby', 'build-trips-error');
-  await drawer.getByLabel('First Trip').fill('7:00');
+  for (const label of ['Pattern', 'First trip', 'Headway']) await expect(drawer.getByLabel(label)).toHaveAttribute('aria-invalid', 'true');
+  await expect(drawer.getByLabel('First trip')).toHaveAttribute('aria-describedby', 'build-trips-error');
+  await drawer.getByLabel('First trip').fill('7:00');
   await drawer.getByLabel('Headway').fill('10');
   await drawer.getByLabel('Pattern').selectOption({ index: 1 });
   await drawer.getByRole('button', { name: 'Build', exact: true }).click();
   // Neither Number of Trips nor Last Trip is entered: both are marked, the fields that are fine are not.
-  await expect(drawer.getByLabel('Number of Trips')).toHaveAttribute('aria-invalid', 'true');
-  await expect(drawer.getByLabel('Last Trip')).toHaveAttribute('aria-invalid', 'true');
-  await expect(drawer.getByLabel('First Trip')).toHaveAttribute('aria-invalid', 'false');
+  await expect(drawer.getByLabel('Number of trips')).toHaveAttribute('aria-invalid', 'true');
+  await expect(drawer.getByLabel('Last trip')).toHaveAttribute('aria-invalid', 'true');
+  await expect(drawer.getByLabel('First trip')).toHaveAttribute('aria-invalid', 'false');
   await drawer.getByRole('button', { name: 'Cancel', exact: true }).click();
 
   const profile = page.locator('[aria-label="Runtimes section"] .menu-field').filter({ hasText: 'Profile' }).getByRole('button');
@@ -344,10 +345,10 @@ test('each workspace has one h1, there is one main landmark, the file input is l
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await checks(/Trips and runtimes/, page.locator('.trips-workspace .schedule-table tbody tr'));
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await checks(/^Blocking$/, page.getByLabel('Current Block').locator('tbody tr'));
+  await checks(/^Blocking$/, page.getByLabel('Current block').locator('tbody tr'));
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Costing Assumptions' })).toBeVisible();
-  await checks(/Cost estimate/, page.getByLabel('Costing controls'));
+  await checks(/Cost estimate/, page.getByRole('region', { name: 'Scope' }));
   await expect(page.locator('input[type=file]').first()).toHaveAccessibleName('Restore project JSON file');
   for (const input of await page.locator('input[type=file]').all()) await expect(input).toHaveAttribute('tabindex', '-1');
   void runInPage; void createRouteWithPattern;

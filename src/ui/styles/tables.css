@@ -1,0 +1,28 @@
+.field-grid { display: grid; grid-template-columns: repeat(2, minmax(150px, 1fr)); gap: var(--space-2) 14px; margin-top: 10px; align-items: start; }
+.field-grid label { display: grid; gap: var(--space-1); color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
+.field-grid .wide { grid-column: 1 / -1; }
+.field-grid b { color: var(--color-danger); }
+.section-title { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); }
+.section-title > span { color: var(--color-text-muted); font-size: var(--font-size-label); }
+.section-title > div { display: flex; gap: var(--space-1); }
+.table-scroll { overflow-x: auto; border: 1px solid var(--color-border); }
+table { border-collapse: collapse; width: 100%; min-width: 510px; }
+.service-days-table table { min-width: 0; }
+th, td { border-bottom: 1px solid var(--color-border-soft); padding: var(--space-1); text-align: left; vertical-align: top; }
+th { position: sticky; top: 0; z-index: 1; background: var(--color-surface-2); color: var(--color-text-muted); font-size: var(--font-size-caption); white-space: nowrap; }
+thead th { vertical-align: bottom; padding-bottom: 6px; }
+td { min-height: 38px; }
+tr:last-child td { border-bottom: 0; }
+th:first-child, td:first-child { position: sticky; left: 0; z-index: 1; background: var(--color-surface); }
+th:first-child { z-index: 2; background: var(--color-surface-2); }
+.table-empty { color: var(--color-text-muted); padding: var(--space-3); }
+.table-actions { display: flex; justify-content: flex-end; margin-top: var(--space-2); }
+.field-error { display: block; color: var(--color-danger); font-size: var(--font-size-caption); line-height: 1.2; padding-top: 2px; }
+.pending-delete td { background: var(--color-danger-soft); color: var(--color-danger); }
+.pending-delete td:first-child { background: var(--color-danger-soft); }
+.draft-row td { background: var(--color-surface-2); }
+.draft-row td:first-child { background: var(--color-surface-2); }
+.row-status, .draft-indicator { display: inline-block; color: var(--color-text-muted); font-size: var(--font-size-caption); font-weight: var(--font-weight-bold); }
+.draft-indicator { margin: var(--space-2) 0 0; }
+.local-conflict { margin: var(--space-2) 0 0; border-left: 3px solid var(--color-danger); background: var(--color-danger-soft); padding: var(--space-2) var(--space-2); }
+.value-incomplete { color: var(--color-warn); font-weight: var(--font-weight-semibold); }

@@ -1,0 +1,64 @@
+/* Design tokens (Decision 0047, interface revision plan Appendix A). The only file that holds raw colour, size, and radius values. */
+:root {
+  /* Surfaces */
+  --color-canvas: #eef2f4;        /* page background */
+  --color-surface: #ffffff;       /* work surface, inputs */
+  --color-surface-2: #f6f8f9;     /* supporting panel, table headings, scope bar */
+  --color-sunken: #edf1f3;        /* chips, disabled fill */
+  --color-border: #d2dbe0;        /* controls and panels */
+  --color-border-soft: #e4e9ec;   /* row and divider lines */
+  /* Text */
+  --color-text: #17212b;
+  --color-text-muted: #536574;    /* labels, secondary text */
+  --color-text-subtle: #62707b;   /* captions, placeholders (O-1, decided) */
+  /* Action and selection */
+  --color-accent: #1b668d;        /* primary button, active tab, links */
+  --color-accent-strong: #134f6d; /* primary hover */
+  --color-accent-soft: #e4eff5;   /* selected menu item, selected list item */
+  --color-focus: #2a7cb3;         /* focus ring */
+  --color-selection: #e9f2f8;     /* selected table rows */
+  /* Status */
+  --color-warn: #7f520f;          /* warning text, Incomplete */
+  --color-warn-soft: #fdf3df;     /* warning fill, save bar */
+  --color-warn-border: #e2c07a;   /* warning border, edited cell mark */
+  --color-danger: #a3342b;        /* error and delete text */
+  --color-danger-soft: #fbeceb;
+  --color-ok: #2c6a3a;
+  --color-ok-soft: #e6f2e8;
+  /* Overlay (proposed addition; awaiting approval at the UR-2 gate) */
+  --color-scrim: rgb(17 35 45 / 50%);
+
+  /* Categorical colours: Block pills (indexes 0 to 5) and the Pattern pill colours that differ from them (2, 4, 5). Values unchanged from before UR-2. */
+  --color-block-0-border: #bdd5e8; --color-block-0-bg: #eaf4fb; --color-block-0-text: #28536e;
+  --color-block-1-border: #bee0d2; --color-block-1-bg: #eaf8f1; --color-block-1-text: #286149;
+  --color-block-2-border: #ead79f; --color-block-2-bg: #fff8dd; --color-block-2-text: #6b5218;
+  --color-block-3-border: #d8c7eb; --color-block-3-bg: #f5effb; --color-block-3-text: #584270;
+  --color-block-4-border: #ebc8af; --color-block-4-bg: #fff0e5; --color-block-4-text: #754325;
+  --color-block-5-border: #e9c4cf; --color-block-5-bg: #fceff2; --color-block-5-text: #78394d;
+  --color-pattern-2-border: #c4d7df; --color-pattern-2-bg: #edf5f8; --color-pattern-2-text: #315865;
+  --color-pattern-4-border: #c8cfdf; --color-pattern-4-bg: #f0f3fa; --color-pattern-4-text: #46536c;
+  --color-pattern-5-border: #d2cae5; --color-pattern-5-bg: #f4f1fa; --color-pattern-5-text: #56476f;
+
+  /* Type */
+  --font-family: 'Source Sans 3 Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-size-caption: 11.5px;  /* switcher captions, menu group labels */
+  --font-size-label: 12px;      /* field labels, table headings */
+  --font-size-note: 13px;       /* inline notes, status, subtitles */
+  --font-size-body: 14px;       /* body, cells, controls */
+  --font-size-title: 16px;      /* work surface titles, app name */
+  --font-size-page: 20px;       /* dialog titles, empty-state headings */
+  --font-weight-regular: 400;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --line-height: 1.35;
+
+  /* Space, size, shape */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px;
+  --control-height: 30px;
+  --row-height: 30px;
+  --radius-control: 5px;
+  --radius-panel: 7px;
+  --radius-pill: 999px;
+  --shadow-popover: 0 8px 24px rgb(20 35 45 / 16%);
+  --shadow-drawer: -10px 0 24px rgb(20 35 45 / 12%);
+}

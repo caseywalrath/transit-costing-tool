@@ -4,6 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
+import { scopeField } from './support/ui';
 
 test.setTimeout(120_000);
 
@@ -17,20 +18,20 @@ async function openCosting(page: Page, prepare?: () => Promise<void>) {
 }
 
 const days = (page: Page) => page.locator('.costing-days');
-const yearOptions = (page: Page) => page.locator('.module-toolbar').getByLabel('View year').locator('option').allTextContents();
+const yearOptions = (page: Page) => scopeField(page, 'View year').locator('option').allTextContents();
 
 test('shows each day count and the total against the 365-day limit, in the valid style when the total is 365', async ({ page }) => {
   await openCosting(page);
   await expect(days(page)).toContainText('Weekday 255');
   await expect(days(page)).toContainText('Holiday 6');
-  await expect(days(page).locator('span').last()).toHaveText('Total 365 / 365');
+  await expect(days(page).locator('span').last()).toHaveText('Total 365 of 365');
   await expect(days(page).locator('.invalid')).toHaveCount(0);
 });
 
 test('marks a total above 365, saved earlier, as invalid', async ({ page }) => {
   await openCosting(page, async () => { await runInPage(page, "const day = (await e.db.serviceDays.toArray()).find((item) => item.kind === 'weekday'); await e.db.serviceDays.put({ ...day, annualServiceDays: 260 });"); });
-  await expect(days(page).locator('span').last()).toHaveText('Total 370 / 365');
-  await expect(days(page).locator('.invalid')).toHaveText('Total 370 / 365');
+  await expect(days(page).locator('span').last()).toHaveText('Total 370 of 365');
+  await expect(days(page).locator('.invalid')).toHaveText('Total 370 of 365');
 });
 
 test('lists the service years from the first year of service and clamps future years to 0 to 10', async ({ page }) => {
@@ -58,8 +59,8 @@ test('validates the assumptions: a rate year after the first year of service blo
   await page.getByLabel('Rate year').fill('2040');
   await page.getByLabel('First Year of Service').fill('2030');
   await expect(page.getByRole('alert').filter({ hasText: 'The rate year cannot be later than the base service year.' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Save assumptions', exact: true })).toBeDisabled();
   await page.getByLabel('Rate year').fill('2025');
   await expect(page.getByRole('alert').filter({ hasText: 'The rate year cannot be later' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Save assumptions', exact: true })).toBeEnabled();
 });

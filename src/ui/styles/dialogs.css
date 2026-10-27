@@ -1,0 +1,18 @@
+.modal-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: var(--space-4); background: var(--color-scrim); z-index: 10; }
+.confirm-dialog { width: min(460px, 100%); background: var(--color-surface); border: 1px solid var(--color-text-subtle); box-shadow: var(--shadow-popover); padding: 18px; }
+.confirm-dialog p { line-height: 1.45; margin: 10px 0 18px; }
+.copy-scope { margin-bottom: var(--space-3) !important; color: var(--color-text-muted); font-size: var(--font-size-label); }
+.copy-mode { display: grid; gap: 5px; margin: 0 0 var(--space-3); border: 0; padding: 0; color: var(--color-text-muted); font-size: var(--font-size-label); }
+.copy-mode legend { margin-bottom: var(--space-1); font-weight: var(--font-weight-bold); }
+.copy-mode label, .clear-target { display: flex; align-items: center; gap: 6px; }
+.copy-mode input[type=radio], .clear-target input[type=checkbox] { width: auto; min-height: 0; }
+.copy-mode small { color: var(--color-text-muted); padding-left: 23px; }
+.copy-impact { grid-template-columns: repeat(3, minmax(90px, 1fr)); }
+.clear-target { margin: 0 0 var(--space-3); color: var(--color-warn); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
+.batch-pattern-results { max-height: 190px; overflow-y: auto; }
+.dialog-field { display: grid; gap: 6px; margin: 14px 0; color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
+.dialog-actions, .confirm-dialog > div:not(.activity-form), .confirm-dialog > .dialog-form > div:not(.activity-form) { display: flex; justify-content: end; gap: var(--space-2); }
+.dialog-actions.activity-dialog-actions { display: grid; grid-template-columns: repeat(3, minmax(104px, 1fr)); align-items: stretch; gap: var(--space-2); margin-top: var(--space-4); }
+.dialog-actions.activity-dialog-actions--two { grid-template-columns: repeat(2, minmax(104px, 1fr)); }
+.activity-dialog-actions button { min-width: 0; min-height: 32px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

@@ -1,0 +1,16 @@
+:root { font-family: var(--font-family); color: var(--color-text); background: var(--color-canvas); font-size: var(--font-size-body); }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+button, input, select, textarea { font: inherit; }
+table, input, .shift-net { font-variant-numeric: tabular-nums; }
+button { cursor: pointer; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); min-height: var(--control-height); padding: var(--space-1) var(--space-2); }
+button:hover:not(:disabled) { background: var(--color-surface-2); }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+button:disabled { cursor: not-allowed; color: var(--color-text-subtle); background: var(--color-sunken); }
+input, select { width: 100%; min-height: var(--control-height); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); padding: 3px 6px; color: inherit; }
+input[type=number] { min-width: 6em; }
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: var(--font-size-title); }
+h2 { font-size: var(--font-size-body); }
+h3 { font-size: var(--font-size-body); }
+.box-heading { margin: 0; font-size: var(--font-size-body); }
