@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { ModalDialog } from '../ModalDialog';
 import { type RouteDefinitionApplication } from '../../application/routeDefinitionService';
-import { formatRuntimeDuration } from '../../domain/durations';
+import { formatDuration } from '../format';
 import { addRuntimeBand, duplicateRuntimeBand, removeRuntimeBand, runtimeBandTotalSeconds, updateRuntimeBand, type RuntimeCalculationMethod } from '../../application/tripsWorkspaceView';
 import { type Node, type Route, type RoutePattern, type RuntimeProfile, type Trip, type ValidationFinding } from '../../domain/types';
 import { userMessage } from '../shared/messages';
@@ -44,7 +44,7 @@ export const RuntimeEditor2 = forwardRef<RuntimeEditorHandle, { service: RouteDe
         <td><RuntimeTimeInput label={`Time band ${bandIndex + 1} start`} value={band.startTime} onCommit={(value) => updateBand(bandIndex, { startTime: value })} /></td>
         <td><RuntimeTimeInput label={`Time band ${bandIndex + 1} end`} value={band.endTime} onCommit={(value) => updateBand(bandIndex, { endTime: value })} /></td>
         {band.segmentRuntimeSeconds.map((value, segmentIndex) => <td key={`${band.id}-${segmentIndex}`}><RuntimeTimeInput label={`Time band ${bandIndex + 1} segment ${segmentIndex + 1}`} value={value} duration onCommit={(next) => updateBand(bandIndex, { segmentRuntimeSeconds: band.segmentRuntimeSeconds.map((item, index) => index === segmentIndex ? next : item) })} /></td>)}
-        <td className="runtime-total">{formatRuntimeDuration(runtimeBandTotalSeconds(band))}</td>
+        <td className="runtime-total">{formatDuration(runtimeBandTotalSeconds(band))}</td>
         <td><div className="row-actions"><button className="icon-button" onClick={() => duplicateBand(bandIndex)} aria-label={`Duplicate time band ${bandIndex + 1}`} title="Duplicate time band"><CopyIcon /></button><button className="icon-button icon-button--danger" onClick={() => setDraft((current) => removeRuntimeBand(current, bandIndex))} aria-label={`Remove time band ${bandIndex + 1}`} title="Remove time band"><TrashIcon /></button></div></td>
       </tr>)}{draft.bands.length === 0 && <tr><td colSpan={pattern.points.length + 3} className="table-empty">Add a time band to enter runtimes.</td></tr>}</tbody>
     </table></div>

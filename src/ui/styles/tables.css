@@ -29,3 +29,4 @@ th:first-child { z-index: 2; background: var(--color-surface-2); }
 .row-status, .draft-indicator { display: inline-block; color: var(--color-text-muted); font-size: var(--font-size-caption); font-weight: var(--font-weight-bold); }
 .draft-indicator { margin: var(--space-2) 0 0; }
 .local-conflict { margin: var(--space-2) 0 0; border-left: 3px solid var(--color-danger); background: var(--color-danger-soft); padding: var(--space-2) var(--space-2); }
+.value-incomplete { color: var(--color-warn); font-weight: var(--font-weight-semibold); }

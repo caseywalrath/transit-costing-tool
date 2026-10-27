@@ -5,19 +5,19 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { summarizeBlock } from '../../domain/blocking';
 import { roundCostingDisplay } from '../../domain/costing';
-import { formatBlockingHours, formatBlockingMiles } from './BlockingWorkspace';
+import { formatHours, formatMiles, INCOMPLETE, withUnit } from '../format';
 
 const BACKUP = fileURLToPath(new URL('../../../output/federal-brt-import/federal-brt-project-backup.json', import.meta.url));
 const snapshot = JSON.parse(readFileSync(BACKUP, 'utf8'));
 
 describe('Blocking hours and miles', () => {
   it('round half away from zero on the decimal text, as Costing does', () => {
-    expect(formatBlockingHours(14.575)).toBe('14.58 h');
-    expect(formatBlockingHours(1.005)).toBe('1.01 h');
-    expect(formatBlockingHours(0)).toBe('0.00 h');
-    expect(formatBlockingHours(undefined)).toBe('Incomplete');
-    expect(formatBlockingMiles(2.675)).toBe('2.68 mi');
-    expect(formatBlockingMiles(undefined)).toBe('Incomplete');
+    expect(withUnit(formatHours(14.575, 'daily'), 'h')).toBe('14.58 h');
+    expect(withUnit(formatHours(1.005, 'daily'), 'h')).toBe('1.01 h');
+    expect(withUnit(formatHours(0, 'daily'), 'h')).toBe('0.00 h');
+    expect(formatHours(undefined, 'daily')).toBe(INCOMPLETE);
+    expect(withUnit(formatMiles(2.675), 'mi')).toBe('2.68 mi');
+    expect(formatMiles(undefined)).toBe(INCOMPLETE);
   });
 
   it('show every golden Block quantity exactly as the Costing rule rounds it, including Block 22 (14.575 revenue hours)', () => {
@@ -29,13 +29,13 @@ describe('Blocking hours and miles', () => {
       for (const key of ['revenueHours', 'platformHours', 'layoverHours', 'runningHours', 'deadheadHours'] as const) {
         const value = summary[key]; if (value === undefined) continue;
         checked += 1;
-        expect(formatBlockingHours(value)).toBe(`${roundCostingDisplay(value, 2).toFixed(2)} h`);
+        expect(formatHours(value, 'daily')).toBe(roundCostingDisplay(value, 2).toFixed(2));
         if (value.toFixed(2) !== roundCostingDisplay(value, 2).toFixed(2)) differing.push(`${block.label} ${key}`);
-        if (block.label === '22' && key === 'revenueHours' && value === 14.575) block22 = formatBlockingHours(value);
+        if (block.label === '22' && key === 'revenueHours' && value === 14.575) block22 = formatHours(value, 'daily');
       }
     }
     expect(checked).toBeGreaterThan(300);
     expect(differing.length).toBeGreaterThan(0); // the quantities where toFixed(2) used to differ
-    expect(block22).toBe('14.58 h');
+    expect(block22).toBe('14.58');
   });
 });

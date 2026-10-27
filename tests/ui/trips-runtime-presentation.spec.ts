@@ -58,8 +58,8 @@ test('the Trips selector for a Blocking Scenario is labeled "Blocking Scenario"'
 
 test('Runtime band totals of 60 minutes or more use the same duration format as the segments and the Run Time column', async ({ page }) => {
   await openGoldenTripsAfter(page, '');
-  // The golden Weekday profile has totals of 53, 61, 65, and 57 minutes. They read :MM like the segment cells (Decision 0010).
-  await expect(runtimeSection(page).locator('.runtime-total')).toHaveText([':53', ':61', ':65', ':57']);
+  // The golden Weekday profile has totals of 53, 61, 65, and 57 minutes. Display-only totals read h:mm from an hour (F2-A, UR-3); the editable segment cells keep :MM (O-3).
+  await expect(runtimeSection(page).locator('.runtime-total')).toHaveText([':53', '1:01', '1:05', ':57']);
   await expect(runtimeSection(page).getByLabel('Time band 2 segment 1')).toHaveValue(':06');
 });
 

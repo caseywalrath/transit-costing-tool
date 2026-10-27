@@ -44,7 +44,7 @@ test('Show headways replaces each later time with the gap from the previous Trip
   await expect.poll(() => columnTexts(page, 0)).toEqual(['6:00', '6:10', '6:20', '6:30']);
 
   await toggleDisplay(page, 'Show headways');
-  await expect.poll(() => columnTexts(page, 0)).toEqual(['6:00', '0:10', '0:10', '0:10']);
+  await expect.poll(() => columnTexts(page, 0)).toEqual(['6:00', ':10', ':10', ':10']);
   await expect(cell(page, 0, 0)).toHaveClass(/trip-headway-first/);
   await expect(cell(page, 1, 0)).not.toHaveClass(/trip-headway-first/);
   await expect(cell(page, 0, 0)).toHaveAttribute('title', 'First scheduled time: 6:00');

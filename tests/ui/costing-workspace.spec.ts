@@ -17,9 +17,11 @@ test('Costing workspace displays a partial estimate, supports year selection, an
   await expect(page.locator('.costing-results-table tfoot').getByRole('cell', { name: '$40,170' })).toBeVisible();
   await page.getByLabel('View year').selectOption('2027');
   await expect(page.getByRole('heading', { name: 'Cost Breakdown' })).toBeVisible();
-  await expect(page.getByText('Applied rate 159 USD per Revenue Hour')).toBeVisible();
+  await expect(page.getByText('Applied rate $159.14 per Revenue Hour')).toBeVisible();
   await expect(page.getByText('Service quantities remain constant; only the rate changes.')).toHaveCount(0);
-  expect(await page.locator('.costing-results-table tbody, .costing-results-table tfoot, .costing-outlook-table tbody').allInnerTexts()).not.toEqual(expect.arrayContaining([expect.stringMatching(/\d+\.\d+/)]));
+  // F3, F6 (UR-3): annual hours and annual cost are whole numbers; daily hours have two decimals; the hourly rate shows cents.
+  expect(await page.locator('.costing-results-table tfoot').allInnerTexts()).not.toEqual(expect.arrayContaining([expect.stringMatching(/\d+\.\d+/)]));
+  for (const text of await page.locator('.costing-results-table tbody tr td:nth-child(4)').allInnerTexts()) expect(text).toMatch(/^[\d,]+\.\d{2}$/);
 
   await page.setViewportSize({ width: 1440, height: 900 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);

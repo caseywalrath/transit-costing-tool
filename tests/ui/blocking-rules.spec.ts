@@ -52,7 +52,7 @@ test('apply to all similar Trips adds a deadhead to every matching connection: 5
   await expect(dialog).toBeHidden();
   await expect(currentBlock.locator('.deadhead-value')).toHaveCount(4);
   await expect(currentBlock.getByRole('button', { name: 'Add deadhead' })).toHaveCount(0);
-  await expect(currentBlock.locator('.deadhead-value').first()).toHaveText('0:03');
+  await expect(currentBlock.locator('.deadhead-value').first()).toHaveText(':03');
 });
 
 test('a blank minutes field is refused for a deadhead, a bulk pull-out, and a minimum layover', async ({ page }) => {

@@ -191,11 +191,11 @@ test('a Trip from another Route shows that Route in its Pattern pill and resolve
   await expect(rows.nth(1).locator('.blocking-node-column').nth(1)).not.toHaveText('—');
 });
 
-test('Blocking shows hours with the Costing rounding: Saturday Block 22 reads 14.58 h', async ({ page }) => {
+test('Blocking shows hours with the Costing rounding: Saturday Block 22 reads 14.58', async ({ page }) => {
   await openBlocking(page, 'Saturday');
   const row = blocksTable(page).locator('tbody tr').filter({ has: page.locator('.link-button', { hasText: /^22$/ }) });
-  await expect(row).toContainText('14.58 h');
-  await expect(row).not.toContainText('14.57 h');
+  await expect(row).toContainText('14.58');
+  await expect(row).not.toContainText('14.57');
 });
 
 test('the labels are exact: Move Trip counts Trips only, "No current issues." is neutral, Pattern pills carry the full name, and the menus say Trip Profile', async ({ page }) => {

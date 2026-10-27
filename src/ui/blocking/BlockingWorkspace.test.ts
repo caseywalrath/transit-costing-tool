@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { blockingError, formatBlockingDuration } from './BlockingWorkspace';
+import { blockingError } from './BlockingWorkspace';
+import { formatDuration } from '../format';
 
-describe('formatBlockingDuration', () => {
+describe('Blocking durations', () => {
   it('keeps overlapping connection gaps visible without treating them as service times', () => {
-    expect(formatBlockingDuration(-600)).toBe('−0:10');
-    expect(formatBlockingDuration(600)).toBe('0:10');
-    expect(formatBlockingDuration(undefined)).toBe('—');
+    expect(formatDuration(-600)).toBe('−:10');
+    expect(formatDuration(600)).toBe(':10');
+    expect(formatDuration(undefined)).toBe('—');
   });
 });
 
