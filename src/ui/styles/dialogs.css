@@ -1,0 +1,18 @@
+.modal-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgb(17 35 45 / .5); z-index: 10; }
+.confirm-dialog { width: min(460px, 100%); background: #fff; border: 1px solid #69808d; box-shadow: 0 8px 30px rgb(0 0 0 / .25); padding: 18px; }
+.confirm-dialog p { line-height: 1.45; margin: 10px 0 18px; }
+.copy-scope { margin-bottom: 12px !important; color: #536a77; font-size: .82rem; }
+.copy-mode { display: grid; gap: 5px; margin: 0 0 12px; border: 0; padding: 0; color: #3d4d59; font-size: .82rem; }
+.copy-mode legend { margin-bottom: 4px; font-weight: 700; }
+.copy-mode label, .clear-target { display: flex; align-items: center; gap: 6px; }
+.copy-mode input[type=radio], .clear-target input[type=checkbox] { width: auto; min-height: 0; }
+.copy-mode small { color: #536a77; padding-left: 23px; }
+.copy-impact { grid-template-columns: repeat(3, minmax(90px, 1fr)); }
+.clear-target { margin: 0 0 12px; color: #633f1d; font-size: .82rem; font-weight: 700; }
+.batch-pattern-results { max-height: 190px; overflow-y: auto; }
+.dialog-field { display: grid; gap: 6px; margin: 14px 0; color: #3d4d59; font-size: .82rem; font-weight: 700; }
+.dialog-actions, .confirm-dialog > div:not(.activity-form), .confirm-dialog > .dialog-form > div:not(.activity-form) { display: flex; justify-content: end; gap: 8px; }
+.dialog-actions.activity-dialog-actions { display: grid; grid-template-columns: repeat(3, minmax(104px, 1fr)); align-items: stretch; gap: 8px; margin-top: 16px; }
+.dialog-actions.activity-dialog-actions--two { grid-template-columns: repeat(2, minmax(104px, 1fr)); }
+.activity-dialog-actions button { min-width: 0; min-height: 32px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

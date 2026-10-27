@@ -1,0 +1,18 @@
+.pattern-layout { display: grid; grid-template-columns: 175px minmax(420px, 1fr); border: 1px solid #c6d0d5; }
+.pattern-list { display: flex; flex-direction: column; background: #f4f7f8; border-right: 1px solid #c6d0d5; padding: 5px; }
+.pattern-list button { display: grid; width: 100%; min-height: 52px; text-align: left; border: 0; border-bottom: 1px solid #d3dde1; border-radius: 0; background: transparent; }
+.pattern-list .pattern-list-add { display: block; min-height: 0; margin: 5px -5px -5px; padding: 8px 10px; text-align: center; border-top: 1px solid #b9c7ce; background: #e7eef1; color: #174e6d; font-weight: 700; }
+.pattern-list .pattern-list-add:hover:not(:disabled) { background: #d9e7ed; }
+.pattern-list button.selected { background: #d9ebf3; border-left: 4px solid #1b668d; }
+.pattern-list span { color: #536a77; font-size: .78rem; margin-top: 3px; }
+.pattern-list em { display: inline-block; margin-left: 4px; color: #406a7d; font-size: .7rem; font-style: normal; font-weight: 700; }
+.pattern-list p { padding: 7px; color: #5b6e79; line-height: 1.4; }
+.pattern-editor { min-width: 0; padding: 10px; }
+.pattern-editor .field-grid { grid-template-columns: repeat(3, minmax(150px, 1fr)); margin-top: 0; }
+.pattern-editor .table-scroll { margin-top: 6px; }
+.pattern-table-actions { justify-content: space-between; align-items: center; }
+.pattern-table-actions > div { display: flex; align-items: center; gap: 5px; }
+.icon-button { display: inline-grid; place-items: center; min-width: 28px; min-height: 28px; padding: 2px 5px; }
+.icon-button--danger { color: #687882; border-color: transparent; background: transparent; }
+.icon-button--danger:hover:not(:disabled) { color: #8b312a; border-color: #d8b1ad; background: #fff5f4; }
+.danger { background: #a4342c; border-color: #a4342c; color: #fff; }

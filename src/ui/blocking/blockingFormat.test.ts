@@ -3,11 +3,11 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { summarizeBlock } from '../domain/blocking';
-import { roundCostingDisplay } from '../domain/costing';
+import { summarizeBlock } from '../../domain/blocking';
+import { roundCostingDisplay } from '../../domain/costing';
 import { formatBlockingHours, formatBlockingMiles } from './BlockingWorkspace';
 
-const BACKUP = fileURLToPath(new URL('../../output/federal-brt-import/federal-brt-project-backup.json', import.meta.url));
+const BACKUP = fileURLToPath(new URL('../../../output/federal-brt-import/federal-brt-project-backup.json', import.meta.url));
 const snapshot = JSON.parse(readFileSync(BACKUP, 'utf8'));
 
 describe('Blocking hours and miles', () => {

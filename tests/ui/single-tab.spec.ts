@@ -266,12 +266,12 @@ test('control: a Blocking edit made from a stale view of the active tab is still
 test('a read-only tab can still run a database upgrade', async ({ browser }) => {
   const context = await browser.newContext();
   const holder = await context.newPage();
-  await holder.goto('/src/styles.css');
+  await holder.goto('/src/ui/styles/index.css');
   // Stand in for an active tab: hold the active-tab lock for the life of this page.
   await holder.evaluate(() => { void navigator.locks.request('transit-costing-tool.active-tab', () => new Promise(() => {})); });
 
   const page = await context.newPage();
-  await page.goto('/src/styles.css');
+  await page.goto('/src/ui/styles/index.css');
   await page.evaluate(async () => {
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open('transit-costing-tool', 4);

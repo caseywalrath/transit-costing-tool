@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ValidationFinding } from '../domain/types';
+import type { ValidationFinding } from '../../domain/types';
 import { costingFindingMessage } from './CostingWorkspace';
 
 const finding = (messageKey: string, entityId = 'x', parameters?: Record<string, string | number>): ValidationFinding => ({ ruleId: messageKey, severity: 'error', entityType: 'scenario', entityId, messageKey, ...(parameters ? { parameters } : {}) });

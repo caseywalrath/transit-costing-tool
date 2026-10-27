@@ -1,0 +1,31 @@
+.route-overview-grid { display: grid; grid-template-columns: minmax(440px, 1.2fr) minmax(360px, .8fr); gap: 14px; }
+.route-details, .route-overview-grid > section, .definition-grid > section { border: 1px solid #b8c8d0; border-top: 3px solid #1b668d; background: #fff; padding: 12px; }
+.field-grid { display: grid; grid-template-columns: repeat(2, minmax(150px, 1fr)); gap: 9px 14px; margin-top: 10px; align-items: start; }
+.field-grid label { display: grid; gap: 4px; color: #3d4d59; font-size: .82rem; font-weight: 700; }
+.field-grid .wide { grid-column: 1 / -1; }
+.field-grid b { color: #9f281e; }
+.section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.section-title > span { color: #627480; font-size: .82rem; }
+.section-title > div { display: flex; gap: 5px; }
+.definition-grid { display: grid; grid-template-columns: minmax(460px, .9fr) minmax(560px, 1.1fr); gap: 14px; }
+.definition-grid > section { min-width: 0; }
+.table-scroll { overflow-x: auto; border: 1px solid #c6d0d5; }
+table { border-collapse: collapse; width: 100%; min-width: 510px; }
+.service-days-table table { min-width: 0; }
+th, td { border-bottom: 1px solid #d6dee2; padding: 4px; text-align: left; vertical-align: top; }
+th { position: sticky; top: 0; z-index: 1; background: #e8eef1; color: #334a58; font-size: .78rem; white-space: nowrap; }
+thead th { vertical-align: bottom; padding-bottom: 6px; }
+td { min-height: 38px; }
+tr:last-child td { border-bottom: 0; }
+th:first-child, td:first-child { position: sticky; left: 0; z-index: 1; background: #fff; }
+th:first-child { z-index: 2; background: #e8eef1; }
+.table-empty { color: #5c6c76; padding: 12px; }
+.table-actions { display: flex; justify-content: flex-end; margin-top: 7px; }
+.field-error { display: block; color: #a42f27; font-size: .76rem; line-height: 1.2; padding-top: 2px; }
+.pending-delete td { background: #fff4f2; color: #6e3a35; }
+.pending-delete td:first-child { background: #fff4f2; }
+.draft-row td { background: #f2f8fb; }
+.draft-row td:first-child { background: #f2f8fb; }
+.row-status, .draft-indicator { display: inline-block; color: #3f6170; font-size: .76rem; font-weight: 700; }
+.draft-indicator { margin: 7px 0 0; }
+.local-conflict { margin: 8px 0 0; border-left: 3px solid #a42f27; background: #fff3f1; padding: 7px 9px; }

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CostingCommands, CostingQueries } from '../application/ports';
-import { ModalDialog } from './ModalDialog';
-import type { CostingAssumptionsInput, CostingBlockExclusionReason, CostingCalculationResult } from '../domain/costing';
-import { DEFAULT_COSTING_ESCALATION, roundCostingDisplay } from '../domain/costing';
-import type { BlockingScenario, CostingAssumptions, Scenario, ServiceDayDefinition, TripProfile, ValidationFinding } from '../domain/types';
-import { createCsvArchive } from '../application/csvDownload';
-import { MenuButton, type MenuGroup } from './MenuButton';
+import type { CostingCommands, CostingQueries } from '../../application/ports';
+import { ModalDialog } from '../ModalDialog';
+import type { CostingAssumptionsInput, CostingBlockExclusionReason, CostingCalculationResult } from '../../domain/costing';
+import { DEFAULT_COSTING_ESCALATION, roundCostingDisplay } from '../../domain/costing';
+import type { BlockingScenario, CostingAssumptions, Scenario, ServiceDayDefinition, TripProfile, ValidationFinding } from '../../domain/types';
+import { createCsvArchive } from '../../application/csvDownload';
+import { MenuButton, type MenuGroup } from '../MenuButton';
 
 type Props = {
   costingService: CostingCommands & CostingQueries;

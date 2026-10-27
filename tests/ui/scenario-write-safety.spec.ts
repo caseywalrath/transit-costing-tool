@@ -110,7 +110,7 @@ test('Duplicate scenario copies the stored Trips, including Trips built after lo
 });
 
 test('Runtime "Copy from day" commits on IndexedDB in independent and shared modes', async ({ page }) => {
-  await page.goto('/src/styles.css');
+  await page.goto('/src/ui/styles/index.css');
   const results = await page.evaluate(async ({ SETUP, raw }: any) => {
     const env = await new Function(SETUP)();
     const out: Record<string, unknown> = {};

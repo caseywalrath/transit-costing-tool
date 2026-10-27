@@ -1,6 +1,6 @@
 # UI revision plan (Phase UR)
 
-- Status: Approved design; no package started.
+- Status: Approved design; UR-0 and UR-1 done.
 - Date: 2026-10-27
 - Decision record: `docs/decisions/0047-interface-revision-design-system.md`
 - Base: `main` at the merge of PR #30 (`fd42c5d`, Decision 0046: Regenerate selected and Undo last regeneration are separate Trips actions). This plan keeps that behaviour (section 3, row "Regenerate and undo").
