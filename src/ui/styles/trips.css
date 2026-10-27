@@ -110,3 +110,9 @@
 .inline-note button.small { min-height: var(--space-5); padding: 0 var(--space-2); }
 .selection-bar { margin-bottom: 0; }
 .selection-bar .subtle-danger { color: var(--color-danger); }
+/* While the table headings are pinned, the selection bar is pinned above them in its compact form. The copy above the table keeps its space but is hidden. */
+.selection-bar-slot--pinned { visibility: hidden; }
+.selection-bar-pinned { position: fixed; top: 0; z-index: 5; }
+.selection-bar--compact { flex-wrap: nowrap; gap: var(--space-1); padding: var(--space-1) var(--space-2); margin: 0; border-radius: 0; background: var(--color-selection); box-shadow: var(--shadow-popover); font-size: var(--font-size-label); overflow-x: auto; }
+.selection-bar--compact button { min-height: var(--space-5); padding: 0 var(--space-2); font-size: var(--font-size-label); white-space: nowrap; }
+.selection-bar--compact .selection-bar__count { margin-right: var(--space-1); white-space: nowrap; }

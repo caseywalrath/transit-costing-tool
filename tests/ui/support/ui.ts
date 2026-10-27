@@ -73,15 +73,15 @@ const buttonCommands = {
   // UR-6c: Build trips and Add trip are header buttons; the commands that need a selection are buttons in the selection bar.
   'trips.build': { name: 'Build trips…', within: 'trips' },
   'trips.add': { name: 'Add trip', within: 'trips' },
-  'trips.shift': { name: 'Shift…', within: 'trips' },
+  'trips.shift': { name: 'Shift…', within: 'selectionBar' },
   // Decision 0046: always present while trips are selected, and disabled until a selected Trip has changed runtimes.
-  'trips.regenerate': { name: 'Regenerate…', within: 'trips' },
-  'trips.changePattern': { name: 'Change pattern…', within: 'trips' },
-  'trips.assignBlock': { name: 'Assign block…', within: 'trips' },
-  'trips.unassignBlock': { name: 'Unassign…', within: 'trips' },
-  'trips.delete': { name: 'Delete…', within: 'trips' },
+  'trips.regenerate': { name: 'Regenerate…', within: 'selectionBar' },
+  'trips.changePattern': { name: 'Change pattern…', within: 'selectionBar' },
+  'trips.assignBlock': { name: 'Assign block…', within: 'selectionBar' },
+  'trips.unassignBlock': { name: 'Unassign…', within: 'selectionBar' },
+  'trips.delete': { name: 'Delete…', within: 'selectionBar' },
   'runtime.addBand': { name: 'Add time band', within: 'runtimes' },
-} satisfies Record<string, { name: string; within?: RegionId }>;
+} satisfies Record<string, { name: string; within?: RegionId | 'selectionBar' }>;
 
 /** How each menu command is run today. Section 7, UR-0 of `docs/implementation/ui-revision-plan.md` lists the ids. */
 const commands = {
@@ -134,8 +134,10 @@ export type CommandId = keyof typeof commands | keyof typeof buttonCommands;
 /** Opens the command's menu and chooses its item. Item names match exactly, except the Undo item, whose name ends in "(N Trips)". */
 export async function runCommand(page: Page, id: CommandId) {
   if (id in buttonCommands) {
-    const button: { name: string; within?: RegionId } = buttonCommands[id as keyof typeof buttonCommands];
-    await (button.within ? region(page, button.within) : page).getByRole('button', { name: button.name, exact: true }).click();
+    const button: { name: string; within?: RegionId | 'selectionBar' } = buttonCommands[id as keyof typeof buttonCommands];
+    // The selection bar is above the table, or pinned above the table headings (outside the Trips section) while the page is scrolled.
+    const scope = button.within === 'selectionBar' ? page.getByRole('toolbar', { name: 'Selected trips' }) : button.within ? region(page, button.within) : page;
+    await scope.getByRole('button', { name: button.name, exact: true }).click();
     return;
   }
   const command: Command = commands[id as keyof typeof commands];

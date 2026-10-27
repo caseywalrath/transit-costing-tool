@@ -10,8 +10,8 @@ export function SaveBar({ message, saveLabel, busy = false, saveDisabled = false
 }
 
 /** Shown while one or more rows are selected. `role="toolbar"`, labelled `ariaLabel` or "<noun> actions". The count reads "2 trips selected". */
-export function SelectionBar({ count, noun, ariaLabel, onClear, children }: { count: number; noun: string; ariaLabel?: string; onClear: () => void; children: ReactNode }) {
-  return <div className="selection-bar" role="toolbar" aria-label={ariaLabel ?? `${noun} actions`}>
+export function SelectionBar({ count, noun, ariaLabel, compact = false, onClear, children }: { count: number; noun: string; ariaLabel?: string; /** The smaller form pinned above a table's fixed heading row. */ compact?: boolean; onClear: () => void; children: ReactNode }) {
+  return <div className={compact ? 'selection-bar selection-bar--compact' : 'selection-bar'} role="toolbar" aria-label={ariaLabel ?? `${noun} actions`}>
     <b className="selection-bar__count">{count} {noun}{count === 1 ? '' : 's'} selected</b>
     {children}
     <button type="button" className="ghost" onClick={onClear}>Clear</button>

@@ -153,3 +153,35 @@ test('Build trips and Add trip are header buttons, and View holds the three disp
   await trips.getByRole('button', { name: 'View', exact: true }).click();
   await expect(page.getByRole('menu', { name: 'View' }).getByRole('menuitemcheckbox')).toHaveText(['Show runtime bands', 'Show headways', 'Round displayed times']);
 });
+
+test('the selection bar is pinned, compact, above the pinned table headings while the page is scrolled, and the live copy is always unique', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openGoldenTrips(page);
+  const bar = page.getByRole('toolbar', { name: 'Selected trips' });
+  const pinnedHeading = page.getByRole('region', { name: 'Trips table headings while scrolling' });
+  const boxes = page.locator('.trips-workspace .schedule-table tbody input[type="checkbox"]');
+  await boxes.nth(2).check();
+  await expect(bar).toHaveCount(1);
+  await expect(page.locator('.selection-bar-pinned')).toHaveCount(0);
+
+  await page.evaluate(() => window.scrollTo(0, 1500));
+  await expect(pinnedHeading).toBeVisible();
+  // One live bar: the copy above the table is hidden, and the pinned one sits at the top of the window with the headings under it.
+  await expect(bar).toHaveCount(1);
+  await expect(page.locator('.selection-bar-pinned')).toHaveCount(1);
+  await expect(bar).toHaveClass(/selection-bar--compact/);
+  await expect.poll(async () => Math.abs((await bar.boundingBox())!.y)).toBeLessThanOrEqual(1);
+  const [barBox, headingBox] = await Promise.all([bar.boundingBox(), pinnedHeading.boundingBox()]);
+  expect(Math.abs(headingBox!.y - (barBox!.y + barBox!.height))).toBeLessThanOrEqual(1);
+
+  // It works from there: Shift… opens the drawer for the selected trip.
+  await bar.getByRole('button', { name: 'Shift…', exact: true }).click();
+  await expect(page.getByRole('complementary', { name: 'Shift selected Trips' })).toBeVisible();
+  await page.getByRole('button', { name: 'Discard', exact: true }).last().click();
+
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(page.locator('.selection-bar-pinned')).toHaveCount(0);
+  await expect(bar).toHaveCount(1);
+  await expect(bar).not.toHaveClass(/selection-bar--compact/);
+  await expect(bar).toBeVisible();
+});

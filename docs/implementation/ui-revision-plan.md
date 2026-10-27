@@ -57,7 +57,7 @@ The user asked for Claude model names on this plan. They map onto the classes in
 These must be answered at the gate named. The plan states the default an agent applies if the user has not answered.
 
 - **O-1 Subtle text contrast: decided.** The user chose **#62707b** on 2026-10-27 (5.09:1 on white, 4.52:1 on the page background). The mockups and screenshots show the earlier #7b8a95; use #62707b.
-- **O-2 Selection bar position (gate after UR-6c).** The mockup puts the selection bar above the Trips table. With 138 rows, the bar scrolls out of view when the selected rows are far down. Option 1: keep it above the table, as approved. Option 2: also keep it in view by sticking it to the bottom of the window while the table is on screen. **Default: Option 1**; UR-6c captures a screenshot of the scrolled case for the user to judge.
+- **O-2 Selection bar position (gate after UR-6c).** The mockup puts the selection bar above the Trips table. With 138 rows, the bar scrolls out of view when the selected rows are far down. Option 1: keep it above the table, as approved. Option 2: also keep it in view by sticking it to the bottom of the window while the table is on screen. **Default: Option 1**; UR-6c captures a screenshot of the scrolled case for the user to judge. *Update (user request after UR-6c):* a third option was built: the bar is also pinned, compact, above the fixed duplicate heading row while it shows, so it scrolls with the headings and not the window bottom.
 - **O-3 Editable runtimes of an hour or more (information only).** Editable runtime cells keep showing `:61`, because `1:01` already means one minute one second in the entry grammar. Totals and other display-only durations show `1:01`.
 
 ## 5. Rules for every package
