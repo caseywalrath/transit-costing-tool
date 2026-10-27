@@ -386,6 +386,10 @@ Approved revised implementation plan: `docs/implementation/phase-04-manual-block
 
 Add annual service quantities, a Revenue-Hour-based cost estimate, user and NTD source metadata, rate-year adjustment, future-year escalation, and a Blocking-Scenario selector. Platform Hours are shown but are not a second cost basis. Packages 5A through 5C implement pure calculations, Scenario-owned assumptions persistence, versioned backup, CSV/ZIP report files, and the Costing workspace. The review replaces integration Package 5D; user acceptance remains. Decision 0027 records the accepted basis, assumption ownership, forecast defaults, and selector-only UI. The preliminary `CostPlan` shape has been replaced in the domain contract; its unused database table remains inert for data preservation.
 
+### Phase UR: Interface revision (approved, not started)
+
+Replace the visual system and the screen layouts without changing domain, persistence, or CSV behaviour: design tokens and a bundled Source Sans 3, a two-row header, three surface levels, a unified save bar, spreadsheet-style grids, collapsible Runtimes, headway trip identification, selection by Pattern, and a Blocking layout whose Unassigned panel collapses to a rail. Decision 0046 records the design; `docs/implementation/ui-revision-plan.md` holds the packages. The "UI Structure" section above is updated when the packages land.
+
 ### Phase 6: Advanced capabilities
 
 Consider suggested blocking, peak vehicles and spares, mile-based costing, Excel interoperability, GTFS interoperability, and multi-route interlining.

@@ -1,0 +1,1226 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head><body>
+<title>Costing Tool UI Proposals</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Source+Code+Pro:wght@400;500&display=swap">
+<style>
+/* Layout: a single reading column of numbered proposals; each mockup sits in its own horizontally scrollable "screen" frame. */
+:root {
+  /* Page chrome (theme-aware) */
+  --bg: #f3f5f6; --fg: #19242c; --muted: #56656f; --rule: #d4dce0; --panel: #ffffff;
+  --accent: #1d5f80; --accent-soft: #e2eef4; --code-bg: #eaeff2;
+  --rec: #2c6b38; --rec-bg: #e4f1e6; --ask: #7a4f0e; --ask-bg: #fbf1dc;
+  --font-body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Source Code Pro", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+  /* Proposed application tokens (the mockups use only these; they stay light in both page themes) */
+  --app-canvas: #eef2f4; --app-surface: #ffffff; --app-surface-2: #f6f8f9; --app-sunken: #edf1f3;
+  --app-border: #d2dbe0; --app-border-soft: #e4e9ec;
+  --app-text: #17212b; --app-muted: #536574; --app-subtle: #7b8a95;
+  --app-accent: #1b668d; --app-accent-strong: #134f6d; --app-accent-soft: #e4eff5; --app-focus: #2a7cb3;
+  --app-danger: #a3342b; --app-danger-soft: #fbeceb;
+  --app-warn: #7f520f; --app-warn-soft: #fdf3df; --app-warn-border: #e2c07a;
+  --app-ok: #2c6a3a; --app-ok-soft: #e6f2e8;
+  --app-sel: #e9f2f8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12181c; --fg: #e3e9ec; --muted: #9aa9b2; --rule: #2c373e; --panel: #1a2228;
+    --accent: #7dbbdb; --accent-soft: #1d3340; --code-bg: #1f292f;
+    --rec: #9fd3a8; --rec-bg: #1c3222; --ask: #e9c27a; --ask-bg: #33291a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12181c; --fg: #e3e9ec; --muted: #9aa9b2; --rule: #2c373e; --panel: #1a2228;
+  --accent: #7dbbdb; --accent-soft: #1d3340; --code-bg: #1f292f;
+  --rec: #9fd3a8; --rec-bg: #1c3222; --ask: #e9c27a; --ask-bg: #33291a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.5; }
+.page { max-width: 1240px; margin: 0 auto; padding-block: 32px 80px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 56px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.2; margin: 0; }
+h1 { font-size: 2rem; font-weight: 700; }
+h2 { font-size: 1.5rem; font-weight: 700; }
+h3 { font-size: 1.125rem; font-weight: 600; }
+p { margin: 0; max-width: 72ch; }
+.stack { display: grid; gap: 16px; min-width: 0; }
+.stack-lg { display: grid; gap: 28px; min-width: 0; }
+.lede { color: var(--muted); font-size: 1.0625rem; }
+.eyebrow { font-size: .8125rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+code, .mono { font-family: var(--font-mono); font-size: .875em; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+ul.plain { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; max-width: 80ch; }
+
+.toc { display: flex; flex-wrap: wrap; gap: 8px; }
+.toc a { display: inline-block; padding: 4px 10px; border: 1px solid var(--rule); border-radius: 999px; background: var(--panel); color: var(--fg); text-decoration: none; font-size: .9rem; }
+.toc a:hover { border-color: var(--accent); }
+
+.decision { display: grid; gap: 4px; padding: 12px 16px; border-left: 3px solid var(--ask); background: var(--ask-bg); border-radius: 0 6px 6px 0; max-width: 90ch; }
+.decision strong { color: var(--ask); }
+.rec { display: inline-block; padding: 0 7px; border-radius: 999px; background: var(--rec-bg); color: var(--rec); font-size: .8rem; font-weight: 700; letter-spacing: .02em; vertical-align: 2px; }
+.tag { display: inline-block; padding: 0 7px; border-radius: 4px; background: var(--code-bg); color: var(--muted); font-size: .8rem; font-weight: 600; }
+
+.option-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.card h3 { font-size: 1.0625rem; }
+.card .meta { color: var(--muted); font-size: .9rem; }
+
+.shot-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; }
+.shot-label h3 { font-size: 1rem; }
+.shot-label span { color: var(--muted); font-size: .9rem; }
+.shot { overflow-x: auto; border-radius: 8px; border: 1px solid var(--rule); background: var(--app-canvas); }
+
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; background: var(--panel); flex-wrap: wrap; }
+.seg button { font: inherit; font-size: .95rem; border: 0; background: transparent; color: var(--fg); padding: 6px 14px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--panel); font-weight: 600; }
+
+.doc-table-wrap { overflow-x: auto; }
+table.doc { border-collapse: collapse; width: 100%; font-size: .95rem; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; }
+table.doc th, table.doc td { text-align: left; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--rule); }
+table.doc th { font-size: .82rem; color: var(--muted); font-weight: 700; background: var(--code-bg); }
+table.doc td.num { font-variant-numeric: tabular-nums; }
+table.doc tr:last-child td { border-bottom: 0; }
+
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.swatch { display: grid; grid-template-columns: 36px 1fr; gap: 10px; align-items: center; padding: 8px; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; min-width: 0; }
+.swatch i { width: 36px; height: 36px; border-radius: 5px; border: 1px solid var(--rule); display: block; }
+.swatch div { min-width: 0; font-size: .85rem; line-height: 1.3; }
+.swatch b { display: block; font-family: var(--font-mono); font-size: .78rem; font-weight: 500; overflow-wrap: anywhere; }
+pre.code { margin: 0; padding: 12px 14px; background: var(--code-bg); border-radius: 6px; overflow-x: auto; font-family: var(--font-mono); font-size: .82rem; line-height: 1.55; }
+
+.fmt { display: grid; gap: 10px; }
+.fmt-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.fmt-opt { border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; background: var(--panel); display: grid; gap: 4px; min-width: 0; }
+.fmt-opt .sample { font-variant-numeric: tabular-nums; font-size: 1.05rem; font-weight: 600; }
+.fmt-opt .why { color: var(--muted); font-size: .88rem; }
+.now { color: var(--muted); font-size: .92rem; }
+.now b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.specimen { background: var(--app-surface); color: var(--app-text); border: 1px solid var(--rule); border-radius: 8px; padding: 18px; display: grid; gap: 12px; font-family: var(--font-body); }
+.scale-row { display: grid; grid-template-columns: 110px 1fr; gap: 12px; align-items: baseline; }
+.scale-row span:first-child { font-family: var(--font-mono); font-size: 12px; color: var(--app-muted); }
+.time-compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.time-compare table { border-collapse: collapse; font-size: 14px; color: var(--app-text); }
+.time-compare td { padding: 3px 10px; text-align: right; border-bottom: 1px solid var(--app-border-soft); }
+
+/* ===================== Mockup application ===================== */
+.m { min-width: 1100px; font-family: var(--font-body); font-size: 14px; line-height: 1.35; color: var(--app-text); background: var(--app-canvas); position: relative; }
+.m.narrow { min-width: 1024px; max-width: 1024px; }
+.m * { font-variant-numeric: tabular-nums; }
+.m button, .m input, .m select { font: inherit; color: inherit; }
+.m-appbar { display: flex; align-items: center; gap: 18px; height: 48px; padding: 0 16px; background: var(--app-surface); border-bottom: 1px solid var(--app-border); }
+.m-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; white-space: nowrap; }
+.m-brand i { width: 18px; height: 18px; border-radius: 4px; background: var(--app-accent); display: inline-block; box-shadow: inset 0 -6px 0 var(--app-accent-strong); }
+.m-switch { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.m-switch button { display: inline-flex; align-items: baseline; gap: 6px; border: 1px solid transparent; background: transparent; border-radius: 5px; padding: 4px 8px; cursor: pointer; white-space: nowrap; max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+.m-switch button:hover { border-color: var(--app-border); background: var(--app-surface-2); }
+.m-switch small { font-size: 11.5px; color: var(--app-subtle); font-weight: 600; }
+.m-switch .chev { color: var(--app-subtle); font-size: 11px; }
+.m-switch .sep { color: var(--app-subtle); }
+.m-tabs { display: flex; align-self: stretch; gap: 4px; }
+.m-tabs button { border: 0; background: transparent; padding: 0 12px; font-weight: 600; color: var(--app-muted); border-bottom: 2px solid transparent; cursor: pointer; }
+.m-tabs button.on { color: var(--app-text); border-bottom-color: var(--app-accent); }
+.m-spacer { flex: 1; }
+.m-status { display: inline-flex; align-items: center; gap: 6px; color: var(--app-muted); font-size: 13px; white-space: nowrap; }
+.m-status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--app-ok); }
+.m-status.saving .dot { background: var(--app-accent); }
+.m-status.dirty .dot { background: var(--app-warn-border); }
+.m-status a { color: var(--app-accent); text-decoration: none; }
+.m-context { display: flex; align-items: center; gap: 14px; min-height: 44px; padding: 6px 16px; background: var(--app-surface-2); border-bottom: 1px solid var(--app-border); flex-wrap: wrap; }
+.m-field { display: inline-flex; align-items: center; gap: 6px; }
+.m-field > span { font-size: 12px; font-weight: 600; color: var(--app-muted); }
+.m-select { display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; height: 30px; padding: 0 9px; min-width: 120px; border: 1px solid var(--app-border); border-radius: 5px; background: var(--app-surface); white-space: nowrap; }
+.m-select::after { content: "▾"; color: var(--app-subtle); font-size: 11px; }
+.m-divider { width: 1px; align-self: stretch; background: var(--app-border); margin: 4px 2px; }
+.m-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border: 1px solid var(--app-border); border-radius: 5px; background: var(--app-surface); font-weight: 600; cursor: pointer; white-space: nowrap; }
+.m-btn:hover { border-color: var(--app-subtle); }
+.m-btn.primary { background: var(--app-accent); border-color: var(--app-accent); color: var(--app-surface); }
+.m-btn.primary:hover { background: var(--app-accent-strong); }
+.m-btn.primary:disabled { background: var(--app-sunken); border-color: var(--app-border); color: var(--app-subtle); cursor: default; }
+.m-btn.ghost { border-color: transparent; background: transparent; color: var(--app-accent); }
+.m-btn.ghost:hover { background: var(--app-accent-soft); }
+.m-btn.danger { color: var(--app-danger); }
+.m-icon { display: inline-grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--app-border); border-radius: 5px; background: var(--app-surface); color: var(--app-muted); cursor: pointer; font-weight: 700; letter-spacing: 1px; }
+.m-body { padding: 16px; display: grid; gap: 16px; }
+.m-cols { display: grid; gap: 16px; align-items: start; }
+
+/* Surface levels */
+.m-work { background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 7px; min-width: 0; position: relative; }
+.m-work-h { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--app-border-soft); flex-wrap: wrap; }
+.m-work-h h4 { margin: 0; font-size: 16px; font-weight: 700; }
+.m-work-h .sub { color: var(--app-muted); font-size: 13px; }
+.m-work-b { padding: 12px 14px; }
+.m-support { min-width: 0; display: grid; gap: 8px; align-content: start; }
+.m-support-h { display: flex; align-items: center; gap: 8px; }
+.m-support-h h5 { margin: 0; font-size: 14px; font-weight: 700; color: var(--app-muted); }
+.m-support-b { background: var(--app-surface-2); border: 1px solid var(--app-border-soft); border-radius: 6px; padding: 10px 12px; }
+.m-note { display: flex; gap: 6px; align-items: baseline; color: var(--app-muted); font-size: 13px; }
+.m-note::before { content: "i"; display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; border: 1px solid var(--app-subtle); font-size: 10px; font-weight: 700; font-style: italic; flex: none; transform: translateY(2px); }
+.m-note.warn { color: var(--app-warn); }
+.m-note.warn::before { content: "!"; font-style: normal; border-color: var(--app-warn-border); background: var(--app-warn-soft); }
+.m-note.ok { color: var(--app-ok); }
+.m-note.ok::before { content: "✓"; font-style: normal; border-color: var(--app-ok); }
+
+/* Mockup tables */
+.m-tw { overflow-x: auto; }
+.m-table { border-collapse: collapse; width: 100%; }
+.m-table th { position: sticky; top: 0; background: var(--app-surface-2); color: var(--app-muted); font-size: 12px; font-weight: 600; text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--app-border); vertical-align: bottom; line-height: 1.2; }
+.m-table td { padding: 0 8px; height: 30px; border-bottom: 1px solid var(--app-border-soft); white-space: nowrap; }
+.m-table tr:hover td { background: var(--app-surface-2); }
+.m-table .r { text-align: right; }
+.m-table .c { text-align: center; }
+.m-table .dim { color: var(--app-subtle); }
+.m-table tfoot td { font-weight: 700; background: var(--app-surface-2); border-top: 1px solid var(--app-border); }
+.m-table tr.sel td { background: var(--app-sel); }
+.m-table tr.active td { box-shadow: inset 0 1px 0 var(--app-accent), inset 0 -1px 0 var(--app-accent); }
+.m-table tr.addrow td { color: var(--app-accent); font-weight: 600; cursor: pointer; }
+.m-table tr.addrow:hover td { background: var(--app-accent-soft); }
+.m-check { width: 14px; height: 14px; border: 1.5px solid var(--app-subtle); border-radius: 3px; display: inline-block; vertical-align: middle; background: var(--app-surface); }
+.m-check.on { background: var(--app-accent); border-color: var(--app-accent); box-shadow: inset 0 0 0 2px var(--app-surface); }
+.m-chip { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 4px; background: var(--app-sunken); color: var(--app-text); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.m-pill { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px 0 6px; border-radius: 999px; border: 1px solid var(--app-border); background: var(--app-surface); font-size: 12.5px; font-weight: 600; }
+.m-pill i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.m-a { color: var(--app-accent); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.m-ro { color: var(--app-text); }
+.m-mini { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 4px; color: var(--app-subtle); cursor: pointer; }
+.m-mini:hover { background: var(--app-sunken); color: var(--app-text); }
+
+/* Contextual bars */
+.m-selbar { display: flex; align-items: center; gap: 6px; padding: 6px 10px; margin: 0 0 8px; border: 1px solid var(--app-accent-soft); background: var(--app-sel); border-radius: 6px; flex-wrap: wrap; }
+.m-selbar b { margin-right: 6px; }
+.m-dirty { position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--app-warn-soft); border-top: 1px solid var(--app-warn-border); border-radius: 0 0 7px 7px; }
+.m-dirty .msg { flex: 1; color: var(--app-warn); font-weight: 600; display: inline-flex; gap: 8px; align-items: center; }
+.m-dirty .msg::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--app-warn-border); }
+
+/* Popover */
+.m-pop { position: absolute; z-index: 5; min-width: 290px; background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 7px; box-shadow: 0 8px 24px rgba(20, 35, 45, .16); padding: 6px; display: grid; gap: 1px; font-size: 14px; }
+.m-pop .lbl { font-size: 11.5px; font-weight: 700; color: var(--app-subtle); padding: 6px 8px 2px; }
+.m-pop .it { padding: 6px 8px; border-radius: 4px; display: flex; justify-content: space-between; gap: 12px; }
+.m-pop .it:hover, .m-pop .it.hl { background: var(--app-accent-soft); }
+.m-pop .it.cur { font-weight: 700; }
+.m-pop .it small { color: var(--app-subtle); }
+.m-pop hr { border: 0; border-top: 1px solid var(--app-border-soft); margin: 4px 0; width: 100%; }
+.m-pop .danger { color: var(--app-danger); }
+
+/* Current-header replica (rough) */
+.old-top { display: flex; justify-content: space-between; align-items: flex-end; padding: 14px 16px 0; border-bottom: 3px solid #24485d; background: var(--app-canvas); }
+.old-top strong { font-size: 18px; padding-bottom: 8px; }
+.old-tabs { display: flex; gap: 2px; }
+.old-tabs span { border: 1px solid var(--app-border); border-bottom: 0; padding: 7px 18px; background: var(--app-surface); }
+.old-tabs span.on { background: #24485d; color: var(--app-surface); font-weight: 700; }
+.old-row { display: flex; gap: 12px; align-items: flex-end; padding: 10px 16px 12px; border-bottom: 1px solid var(--app-border); background: var(--app-surface-2); }
+.old-row label { display: grid; gap: 4px; font-size: 11.5px; font-weight: 700; color: var(--app-muted); }
+.old-row .m-select { height: 34px; min-width: 180px; }
+.height-tag { position: absolute; right: 10px; top: 8px; font-size: 12px; font-weight: 700; color: var(--app-muted); background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 999px; padding: 1px 8px; }
+
+/* Runtime grid (interactive and static) */
+.rt { border-collapse: separate; border-spacing: 0; }
+.rt th { position: static; }
+.rt td.cell { padding: 0; height: 30px; min-width: 64px; border-right: 1px solid var(--app-border-soft); position: relative; cursor: cell; }
+.rt td.cell > span { display: block; padding: 0 8px; line-height: 30px; }
+.rt td.cell:hover { box-shadow: inset 0 0 0 1px var(--app-border); }
+.rt td.cell.active { box-shadow: inset 0 0 0 2px var(--app-focus); outline: none; z-index: 1; }
+.rt td.cell.dirty::after { content: ""; position: absolute; top: 0; right: 0; border-style: solid; border-width: 0 7px 7px 0; border-color: transparent var(--app-warn-border) transparent transparent; }
+.rt td.cell.invalid { box-shadow: inset 0 0 0 2px var(--app-danger); background: var(--app-danger-soft); }
+.rt td.cell input { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; padding: 0 8px; background: var(--app-surface); box-shadow: inset 0 0 0 2px var(--app-focus); outline: none; font-variant-numeric: tabular-nums; }
+.rt td.total { font-weight: 700; text-align: right; padding: 0 10px; }
+.rt th.segh { min-width: 74px; max-width: 96px; white-space: normal; }
+
+/* Round 3 additions */
+.decision.done { border-left-color: var(--rec); background: var(--rec-bg); }
+.decision.done strong { color: var(--rec); }
+[hidden] { display: none !important; }
+.m-context.nowrap { flex-wrap: nowrap; overflow: hidden; gap: 10px; }
+.m-context.nowrap.tight .m-switch small { display: none; }
+.m-context.nowrap .m-switch button .v { min-width: 64px; }
+.m-context.nowrap .m-switch { flex: 0 1 auto; min-width: 0; }
+.m-context.nowrap .m-switch button { min-width: 96px; flex: 0 1 auto; }
+.m-context.nowrap .m-switch button .v { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.m-context.nowrap .m-field { flex: none; }
+.m-select .v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.m-select.cap { min-width: 0; }
+.fit-ok { color: var(--app-ok); background: var(--app-ok-soft); border: 1px solid var(--app-ok); border-radius: 4px; padding: 3px 8px; margin: 0 16px 8px; font-size: 12.5px; font-weight: 600; display: inline-block; }
+.fit-bad { color: var(--app-danger); background: var(--app-danger-soft); border: 1px solid var(--app-danger); border-radius: 4px; padding: 3px 8px; margin: 0 16px 8px; font-size: 12.5px; font-weight: 600; display: inline-block; }
+.hw td.t { line-height: 1.15; }
+.hw .two { display: grid; justify-items: end; padding: 3px 0; }
+.hw .two b { font-weight: 600; }
+.hw .two small { font-size: 11.5px; color: var(--app-subtle); }
+.hw .inl small { font-size: 11.5px; color: var(--app-subtle); margin-left: 5px; }
+.hw .chg { box-shadow: inset 3px 0 0 var(--app-warn-border); background: var(--app-warn-soft); }
+.hw .pin { position: sticky; background: var(--app-surface); z-index: 1; }
+.hw th.pin { background: var(--app-surface-2); z-index: 2; }
+.hw .pin-last { box-shadow: 1px 0 0 var(--app-border); }
+.hw tr.sel td.pin { background: var(--app-sel); }
+.hw .first { color: var(--app-muted); }
+.chk { display: inline-flex; align-items: center; gap: 6px; font-size: .95rem; color: var(--fg); }
+.blk-top { display: grid; gap: 16px; align-items: start; transition: grid-template-columns .2s; }
+.blk-top.side { grid-template-columns: 470px minmax(0, 1fr); }
+.blk-top.rail { grid-template-columns: 46px minmax(0, 1fr); }
+.blk-top.stack { grid-template-columns: minmax(0, 1fr); }
+.m-rail { display: grid; justify-items: center; gap: 10px; padding: 10px 0; min-height: 360px; align-content: start; cursor: pointer; }
+.m-rail .vt { writing-mode: vertical-rl; transform: rotate(180deg); font-weight: 700; color: var(--app-muted); }
+.m-rail .cnt { display: inline-grid; place-items: center; min-width: 22px; height: 22px; border-radius: 999px; background: var(--app-ok-soft); color: var(--app-ok); font-weight: 700; font-size: 12px; }
+.m-scrollbox { max-height: 214px; overflow-y: auto; }
+.m-fit { font-size: 12.5px; }
+.m-fit.ok { color: var(--app-ok); font-weight: 600; }
+.m-fit.no { color: var(--app-subtle); }
+.m-fit.dh { color: var(--app-warn); }
+.m-toggle { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border: 1px solid var(--app-border); border-radius: 999px; font-size: 12.5px; font-weight: 600; background: var(--app-surface); }
+.m-toggle.on { background: var(--app-accent-soft); border-color: var(--app-accent); color: var(--app-accent-strong); }
+.m-hdrsel { display: inline-flex; align-items: center; gap: 3px; }
+.m-hdrsel .car { font-size: 10px; color: var(--app-subtle); }
+.sel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 20px; align-items: start; }
+.sel-stage { position: relative; min-height: 380px; background: var(--app-canvas); border: 1px solid var(--rule); border-radius: 8px; padding: 14px; overflow: hidden; }
+.sel-stage .m-pop { position: absolute; }
+.m-rule { display: grid; grid-template-columns: 150px 120px 1fr 26px; gap: 8px; align-items: center; }
+.m-rule + .m-rule { margin-top: 8px; }
+.grid-msg { min-height: 22px; font-size: 13px; color: var(--app-danger); padding: 4px 14px 0; }
+.kbd { display: inline-block; font-family: var(--font-mono); font-size: .78rem; padding: 0 5px; border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px; background: var(--panel); }
+.flash { color: var(--app-ok); font-size: 12.5px; font-weight: 600; opacity: 0; transition: opacity .2s; }
+.flash.show { opacity: 1; }
+.flash.err { color: var(--app-danger); }
+.sd-grid { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
+.sd-grid label { display: grid; gap: 3px; font-size: 12px; font-weight: 600; color: var(--app-muted); }
+.sd-grid input { width: 80px; height: 30px; border: 1px solid var(--app-border); border-radius: 5px; padding: 0 8px; background: var(--app-surface); text-align: right; }
+.sd-grid input:focus { outline: 2px solid var(--app-focus); outline-offset: -1px; }
+
+/* Drawer */
+.m-drawer { position: absolute; top: 0; right: 0; bottom: 0; width: 470px; background: var(--app-surface); border-left: 1px solid var(--app-border); box-shadow: -10px 0 24px rgba(20, 35, 45, .12); display: grid; grid-template-rows: auto 1fr auto; z-index: 3; }
+.m-drawer .m-work-b { overflow: auto; }
+
+/* Stat strip */
+.m-stats { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0; border: 1px solid var(--app-border-soft); border-radius: 6px; background: var(--app-surface); }
+.m-stats div { padding: 8px 12px; border-right: 1px solid var(--app-border-soft); display: grid; gap: 2px; }
+.m-stats div:last-child { border-right: 0; }
+.m-stats span { font-size: 12px; color: var(--app-muted); font-weight: 600; }
+.m-stats b { font-size: 16px; }
+.m-stats b.inc { color: var(--app-warn); font-size: 14px; }
+.m-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 16px; }
+.m-form label { display: grid; gap: 3px; font-size: 12px; font-weight: 600; color: var(--app-muted); }
+.m-input { height: 30px; border: 1px solid var(--app-border); border-radius: 5px; padding: 0 9px; display: flex; align-items: center; background: var(--app-surface); color: var(--app-text); font-size: 14px; font-weight: 400; }
+.m-input.ph { color: var(--app-subtle); }
+.m-input.edited { border-color: var(--app-warn-border); background: var(--app-warn-soft); }
+.m-inline-fields { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; }
+.m-plist { display: grid; gap: 2px; }
+.m-plist div { padding: 6px 10px; border-radius: 5px; display: grid; gap: 1px; cursor: pointer; }
+.m-plist div:hover { background: var(--app-surface-2); }
+.m-plist div.on { background: var(--app-accent-soft); box-shadow: inset 3px 0 0 var(--app-accent); }
+.m-plist b { font-weight: 600; font-size: 13.5px; }
+.m-plist small { color: var(--app-muted); font-size: 12px; }
+.m-plist .group { font-size: 11.5px; font-weight: 700; color: var(--app-subtle); padding: 8px 10px 2px; cursor: default; }
+.m-plist .group:hover { background: none; }
+.m-type { color: var(--app-muted); }
+.m-section-collapsed { display: flex; align-items: center; gap: 12px; padding: 9px 14px; flex-wrap: wrap; }
+.m-section-collapsed .twist { font-size: 12px; color: var(--app-muted); width: 14px; display: inline-block; }
+.m-section-collapsed h4 { margin: 0; font-size: 16px; font-weight: 700; }
+.m-kv { color: var(--app-muted); font-size: 13px; }
+.m-kv b { color: var(--app-text); font-weight: 600; }
+.m-badge { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.m-badge.warn { background: var(--app-warn-soft); color: var(--app-warn); border: 1px solid var(--app-warn-border); }
+.m-segctl { display: inline-flex; border: 1px solid var(--app-border); border-radius: 6px; overflow: hidden; }
+.m-segctl button { border: 0; background: var(--app-surface); padding: 4px 12px; cursor: pointer; font-weight: 600; color: var(--app-muted); }
+.m-segctl button.on { background: var(--app-accent-soft); color: var(--app-accent-strong); }
+.m-segctl button + button { border-left: 1px solid var(--app-border); }
+
+@media (max-width: 640px) {
+  h1 { font-size: 1.6rem; }
+  .scale-row { grid-template-columns: 1fr; gap: 2px; }
+}
+@media (prefers-reduced-motion: reduce) { .flash { transition: none; } }
+</style>
+
+<div class="page">
+
+<header class="stack">
+  <div class="eyebrow">Transit Costing Tool · UI/UX round 2</div>
+  <h1>Mockups and decisions for the interface revision</h1>
+  <p class="lede">The mockups below use the real Federal Boulevard BRT sample data and the proposed Source Sans 3 typeface and colour tokens. They are static except where a section says "interactive". Each open choice has a code (for example <b>H-B</b> or <b>F2-A</b>), so you can reply in chat with a list of codes.</p>
+  <nav class="toc" aria-label="Sections">
+    <a href="#header">1 · Header</a><a href="#surfaces">2 · Surface levels</a><a href="#route">3 · Route tab</a><a href="#trips">4 · Trips tab and Runtimes</a><a href="#blocking">5 · Blocking tab</a><a href="#costing">6 · Costing tab</a><a href="#save">7 · Save pattern and spreadsheet cells</a><a href="#tokens">8 · Design tokens</a><a href="#type">9 · Typography</a><a href="#formats">10 · Number formats</a><a href="#terms">11 · Terminology</a><a href="#deferred">12 · Deferred items</a>
+  </nav>
+</header>
+
+<section id="status" class="stack">
+  <div class="eyebrow">Round 3 · decisions so far</div>
+  <h2>Decided, and what is still open</h2>
+  <div class="doc-table-wrap"><table class="doc">
+    <thead><tr><th>Item</th><th>Decision</th><th>Still open (shown on this page)</th></tr></thead>
+    <tbody>
+      <tr><td>Header</td><td>H-B approved</td><td>No selector may wrap to a second line; Project and Scenario truncate first. See <a href="#header">section 1</a>.</td></tr>
+      <tr><td>Surfaces · Route</td><td>Approved as shown (Reverse stays visible)</td><td>—</td></tr>
+      <tr><td>Trips · Runtimes</td><td>R-A approved (collapsible, state remembered)</td><td>Identifying the trip behind a headway (<b>HW</b>) and selecting trips by pattern (<b>SEL</b>). See <a href="#headways">section 4b</a> and <a href="#selecting">4c</a>.</td></tr>
+      <tr><td>Blocking</td><td>Provisionally approved</td><td>Layout when unassigned trips remain (<b>BL</b>). See <a href="#blocking">section 5</a>.</td></tr>
+      <tr><td>Costing</td><td>Approved; label is "Inflation rate (%)"</td><td>—</td></tr>
+      <tr><td>Save rule and cells</td><td>Approved; Enter moves down, Tab moves across</td><td>The demo's stacked headings were a bug (a style-name clash) and are fixed.</td></tr>
+      <tr><td>Tokens · Type</td><td>Palette approved; Source Sans 3; TY-A</td><td>—</td></tr>
+      <tr><td>Formats · Terms</td><td>F1–F8 all option A; T1-A; T3 "inflation"</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ 1 HEADER ============ -->
+<section id="header" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Section 1</div>
+    <h2>Header: collapsing three rows</h2>
+    <p>Today the header uses three rows (about 200 px) before any work content. The current layout is shown first, then two alternatives. Both alternatives keep the Project and Scenario actions, but move them into the switcher menus, so the separate "⋯" buttons next to each selector go away.</p>
+  </div>
+
+  <div class="stack">
+    <div class="shot-label"><h3>Current</h3><span>Trips tab · about 200 px</span></div>
+    <div class="shot"><div class="m narrow" style="position:relative">
+      <span class="height-tag">≈ 200 px</span>
+      <div class="old-top"><strong>Transit Costing Tool</strong><div class="old-tabs"><span>Route</span><span class="on">Trips</span><span>Blocking</span><span>Costing</span></div></div>
+      <div class="old-row"><label>Project<span class="m-select">Federal Boulevard BRT 2029 Service Plan</span></label><span class="m-icon">⋯</span><label>Scenario<span class="m-select">Workbook Service Plan</span></label><span class="m-icon">⋯</span></div>
+      <div class="old-row"><label>Route<span class="m-select">Federal BRT — Federal Boulevard BRT</span></label><label>Day<span class="m-select">Weekday</span></label><label>Direction<span class="m-select">Southbound</span></label></div>
+    </div></div>
+  </div>
+
+  <div class="stack">
+    <div class="shot-label"><h3>H-A · Single app bar plus context row</h3><span>About 92 px · Project menu shown open</span></div>
+    <div class="shot"><div class="m narrow" style="min-height:330px">
+      <div class="m-appbar">
+        <div class="m-brand"><i></i>Transit Costing</div>
+        <div class="m-switch">
+          <button style="max-width:250px"><small>Project</small>Federal Boulevard BRT 2029 Service Plan<span class="chev">▾</span></button>
+          <span class="sep">›</span>
+          <button><small>Scenario</small>Workbook Service Plan<span class="chev">▾</span></button>
+        </div>
+        <div class="m-spacer"></div>
+        <nav class="m-tabs"><button>Route</button><button class="on">Trips</button><button>Blocking</button><button>Costing</button></nav>
+        <span class="m-status"><span class="dot"></span>Saved</span>
+      </div>
+      <div class="m-context">
+        <label class="m-field"><span>Route</span><span class="m-select">Federal BRT — Federal Boulevard BRT</span></label>
+        <label class="m-field"><span>Day</span><span class="m-select">Weekday</span></label>
+        <label class="m-field"><span>Direction</span><span class="m-select">Southbound</span></label>
+        <div class="m-spacer"></div>
+        <span class="m-icon" title="Route actions">⋯</span>
+      </div>
+      <div class="m-pop" style="top:42px;left:150px">
+        <div class="lbl">Projects</div>
+        <div class="it cur">✓ Federal Boulevard BRT 2029 Service Plan</div>
+        <div class="it">Colfax Corridor Study</div>
+        <div class="it">+ New project…</div>
+        <hr>
+        <div class="it">Rename project…</div>
+        <div class="it hl">Back up project (JSON) <small>Last: Oct 24, 3:12 PM</small></div>
+        <div class="it">Restore project from backup…</div>
+        <hr>
+        <div class="it danger">Delete project…</div>
+      </div>
+    </div></div>
+    <p class="now">At 1024 px wide (shown) the project name must be truncated to fit beside the tabs. A long project name and a long scenario name compete with the tabs for the same row.</p>
+  </div>
+
+  <div class="stack">
+    <div class="shot-label"><h3>H-B · Two compact rows</h3><span>About 92 px · Row 1 is the application, row 2 is everything that scopes the data</span></div>
+    <div class="shot"><div class="m narrow">
+      <div class="m-appbar">
+        <div class="m-brand"><i></i>Transit Costing Tool</div>
+        <nav class="m-tabs" style="margin-left:18px"><button>Route</button><button class="on">Trips</button><button>Blocking</button><button>Costing</button></nav>
+        <div class="m-spacer"></div>
+        <span class="m-status"><span class="dot"></span>Saved locally · <a href="#header">backup 3 days old</a></span>
+      </div>
+      <div class="m-context">
+        <div class="m-switch">
+          <button style="max-width:260px"><small>Project</small>Federal Boulevard BRT 2029 Service Plan<span class="chev">▾</span></button>
+          <span class="sep">›</span>
+          <button><small>Scenario</small>Workbook Service Plan<span class="chev">▾</span></button>
+        </div>
+        <span class="m-divider"></span>
+        <label class="m-field"><span>Route</span><span class="m-select">Federal BRT — Federal Boulevard BRT</span></label>
+        <label class="m-field"><span>Day</span><span class="m-select" style="min-width:100px">Weekday</span></label>
+        <label class="m-field"><span>Direction</span><span class="m-select" style="min-width:110px">Southbound</span></label>
+      </div>
+    </div></div>
+    <p class="now">Tabs sit on the left, where the eye starts. The save status also shows backup age, using the last-backup time the app already records. When a tab needs more selectors (Blocking has four), row 2 wraps onto a second line instead of squeezing the tabs.</p>
+  </div>
+
+  <div class="decision done"><span><strong>Decided · H-B</strong></span></div>
+
+  <div class="stack">
+    <h3>H-B at 1024 px with the most selectors (Blocking)</h3>
+    <p>Rule: row 2 never wraps. When space runs out, the small "Project" and "Scenario" captions are dropped first (the › between the two names still shows which is which, and the captions remain on hover and for screen readers). Then the two names shrink, each down to about 64 px of text, with an ellipsis. Tab selectors keep their full width, except that long values (a Route or Blocking scenario name) stop at a set maximum width. The full name always shows on hover and in the open menu. This is the narrowest supported width; at 1280 px or more nothing is truncated in the sample project.</p>
+  </div>
+  <div class="shot"><div class="m narrow">
+    <div class="m-appbar"><div class="m-brand"><i></i>Transit Costing Tool</div><nav class="m-tabs" style="margin-left:18px"><button>Route</button><button>Trips</button><button class="on">Blocking</button><button>Costing</button></nav><div class="m-spacer"></div><span class="m-status"><span class="dot"></span>Saved locally · <a href="#header">backup 3 days old</a></span></div>
+    <div class="m-context nowrap tight" id="fitRow">
+      <div class="m-switch">
+        <button style="max-width:240px" title="Federal Boulevard BRT 2029 Service Plan"><small>Project</small><span class="v">Federal Boulevard BRT 2029 Service Plan</span><span class="chev">▾</span></button>
+        <span class="sep">›</span>
+        <button style="max-width:200px" title="Workbook Service Plan"><small>Scenario</small><span class="v">Workbook Service Plan</span><span class="chev">▾</span></button>
+      </div>
+      <span class="m-divider"></span>
+      <label class="m-field"><span>Route</span><span class="m-select cap" style="max-width:130px"><span class="v">Federal BRT</span></span></label>
+      <label class="m-field"><span>Trip profile</span><span class="m-select cap" style="max-width:120px;min-width:84px"><span class="v">Default</span></span></label>
+      <label class="m-field"><span>Blocking scenario</span><span class="m-select cap" style="max-width:150px;min-width:120px"><span class="v">Workbook Blocks</span></span></label>
+      <label class="m-field"><span>Day</span><span class="m-select cap" style="min-width:96px"><span class="v">Weekday</span></span></label>
+      <span class="m-icon" style="flex:none" title="Blocking scenario actions">⋯</span>
+    </div>
+  </div></div>
+  <p class="now">The Route selector shows the route's short name in the row ("Federal BRT"); its menu lists "Federal BRT — Federal Boulevard BRT". This saves about 150 px on every tab.</p>
+</section>
+
+<!-- ============ 2 SURFACES ============ -->
+<section id="surfaces" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Section 2</div>
+    <h2>Three surface levels</h2>
+    <p>Every panel today has the same white card and heavy teal top border, so nothing stands out. The proposal gives each kind of content its own visual weight. The tab mockups in sections 3 to 6 apply these rules.</p>
+  </div>
+  <div class="option-grid">
+    <div class="card"><span class="tag">Level 1</span><h3>Work surface</h3><p class="meta">What you edit or read most on the tab: the Trips table, the Pattern editor, Current block, Cost breakdown. White panel, thin border, 16 px bold title, panel actions in its header.</p></div>
+    <div class="card"><span class="tag">Level 2</span><h3>Supporting panel</h3><p class="meta">Context and summaries: Service days, Weekday summary, Exclusions, Yearly outlook. No card border; a muted 14 px title over a lightly tinted box. Visually recedes.</p></div>
+    <div class="card"><span class="tag">Level 3</span><h3>Inline note</h3><p class="meta">One-line status and guidance, such as "No current issues" or "Enter all non-revenue miles…". Text with a small icon, no box. Colour is used only for warnings and confirmations.</p></div>
+  </div>
+  <p>The teal accent is reserved for three things: the active tab, primary buttons, and the selected item. Thick borders are dropped everywhere.</p>
+</section>
+
+<!-- ============ 3 ROUTE ============ -->
+<section id="route" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Section 3</div>
+    <h2>Route tab</h2>
+    <p>Route details and Service days shrink to a single supporting strip, which frees the height for Nodes and Patterns. The Pattern editor shows one unsaved change so you can see the save bar (section 7 lets you try it).</p>
+  </div>
+  <div class="shot"><div class="m">
+    <div class="m-appbar"><div class="m-brand"><i></i>Transit Costing Tool</div><nav class="m-tabs" style="margin-left:18px"><button class="on">Route</button><button>Trips</button><button>Blocking</button><button>Costing</button></nav><div class="m-spacer"></div><span class="m-status dirty"><span class="dot"></span>Unsaved changes in Pattern</span></div>
+    <div class="m-context"><div class="m-switch"><button><small>Project</small>Federal Boulevard BRT 2029 Service Plan<span class="chev">▾</span></button><span class="sep">›</span><button><small>Scenario</small>Workbook Service Plan<span class="chev">▾</span></button></div><span class="m-divider"></span><label class="m-field"><span>Route</span><span class="m-select">Federal BRT — Federal Boulevard BRT</span></label><span class="m-icon" title="Route actions">⋯</span></div>
+    <div class="m-body">
+      <div class="m-cols" style="grid-template-columns: 1.4fr 1fr">
+        <div class="m-support"><div class="m-support-h"><h5>Route details</h5></div><div class="m-support-b m-inline-fields">
+          <label class="m-field" style="display:grid;gap:3px"><span>Route name</span><span class="m-input" style="width:230px">Federal Boulevard BRT</span></label>
+          <label class="m-field" style="display:grid;gap:3px"><span>Short name</span><span class="m-input" style="width:120px">Federal BRT</span></label>
+          <label class="m-field" style="display:grid;gap:3px;flex:1"><span>Description</span><span class="m-input ph">Optional</span></label>
+        </div></div>
+        <div class="m-support"><div class="m-support-h"><h5>Annual service days</h5><span class="m-note" style="margin-left:auto">Saves when you leave a field</span></div><div class="m-support-b sd-grid">
+          <label>Weekday<span class="m-input" style="width:70px;justify-content:flex-end">255</span></label><label>Saturday<span class="m-input" style="width:70px;justify-content:flex-end">52</span></label><label>Sunday<span class="m-input" style="width:70px;justify-content:flex-end">52</span></label><label>Holiday<span class="m-input" style="width:70px;justify-content:flex-end">6</span></label><span class="m-kv" style="padding-bottom:6px">Total <b>365</b> of 365</span>
+        </div></div>
+      </div>
+      <div class="m-cols" style="grid-template-columns: 0.9fr 1.6fr">
+        <div class="m-work"><div class="m-work-h"><h4>Nodes</h4><span class="sub">11</span></div>
+          <div class="m-tw"><table class="m-table" id="nodesTable"><thead><tr><th>Name</th><th>Short</th><th>Type</th><th>Notes</th><th></th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="m-work"><div class="m-work-h"><h4>Patterns</h4><span class="sub">6</span></div>
+          <div style="display:grid;grid-template-columns:230px 1fr">
+            <div class="m-plist" style="padding:8px;border-right:1px solid var(--app-border-soft)" id="patternList"></div>
+            <div>
+              <div class="m-work-h" style="border-bottom:0"><h4 style="font-size:15px">Northbound: Evans to Wagon Road</h4><span class="sub">Northbound · 9 points · 18.50 mi</span><div class="m-spacer"></div><span class="m-btn">Reverse</span><span class="m-icon" title="Pattern actions">⋯</span></div>
+              <div style="padding:0 14px 8px" class="m-inline-fields">
+                <label class="m-field" style="display:grid;gap:3px"><span>Direction</span><span class="m-select" style="width:140px">Northbound</span></label>
+                <label class="m-field" style="display:grid;gap:3px"><span>Pattern name</span><span class="m-input edited" style="width:260px">Northbound: Evans to Wagon Road</span></label>
+                <label class="m-field" style="display:grid;gap:3px"><span>Label</span><span class="m-input ph" style="width:140px">e.g. Full</span></label>
+              </div>
+              <div class="m-tw"><table class="m-table" id="pointsTable"><thead><tr><th class="r">#</th><th>Node</th><th class="r">Cumulative mi</th><th class="r">Segment mi</th><th></th></tr></thead><tbody></tbody></table></div>
+              <div class="m-dirty"><span class="msg">1 unsaved change in this Pattern</span><button class="m-btn">Discard</button><button class="m-btn primary">Review and save</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+
+  <div class="doc-table-wrap"><table class="doc">
+    <thead><tr><th>Panel</th><th>Visible actions</th><th>In the ⋯ menu</th><th>Saving</th></tr></thead>
+    <tbody>
+      <tr><td>Route (context row)</td><td>Route selector</td><td>New route, Rename route, Duplicate route, Export route CSV (ZIP), Delete route</td><td>Each action saves through its own dialog (unchanged)</td></tr>
+      <tr><td>Route details</td><td>Name fields</td><td>none</td><td>Saves when you leave a field</td></tr>
+      <tr><td>Annual service days</td><td>Four count fields, total</td><td>none</td><td>Saves when you leave a field (unchanged), with an inline "Saved" confirmation</td></tr>
+      <tr><td>Nodes</td><td>"+ New node" as the last table row; row delete icon</td><td>none</td><td>Save bar: "Save nodes" / "Discard"</td></tr>
+      <tr><td>Patterns list</td><td>"+ Add pattern" as the last list item (exists today)</td><td>none</td><td>—</td></tr>
+      <tr><td>Pattern editor</td><td>Reverse; "+ Add node" as the last table row; reorder by drag handle or ↑↓</td><td>Duplicate pattern, Delete pattern</td><td>Save bar: "Review and save" (keeps the existing impact review) / "Discard"</td></tr>
+    </tbody>
+  </table></div>
+  <div class="decision done"><span><strong>Decided · Route layout approved as shown</strong> (Reverse stays visible).</span></div>
+</section>
+
+<!-- ============ 4 TRIPS ============ -->
+<section id="trips" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Section 4 · interactive</div>
+    <h2>Trips tab and the Runtimes panel</h2>
+    <p>Pick an option to see the Trips tab with Runtimes handled that way. All three use the same Trips work surface: Build trips is the primary button, the Trip profile and Blocking scenario selectors stay in the panel header, and actions on selected trips appear in a selection bar (two trips are selected in the mockup). The first six trips are real; the last two rows are illustrative.</p>
+  </div>
+  <div class="seg" role="group" aria-label="Runtimes option">
+    <button type="button" data-rt="a" aria-pressed="true">R-A · Collapsible section</button>
+    <button type="button" data-rt="b" aria-pressed="false">R-B · Side drawer</button>
+    <button type="button" data-rt="c" aria-pressed="false">R-C · Sub-view</button>
+  </div>
+  <p class="now" id="rtExplain"></p>
+  <div class="shot"><div class="m" id="tripsMock" style="min-height:560px">
+    <div class="m-appbar"><div class="m-brand"><i></i>Transit Costing Tool</div><nav class="m-tabs" style="margin-left:18px"><button>Route</button><button class="on">Trips</button><button>Blocking</button><button>Costing</button></nav><div class="m-spacer"></div><span class="m-status"><span class="dot"></span>Saved locally · <a href="#trips">backup 3 days old</a></span></div>
+    <div class="m-context"><div class="m-switch"><button><small>Project</small>Federal Boulevard BRT 2029 Service Plan<span class="chev">▾</span></button><span class="sep">›</span><button><small>Scenario</small>Workbook Service Plan<span class="chev">▾</span></button></div><span class="m-divider"></span><label class="m-field"><span>Route</span><span class="m-select">Federal BRT — Federal Boulevard BRT</span></label><label class="m-field"><span>Day</span><span class="m-select" style="min-width:100px">Weekday</span></label><label class="m-field"><span>Direction</span><span class="m-select" style="min-width:110px">Southbound</span></label></div>
+    <div class="m-body" id="tripsBody"></div>
+  </div></div>
+
+  <div class="doc-table-wrap"><table class="doc">
+    <thead><tr><th>Panel</th><th>Visible actions</th><th>In the ⋯ menu</th><th>On selection</th></tr></thead>
+    <tbody>
+      <tr><td>Runtimes</td><td>Pattern selector, Runtime profile selector (keeps its New / Rename / Copy / Reverse-copy / Delete items), "+ Add time band" as the last table row</td><td>Calculation method (whole Route), Copy runtimes from another day…, Export profile CSV</td><td>—</td></tr>
+      <tr><td>Trips</td><td><b>Build trips…</b> (primary), Add trip, View ▾ (Show runtime bands, Show headways, Round displayed times)</td><td>Copy trips from another day…, Export trips CSV</td><td>Selection bar: Shift…, Change pattern…, Assign block…, Unassign, Delete…</td></tr>
+    </tbody>
+  </table></div>
+  <ul class="plain">
+    <li>The per-row Pattern dropdown (truncated to "Southbou…" today) becomes a read-only chip showing the pattern's Label, a field the Pattern editor already has. You change a pattern through the selection bar.</li>
+    <li>Block pills keep their colour but add the block number in plain text and a neutral background, so the colour is a helper rather than the only cue.</li>
+  </ul>
+  <div class="decision done"><span><strong>Decided · R-A</strong> (collapsible Runtimes; open or closed state remembered on this device).</span></div>
+</section>
+
+<!-- ============ 4b HEADWAYS ============ -->
+<section id="headways" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Section 4b · interactive</div>
+    <h2>Knowing which trip a headway belongs to</h2>
+    <p>Today, "Show headways" replaces every time with the gap since the previous trip at that timepoint. The trip's own time is only in a hover tooltip, so a change from :07:30 to :15 cannot be traced to a trip. The sample below is an illustrative evening transition: the Westminster Station short turns stop after 18:22:30, so the headway there doubles. The other trips run every 15 minutes.</p>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center">
+    <div class="seg" role="group" aria-label="Headway display option">
+      <button type="button" data-hw="b" aria-pressed="true">HW-B · Pinned "Departs" column</button>
+      <button type="button" data-hw="a" aria-pressed="false">HW-A · Time under headway</button>
+      <button type="button" data-hw="c" aria-pressed="false">HW-C · Time with headway beside</button>
+    </div>
+    <label class="chk" for="hwMark"><input type="checkbox" id="hwMark" checked> HW-X · Mark where the headway changes</label>
+  </div>
+  <p class="now" id="hwExplain"></p>
+  <div class="shot"><div class="m"><div class="m-body"><div class="m-work">
+    <div class="m-work-h"><h4>Trips</h4><span class="sub">Southbound · Weekday · headways shown</span><div class="m-spacer"></div><span class="m-btn">View ▾</span></div>
+    <div class="m-tw" style="max-width:100%"><table class="m-table hw" id="hwTable"></table></div>
+  </div></div></div></div>
+  <div class="decision"><span><strong>Decision HW</strong> · HW-A, HW-B, or HW-C, and whether to add HW-X. <span class="rec">Recommended: HW-B with HW-X</span></span><span>HW-B adds one narrow column and keeps the headway grid easy to scan. The selection checkbox, Pattern, and Departs columns stay pinned when you scroll sideways, which also helps the ordinary times view. HW-A gives the exact time at every timepoint but makes each row about 40% taller, so fewer trips fit on screen. HW-C keeps the times as the main content, but every column gets about 40 px wider. HW-X shades the first cell where a headway differs from the one above it, so a change stands out without reading every number.</span></div>
+</section>
+
+<!-- ============ 4c SELECTING ============ -->
+<section id="selecting" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Section 4c</div>
+    <h2>Selecting trips by pattern, and later by rule</h2>
+    <p>Three levels of the same idea, from smallest to largest. Shift-click keeps its current meaning (select a range), so the pattern shortcut uses Ctrl-click (⌘-click on a Mac) on the pattern chip.</p>
+  </div>
+  <div class="sel-grid">
+    <div class="stack">
+      <div class="shot-label"><h3>SEL-1 · Select menu on the header checkbox</h3></div>
+      <div class="sel-stage m">
+        <div style="display:flex;gap:10px;align-items:center;padding:4px 2px"><span class="m-hdrsel"><span class="m-check"></span><span class="car">▾</span></span><span style="font-size:12px;color:var(--app-muted);font-weight:600">Pattern</span></div>
+        <div class="m-pop" style="top:42px;left:14px;min-width:300px">
+          <div class="it">Select all <small>138</small></div>
+          <div class="it">Select none</div>
+          <div class="it">Invert selection</div>
+          <hr>
+          <div class="lbl">By pattern</div>
+          <div class="it hl">Wagon Road to Evans <small>65</small></div>
+          <div class="it">Westminster Station to Englewood <small>65</small></div>
+          <div class="it">Wagon Road to Englewood <small>8</small></div>
+          <hr>
+          <div class="lbl">By status</div>
+          <div class="it">Not assigned to a block <small>0</small></div>
+          <div class="it">Run times have changed <small>0</small></div>
+          <hr>
+          <div class="it" style="color:var(--app-subtle)">Select by rule… <small>later</small></div>
+        </div>
+      </div>
+      <p class="now">Choosing an item replaces the selection. Holding Ctrl (⌘) while choosing adds to it, so "all Wagon Road to Evans plus all Wagon Road to Englewood" takes two clicks.</p>
+    </div>
+    <div class="stack">
+      <div class="shot-label"><h3>SEL-2 · Pattern chip shortcut</h3></div>
+      <div class="sel-stage m">
+        <table class="m-table" style="width:auto"><tbody>
+          <tr><td><span class="m-check"></span></td><td><span class="m-chip" style="box-shadow:0 0 0 2px var(--app-focus)">Wagon Rd–Evans</span></td><td class="r">4:08</td></tr>
+          <tr><td><span class="m-check"></span></td><td><span class="m-chip">Westminster–Englewood</span></td><td class="r dim">—</td></tr>
+          <tr><td><span class="m-check"></span></td><td><span class="m-chip">Wagon Rd–Evans</span></td><td class="r">4:38</td></tr>
+        </tbody></table>
+        <div class="m-pop" style="top:52px;left:120px;min-width:280px">
+          <div class="it hl">Select all 65 on Wagon Road to Evans</div>
+          <div class="it">Add them to the selection</div>
+          <div class="it">Remove them from the selection</div>
+        </div>
+      </div>
+      <p class="now">Clicking a chip opens this short menu. Ctrl-click (⌘-click) on a chip skips the menu and adds that pattern's trips to the selection. The menu makes the feature discoverable; the shortcut makes it fast.</p>
+    </div>
+  </div>
+  <div class="stack">
+    <div class="shot-label"><h3>SEL-3 · Select by rule (later package)</h3><span>A dialog that builds a selection from conditions</span></div>
+    <div class="shot"><div class="m" style="min-width:720px;max-width:760px;padding:16px">
+      <div class="m-work"><div class="m-work-h"><h4>Select trips by rule</h4><span class="sub">Southbound · Weekday</span></div>
+        <div class="m-work-b">
+          <div class="m-rule"><span class="m-select">Pattern</span><span class="m-select">is</span><span class="m-select">Wagon Road to Evans</span><span class="m-mini">✕</span></div>
+          <div class="m-rule"><span class="m-select">First departure</span><span class="m-select">after</span><span class="m-input">15:00</span><span class="m-mini">✕</span></div>
+          <div class="m-rule"><span class="m-select">Headway at…</span><span class="m-select">greater than</span><span style="display:flex;gap:8px"><span class="m-select" style="flex:1">Westminster Station</span><span class="m-input" style="width:70px">:10</span></span><span class="m-mini">✕</span></div>
+          <div style="padding-top:10px;display:flex;gap:8px;align-items:center"><span class="m-btn ghost">+ Add condition</span><div class="m-spacer"></div><span class="m-kv">Matches <b>12 trips</b></span></div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;padding:10px 14px;border-top:1px solid var(--app-border-soft)"><span class="m-btn">Cancel</span><span class="m-btn">Add to selection</span><span class="m-btn primary">Select 12 trips</span></div>
+      </div>
+    </div></div>
+    <p class="now">Conditions are combined with "and". Candidate fields: pattern; first departure or the time at a chosen timepoint (before, after, between); headway at a timepoint (greater than, less than, equal to); run time; block (is, is not, none); run times have changed. The matching rules would live in the application layer, which keeps them testable.</p>
+  </div>
+  <div class="decision"><span><strong>Decision SEL</strong> · Which levels to build now. <span class="rec">Recommended: SEL-1 and SEL-2 now; SEL-3 recorded as a later package</span></span><span>SEL-1 and SEL-2 are small and use data the screen already has. SEL-3 needs a rule model, a dialog, and tests of its own, so it is better as a separate package once the new layout has settled. SEL-1 keeps a disabled "Select by rule…" item as a placeholder only if you want it visible; otherwise it is left out until SEL-3 exists.</span></div>
+</section>
+
+<!-- ============ 5 BLOCKING ============ -->
+<section id="blocking" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Section 5</div>
+    <h2>Blocking tab</h2>
+    <p>The day summary becomes a stat strip above the Blocks table instead of a card beside it. For the Unassigned trips panel, two layouts avoid switching between side-by-side and stacked. Pick a layout, then switch between "6 unassigned" and "None left" to see what changes. The unassigned trips are illustrative.</p>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center">
+    <div class="seg" role="group" aria-label="Blocking layout">
+      <button type="button" data-bl="a" aria-pressed="true">BL-A · Side by side, collapses to a rail</button>
+      <button type="button" data-bl="b" aria-pressed="false">BL-B · Always stacked</button>
+    </div>
+    <div class="seg" role="group" aria-label="Unassigned trips state">
+      <button type="button" data-un="6" aria-pressed="true">6 unassigned</button>
+      <button type="button" data-un="0" aria-pressed="false">None left</button>
+    </div>
+  </div>
+  <p class="now" id="blExplain"></p>
+  <div class="shot"><div class="m" style="min-width:1280px">
+    <div class="m-appbar"><div class="m-brand"><i></i>Transit Costing Tool</div><nav class="m-tabs" style="margin-left:18px"><button>Route</button><button>Trips</button><button class="on">Blocking</button><button>Costing</button></nav><div class="m-spacer"></div><span class="m-status"><span class="dot"></span>Saved locally · <a href="#blocking">backup 3 days old</a></span></div>
+    <div class="m-context nowrap"><div class="m-switch"><button style="max-width:260px"><small>Project</small><span class="v">Federal Boulevard BRT 2029 Service Plan</span><span class="chev">▾</span></button><span class="sep">›</span><button style="max-width:220px"><small>Scenario</small><span class="v">Workbook Service Plan</span><span class="chev">▾</span></button></div><span class="m-divider"></span><label class="m-field"><span>Route</span><span class="m-select">Federal BRT</span></label><label class="m-field"><span>Trip profile</span><span class="m-select" style="min-width:90px">Default</span></label><label class="m-field"><span>Blocking scenario</span><span class="m-select">Workbook Blocks</span></label><label class="m-field"><span>Day</span><span class="m-select" style="min-width:100px">Weekday</span></label><span class="m-icon" title="Blocking scenario actions">⋯</span></div>
+    <div class="m-body">
+      <div class="blk-top side" id="blkTop">
+      <div class="m-work" id="unassignedPanel"></div>
+      <div class="m-work" style="min-width:0">
+        <div class="m-work-h"><h4>Current block</h4><span class="m-select" style="min-width:110px">Block 26</span><span class="sub">14 trips · 4:33 – 22:48 · Revenue 17.24 h · Layover 18.0%</span><div class="m-spacer"></div><span class="m-btn">New block</span><span class="m-icon" title="Block actions">⋯</span></div>
+        <div class="m-work-b">
+          <div class="m-selbar"><b>2 trips selected</b><span class="m-btn">Remove from block</span><span class="m-btn">Move to block…</span><span class="m-btn ghost">Clear</span></div>
+          <div class="m-tw"><table class="m-table" id="blockTable"><thead><tr><th style="width:28px"></th><th class="r">#</th><th>Activity</th><th>Pattern</th><th>Start</th><th class="r">From</th><th class="r">To</th><th>End</th><th class="r">Deadhead</th><th class="r">Layover</th><th class="c">Order</th><th></th></tr></thead><tbody></tbody></table></div>
+          <div style="padding-top:8px;display:grid;gap:4px"><span class="m-note ok">No current issues.</span><span class="m-note warn">Platform miles are incomplete: enter non-revenue miles for pull-out, pull-in, and deadhead.</span></div>
+        </div>
+      </div>
+      </div>
+      <div class="m-support"><div class="m-support-h"><h5>Weekday summary · 18 blocks</h5></div>
+        <div class="m-stats"><div><span>Revenue</span><b>311.59 h</b></div><div><span>Running</span><b>256.28 h</b></div><div><span>Platform</span><b>329.59 h</b></div><div><span>Layover</span><b>55.31 h</b></div><div><span>Deadhead</span><b>18.00 h</b></div><div><span>Revenue miles</span><b>4,488.50</b></div><div><span>Platform miles</span><b class="inc">Incomplete</b></div></div>
+      </div>
+      <div class="m-work"><div class="m-work-h"><h4>Blocks</h4><span class="sub">Weekday · select a block name to open it</span></div>
+        <div class="m-tw"><table class="m-table" id="blocksTable"><thead><tr><th>Block ▲</th><th class="r">Trips</th><th class="r">Pull-out</th><th class="r">Start</th><th class="r">End</th><th class="r">Pull-in</th><th class="r">Running (h)</th><th class="r">Layover (h)</th><th class="r">Layover %</th><th class="r">Revenue (h)</th><th class="r">Deadhead (h)</th></tr></thead><tbody></tbody><tfoot><tr><td>Total · 18 blocks</td><td></td><td></td><td></td><td></td><td></td><td class="r">256.28</td><td class="r">55.31</td><td class="r">17.8%</td><td class="r">311.59</td><td class="r">18.00</td></tr></tfoot></table></div>
+      </div>
+    </div>
+  </div></div>
+  <div class="doc-table-wrap"><table class="doc">
+    <thead><tr><th>Panel</th><th>Visible actions</th><th>In the ⋯ menu</th><th>On selection</th></tr></thead>
+    <tbody>
+      <tr><td>Context row</td><td>Four selectors</td><td>New / Rename / Duplicate / Delete blocking scenario, Export blocking CSV (ZIP)</td><td>—</td></tr>
+      <tr><td>Unassigned trips</td><td>"Compatible only" filter as a visible toggle, Clear filters</td><td>none</td><td>Selection bar: Assign to Block 26</td></tr>
+      <tr><td>Current block</td><td>Block selector, New block; "+ Add pull-out" and "+ Add pull-in" appear as table rows only when missing; "+ deadhead" on each gap (as today)</td><td>Rename block…, Edit notes…, Delete block…</td><td>Selection bar: Remove from block, Move to block…</td></tr>
+      <tr><td>Blocks</td><td>Sortable headings; block name opens it</td><td>none</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+  <div class="decision"><span><strong>Decision BL</strong> · BL-A or BL-B. <span class="rec">Recommended: BL-A</span></span><span>BL-A keeps today's side-by-side arrangement whenever there is something to assign. When the list empties, the panel shrinks to a narrow rail in the same place, so Current block widens but nothing moves to another row. The rail has a collapse button you can also use yourself, and that choice is remembered. BL-B never changes shape, but you lose the side-by-side view you find helpful, and a long unassigned list pushes Current block down the page.</span></div>
+</section>
+
+<!-- ============ 6 COSTING ============ -->
+<section id="costing" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Section 6</div>
+    <h2>Costing tab</h2>
+    <p>The assumptions form uses the same save bar as other panels instead of a Save button in its corner. Cost breakdown is the work surface; Exclusions and Yearly outlook become supporting panels.</p>
+  </div>
+  <div class="shot"><div class="m">
+    <div class="m-appbar"><div class="m-brand"><i></i>Transit Costing Tool</div><nav class="m-tabs" style="margin-left:18px"><button>Route</button><button>Trips</button><button>Blocking</button><button class="on">Costing</button></nav><div class="m-spacer"></div><span class="m-status dirty"><span class="dot"></span>Unsaved changes in Costing assumptions</span></div>
+    <div class="m-context"><div class="m-switch"><button><small>Project</small>Federal Boulevard BRT 2029 Service Plan<span class="chev">▾</span></button><span class="sep">›</span><button><small>Scenario</small>Workbook Service Plan<span class="chev">▾</span></button></div><span class="m-divider"></span><label class="m-field"><span>Blocking scenario</span><span class="m-select">Workbook Blocks</span></label><span class="m-kv">Trip profile <b>Default</b></span><label class="m-field"><span>View year</span><span class="m-select" style="min-width:90px">2026</span></label><div class="m-spacer"></div><span class="m-btn">Export costing CSV</span></div>
+    <div class="m-body">
+      <div class="m-work"><div class="m-work-h"><h4>Costing assumptions</h4><span class="sub">Shared by every blocking scenario in Workbook Service Plan</span></div>
+        <div class="m-work-b"><div class="m-form">
+          <label>Operating cost per revenue hour (USD)<span class="m-input edited">$142.50</span></label>
+          <label>Rate year<span class="m-input">2026</span></label>
+          <label>Source<span class="m-select" style="width:100%">User entered</span></label>
+          <label>First year of service<span class="m-input">2026</span></label>
+          <label>Future years<span class="m-input">10</span></label>
+          <label>Inflation rate (%)<span class="m-input">3.0</span></label>
+        </div><div style="padding-top:10px" class="m-kv">Annual service days: Weekday <b>255</b> · Saturday <b>52</b> · Sunday <b>52</b> · Holiday <b>6</b> · Total <b>365</b> of 365 · edit on the Route tab</div></div>
+        <div class="m-dirty"><span class="msg">1 unsaved change · the estimate below uses the saved rate until you save</span><button class="m-btn">Discard</button><button class="m-btn primary">Save assumptions</button></div>
+      </div>
+      <div class="m-work"><div class="m-work-h"><h4>Cost breakdown · 2026</h4><span class="m-badge warn">No estimate yet</span></div>
+        <div class="m-work-b">
+          <span class="m-note warn" style="padding-bottom:8px">Save an operating cost rate to calculate costs. Service quantities are shown below.</span>
+          <div class="m-tw"><table class="m-table"><thead><tr><th>Service day</th><th class="r">Days</th><th class="r">Blocks</th><th class="r">Daily revenue (h)</th><th class="r">Daily platform (h)</th><th class="r">Daily cost</th><th class="r">Annual revenue (h)</th><th class="r">Annual platform (h)</th><th class="r">Annual cost</th></tr></thead><tbody>
+            <tr><td>Weekday</td><td class="r">255</td><td class="r">18</td><td class="r">311.59</td><td class="r">329.59</td><td class="r dim">—</td><td class="r">79,456</td><td class="r">84,046</td><td class="r dim">—</td></tr>
+            <tr><td>Saturday</td><td class="r">52</td><td class="r">17</td><td class="r">280.94</td><td class="r">298.19</td><td class="r dim">—</td><td class="r">14,609</td><td class="r">15,506</td><td class="r dim">—</td></tr>
+            <tr><td>Sunday</td><td class="r">52</td><td class="r">17</td><td class="r">245.88</td><td class="r">262.88</td><td class="r dim">—</td><td class="r">12,786</td><td class="r">13,670</td><td class="r dim">—</td></tr>
+            <tr><td>Holiday</td><td class="r">6</td><td class="r">17</td><td class="r">245.88</td><td class="r">262.88</td><td class="r dim">—</td><td class="r">1,475</td><td class="r">1,577</td><td class="r dim">—</td></tr>
+          </tbody><tfoot><tr><td>Total</td><td class="r">365</td><td class="r">69</td><td></td><td></td><td></td><td class="r">108,327</td><td class="r">114,800</td><td class="r dim">—</td></tr></tfoot></table></div>
+          <p class="m-note" style="padding-top:8px">Totals are computed before rounding, so a total can differ by 1 from the sum of the rounded rows.</p>
+        </div>
+      </div>
+      <div class="m-cols" style="grid-template-columns:1fr 1fr">
+        <div class="m-support"><div class="m-support-h"><h5>Exclusions</h5></div><div class="m-support-b"><span class="m-note ok">No excluded blocks or unassigned trips.</span></div></div>
+        <div class="m-support"><div class="m-support-h"><h5>Yearly outlook</h5></div><div class="m-support-b"><span class="m-note">Appears after you save an operating cost rate.</span></div></div>
+      </div>
+    </div>
+  </div></div>
+  <p class="now">The daily-hours columns above show two decimals (F3-A in section 10). Today the Costing tab shows whole hours ("312") and Blocking shows two decimals ("311.59 h") for the same quantity. Saturday, Sunday, and Holiday daily hours in this mockup are derived from today's annual figures and are illustrative only.</p>
+  <div class="decision done"><span><strong>Decided · Costing layout approved</strong>; the field is labelled "Inflation rate (%)".</span></div>
+</section>
+
+<!-- ============ 7 SAVE + GRID ============ -->
+<section id="save" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Section 7 · interactive</div>
+    <h2>Save pattern and spreadsheet cells</h2>
+    <p>This is a working model of the Runtimes table with spreadsheet-style cells, together with the Service day counts that save automatically. Edit a few cells, then use Discard or Save. The status in the bar at the top follows what you do.</p>
+  </div>
+  <div class="option-grid">
+    <div class="card"><h3>The rule</h3><p class="meta">A single field that stands alone (a name, a service-day count, a selector) saves when you leave it and shows a brief "Saved". A table or form whose edits must be reviewed or saved together (Nodes, Pattern, Runtimes, Costing assumptions) collects edits and shows the save bar at the bottom of that panel.</p></div>
+    <div class="card"><h3>What stays the same</h3><p class="meta">The impact reviews (for example, saving a Pattern that changes trips) still open after you press Save. Leaving a tab with unsaved edits still asks first. Only the placement and look are being unified.</p></div>
+    <div class="card"><h3>Keys</h3><p class="meta"><span class="kbd">↑</span> <span class="kbd">↓</span> <span class="kbd">←</span> <span class="kbd">→</span> move · type to replace · <span class="kbd">Enter</span> or <span class="kbd">F2</span> edit · <span class="kbd">Enter</span> commit and move down · <span class="kbd">Tab</span> commit and move right · <span class="kbd">Esc</span> cancel. Run times accept <code>:05</code>, <code>:05:30</code>, <code>5</code>, or <code>5.5</code>.</p></div>
+  </div>
+  <div class="shot"><div class="m" id="demo">
+    <div class="m-appbar"><div class="m-brand"><i></i>Transit Costing Tool</div><nav class="m-tabs" style="margin-left:18px"><button>Route</button><button class="on">Trips</button><button>Blocking</button><button>Costing</button></nav><div class="m-spacer"></div><span class="m-status" id="demoStatus" aria-live="polite"><span class="dot"></span><span>All changes saved</span></span></div>
+    <div class="m-body">
+      <div class="m-support"><div class="m-support-h"><h5>Annual service days</h5><span class="m-note" style="margin-left:auto">Saves when you leave a field. The total cannot exceed 365.</span></div>
+        <div class="m-support-b sd-grid" id="sdGrid"></div>
+      </div>
+      <div class="m-work" id="rtWork">
+        <div class="m-work-h"><h4>Runtimes</h4><span class="sub">Southbound: Wagon Road to Evans · Weekday workbook runtimes</span></div>
+        <div class="m-tw" style="padding:0 0 0 0"><table class="m-table rt" id="grid" role="grid" aria-label="Runtime bands, editable"></table></div>
+        <div class="grid-msg" id="gridMsg" role="alert"></div>
+        <div class="m-dirty" id="demoDirty" hidden><span class="msg" id="demoDirtyMsg"></span><button class="m-btn" id="demoDiscard" type="button">Discard</button><button class="m-btn primary" id="demoSave" type="button">Save runtimes</button></div>
+      </div>
+    </div>
+  </div></div>
+  <div class="decision done"><span><strong>Decided · save rule and cell behaviour approved.</strong> <span class="kbd">Enter</span> moves down; <span class="kbd">Tab</span> moves across. The column headings now spread across the grid (the stacked headings were a style-name clash in this page, not the design).</span></div>
+</section>
+
+<!-- ============ 8 TOKENS ============ -->
+<section id="tokens" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Section 8 · explanation</div>
+    <h2>What design tokens are, and why they help here</h2>
+    <p>A design token is a named value for one visual decision, such as "the colour of a warning" or "the space between form fields". The stylesheet then refers to the name instead of repeating the raw value. It is the same idea as a named cell in a spreadsheet: change the value in one place and every formula that uses it updates.</p>
+  </div>
+  <div class="option-grid">
+    <div class="card"><span class="tag">Today</span><h3>168 colours, 21 font sizes, 7 corner radii</h3><p class="meta">Counted in <code>src/styles.css</code>. Many are near-duplicates (for example, five slightly different blue-greys for label text). Each was picked separately when a panel was built, which is why panels look subtly different from each other.</p></div>
+    <div class="card"><span class="tag">Proposed</span><h3>About 22 colours, 6 sizes, 2 radii</h3><p class="meta">Each named by its role, not its appearance: <code>--color-text-muted</code>, not <code>--grey-3</code>. A rule like "warnings are amber" is then enforced simply by everyone using the same name.</p></div>
+    <div class="card"><span class="tag">Cost</span><h3>Mostly mechanical</h3><p class="meta">Once you approve the values, replacing raw colours with token names is a find-and-map exercise with screenshot comparison, which suits a structural (Luna) package. It changes no behaviour.</p></div>
+  </div>
+  <h3>Example</h3>
+  <pre class="code">/* Today: the same idea written three different ways */
+.primary        { background: #1b668d; }
+.tab.active     { background: #24485d; }
+.menu-check     { color: #1b668d; }
+.trip-status    { color: #6b4d1c; }   /* warning text */
+.recalc-fallback{ color: #835521; }   /* also warning text, different brown */
+
+/* With tokens: one definition per role */
+:root {
+  --color-action:     #1b668d;
+  --color-warn-text:  #7f520f;
+}
+.primary, .tab.active { background: var(--color-action); }
+.menu-check           { color: var(--color-action); }
+.trip-status,
+.recalc-fallback      { color: var(--color-warn-text); }</pre>
+  <h3>Proposed colour roles</h3>
+  <p class="now">These are the exact values used in the mockups on this page.</p>
+  <div class="swatches" id="swatches"></div>
+  <ul class="plain">
+    <li><b>Spacing:</b> 4, 8, 12, 16, 24 px. <b>Radius:</b> 5 px for controls, 7 px for panels. <b>Type:</b> the six sizes in section 9.</li>
+    <li><b>Dark mode</b> becomes a matter of supplying a second set of values for the same names. It is not proposed now; tokens keep that door open at no extra cost.</li>
+  </ul>
+  <div class="decision done"><span><strong>Decided · tokens approved with this palette.</strong></span></div>
+</section>
+
+<!-- ============ 9 TYPE ============ -->
+<section id="type" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Section 9</div>
+    <h2>Typography: Source Sans 3</h2>
+    <p>Source Sans 3 is an open-source typeface from Adobe. It is narrower than Inter, which helps dense tables, and it has true fixed-width ("tabular") digits. The font files would be bundled with the app, so every computer shows the same font and no network request is made.</p>
+  </div>
+  <div class="specimen">
+    <div class="scale-row"><span>20 · page title</span><span style="font-size:20px;font-weight:700">Federal Boulevard BRT</span></div>
+    <div class="scale-row"><span>16 · panel title</span><span style="font-size:16px;font-weight:700">Current block</span></div>
+    <div class="scale-row"><span>14 · body / cells</span><span style="font-size:14px">Westminster Station → Clear Creek &amp; Federal · 4:27 · 5:04:30 · 26:01</span></div>
+    <div class="scale-row"><span>13 · notes</span><span style="font-size:13px;color:var(--app-muted)">Totals are computed before rounding, so a total can differ by 1.</span></div>
+    <div class="scale-row"><span>12 · labels, headings</span><span style="font-size:12px;font-weight:600;color:var(--app-muted)">Annual revenue (h) · Pull-out · Layover %</span></div>
+    <div class="scale-row"><span>11.5 · captions</span><span style="font-size:11.5px;font-weight:700;color:var(--app-subtle)">Project · Scenario</span></div>
+  </div>
+  <h3>Times in grids: proportional or monospaced</h3>
+  <div class="time-compare">
+    <div class="specimen"><b style="font-size:14px">TY-A · Source Sans 3, tabular digits</b><table id="tcA" style="font-family:var(--font-body)"></table></div>
+    <div class="specimen"><b style="font-size:14px">TY-B · Source Code Pro for times only</b><table id="tcB" style="font-family:var(--font-mono);font-size:13px"></table></div>
+  </div>
+  <div class="decision done"><span><strong>Decided · Source Sans 3 throughout; TY-A for times.</strong></span></div>
+</section>
+
+<!-- ============ 10 FORMATS ============ -->
+<section id="formats" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Section 10 · your choices</div>
+    <h2>Number formats</h2>
+    <p>Each item below lists where the app disagrees with itself today, with the options. One shared set of formatting functions would then apply the chosen format everywhere. The CSV exports keep their own full-precision formats and are not affected.</p>
+  </div>
+  <div id="formatList" class="stack-lg"></div>
+</section>
+
+<!-- ============ 11 TERMS ============ -->
+<section id="terms" class="stack-lg">
+  <div class="stack">
+    <div class="eyebrow">Section 11</div>
+    <h2>Terminology and sentence case</h2>
+    <p>Sentence case is agreed. One detail needs a choice: the domain glossary and the docs capitalise defined terms (Trip, Block, Blocking Scenario) as if they were proper nouns.</p>
+  </div>
+  <div class="fmt-opts">
+    <div class="fmt-opt"><b>T1-A · Lower-case everything except the first word</b> <span class="rec">Recommended</span><span class="sample">Unassigned trips · Current block · Blocking scenario</span><span class="why">Standard sentence case. The docs can keep capitals; only the interface changes.</span></div>
+    <div class="fmt-opt"><b>T1-B · Keep domain terms capitalised</b><span class="sample">Unassigned Trips · Current Block · Blocking Scenario</span><span class="why">Matches the docs exactly, but mixed capitals keep the interface looking inconsistent.</span></div>
+  </div>
+  <div class="doc-table-wrap"><table class="doc">
+    <thead><tr><th>Today</th><th>Proposed</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Profile (in the Runtimes header)</td><td>Runtime profile</td><td>"Profile" means two different things on the same tab</td></tr>
+      <tr><td>Profile (in the Trips header)</td><td>Trip profile</td><td>Same</td></tr>
+      <tr><td>Inflation Rate (%)</td><td>Inflation rate (%)</td><td>Sentence case. "Inflation" is kept (T3); the glossary entry gains "inflation rate" as the interface name for annual escalation.</td></tr>
+      <tr><td>Costing Assumptions · Cost Breakdown · Yearly Outlook</td><td>Costing assumptions · Cost breakdown · Yearly outlook</td><td>Sentence case</td></tr>
+      <tr><td>Add Time Band · Run Time · Next Trip</td><td>Add time band · Run time · Next trip</td><td>Sentence case</td></tr>
+      <tr><td>Backup project JSON · Restore project JSON</td><td>Back up project (JSON) · Restore project from backup…</td><td>"Backup" is a noun; the menu item is an action. The ellipsis marks items that open a dialog.</td></tr>
+      <tr><td>Run Times Have Changed</td><td>Run times have changed</td><td>Sentence case</td></tr>
+    </tbody>
+  </table></div>
+  <div class="decision done"><span><strong>Decided · T1-A; T3 "inflation".</strong></span></div>
+</section>
+
+<!-- ============ 12 DEFERRED ============ -->
+<section id="deferred" class="stack">
+  <div class="eyebrow">Section 12</div>
+  <h2>Recorded and deferred</h2>
+  <p>These items would be written into the UI/UX implementation plan as deferred, so they are not lost:</p>
+  <ul class="plain">
+    <li>Command palette (Ctrl/⌘ K) and keyboard shortcuts.</li>
+    <li>Glossary tooltips next to domain terms.</li>
+    <li>Team readiness: first-run screen with a sample project, in-app help, a "What's new" note, a clearer flow for sharing a project copy, and a settings page.</li>
+    <li>Accessibility beyond quick wins. The quick wins included in this revision: a visible focus outline on every control, label contrast that meets WCAG AA (the token palette above does), larger icon targets, and block numbers shown as text beside the colour.</li>
+    <li>Dropped: workflow-step tabs, left sidebar, density toggle.</li>
+  </ul>
+</section>
+
+</div>
+
+<script>
+(function () {
+  // ---------- Shared sample data (Federal Boulevard BRT, Weekday) ----------
+  const SEGMENTS = ['Wagon Road → 112th Ave', '112th Ave → 104th Ave', '104th Ave → Westminster Station', 'Westminster Station → Clear Creek & Federal', 'Clear Creek & Federal → Federal-32nd', 'Federal-32nd → Decatur-Federal', 'Decatur-Federal → Alameda', 'Alameda → Evans'];
+  const BANDS = [
+    { from: '0:00', to: '5:47', seg: [5, 2, 12, 5, 8, 7, 6, 8] },
+    { from: '5:47', to: '9:58', seg: [6, 2, 13, 5, 11, 8, 7, 9] },
+    { from: '9:58', to: '17:51', seg: [7, 2, 15, 6, 11, 8, 7, 9] },
+    { from: '17:51', to: '30:00', seg: [5, 2, 13, 5, 9, 7, 7, 9] },
+  ];
+  const STOPS = ['Wagon Road', '112th Ave', '104th Ave', 'Westminster Station', 'Clear Creek & Federal', 'Federal-32nd', 'Decatur-Federal', 'Alameda', 'Evans', 'Yale', 'Englewood'];
+  const TRIPS = [
+    ['Wagon Rd–Evans', ['4:08', '4:13', '4:15', '4:27', '4:32', '4:40', '4:47', '4:53', '5:01', '', ''], 53, 21, '#7d4fb0'],
+    ['Westminster–Englewood', ['', '', '', '4:43', '4:48', '4:56', '5:03', '5:09', '5:17', '5:19', '5:27'], 44, 12, '#b0457a'],
+    ['Wagon Rd–Evans', ['4:38', '4:43', '4:45', '4:57', '5:02', '5:10', '5:17', '5:23', '5:31', '', ''], 53, 23, '#c0392b'],
+    ['Westminster–Englewood', ['', '', '', '5:04:30', '5:09:30', '5:17:30', '5:24:30', '5:30:30', '5:38:30', '5:40:30', '5:48:30'], 44, 11, '#b8860b'],
+    ['Wagon Rd–Evans', ['4:53', '4:58', '5:00', '5:12', '5:17', '5:25', '5:32', '5:38', '5:46', '', ''], 53, 25, '#2e8b57'],
+    ['Westminster–Englewood', ['', '', '', '5:19:30', '5:24:30', '5:32:30', '5:39:30', '5:45:30', '5:53:30', '5:55:30', '6:03:30'], 44, 14, '#a0522d'],
+    ['Wagon Rd–Evans', ['5:08', '5:13', '5:15', '5:27', '5:32', '5:40', '5:47', '5:53', '6:01', '', ''], 53, 16, '#2b6cb0'],
+    ['Wagon Rd–Englewood', ['5:18', '5:23', '5:25', '5:37', '5:42', '5:50', '5:57', '6:03', '6:11', '6:13', '6:21'], 63, 18, '#6b8e23'],
+  ];
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  // Duration format F2-A: ":MM" under an hour, "h:mm" from an hour; seconds only when present.
+  function fmtDur(totalSeconds) {
+    const s = Math.round(totalSeconds); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); const sec = s % 60;
+    const mm = String(m).padStart(2, '0'); const ss = sec ? ':' + String(sec).padStart(2, '0') : '';
+    return h ? `${h}:${mm}${ss}` : `:${mm}${ss}`;
+  }
+
+  // ---------- Route tab ----------
+  const NODES = [['Wagon Road', 'terminal'], ['112th Ave', 'timepoint'], ['104th Ave', 'timepoint'], ['Westminster Station', 'terminal'], ['Clear Creek & Federal', 'timepoint'], ['Federal-32nd', 'timepoint'], ['Decatur-Federal', 'timepoint'], ['Alameda', 'timepoint'], ['Evans', 'terminal'], ['Yale', 'timepoint'], ['Englewood', 'terminal']];
+  document.querySelector('#nodesTable tbody').innerHTML = NODES.map(([n, t]) => `<tr><td>${esc(n)}</td><td class="dim">—</td><td class="m-type">${t === 'terminal' ? 'Terminal' : 'Timepoint'}</td><td></td><td class="r"><span class="m-mini" title="Delete node">✕</span></td></tr>`).join('') + '<tr class="addrow"><td colspan="5">+ New node</td></tr>';
+  const PATTERNS = [['Northbound', [['Englewood to Wagon Road', 11], ['Englewood to Westminster Station', 8], ['Evans to Wagon Road', 9, true]]], ['Southbound', [['Wagon Road to Englewood', 11], ['Wagon Road to Evans', 9], ['Westminster Station to Englewood', 8]]]];
+  document.getElementById('patternList').innerHTML = PATTERNS.map(([dir, list]) => `<div class="group">${dir}</div>` + list.map(([n, p, on]) => `<div class="${on ? 'on' : ''}"><b>${esc(n)}</b><small>${p} points</small></div>`).join('')).join('') + '<div class="addrow" style="color:var(--app-accent);font-weight:600">+ Add pattern</div>';
+  const POINTS = [['Evans', 0], ['Alameda', 2.233962], ['Decatur-Federal', 4.049057], ['Federal-32nd', 5.724528], ['Clear Creek & Federal', 8.756334], ['Westminster Station', 10.28221], ['104th Ave', 14.790027], ['112th Ave', 15.787332], ['Wagon Road', 18.5]];
+  document.querySelector('#pointsTable tbody').innerHTML = POINTS.map(([n, c], i) => `<tr><td class="r dim">${i + 1}</td><td><span class="m-select" style="height:24px;min-width:200px;border-color:transparent;background:transparent">${esc(n)}</span></td><td class="r">${c.toFixed(2)}</td><td class="r dim">${i ? (c - POINTS[i - 1][1]).toFixed(2) : '—'}</td><td class="r"><span class="m-mini" title="Move">⋮⋮</span><span class="m-mini" title="Remove point">✕</span></td></tr>`).join('') + '<tr class="addrow"><td></td><td colspan="4">+ Add node to pattern</td></tr>';
+
+  // ---------- Trips tab ----------
+  function runtimeTableHtml() {
+    return `<table class="m-table rt"><thead><tr><th>From</th><th>To</th>${SEGMENTS.map((s) => `<th class="segh">${esc(s)}</th>`).join('')}<th class="r">Total</th><th></th></tr></thead><tbody>${BANDS.map((b) => `<tr><td class="cell"><span>${b.from}</span></td><td class="cell"><span>${b.to}</span></td>${b.seg.map((m) => `<td class="cell"><span>${fmtDur(m * 60)}</span></td>`).join('')}<td class="total">${fmtDur(b.seg.reduce((a, c) => a + c, 0) * 60)}</td><td class="r"><span class="m-mini" title="Duplicate band">⧉</span><span class="m-mini" title="Delete band">✕</span></td></tr>`).join('')}<tr class="addrow"><td colspan="12">+ Add time band</td></tr></tbody></table>`;
+  }
+  function runtimeTransposedHtml() {
+    return `<table class="m-table rt"><thead><tr><th>Segment</th>${BANDS.map((b) => `<th class="r">${b.from}–${b.to}</th>`).join('')}</tr></thead><tbody>${SEGMENTS.map((s, i) => `<tr><td style="white-space:normal;line-height:1.2;padding:4px 8px">${esc(s)}</td>${BANDS.map((b) => `<td class="cell r"><span>${fmtDur(b.seg[i] * 60)}</span></td>`).join('')}</tr>`).join('')}</tbody><tfoot><tr><td>Total</td>${BANDS.map((b) => `<td class="r">${fmtDur(b.seg.reduce((a, c) => a + c, 0) * 60)}</td>`).join('')}</tr></tfoot></table><div style="padding:8px 0;color:var(--app-accent);font-weight:600">+ Add time band</div>`;
+  }
+  function tripsTableHtml(limit) {
+    const rows = TRIPS.slice(0, limit);
+    return `<div class="m-tw"><table class="m-table"><thead><tr><th style="width:26px"><span class="m-check"></span></th><th>Pattern</th>${STOPS.map((s) => `<th class="r" style="white-space:normal;max-width:80px">${esc(s)}</th>`).join('')}<th class="r">Run time</th><th>Block</th></tr></thead><tbody>${rows.map(([p, times, run, blk, col], i) => `<tr class="${i === 1 || i === 2 ? 'sel' : ''}"><td><span class="m-check ${i === 1 || i === 2 ? 'on' : ''}"></span></td><td><span class="m-chip">${esc(p)}</span></td>${times.map((t) => `<td class="r ${t ? '' : 'dim'}">${t || '—'}</td>`).join('')}<td class="r">${fmtDur(run * 60)}</td><td><span class="m-pill"><i style="background:${col}"></i>${blk}</span></td></tr>`).join('')}</tbody></table></div>`;
+  }
+  const tripsHeader = (extra = '') => `<div class="m-work-h"><h4>Trips</h4><span class="sub">138</span>${extra}<label class="m-field" style="margin-left:12px"><span>Trip profile</span><span class="m-select" style="min-width:90px">Default</span></label><label class="m-field"><span>Blocking scenario</span><span class="m-select">Workbook Blocks</span></label><div class="m-spacer"></div><span class="m-btn">View ▾</span><span class="m-btn">Add trip</span><span class="m-btn primary">Build trips…</span><span class="m-icon" title="Trip actions">⋯</span></div>`;
+  const selbar = '<div class="m-selbar"><b>2 trips selected</b><span class="m-btn">Shift…</span><span class="m-btn">Change pattern…</span><span class="m-btn">Assign block…</span><span class="m-btn">Unassign</span><span class="m-btn danger">Delete…</span><span class="m-btn ghost">Clear</span></div>';
+  const runtimeSelectors = '<label class="m-field"><span>Pattern</span><span class="m-select">Wagon Road to Evans</span></label><label class="m-field"><span>Runtime profile</span><span class="m-select">Weekday workbook runtimes</span></label>';
+  let rtExpanded = false; let rcView = 'trips';
+  const EXPLAIN = {
+    a: 'R-A: Runtimes is a one-line summary above the trips. "Edit runtimes" expands it in place; select it in the mockup to try.',
+    b: 'R-B: Runtimes open in a drawer over the right side of the Trips table. The table is turned sideways (segments as rows) to fit the drawer.',
+    c: 'R-C: A switch in the Trips panel header swaps between the timetable and the runtimes. Select "Runtimes" in the mockup to try.',
+  };
+  function renderTrips(opt) {
+    const body = document.getElementById('tripsBody');
+    document.getElementById('rtExplain').textContent = EXPLAIN[opt];
+    if (opt === 'a') {
+      const head = `<div class="m-section-collapsed"><span class="twist">${rtExpanded ? '▾' : '▸'}</span><h4>Runtimes</h4><span class="m-kv"><b>Wagon Road to Evans</b> · Weekday workbook runtimes · 4 bands · run time ${fmtDur(53 * 60)}–${fmtDur(65 * 60)} · band at segment start</span><div class="m-spacer"></div>${rtExpanded ? runtimeSelectors + '<span class="m-icon" title="Runtime actions">⋯</span>' : ''}<button class="m-btn" type="button" id="rtToggle">${rtExpanded ? 'Close' : 'Edit runtimes'}</button></div>`;
+      body.innerHTML = `<div class="m-work">${head}${rtExpanded ? `<div class="m-tw" style="border-top:1px solid var(--app-border-soft)">${runtimeTableHtml()}</div>` : ''}</div><div class="m-work">${tripsHeader()}<div class="m-work-b">${selbar}${tripsTableHtml(rtExpanded ? 4 : 8)}</div></div>`;
+      document.getElementById('rtToggle').onclick = () => { rtExpanded = !rtExpanded; renderTrips('a'); };
+    } else if (opt === 'b') {
+      body.innerHTML = `<div class="m-work">${tripsHeader('<span class="m-btn" style="margin-left:8px">Runtimes ◂</span>')}<div class="m-work-b">${selbar}${tripsTableHtml(8)}</div></div><div class="m-drawer"><div class="m-work-h"><h4>Runtimes</h4><div class="m-spacer"></div><span class="m-icon" title="Runtime actions">⋯</span><span class="m-icon" title="Close">✕</span></div><div class="m-work-b"><div class="m-inline-fields" style="padding-bottom:10px">${runtimeSelectors.replace(/class="m-field"/g, 'class="m-field" style="display:grid;gap:3px"')}</div>${runtimeTransposedHtml()}</div></div>`;
+    } else {
+      const ctl = `<span class="m-segctl" style="margin-left:10px"><button type="button" data-v="trips" class="${rcView === 'trips' ? 'on' : ''}">Timetable</button><button type="button" data-v="rt" class="${rcView === 'rt' ? 'on' : ''}">Runtimes</button></span>`;
+      if (rcView === 'trips') body.innerHTML = `<div class="m-work">${tripsHeader(ctl)}<div class="m-work-b">${selbar}${tripsTableHtml(8)}</div></div>`;
+      else body.innerHTML = `<div class="m-work"><div class="m-work-h"><h4>Trips</h4>${ctl}<span class="m-badge warn" style="margin-left:8px">Run times have changed on 0 trips</span><div class="m-spacer"></div>${runtimeSelectors}<span class="m-icon" title="Runtime actions">⋯</span></div><div class="m-tw">${runtimeTableHtml()}</div></div>`;
+      body.querySelectorAll('.m-segctl button').forEach((b) => { b.onclick = () => { rcView = b.dataset.v; renderTrips('c'); }; });
+    }
+  }
+  document.querySelectorAll('[data-rt]').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('[data-rt]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    renderTrips(b.dataset.rt);
+  }));
+  renderTrips('a');
+
+  // ---------- Blocking tab ----------
+  const ACT = [['Pull-out', '', 'Garage', '4:33', '5:03', 'Evans', '', '']];
+  const BT = [['5:03', '5:57', 'N'], ['6:17', '7:18', 'S'], ['7:31', '8:33', 'N'], ['8:47', '9:48', 'S'], ['10:01', '11:06', 'N'], ['11:13', '12:18', 'S'], ['12:31', '13:36', 'N'], ['13:43', '14:48', 'S']];
+  const LAY = [':19', ':13', ':13', ':13', ':06', ':13', ':06', ':15'];
+  let bt = `<tr><td></td><td></td><td>Pull-out</td><td></td><td class="dim">Garage</td><td class="r">4:33</td><td class="r">5:03</td><td>Evans</td><td class="r dim">—</td><td class="r dim">—</td><td></td><td class="r"><span class="m-btn" style="height:24px">Edit</span></td></tr>`;
+  BT.forEach(([f, t, d], i) => {
+    const sel = i === 2 || i === 3;
+    bt += `<tr class="${sel ? 'sel' : ''}"><td><span class="m-check ${sel ? 'on' : ''}"></span></td><td class="r dim">${i + 1}</td><td>Trip</td><td><span class="m-chip">${d === 'N' ? 'NB Evans–Wagon Rd' : 'SB Wagon Rd–Evans'}</span></td><td>${d === 'N' ? 'Evans' : 'Wagon Road'}</td><td class="r">${f}</td><td class="r">${t}</td><td>${d === 'N' ? 'Wagon Road' : 'Evans'}</td><td class="r"><span class="m-mini" title="Add deadhead">+</span></td><td class="r">${LAY[i]}</td><td class="c"><span class="m-mini">↑</span><span class="m-mini">↓</span></td><td class="r"><span class="m-mini" title="Remove">✕</span></td></tr>`;
+  });
+  bt += `<tr><td></td><td></td><td colspan="10" class="dim">… 6 more trips, ending 22:18 at Evans …</td></tr><tr><td></td><td></td><td>Pull-in</td><td></td><td>Evans</td><td class="r">22:18</td><td class="r">22:48</td><td class="dim">Garage</td><td class="r dim">—</td><td class="r dim">—</td><td></td><td class="r"><span class="m-btn" style="height:24px">Edit</span></td></tr>`;
+  document.querySelector('#blockTable tbody').innerHTML = bt;
+  const BLOCKS = [[11, 16, '3:31', '4:01', '19:51', '20:21', 13.27, 2.58, 16.3, 15.84], [12, 20, '4:13', '4:43', '26:01', '26:31', 17.17, 4.13, 19.4, 21.30], [13, 20, '4:01', '4:31', '25:27', '25:57', 16.97, 3.97, 18.9, 20.93], [14, 20, '4:49', '5:19', '26:11', '26:41', 16.97, 3.89, 18.7, 20.86], [15, 15, '4:16', '4:46', '19:32', '20:02', 12.47, 2.30, 15.6, 14.77], [25, 17, '4:23', '4:53', '26:27', '26:57', 17.37, 4.20, 19.5, 21.57], [26, 14, '4:33', '5:03', '22:18', '22:48', 14.13, 3.11, 18.0, 17.24], [27, 12, '4:38', '5:08', '19:45', '20:15', 12.37, 2.26, 15.4, 14.63]];
+  document.querySelector('#blocksTable tbody').innerHTML = BLOCKS.map((b) => `<tr class="${b[0] === 26 ? 'active' : ''}"><td><span class="m-a">${b[0]}</span></td><td class="r">${b[1]}</td><td class="r">${b[2]}</td><td class="r">${b[3]}</td><td class="r">${b[4]}</td><td class="r">${b[5]}</td><td class="r">${b[6].toFixed(2)}</td><td class="r">${b[7].toFixed(2)}</td><td class="r">${b[8].toFixed(1)}%</td><td class="r">${b[9].toFixed(2)}</td><td class="r">1.00</td></tr>`).join('') + '<tr><td colspan="11" class="dim">… 10 more blocks …</td></tr>';
+
+  // ---------- Headway identification (illustrative evening transition) ----------
+  const toS = (t) => { const p = t.split(':').map(Number); return p[0] * 3600 + p[1] * 60 + (p[2] || 0); };
+  const clock = (s) => { const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); const x = s % 60; return `${h}:${String(m).padStart(2, '0')}${x ? ':' + String(x).padStart(2, '0') : ''}`; };
+  const WRE = [0, 5, 7, 19, 24, 32, 39, 45, 53]; const WEN = [0, 5, 13, 20, 26, 34, 36, 44];
+  const hwRows = [];
+  ['17:45', '18:00', '18:15', '18:30', '18:45', '19:00'].forEach((w) => { const base = toS(w) - 19 * 60; hwRows.push({ p: 'Wagon Rd–Evans', t: STOPS.map((_, i) => (i < 9 ? base + WRE[i] * 60 : null)) }); });
+  ['17:37:30', '17:52:30', '18:07:30', '18:22:30'].forEach((w) => { const base = toS(w); hwRows.push({ p: 'Westminster–Englewood', t: STOPS.map((_, i) => (i >= 3 ? base + WEN[i - 3] * 60 : null)) }); });
+  hwRows.sort((a, b) => a.t[3] - b.t[3]);
+  // Headway per cell = gap to the previous row with a time in the same column.
+  hwRows.forEach((row, r) => { row.h = row.t.map((t, c) => { if (t === null) return undefined; for (let k = r - 1; k >= 0; k--) if (hwRows[k].t[c] !== null) return t - hwRows[k].t[c]; return null; }); });
+  function renderHw(opt) {
+    const mark = document.getElementById('hwMark').checked;
+    document.getElementById('hwExplain').textContent = {
+      b: 'HW-B: a "Departs" column (the trip\'s first scheduled time) appears beside Pattern while headways are shown. These columns stay in place when you scroll sideways.',
+      a: 'HW-A: each cell shows the headway, with that trip\'s time at the timepoint underneath in small type.',
+      c: 'HW-C: each cell keeps the time and adds the headway beside it in small type.',
+    }[opt];
+    const pinB = opt === 'b';
+    const pin = (i, last) => (pinB ? ` pin${last ? ' pin-last' : ''}" style="left:${[0, 34, 204][i]}px;min-width:${[34, 170, 70][i]}px;max-width:${[34, 170, 70][i]}px` : '');
+    let h = `<thead><tr><th class="${pin(0)}"><span class="m-check"></span></th><th class="${pin(1, !pinB)}">Pattern</th>${pinB ? `<th class="r${pin(2, true)}">Departs</th>` : ''}${STOPS.map((s) => `<th class="r" style="white-space:normal;max-width:80px">${esc(s)}</th>`).join('')}<th class="r">Run time</th></tr></thead><tbody>`;
+    hwRows.forEach((row, r) => {
+      const first = row.t.find((x) => x !== null); const last = [...row.t].reverse().find((x) => x !== null);
+      h += `<tr class="${r === 8 ? 'sel' : ''}"><td class="${pin(0)}"><span class="m-check ${r === 8 ? 'on' : ''}"></span></td><td class="${pin(1)}"><span class="m-chip">${row.p}</span></td>${pinB ? `<td class="r${pin(2, true)}"><b>${clock(first)}</b></td>` : ''}`;
+      row.t.forEach((t, c) => {
+        if (t === null) { h += '<td class="r dim">—</td>'; return; }
+        const hw = row.h[c];
+        let prevHw; for (let k = r - 1; k >= 0; k--) if (hwRows[k].t[c] !== null) { prevHw = hwRows[k].h[c]; break; }
+        const chg = mark && hw !== null && prevHw !== undefined && prevHw !== null && prevHw !== hw;
+        const cls = `r t${chg ? ' chg' : ''}`;
+        if (hw === null) { h += `<td class="${cls} first" title="First scheduled time">${clock(t)}</td>`; return; }
+        if (opt === 'a') h += `<td class="${cls}"><span class="two"><b>${fmtDur(hw)}</b><small>${clock(t)}</small></span></td>`;
+        else if (opt === 'c') h += `<td class="${cls}"><span class="inl">${clock(t)}<small>${fmtDur(hw)}</small></span></td>`;
+        else h += `<td class="${cls}" title="${clock(t)}">${fmtDur(hw)}</td>`;
+      });
+      h += `<td class="r">${fmtDur(last - first)}</td></tr>`;
+    });
+    document.getElementById('hwTable').innerHTML = h + '</tbody>';
+  }
+  let hwOpt = 'b';
+  document.querySelectorAll('[data-hw]').forEach((b) => b.addEventListener('click', () => { document.querySelectorAll('[data-hw]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); hwOpt = b.dataset.hw; renderHw(hwOpt); }));
+  document.getElementById('hwMark').addEventListener('change', () => renderHw(hwOpt));
+  renderHw('b');
+
+  // ---------- Blocking: unassigned trips layouts (illustrative trips) ----------
+  const UN = [
+    ['NB Evans–Wagon Rd', 'Evans', '22:33', '23:30', 'Wagon Road', 'ok', 'Fits · layover :15'],
+    ['SB Wagon Rd–Evans', 'Wagon Road', '23:41', '24:38', 'Evans', 'dh', 'Deadhead needed'],
+    ['SB Westminster–Englewood', 'Westminster Station', '22:52:30', '23:36:30', 'Englewood', 'dh', 'Deadhead needed'],
+    ['NB Englewood–Westminster', 'Englewood', '6:02', '6:46', 'Westminster Station', 'no', 'Overlaps #2'],
+    ['NB Evans–Wagon Rd', 'Evans', '15:18', '16:15', 'Wagon Road', 'no', 'Overlaps #9'],
+    ['SB Wagon Rd–Englewood', 'Wagon Road', '5:18', '6:21', 'Englewood', 'no', 'Overlaps #1'],
+  ];
+  let blOpt = 'a'; let unCount = 6;
+  function renderBl() {
+    const top = document.getElementById('blkTop'); const panel = document.getElementById('unassignedPanel');
+    document.getElementById('blExplain').textContent = blOpt === 'a'
+      ? (unCount ? 'BL-A with trips left: side by side, as today. The ◂ button collapses the panel to a rail by hand.' : 'BL-A with none left: the panel shrinks to a rail in the same column. Current block widens; nothing moves to a different row.')
+      : (unCount ? 'BL-B with trips left: the list sits above Current block at full width, at most about six rows tall, then scrolls.' : 'BL-B with none left: the panel is one line above Current block.');
+    const head = (wide) => `<div class="m-work-h"><h4>Unassigned trips</h4><span class="sub">6</span><div class="m-spacer"></div><span class="m-toggle">Compatible only</span>${wide ? '' : '<span class="m-icon" title="Collapse to rail">◂</span>'}</div>`;
+    const fit = (k, t) => `<span class="m-fit ${k}">${t}</span>`;
+    const assign = (k) => (k === 'no' ? '' : '<span class="m-btn" style="height:24px">Assign</span>');
+    const sel = '<div class="m-selbar"><b>1 selected</b><span class="m-btn primary">Assign to Block 26</span><span class="m-btn ghost">Clear</span></div>';
+    if (blOpt === 'a' && unCount) {
+      top.className = 'blk-top side';
+      panel.innerHTML = head(false) + `<div class="m-work-b">${sel}<div class="m-tw"><table class="m-table"><thead><tr><th style="width:24px"></th><th>Pattern</th><th class="r">From</th><th class="r">To</th><th>Fit with Block 26</th><th></th></tr></thead><tbody>${UN.map((u, i) => `<tr class="${i === 0 ? 'sel' : ''}"><td><span class="m-check ${i === 0 ? 'on' : ''}"></span></td><td><span class="m-chip">${u[0]}</span></td><td class="r">${u[2]}</td><td class="r">${u[3]}</td><td style="white-space:normal;line-height:1.2">${fit(u[5], u[6])}</td><td class="r">${assign(u[5])}</td></tr>`).join('')}</tbody></table></div></div>`;
+    } else if (blOpt === 'a') {
+      top.className = 'blk-top rail';
+      panel.innerHTML = '<div class="m-rail" title="Unassigned trips: none. Select to expand."><span class="m-mini">▸</span><span class="cnt">0</span><span class="vt">Unassigned trips · none left</span></div>';
+    } else if (unCount) {
+      top.className = 'blk-top stack';
+      panel.innerHTML = head(true) + `<div class="m-work-b">${sel}<div class="m-tw m-scrollbox"><table class="m-table"><thead><tr><th style="width:24px"></th><th>Pattern</th><th>Start</th><th class="r">From</th><th class="r">To</th><th>End</th><th>Fit with Block 26</th><th></th></tr></thead><tbody>${UN.map((u, i) => `<tr class="${i === 0 ? 'sel' : ''}"><td><span class="m-check ${i === 0 ? 'on' : ''}"></span></td><td><span class="m-chip">${u[0]}</span></td><td>${u[1]}</td><td class="r">${u[2]}</td><td class="r">${u[3]}</td><td>${u[4]}</td><td>${fit(u[5], u[6])}</td><td class="r">${assign(u[5])}</td></tr>`).join('')}</tbody></table></div></div>`;
+    } else {
+      top.className = 'blk-top stack';
+      panel.innerHTML = '<div class="m-section-collapsed"><span class="twist">▸</span><h4>Unassigned trips</h4><span class="m-note ok">None on Federal BRT, Weekday</span></div>';
+    }
+  }
+  document.querySelectorAll('[data-bl]').forEach((b) => b.addEventListener('click', () => { document.querySelectorAll('[data-bl]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); blOpt = b.dataset.bl; renderBl(); }));
+  document.querySelectorAll('[data-un]').forEach((b) => b.addEventListener('click', () => { document.querySelectorAll('[data-un]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); unCount = Number(b.dataset.un); renderBl(); }));
+  renderBl();
+
+  // ---------- Interactive save + grid demo ----------
+  const statusEl = document.getElementById('demoStatus');
+  function setStatus(kind, text) { statusEl.className = 'm-status' + (kind ? ' ' + kind : ''); statusEl.lastElementChild.textContent = text; }
+  let sdSaved = [['Weekday', 255], ['Saturday', 52], ['Sunday', 52], ['Holiday', 6]];
+  const sdGrid = document.getElementById('sdGrid');
+  sdGrid.innerHTML = sdSaved.map(([n, v], i) => `<label for="sd${i}">${n}<input id="sd${i}" inputmode="numeric" value="${v}"></label><span class="flash" id="sdf${i}"></span>`).join('') + '<span class="m-kv" id="sdTotal" style="padding-bottom:6px"></span>';
+  const sdTotal = () => sdSaved.reduce((a, [, v]) => a + v, 0);
+  const showTotal = () => { document.getElementById('sdTotal').innerHTML = `Total <b>${sdTotal()}</b> of 365`; };
+  showTotal();
+  sdSaved.forEach((_, i) => {
+    const input = document.getElementById('sd' + i); const flash = document.getElementById('sdf' + i);
+    input.addEventListener('change', () => {
+      const v = Number(input.value.trim());
+      const other = sdTotal() - sdSaved[i][1];
+      flash.classList.remove('err');
+      if (!Number.isInteger(v) || v < 0) { flash.textContent = 'Enter a whole number of 0 or more'; flash.classList.add('err', 'show'); input.value = sdSaved[i][1]; return; }
+      if (other + v > 365) { flash.textContent = `Total would be ${other + v} of 365`; flash.classList.add('err', 'show'); input.value = sdSaved[i][1]; return; }
+      if (v === sdSaved[i][1]) return;
+      setStatus('saving', 'Saving…');
+      setTimeout(() => { sdSaved[i][1] = v; showTotal(); flash.textContent = '✓ Saved'; flash.classList.add('show'); refreshStatus(); setTimeout(() => flash.classList.remove('show'), 1800); }, 450);
+    });
+  });
+
+  const COLS = 10; // From, To, 8 segments
+  let saved = BANDS.map((b) => [b.from, b.to, ...b.seg.map((m) => m * 60)]);
+  let cur = saved.map((r) => r.slice());
+  let active = { r: 0, c: 2 }; let editing = null;
+  const grid = document.getElementById('grid'); const msg = document.getElementById('gridMsg');
+  function parseTime(s) { const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim()); if (!m || Number(m[2]) > 59) return null; return `${Number(m[1])}:${m[2]}`; }
+  function parseDur(s) {
+    s = s.trim(); let m;
+    if ((m = /^\d+(\.\d+)?$/.exec(s))) return Math.round(parseFloat(s) * 60);
+    if ((m = /^:?(\d{1,3}):(\d{2})$/.exec(s)) && Number(m[2]) < 60) return Number(m[1]) * 60 + Number(m[2]);
+    if ((m = /^:(\d{1,3})$/.exec(s))) return Number(m[1]) * 60;
+    return null;
+  }
+  const show = (c, v) => (c < 2 ? v : fmtDur(v));
+  function drawGrid() {
+    let h = `<thead><tr><th>From</th><th>To</th>${SEGMENTS.map((s) => `<th class="segh">${esc(s)}</th>`).join('')}<th class="r">Total</th></tr></thead><tbody>`;
+    cur.forEach((row, r) => {
+      h += '<tr>' + row.map((v, c) => `<td class="cell${saved[r][c] !== v ? ' dirty' : ''}" role="gridcell" data-r="${r}" data-c="${c}" tabindex="-1"><span>${show(c, v)}</span></td>`).join('') + `<td class="total">${fmtDur(row.slice(2).reduce((a, x) => a + x, 0))}</td></tr>`;
+    });
+    grid.innerHTML = h + '</tbody>';
+    const cell = cellAt(active.r, active.c); cell.tabIndex = 0; cell.classList.add('active');
+    refreshStatus();
+  }
+  const cellAt = (r, c) => grid.querySelector(`td[data-r="${r}"][data-c="${c}"]`);
+  function dirtyCount() { let n = 0; cur.forEach((row, r) => row.forEach((v, c) => { if (saved[r][c] !== v) n++; })); return n; }
+  function refreshStatus() {
+    const n = dirtyCount(); const bar = document.getElementById('demoDirty');
+    bar.hidden = n === 0;
+    document.getElementById('demoDirtyMsg').textContent = `${n} unsaved change${n === 1 ? '' : 's'} in Runtimes`;
+    if (statusEl.classList.contains('saving')) return;
+    if (n) setStatus('dirty', 'Unsaved changes in Runtimes'); else setStatus('', 'All changes saved');
+  }
+  function move(r, c, focus = true) {
+    active = { r: Math.max(0, Math.min(cur.length - 1, r)), c: Math.max(0, Math.min(COLS - 1, c)) };
+    grid.querySelectorAll('td.cell').forEach((td) => { td.classList.remove('active'); td.tabIndex = -1; });
+    const cell = cellAt(active.r, active.c); cell.classList.add('active'); cell.tabIndex = 0; if (focus) cell.focus();
+  }
+  function startEdit(initial) {
+    const { r, c } = active; const cell = cellAt(r, c);
+    const input = document.createElement('input');
+    input.value = initial !== undefined ? initial : show(c, cur[r][c]);
+    input.setAttribute('aria-label', `${c < 2 ? (c ? 'To' : 'From') : SEGMENTS[c - 2]}, band ${r + 1}`);
+    cell.appendChild(input); input.focus(); if (initial === undefined) input.select();
+    editing = { input, r, c };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); if (commit()) move(r + (e.shiftKey ? -1 : 1), c); }
+      else if (e.key === 'Tab') { e.preventDefault(); if (commit()) move(r, c + (e.shiftKey ? -1 : 1)); }
+      else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+    input.addEventListener('blur', () => { if (editing && editing.input === input) { if (!commit()) cancel(); } });
+  }
+  function commit() {
+    if (!editing) return true;
+    const { input, r, c } = editing; const raw = input.value;
+    const v = c < 2 ? parseTime(raw) : parseDur(raw);
+    if (v === null) {
+      msg.textContent = c < 2 ? `"${raw}" is not a time. Use H:MM, for example 5:47 or 26:10.` : `"${raw}" is not a run time. Use :MM, :MM:SS, or decimal minutes, for example :07, :07:30, or 7.5.`;
+      cellAt(r, c).classList.add('invalid'); return false;
+    }
+    msg.textContent = ''; editing = null; cur[r][c] = v; drawGrid(); move(r, c); return true;
+  }
+  function cancel() { if (!editing) return; const { r, c } = editing; editing = null; msg.textContent = ''; drawGrid(); move(r, c); }
+  grid.addEventListener('click', (e) => { const td = e.target.closest('td.cell'); if (!td || editing) return; move(Number(td.dataset.r), Number(td.dataset.c)); });
+  grid.addEventListener('dblclick', (e) => { const td = e.target.closest('td.cell'); if (!td || editing) return; move(Number(td.dataset.r), Number(td.dataset.c)); startEdit(); });
+  grid.addEventListener('keydown', (e) => {
+    if (editing) return;
+    const { r, c } = active;
+    const keys = { ArrowUp: [r - 1, c], ArrowDown: [r + 1, c], ArrowLeft: [r, c - 1], ArrowRight: [r, c + 1] };
+    if (keys[e.key]) { e.preventDefault(); move(...keys[e.key]); }
+    else if (e.key === 'Enter' || e.key === 'F2') { e.preventDefault(); startEdit(); }
+    else if (e.key === 'Tab' && !e.shiftKey && c < COLS - 1) { e.preventDefault(); move(r, c + 1); }
+    else if (e.key === 'Tab' && e.shiftKey && c > 0) { e.preventDefault(); move(r, c - 1); }
+    else if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); startEdit(''); }
+    else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); startEdit(e.key); }
+  });
+  document.getElementById('demoDiscard').onclick = () => { cur = saved.map((x) => x.slice()); msg.textContent = ''; editing = null; drawGrid(); };
+  document.getElementById('demoSave').onclick = () => {
+    const btn = document.getElementById('demoSave'); btn.disabled = true; btn.textContent = 'Saving…'; setStatus('saving', 'Saving…');
+    setTimeout(() => { saved = cur.map((x) => x.slice()); btn.disabled = false; btn.textContent = 'Save runtimes'; statusEl.classList.remove('saving'); drawGrid(); move(active.r, active.c, false); }, 700);
+  };
+  drawGrid(); move(0, 2, false);
+
+  // ---------- Swatches ----------
+  const SW = [['--app-canvas', 'Page background'], ['--app-surface', 'Work surface'], ['--app-surface-2', 'Supporting panel, table heading'], ['--app-sunken', 'Chips, disabled fill'], ['--app-border', 'Control and panel border'], ['--app-border-soft', 'Row and divider lines'], ['--app-text', 'Body text'], ['--app-muted', 'Labels, secondary text'], ['--app-subtle', 'Placeholders, captions'], ['--app-accent', 'Primary action, active tab'], ['--app-accent-strong', 'Primary action hover'], ['--app-accent-soft', 'Selected item'], ['--app-focus', 'Keyboard focus ring'], ['--app-sel', 'Selected rows'], ['--app-warn', 'Warning text'], ['--app-warn-soft', 'Warning fill, unsaved bar'], ['--app-warn-border', 'Warning border, edited cell'], ['--app-danger', 'Error and delete text'], ['--app-danger-soft', 'Error fill'], ['--app-ok', 'Confirmation text'], ['--app-ok-soft', 'Confirmation fill']];
+  const cs = getComputedStyle(document.documentElement);
+  document.getElementById('swatches').innerHTML = SW.map(([t, role]) => `<div class="swatch"><i style="background:var(${t})"></i><div>${role}<b>${t.replace('--app-', '--color-')} ${cs.getPropertyValue(t).trim()}</b></div></div>`).join('');
+
+  // ---------- Typography comparison ----------
+  const tcRows = TRIPS.slice(0, 5).map(([, t]) => `<tr>${t.slice(3, 9).map((x) => `<td>${x || '—'}</td>`).join('')}</tr>`).join('');
+  document.getElementById('tcA').innerHTML = tcRows; document.getElementById('tcB').innerHTML = tcRows;
+
+  // ---------- Formats ----------
+  const FORMATS = [
+    { id: 'F1', title: 'Clock times (trip times, band bounds, pull-out/in)', now: 'Trips <b>4:08</b>, <b>5:04:30</b>, after midnight <b>26:01</b>; band bounds <b>0:00</b>–<b>30:00</b>. Consistent today.', opts: [
+      ['A', '4:08 · 5:04:30 · 26:01', 'Keep: hours without a leading zero, seconds only when present, service-day times past 24:00.', true],
+      ['B', '04:08 · 05:04:30 · 26:01', 'Always two-digit hours. Easier to scan in long columns; looks less like a clock.'] ] },
+    { id: 'F2', title: 'Durations (segment run times, trip run time, layover)', now: 'Runtimes <b>:05</b> and totals <b>:61</b>, <b>:65</b>; Trips run time <b>:53</b>; Blocking layover <b>0:19</b>. Two different styles, and minutes above 59.', opts: [
+      ['A', ':05 · :53 · 1:01 · 1:05', ':MM under an hour, h:mm from an hour. Keeps the familiar :MM entry style. Used in these mockups.', true],
+      ['B', '0:05 · 0:53 · 1:01 · 1:05', 'Always h:mm. Fully uniform, but adds "0:" to nearly every runtime cell.'],
+      ['C', '5 · 53 · 61 · 65 (min)', 'Whole minutes with the unit in the heading. Simple arithmetic; loses seconds unless shown as 5.5.'] ] },
+    { id: 'F3', title: 'Hours (block and day totals)', now: 'Blocking <b>13.27 h</b>, summary <b>311.59 h</b>; Costing daily <b>312</b>; annual <b>79,456</b>.', opts: [
+      ['A', 'Daily 311.59 · Annual 79,456', 'Two decimals for daily and block hours on every tab; annual hours whole with thousands separators.', true],
+      ['B', 'Daily 311.6 · Annual 79,456', 'One decimal for daily. Shorter; matches typical report precision.'],
+      ['C', 'Block 14:08 · Daily 311.59', 'h:mm for single blocks (reads like a schedule), decimal for totals. Two styles for one unit.'] ] },
+    { id: 'F4', title: 'Miles', now: 'Cumulative <b>2.233962</b> beside segment <b>2.23</b>; Revenue miles <b>4488.50 mi</b> with no thousands separator.', opts: [
+      ['A', '2.23 · 4,488.50', 'Two decimals everywhere, thousands separators. A cell being edited shows the full stored value.', true],
+      ['B', '2.234 · 4,488.5', 'Three decimals for pattern miles (closer to GIS precision), one for totals.'] ] },
+    { id: 'F5', title: 'Where units appear', now: 'Blocking repeats <b>h</b> in every cell; Costing puts "Hours" in the heading only.', opts: [
+      ['A', 'Heading "Revenue (h)", cells 15.84', 'Unit in the column heading for tables; unit beside the number in summary tiles. Used in these mockups.', true],
+      ['B', 'Cells "15.84 h"', 'Unit in every cell. Clearer when a cell is copied out, but busier.'] ] },
+    { id: 'F6', title: 'Money', now: 'Costing table whole dollars <b>$1,234,567</b>; rate field entered as plain number.', opts: [
+      ['A', '$1,234,567 · rate $142.50', 'Whole dollars in tables, cents for the hourly rate.', true],
+      ['B', '$1,234,567.00', 'Cents everywhere. Implies more precision than the estimate has.'] ] },
+    { id: 'F7', title: 'Missing values', now: 'Trips <b>—</b> for a skipped timepoint; Blocking <b>Incomplete</b>; Costing <b>—</b> for no estimate.', opts: [
+      ['A', '— not applicable · Incomplete (amber) missing input', 'Two meanings, two looks: a dash when a value cannot exist, amber "Incomplete" when you still need to enter something.', true],
+      ['B', '— for both', 'Simpler, but hides the difference between "not relevant" and "you need to act".'] ] },
+    { id: 'F8', title: 'Percentages', now: 'Layover <b>16.3%</b>; escalation entered as <b>3</b>.', opts: [
+      ['A', '16.3% · 3.0%', 'One decimal for shown percentages; fields show what was typed.', true],
+      ['B', '16% · 3%', 'Whole percentages. Loses distinctions between similar blocks.'] ] },
+  ];
+  document.getElementById('formatList').innerHTML = FORMATS.map((f) => `<div class="fmt"><h3>${f.id} · ${esc(f.title)}</h3><p class="now">Today: ${f.now}</p><div class="fmt-opts">${f.opts.map(([k, s, w, r]) => `<div class="fmt-opt"><b>${f.id}-${k}${r ? ' <span class="rec">Recommended</span>' : ''}</b><span class="sample">${esc(s)}</span><span class="why">${esc(w)}</span></div>`).join('')}</div></div>`).join('');
+})();
+</script>
+</body></html>
