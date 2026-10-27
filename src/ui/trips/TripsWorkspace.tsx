@@ -18,7 +18,8 @@ import { tripTableCsv } from '../../application/tripTableCsv';
 import { type RouteNavigationGuard } from '../shared/types';
 import { type RuntimeEditorHandle, type RuntimeEditorState, RuntimeEditor2, RouteRuntimeMethodDialog } from './RuntimeEditor';
 import { type BuildTripsValues, EMPTY_BUILD_VALUES, type NewRuntimeDialog, TripBlockAssignmentDialog, TripBlockUnassignmentDialog, BuildTripsDrawer, RuntimeProfileDialog2, DeleteRuntimeProfileDialog, DeleteTripsDialog, RecalculationDialog, RuntimeDayCopyDialog, TripDayCopyDialog, BatchPatternChangeDialog, TripPatternChangeDialog } from './dialogs';
-import { type TripBlockAssignmentDraft, type TripBlockOption, ScheduleTable } from './ScheduleTable';
+import { type TripBlockAssignmentDraft, type TripBlockOption, type TripSelectionRequest, ScheduleTable } from './ScheduleTable';
+import { combineSelection, invertSelection, tripIdsMatching } from '../../application/tripSelection';
 import { download } from '../shared/download';
 import { messages, userMessage } from '../shared/messages';
 import { RouteNavigationDraftDialog, ShiftDiscardDialog } from '../shared/dialogs';
@@ -544,6 +545,18 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   function selectTripsWithChangedRuntimes() {
     requestShiftScopeChange(() => { selectionAnchorId.current = undefined; setSelectedTripIds(tripsWithChangedRuntimes.map((trip) => trip.id)); });
   }
+  function selectTripsBy(request: TripSelectionRequest) {
+    requestShiftScopeChange(() => {
+      selectionAnchorId.current = undefined;
+      const allIds = trips.map((trip) => trip.id);
+      if (!('mode' in request)) {
+        setSelectedTripIds((current) => request.kind === 'all' ? allIds : request.kind === 'none' ? [] : invertSelection(allIds, current));
+        return;
+      }
+      const matching = tripIdsMatching(trips, request.kind === 'pattern' ? { kind: 'pattern', patternId: request.patternId } : request.kind === 'unassigned' ? { kind: 'unassigned', assignedTripIds: new Set(tripBlockByTripId.keys()) } : { kind: 'runtimeChanged', changedTripIds: changedRuntimeTripIds });
+      setSelectedTripIds((current) => combineSelection(current, matching, request.mode));
+    });
+  }
   function clearTripSelection() { requestShiftScopeChange(() => { selectionAnchorId.current = undefined; setSelectedTripIds([]); }); }
   const runtimeProfileMenu: MenuGroup[] = [
     { label: 'Profiles', items: profiles.map((profile) => ({ id: profile.id, label: profile.name, wrapLabel: true, checked: profile.id === profileId, disabled: loading || tripProfileBusy, onSelect: () => requestScopeChange(() => void assignProfile(profile.id)) })) },
@@ -659,7 +672,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
           selectionAnchorId.current = id;
           return current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
         });
-      })} onSelectAll={(selected) => requestShiftScopeChange(() => { selectionAnchorId.current = undefined; setSelectedTripIds(selected ? trips.map((trip) => trip.id) : []); })} onDelete={(trip) => requestShiftScopeChange(() => void requestTripDeletion([trip.id]))} onDraftChange={setDraftTrip} onDraftSave={() => void saveDraftTrip()} onDraftCancel={() => setDraftTrip(undefined)} busy={busy || tripProfileBusy} />
+      })} onSelectAll={(selected) => requestShiftScopeChange(() => { selectionAnchorId.current = undefined; setSelectedTripIds(selected ? trips.map((trip) => trip.id) : []); })} onSelectBy={selectTripsBy} onDelete={(trip) => requestShiftScopeChange(() => void requestTripDeletion([trip.id]))} onDraftChange={setDraftTrip} onDraftSave={() => void saveDraftTrip()} onDraftCancel={() => setDraftTrip(undefined)} busy={busy || tripProfileBusy} />
     </WorkSurface>
     {shiftDrawerOpen && <aside ref={shiftDrawerRef} className="shift-drawer shift-drawer--compact" role="complementary" aria-labelledby="shift-drawer-title" onClickCapture={(event) => { const control = (event.target as HTMLElement).closest('button'); if (control) lastShiftControl.current = control; }}>
       <header><h2 id="shift-drawer-title">Shift selected Trips</h2><button className="icon-button" type="button" aria-label="Close Shift drawer" title="Close Shift drawer" onClick={requestCloseShiftDrawer} disabled={busy}>×</button></header>

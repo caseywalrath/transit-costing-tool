@@ -72,6 +72,16 @@ for (const width of [1024, 1440]) {
     await page.evaluate(() => window.scrollBy(0, 1));
     await page.waitForTimeout(500);
     await page.screenshot({ path: out('trips-headways'), fullPage: false });
+    // UR-9: the header select menu open (headways still on), and a Pattern chip menu open with one pattern selected.
+    await schedule.scrollIntoViewIfNeeded();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await schedule.getByRole('button', { name: 'Select trips by…', exact: true }).click();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: out('trips-select-menu'), fullPage: false });
+    await page.getByRole('menuitem', { name: /\(65\)$/ }).first().click();
+    await schedule.locator('tbody tr').nth(2).locator('.chip-menu-trigger').click();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: out('trips-chip-menu'), fullPage: false });
     // Packages add states here.
   });
 }
