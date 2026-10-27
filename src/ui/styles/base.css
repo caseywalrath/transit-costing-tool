@@ -1,15 +1,16 @@
-:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #17212b; background: #f3f6f8; font-size: 14px; }
+:root { font-family: var(--font-family); color: var(--color-text); background: var(--color-canvas); font-size: var(--font-size-body); }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
 button, input, select, textarea { font: inherit; }
-button { cursor: pointer; border: 1px solid #aebbc5; border-radius: 3px; background: #fff; color: #15232d; min-height: 30px; padding: 4px 9px; }
-button:hover:not(:disabled) { background: #edf4f7; }
-button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #1a78aa; outline-offset: 1px; }
-button:disabled { cursor: not-allowed; color: #74818b; background: #e7ecef; }
-input, select { width: 100%; min-height: 30px; border: 1px solid #aebbc5; border-radius: 2px; background: #fff; padding: 3px 6px; color: inherit; }
+table, input, .shift-net { font-variant-numeric: tabular-nums; }
+button { cursor: pointer; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); min-height: var(--control-height); padding: var(--space-1) var(--space-2); }
+button:hover:not(:disabled) { background: var(--color-surface-2); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 1px; }
+button:disabled { cursor: not-allowed; color: var(--color-text-subtle); background: var(--color-sunken); }
+input, select { width: 100%; min-height: var(--control-height); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); padding: 3px 6px; color: inherit; }
 input[type=number] { min-width: 6em; }
 h1, h2, h3, p { margin: 0; }
-h1 { font-size: 1.2rem; }
-h2 { font-size: 1rem; }
-h3 { font-size: .95rem; }
-.box-heading { margin: 0; font-size: 1rem; }
+h1 { font-size: var(--font-size-title); }
+h2 { font-size: var(--font-size-body); }
+h3 { font-size: var(--font-size-body); }
+.box-heading { margin: 0; font-size: var(--font-size-body); }

@@ -35,7 +35,7 @@ test('keeps the Trips Pattern column no wider than its compact selector', async 
   expect(selectorBox!.width).toBeLessThanOrEqual(96.5);
   // A short schedule must use its content width rather than stretching across the scroll region.
   expect(tableBox!.width).toBeLessThan(regionBox!.width);
-  expect(fontSize).toBe('11.2px');
+  expect(fontSize).toBe('12px');
 });
 
 test('places an unsaved new trip before the saved schedule rows', async ({ page }) => {

@@ -1,5 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import '@fontsource-variable/source-sans-3';
 import './ui/styles/index.css';
 import { App } from './ui/App';
 import { DexieRouteDefinitionRepository } from './persistence/dexieRepository';
