@@ -74,7 +74,8 @@ test('Pattern points: Cumulative mi edits with a parser message, and Tab reaches
   await page.keyboard.press('Control+A');
   await page.keyboard.type('4.5');
   await page.keyboard.press('Enter');
-  await expect(distance).toHaveText('4.5');
+  // F4-A: two decimals at rest; the full value returns while editing.
+  await expect(distance).toHaveText('4.50');
   await expect(distance).toHaveClass(/grid-cell--edited/);
   await expect(points.locator('tbody tr output').nth(1)).toHaveText('4.50');
   // Shift+Tab from Cumulative mi reaches the Node select of the same point.

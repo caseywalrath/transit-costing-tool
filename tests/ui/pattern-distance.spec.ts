@@ -10,7 +10,8 @@ test('a Pattern with no distance shows "incomplete" for its segment miles, and t
   await createRouteWithPattern(page, 'Pattern distance');
   const segments = page.locator('.pattern-editor tbody tr output');
   await expect(segments).toHaveText(['incomplete', 'incomplete']);
-  await expect(page.locator('.pattern-editor')).not.toContainText('0.00');
+  // The Cumulative mi cells read 0.00 (F4-A); no total distance is claimed.
+  await expect(page.locator('.pattern-editor__meta')).toContainText('miles incomplete');
 
   const distance = gridCell(page, 'Point 2 cumulative miles');
   await editGridCell(distance, '4.5');

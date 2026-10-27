@@ -61,9 +61,11 @@
 .blocking-trips-table .blocking-assign-column { width: 16%; text-align: right; }
 .blocking-trips-table .assign-button { width: 100%; max-width: 78px; min-width: 0; padding: 3px var(--space-1); font-size: var(--font-size-caption); white-space: nowrap; }
 .blocking-trips-table .sortable-filter-header { padding: 0; vertical-align: bottom; }
-.blocking-trips-table .column-sort-button { display: flex; align-items: flex-end; gap: 2px; min-height: 38px; padding-bottom: 6px; }
+/* The filter button sits in the heading's top-right corner and the label uses the full width below it, so narrow columns do not cut the label. */
+.blocking-trips-table .column-sort-button { display: flex; align-items: flex-end; gap: 2px; min-height: calc(var(--control-height) + var(--space-4)); padding: 3px 5px 6px; }
 .blocking-trips-table .column-sort-label { min-width: 0; }
-.blocking-trips-table .column-filter-button { top: auto; bottom: var(--space-1); }
+.blocking-trips-table .column-sort-indicator { flex: none; }
+.blocking-trips-table .column-filter-button { top: 2px; }
 .table-header-controls { position: relative; display: block; min-width: 0; }
 .column-sort-button { display: block; width: 100%; min-height: 32px; border: 0; border-radius: 0; background: transparent; padding: 3px 28px 3px 5px; color: inherit; font-size: inherit; font-weight: inherit; line-height: 1.15; text-align: left; white-space: normal; }
 .column-sort-button:hover:not(:disabled) { background: var(--color-sunken); }

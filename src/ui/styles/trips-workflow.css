@@ -80,7 +80,7 @@
 .schedule-table .trip-selection-column { width: 50px; min-width: 50px; }
 .schedule-table th.trip-selection-column { z-index: 4; }
 .schedule-table th.trip-selection-column { padding-left: 3px; padding-right: 3px; }
-.trip-selection-header { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.trip-selection-header { display: flex; align-items: center; justify-content: center; gap: var(--space-2); }
 .trip-selection-header .menu-trigger.trip-selection-menu-trigger { min-height: 20px; min-width: 0; width: 18px; border: 0; background: transparent; padding: 0; color: var(--color-text-muted); font-size: var(--font-size-caption); text-align: center; }
 .trip-selection-header .menu-trigger.trip-selection-menu-trigger .menu-chevron { display: none; }
 .trip-selection-header .menu-trigger.trip-selection-menu-trigger:hover:not(:disabled) { color: var(--color-text); }

@@ -6,6 +6,7 @@ import { TrashIcon } from '../shared/icons';
 import { type Node, type NodeKind, type RoutePattern } from '../../domain/types';
 
 const NODE_KINDS: NodeKind[] = ['timepoint', 'terminal', 'garage', 'other'];
+const NODE_KIND_LABELS: Record<NodeKind, string> = { timepoint: 'Timepoint', terminal: 'Terminal', garage: 'Garage', other: 'Other' };
 const NODE_COLUMNS = ['Node name', 'Node short name', 'Node type', 'Node notes'] as const;
 
 export function NodesGrid({ nodes, savedNodes, pendingDeletes, saving, errorsFor, newNodeButton, onChange, onSetPendingDelete, onAdd }: {
@@ -32,7 +33,7 @@ export function NodesGrid({ nodes, savedNodes, pendingDeletes, saving, errorsFor
           const edited = saved ? text(saved, c) !== text(node, c) : c === 0 || Boolean(text(node, c));
           const editing = grid.editing?.r === r && grid.editing.c === c;
           return <td key={label} {...grid.cellProps(r, c)} className={edited ? 'grid-cell grid-cell--edited' : 'grid-cell'} data-cell={label}>
-            {c === 2 ? <select data-grid-control tabIndex={-1} aria-label={label} value={node.kind} disabled={pending || saving} onChange={(event) => onChange(node.id, { kind: event.target.value as NodeKind })}>{NODE_KINDS.map((kind) => <option key={kind}>{kind}</option>)}</select>
+            {c === 2 ? <select data-grid-control tabIndex={-1} aria-label={label} value={node.kind} disabled={pending || saving} onChange={(event) => onChange(node.id, { kind: event.target.value as NodeKind })}>{NODE_KINDS.map((kind) => <option key={kind} value={kind}>{NODE_KIND_LABELS[kind]}</option>)}</select>
               : editing ? <input {...grid.inputProps} className="grid-cell__input" aria-label={label} />
                 : <span className={!text(node, c) ? 'grid-cell__placeholder' : undefined}>{text(node, c) || (c === 0 ? 'Enter node name' : '')}</span>}
             {c === 0 && errors.map((error) => <small className="field-error" key={error}>{error}</small>)}

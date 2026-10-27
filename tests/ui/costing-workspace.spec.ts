@@ -16,7 +16,7 @@ test('Costing workspace displays a partial estimate, supports year selection, an
   await expect(page.getByText('Partial estimate')).toBeVisible();
   await expect(page.getByText('0 excluded blocks · 1 unassigned trips')).toBeVisible();
   await expect(page.locator('.costing-results-table tfoot').getByRole('cell', { name: '$40,170' })).toBeVisible();
-  await page.getByLabel('View year').selectOption('2027');
+  await scopeField(page, 'View year').selectOption('2027');
   await expect(page.getByRole('heading', { name: 'Cost Breakdown' })).toBeVisible();
   await expect(page.getByText('Applied rate $159.14 per Revenue Hour')).toBeVisible();
   await expect(page.getByText('Service quantities remain constant; only the rate changes.')).toHaveCount(0);

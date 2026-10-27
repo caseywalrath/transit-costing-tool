@@ -159,7 +159,7 @@ const commands = {
 
 export type CommandId = keyof typeof commands | keyof typeof buttonCommands;
 
-/** Opens the command's menu and chooses its item. Item names match exactly, except the Undo item, whose name ends in "(N Trips)". */
+/** Opens the command's menu and chooses its item. Item names match exactly, except the Undo item, whose name ends in "(N trips)". */
 export async function runCommand(page: Page, id: CommandId) {
   if (id in buttonCommands) {
     const button: { name: string | RegExp; within?: RegionId | 'selectionBar' | 'blockSelectionBar' | 'unassignedSelectionBar' } = buttonCommands[id as keyof typeof buttonCommands];

@@ -4,7 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
-import { runCommand } from './support/ui';
+import { runCommand, scopeField } from './support/ui';
 
 test.setTimeout(120_000);
 test.use({ actionTimeout: 15_000 });
@@ -16,7 +16,7 @@ async function openBlocking(page: Page, day = 'Weekday') {
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Scope' })).toBeVisible();
-  if (day !== 'Weekday') await page.getByRole('region', { name: 'Scope' }).getByLabel('Day').selectOption({ label: day });
+  if (day !== 'Weekday') await scopeField(page, 'Day').selectOption({ label: day });
 }
 
 const blocksTable = (page: Page) => page.getByLabel('Blocks', { exact: true });
@@ -212,7 +212,7 @@ test('the labels are exact: Move Trip counts Trips only, "No current issues." is
   expect(await noIssues.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe('rgb(255, 248, 233)');
   expect(await noIssues.evaluate((element) => getComputedStyle(element).borderLeftWidth)).toBe('0px');
 
-  await expect(page.getByRole('region', { name: 'Scope' }).getByLabel('Trip profile')).toBeVisible();
+  await expect(scopeField(page, 'Trip profile')).toBeVisible();
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await page.locator('[aria-label="Trips section"] .menu-field').filter({ hasText: 'Profile' }).getByRole('button').click();
   await expect(page.locator('[role="menu"][aria-label="Trip profile"]')).toHaveCount(1);

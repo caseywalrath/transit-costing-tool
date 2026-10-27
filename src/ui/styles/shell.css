@@ -3,9 +3,9 @@
 /* Application header (H-B). Row 1 is the app bar; row 2 is the scope bar and never wraps. */
 .app-header { margin: 0 -18px var(--space-3); }
 .app-bar { display: flex; align-items: center; gap: var(--space-4); height: 48px; padding: 0 var(--space-4); background: var(--color-surface); border-bottom: 1px solid var(--color-border); }
-.app-bar__brand { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.app-bar__brand { display: flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
 .app-bar__brand strong { font-size: var(--font-size-title); font-weight: var(--font-weight-bold); color: var(--color-text); }
-.app-bar__mark { width: 18px; height: 18px; border-radius: 4px; background: var(--color-accent); }
+.app-bar__mark { width: 18px; height: 18px; border-radius: var(--radius-control); background: var(--color-accent); }
 .app-bar__spacer, .scope-bar__spacer { flex: 1 1 0; min-width: 0; }
 .app-bar nav { align-self: stretch; gap: var(--space-1); margin-left: var(--space-3); }
 .tab { min-width: 0; height: auto; padding: 0 var(--space-3); border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--color-text-muted); font-weight: var(--font-weight-semibold); }
