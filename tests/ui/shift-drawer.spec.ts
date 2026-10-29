@@ -1,16 +1,17 @@
 import { expect, test } from '@playwright/test';
 import { createShiftReadySchedule } from './support/tripsWorkspace';
-import { runCommand } from './support/ui';
+import { runCommand, shiftBar } from './support/ui';
 
-// U10: the compact Shift drawer. The step buttons name their size and direction; a step size is one press away, or typed.
+// U10, UR-15: Shift is a mode of the Trips selection bar. The step buttons name their size and direction; a step size is one press away, or typed.
 test('step sizes are chosen with one press or typed, the buttons name the step, and an invalid step is refused', async ({ page }) => {
   await createShiftReadySchedule(page, '06:20');
   const rows = page.locator('.schedule-table tbody tr');
   await rows.first().locator('input[type="checkbox"]').check();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
+  const drawer = shiftBar(page);
   const status = drawer.getByRole('status');
-  await expect(status).toHaveText('No net shift1 selected');
+  await expect(status).toHaveText('No net shift');
+  await expect(drawer).toContainText('Shift 1 trip');
 
   await drawer.getByRole('radio', { name: '10', exact: true }).check();
   await expect(drawer.getByLabel('Step minutes')).toHaveValue('10');
@@ -40,7 +41,7 @@ test('the step sizes are a keyboard radio group', async ({ page }) => {
   await createShiftReadySchedule(page, '06:20');
   await page.locator('.schedule-table tbody tr').first().locator('input[type="checkbox"]').check();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
+  const drawer = shiftBar(page);
   // The drawer previews the selection as it opens and disables its controls until that is done; when the preview ends, a control
   // that lost the focus to the disabled state gives it to the first step button. A step size focused before then loses the focus
   // (the cause of intermittent CI failures), so wait until the step buttons are enabled, which happens only after the preview.

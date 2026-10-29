@@ -84,6 +84,55 @@ test('Pattern points: Cumulative mi edits with a parser message, and Tab reaches
   expect(await page.evaluate(() => document.activeElement?.getAttribute('aria-label'))).toBe('Point 2 node');
 });
 
+// UR-14: Tab runs through a row's cells, then the row's action buttons, then the first cell of the next row; Shift+Tab is the reverse.
+test('Nodes and Pattern points: Tab wraps from the end of a row to the start of the next row', async ({ page }) => {
+  await createRouteWithPattern(page, 'Grid tab wrap');
+  const [firstName, secondName] = await gridCell(page, 'Node name').allTextContents();
+  const focusedName = () => page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.closest('[data-cell]')?.getAttribute('data-cell') ?? '');
+  const focusedText = () => page.evaluate(() => document.activeElement?.textContent ?? '');
+
+  await gridCell(page, 'Node notes').first().click();
+  await page.keyboard.press('Tab');
+  expect(await focusedName()).toBe(`Remove ${firstName}`);
+  await page.keyboard.press('Tab');
+  expect(await focusedText()).toBe(secondName);
+  expect(await focusedCell(page)).toBe('Node name');
+  await page.keyboard.press('Shift+Tab');
+  expect(await focusedName()).toBe(`Remove ${firstName}`);
+  await page.keyboard.press('Shift+Tab');
+  expect(await focusedCell(page)).toBe('Node notes');
+  // Tab that commits an edit in the row's last cell moves on the same way.
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Note');
+  await page.keyboard.press('Tab');
+  await expect(gridCell(page, 'Node notes').first()).toHaveText('Note');
+  expect(await focusedName()).toBe(`Remove ${firstName}`);
+
+  // Pattern points: Node, Cumulative mi, the enabled Order button, Remove, then the next point's Node.
+  await gridCell(page, 'Point 1 cumulative miles').click();
+  await page.keyboard.press('Tab');
+  expect(await focusedName()).toBe('Move point down');
+  await page.keyboard.press('Tab');
+  expect(await focusedName()).toBe('Remove point 1');
+  await page.keyboard.press('Tab');
+  expect(await focusedName()).toBe('Point 2 node');
+  await page.keyboard.press('Shift+Tab');
+  expect(await focusedName()).toBe('Remove point 1');
+});
+
+test('saving a Node does not leave an unsaved change in the Pattern', async ({ page }) => {
+  await createRouteWithPattern(page, 'Node save keeps pattern');
+  await gridCell(page, 'Node short name').first().click();
+  await page.keyboard.type('AA');
+  await page.keyboard.press('Enter');
+  await saveBar(page).click();
+  await expect(saveBar(page)).toHaveCount(0);
+  await expect(gridCell(page, 'Node short name').first()).toHaveText('AA');
+  // Before UR-14 the Node save rewrote the Pattern's save time, and the Pattern showed a save bar that could not be saved.
+  await expect(page.getByRole('button', { name: 'Review and save', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Unsaved changes' })).toHaveCount(0);
+});
+
 test('a Service day count shows "Saved" after a committed change', async ({ page }) => {
   await createRouteWithPattern(page, 'Saved note');
   const weekday = page.locator('input[type="number"]').first();

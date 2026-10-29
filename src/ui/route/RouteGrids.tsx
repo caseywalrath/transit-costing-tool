@@ -31,7 +31,7 @@ export function NodesGrid({ nodes, savedNodes, pendingDeletes, saving, errorsFor
       const pending = pendingDeletes.has(node.id);
       const saved = savedById.get(node.id);
       const errors = errorsFor(node.id);
-      return <tr key={node.id} className={`${pending ? 'pending-delete' : ''} ${!saved ? 'draft-row' : ''}`}>
+      return <tr key={node.id} {...grid.rowProps(r)} className={`${pending ? 'pending-delete' : ''} ${!saved ? 'draft-row' : ''}`}>
         {NODE_COLUMNS.map((label, c) => {
           const edited = saved ? text(saved, c) !== text(node, c) : c === 0 || Boolean(text(node, c));
           const editing = grid.editing?.r === r && grid.editing.c === c;
@@ -44,7 +44,7 @@ export function NodesGrid({ nodes, savedNodes, pendingDeletes, saving, errorsFor
         })}
         <td>{pending ? <button disabled={saving} onClick={() => onSetPendingDelete(node.id, false)}>Undo</button> : <button className="icon-button icon-button--danger" disabled={saving} onClick={() => onSetPendingDelete(node.id, true)} aria-label={`Remove ${node.name || 'node'}`} title={`Remove ${node.name || 'node'}`}><TrashIcon /></button>} {pending && <span className="row-status">Will be deleted</span>}</td>
       </tr>;
-    })}{nodes.length === 0 && <tr><td colSpan={5} className="table-empty">Add scheduling timepoints and terminals. Nodes can be reused in any pattern.</td></tr>}<tr className="table-add-row"><td colSpan={5}><button type="button" ref={newNodeButton} className="ghost" onClick={() => { focusNew.current = true; onAdd(); }} disabled={saving}><span aria-hidden="true">+ </span>New node</button></td></tr></tbody>
+    })}{nodes.length === 0 && <tr><td colSpan={5} className="table-empty">No nodes. A pattern needs 2 or more (terminals, timepoints).</td></tr>}<tr className="table-add-row"><td colSpan={5}><button type="button" ref={newNodeButton} className={nodes.length < 2 ? 'primary' : 'ghost'} onClick={() => { focusNew.current = true; onAdd(); }} disabled={saving}><span aria-hidden="true">+ </span>New node</button></td></tr></tbody>
   </table></div><p className="grid-message" role="status" aria-live="polite">{grid.message}</p></>;
 }
 

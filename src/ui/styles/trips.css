@@ -101,7 +101,6 @@
 .disclosure { display: inline-flex; align-items: center; gap: var(--space-inline); min-height: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: var(--font-weight-bold); }
 .disclosure:hover:not(:disabled), .disclosure:disabled { background: transparent; color: inherit; }
 .disclosure__arrow { width: var(--space-3); color: var(--color-text-muted); font-size: var(--font-size-note); }
-.runtimes-summary { flex: 1 1 320px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .runtimes-toolbar { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
 .runtimes-body .runtime-editor { margin-top: var(--space-2); border: 0; background: transparent; padding: 0; min-width: 0; }
 .runtimes-body .runtime-status { border: 0; background: transparent; padding: 0; }

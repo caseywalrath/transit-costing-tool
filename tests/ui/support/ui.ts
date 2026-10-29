@@ -43,6 +43,9 @@ const regionToday: Record<RegionId, string> = {
   costingControls: 'Scope',
 };
 
+/** The Shift controls (UR-15: a mode of the Trips selection bar, `role="toolbar"`). Only the live copy is visible, so this finds one. */
+export const shiftBar = (page: Page): Locator => page.getByRole('toolbar', { name: 'Shift selected trips', exact: true });
+
 /** Returns the panel with this id. */
 export const region = (page: Page, id: RegionId): Locator => page.locator(`[aria-label="${regionToday[id]}"]`);
 

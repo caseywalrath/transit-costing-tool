@@ -76,7 +76,7 @@ export const RuntimeEditor2 = forwardRef<RuntimeEditorHandle, { service: RouteDe
   return <div className="runtime-editor">
     <div className="table-scroll data-grid runtime-table"><table className="grid-table" role="grid" aria-label="Runtimes">
       <thead><tr><th scope="col">From</th><th scope="col">To</th>{pattern.points.slice(1).map((point, index) => <th scope="col" key={point.id}><span className="segment-header">{nodeName(pattern.points[index].nodeId)} → {nodeName(point.nodeId)}</span></th>)}<th scope="col" className="runtime-total-heading">Total</th><th scope="col"><span className="visually-hidden">Time band actions</span></th></tr></thead>
-      <tbody>{draft.bands.map((band, bandIndex) => <tr key={band.id} className={findings.some((finding) => finding.parameters?.bandId === band.id || finding.parameters?.previousBandId === band.id) ? 'runtime-row-error' : undefined}>
+      <tbody>{draft.bands.map((band, bandIndex) => <tr key={band.id} {...grid.rowProps(bandIndex)} className={findings.some((finding) => finding.parameters?.bandId === band.id || finding.parameters?.previousBandId === band.id) ? 'runtime-row-error' : undefined}>
         {Array.from({ length: segmentCount + 2 }, (_, c) => {
           const saved = savedBands.get(band.id);
           const edited = !saved || cellValue(saved, c) !== cellValue(band, c);

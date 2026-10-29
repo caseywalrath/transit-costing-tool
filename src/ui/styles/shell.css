@@ -54,6 +54,9 @@ nav { display: flex; gap: 2px; }
 .empty-state { max-width: 620px; margin: 72px auto; border: 1px solid var(--color-border); background: var(--color-surface); padding: var(--space-5); }
 .empty-state p { margin: 10px 0 18px; line-height: 1.45; color: var(--color-text-muted); }
 .empty-project { max-width: 620px; border: 0; background: transparent; padding: 0; text-align: center; }
+.empty-state__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.empty-project .empty-state__actions { justify-content: center; }
+.prerequisite__actions { margin-top: var(--space-3); }
 .primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-surface); font-weight: var(--font-weight-bold); }
 .primary:disabled { background: var(--color-sunken); border-color: var(--color-border); color: var(--color-text-subtle); font-weight: var(--font-weight-regular); }
 .primary:hover:not(:disabled) { background: var(--color-accent-strong); border-color: var(--color-accent-strong); }

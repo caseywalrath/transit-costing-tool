@@ -4,7 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule } from './support/tripsWorkspace';
-import { runCommand } from './support/ui';
+import { runCommand, shiftBar } from './support/ui';
 
 test.setTimeout(90_000);
 
@@ -134,7 +134,7 @@ test('discards a Shift whose net offset is zero without writing any Trip', async
 
   const openShift = async () => {
     await runCommand(page, 'trips.shift');
-    return page.getByRole('complementary', { name: 'Shift selected trips' });
+    return shiftBar(page);
   };
   await rows(page).first().getByRole('checkbox').check();
   const drawer = await openShift();

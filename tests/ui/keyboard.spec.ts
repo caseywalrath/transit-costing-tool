@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule, openGoldenTrips } from './support/tripsWorkspace';
-import { editGridCell, gridCell, openRuntimes, projectSwitcher, runCommand, scopeField } from './support/ui';
+import { editGridCell, gridCell, openRuntimes, projectSwitcher, runCommand, scopeField, shiftBar } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
@@ -176,21 +176,21 @@ test('every dialog opened from the screens has an accessible name, and the axe d
   expect(await axeViolations(page)).toEqual([]);
 });
 
-test('Shift drawer steps keep keyboard focus inside the drawer', async ({ page }) => {
+test('Shift steps keep keyboard focus inside the shift bar', async ({ page }) => {
   await openGoldenTrips(page);
   await page.locator('.trips-workspace .schedule-table tbody input[type=checkbox]').first().check();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
+  const drawer = shiftBar(page);
   const forward = drawer.getByRole('button', { name: /min later/ });
   await forward.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByText(/Staged 1 minute later/)).toBeVisible();
-  await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest('aside.shift-drawer'))).toBe(true);
+  await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest('[data-shift-bar]'))).toBe(true);
   await expect(forward).toBeFocused();
   const undo = drawer.getByRole('button', { name: 'Undo', exact: true });
   await undo.focus();
   await page.keyboard.press('Enter');
-  await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest('aside.shift-drawer'))).toBe(true);
+  await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest('[data-shift-bar]'))).toBe(true);
 });
 
 test('focus returns to the Block pill after confirming an assignment, and to Trip actions after an Unassign', async ({ page }) => {

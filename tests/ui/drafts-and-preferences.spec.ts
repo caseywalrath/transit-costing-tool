@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule, openGoldenTrips } from './support/tripsWorkspace';
-import { editGridCell, editRuntimeCell, gridCell, openRuntimes, runCommand, runtimeCell, scopeField } from './support/ui';
+import { editGridCell, editRuntimeCell, gridCell, openRuntimes, runCommand, runtimeCell, scopeField, shiftBar } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
@@ -31,7 +31,7 @@ const dayOption = (page: Page) => scopeField(page, 'Day').evaluate((select: HTML
 async function startStagedShift(page: Page) {
   await page.locator('.schedule-table tbody input[type="checkbox"]').first().check();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
+  const drawer = shiftBar(page);
   await drawer.getByRole('button', { name: /min earlier/ }).click();
   await expect(page.getByText('Staged 1 minute earlier')).toBeVisible();
   return drawer;

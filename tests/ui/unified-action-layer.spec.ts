@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { createShiftReadySchedule, settleFrames } from './support/tripsWorkspace';
-import { editRuntimeCell, runCommand, runtimeCell, scopeField } from './support/ui';
+import { editRuntimeCell, runCommand, runtimeCell, scopeField, shiftBar } from './support/ui';
 
 test.setTimeout(60_000);
 
@@ -170,7 +170,7 @@ test('restores the page scroll position after committing a shift', async ({ page
 
   await page.locator('.schedule-table tbody input[type="checkbox"]').nth(8).check();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
+  const drawer = shiftBar(page);
   await drawer.getByRole('button', { name: /min later/ }).click();
   await expect(page.getByText('Staged 1 minute later')).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 300));
@@ -188,7 +188,7 @@ test('stages Shift actions, guards scope changes, and persists only on Done', as
   await page.locator('.schedule-table tbody input[type="checkbox"]').check();
   await runCommand(page, 'trips.shift');
 
-  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
+  const drawer = shiftBar(page);
   await expect(drawer).toBeVisible();
   await drawer.getByRole('button', { name: /min earlier/ }).click();
   await expect(page.getByText('Staged 1 minute earlier')).toBeVisible();

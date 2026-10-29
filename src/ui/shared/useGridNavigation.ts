@@ -5,7 +5,7 @@ type Editing = GridCell & { text: string; initial: string; selectAll: boolean };
 
 /**
  * A spreadsheet-style keyboard grid (UR-7). One cell is in the tab order (roving tabindex). At rest the arrow keys, Home, End, Tab, and
- * Shift+Tab move; Enter or F2 edits with the text selected; a printable key edits starting with that character; Backspace or Delete edits
+ * Shift+Tab move; Tab runs through a row's cells, then the row's action buttons, then the next row's first cell (UR-14). Enter or F2 edits with the text selected; a printable key edits starting with that character; Backspace or Delete edits
  * empty. While editing, Enter and Shift+Enter commit and move down or up, Tab and Shift+Tab commit and move right or left, Escape cancels,
  * and blur commits or, when the entry is refused, cancels. `onCommit` returns the reason an entry is refused, which `message` carries.
  * The hook does not parse values: the caller's `onCommit` uses the domain parsers.
@@ -58,6 +58,44 @@ export function useGridNavigation({ rowCount, colCount, isEditable, cellText, on
   }
   function cancel() { if (!editingRef.current) return; setMessage(''); setEditing(undefined); pendingFocus.current = 'cell'; }
 
+  /** The focusable controls of row `r` outside its grid cells, such as the row's action buttons, in document order. */
+  function rowControls(r: number): HTMLElement[] {
+    const row = cells.current.get(`${r}:0`)?.closest('tr');
+    if (!row) return [];
+    return Array.from(row.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href], [tabindex]'))
+      .filter((element) => !element.closest('[role="gridcell"]') && element.tabIndex >= 0 && !(element as HTMLButtonElement).disabled);
+  }
+  /**
+   * Tab order: a row's cells, then the row's own controls (its action buttons), then the first cell of the next row. Shift+Tab is the
+   * reverse. Returns false when Tab should leave the grid (forward from the last row, backward from the first).
+   */
+  function tabFrom({ r, c }: GridCell, backward: boolean): boolean {
+    const next = c + (backward ? -1 : 1);
+    if (next >= 0 && next < colCount) { moveTo({ r, c: next }); return true; }
+    if (!backward) {
+      const controls = rowControls(r);
+      if (controls.length) { controls[0].focus(); return true; }
+      if (r + 1 < rowCount) { moveTo({ r: r + 1, c: 0 }); return true; }
+      return false;
+    }
+    if (r === 0) return false;
+    const controls = rowControls(r - 1);
+    if (controls.length) controls[controls.length - 1].focus(); else moveTo({ r: r - 1, c: colCount - 1 });
+    return true;
+  }
+  /** Props for each row: Tab from the row's last control moves to the next row's first cell, and Shift+Tab from its first control to its last cell. */
+  function rowProps(r: number) {
+    return {
+      onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+        const target = event.target as HTMLElement;
+        if (event.key !== 'Tab' || target.closest('[role="gridcell"]')) return;
+        const controls = rowControls(r);
+        if (!event.shiftKey && target === controls.at(-1) && r + 1 < rowCount) { event.preventDefault(); moveTo({ r: r + 1, c: 0 }); }
+        else if (event.shiftKey && target === controls[0]) { event.preventDefault(); moveTo({ r, c: colCount - 1 }); }
+      },
+    };
+  }
+
   function onCellKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (editingRef.current) return;
     const { r, c } = activeCell;
@@ -66,9 +104,8 @@ export function useGridNavigation({ rowCount, colCount, isEditable, cellText, on
     const moves: Record<string, GridCell> = { ArrowUp: { r: r - 1, c }, ArrowDown: { r: r + 1, c }, ArrowLeft: { r, c: c - 1 }, ArrowRight: { r, c: c + 1 }, Home: { r, c: 0 }, End: { r, c: colCount - 1 } };
     if (moves[event.key]) { event.preventDefault(); moveTo(moves[event.key]); return; }
     if (event.key === 'Tab') {
-      // At the row's ends Tab leaves the grid through the browser's own focus order.
-      const next = c + (event.shiftKey ? -1 : 1);
-      if (next >= 0 && next < colCount) { event.preventDefault(); moveTo({ r, c: next }); }
+      // Past the grid's first or last cell Tab leaves the grid through the browser's own focus order.
+      if (tabFrom({ r, c }, event.shiftKey)) event.preventDefault();
       return;
     }
     if (event.key === 'Enter' || event.key === 'F2') { event.preventDefault(); startEdit(); return; }
@@ -105,12 +142,12 @@ export function useGridNavigation({ rowCount, colCount, isEditable, cellText, on
       if (event.key === 'Enter' || event.key === 'Tab') {
         event.preventDefault();
         if (!commit()) return;
-        const step = event.shiftKey ? -1 : 1;
-        moveTo(event.key === 'Enter' ? { r: current.r + step, c: current.c } : { r: current.r, c: current.c + step });
+        if (event.key === 'Enter') moveTo({ r: current.r + (event.shiftKey ? -1 : 1), c: current.c });
+        else if (!tabFrom(current, event.shiftKey)) moveTo(current);
       }
     },
     onBlur: () => { if (!editingRef.current) return; if (!commit()) { setMessage(''); setEditing(undefined); } },
   };
 
-  return { activeCell, editing: editing ? { r: editing.r, c: editing.c } : undefined, cellProps, inputProps, message, moveTo };
+  return { activeCell, editing: editing ? { r: editing.r, c: editing.c } : undefined, cellProps, rowProps, inputProps, message, moveTo };
 }

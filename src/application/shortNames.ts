@@ -36,6 +36,13 @@ export function nodeShortName(node: Pick<Node, 'name' | 'shortName'> | undefined
   return node.shortName?.trim() || abbreviatePlaceName(node.name);
 }
 
+/** The Pattern name without a leading "<Direction>:", for a list already grouped by direction. A name that is only the prefix is kept. */
+export function patternNameWithoutDirection(name: string, directionName: string | undefined): string {
+  const body = name.trim();
+  const prefix = directionName?.trim() ? `${directionName.trim()}:` : '';
+  return prefix && body.toLowerCase().startsWith(prefix.toLowerCase()) && body.length > prefix.length ? body.slice(prefix.length).trim() : body;
+}
+
 /**
  * The name generated for a Pattern without a planner-entered short name: the direction abbreviation, then the full name without its
  * "<Direction>:" prefix. A name of the form "<origin> to <destination>" becomes "<origin>–<destination>"; an origin or destination that
@@ -43,9 +50,7 @@ export function nodeShortName(node: Pick<Node, 'name' | 'shortName'> | undefined
  * "Northbound: Evans to Wagon Road" → "NB Evans–Wagon Rd".
  */
 export function generatedPatternShortName(pattern: Pick<RoutePattern, 'name' | 'points'>, directionName: string | undefined, nodes?: ReadonlyMap<string, Pick<Node, 'name' | 'shortName'>>): string {
-  let body = pattern.name.trim();
-  const prefix = directionName?.trim() ? `${directionName.trim()}:` : '';
-  if (prefix && body.toLowerCase().startsWith(prefix.toLowerCase()) && body.length > prefix.length) body = body.slice(prefix.length).trim();
+  const body = patternNameWithoutDirection(pattern.name, directionName);
   const endNodes = [pattern.points[0], pattern.points.at(-1)].map((point) => (point ? nodes?.get(point.nodeId) : undefined)).filter((node): node is Pick<Node, 'name' | 'shortName'> => Boolean(node));
   const shortenPart = (part: string) => {
     const endNode = endNodes.find((node) => node.name.trim().toLowerCase() === part.trim().toLowerCase());

@@ -40,16 +40,13 @@
 .shift-drawer header { border-bottom: 1px solid var(--color-border-soft); }
 .shift-drawer footer { justify-content: end; border-top: 1px solid var(--color-border-soft); }
 .shift-drawer-body { display: grid; align-content: start; gap: var(--space-3); overflow-y: auto; padding: var(--space-4); }
-/* U10: the Shift drawer is a compact panel docked to the lower right edge, so the Trips table stays visible above and beside it. */
-.shift-drawer--compact { top: auto; right: var(--space-4); bottom: var(--space-4); display: grid; grid-template-rows: none; gap: 10px; width: 320px; padding: var(--space-3) 14px; border: 1px solid var(--color-border); border-radius: var(--radius-panel); box-shadow: var(--shadow-popover); }
-.shift-drawer--compact header, .shift-drawer--compact footer { padding: 0; border: 0; }
-.shift-drawer--compact header h2 { margin: 0; font-size: var(--font-size-body); }
-.shift-drawer--compact footer { justify-content: start; gap: 6px; padding-top: 10px; border-top: 1px solid var(--color-border-soft); }
-.shift-net { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); margin: 0; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
-.shift-net strong { color: var(--color-text); font-size: var(--font-size-title); }
-.shift-steps { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.shift-steps button { min-height: 36px; font-weight: var(--font-weight-semibold); font-variant-numeric: tabular-nums; }
-.shift-step-size { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); margin: 0; padding: 0; border: 0; }
+/* UR-15: Shift is a mode of the Trips selection bar (`.shift-bar`), so it stays beside the rows it moves and never covers the table. */
+.shift-bar > button { font-variant-numeric: tabular-nums; }
+.shift-bar .grow { flex: 1 1 0; }
+.shift-net { margin: 0 var(--space-2); color: var(--color-text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.shift-net strong { color: var(--color-text); }
+.shift-bar__message { flex-basis: 100%; margin: 0; }
+.shift-step-size { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-1); margin: 0 var(--space-2); padding: 0; border: 0; }
 .shift-step-size legend { float: left; margin-right: 6px; padding: 0; color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
 .shift-step-preset { position: relative; }
 .shift-step-preset input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
@@ -58,7 +55,6 @@
 .shift-step-preset:has(input:focus-visible) { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .shift-step-other { display: inline-flex; align-items: center; gap: var(--space-1); margin-left: var(--space-1); font-size: var(--font-size-label); }
 .shift-step-other input { width: 50px; min-width: 50px; height: 28px; text-align: center; font-variant-numeric: tabular-nums; }
-.shift-drawer--compact .field-error { margin: 0; }
 .build-trips-drawer { width: min(400px, 40vw); }
 .build-trips-form { display: contents; }
 .build-trips-drawer .dialog-field { display: grid; gap: 5px; color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }

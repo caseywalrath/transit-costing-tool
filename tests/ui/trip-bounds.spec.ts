@@ -4,7 +4,7 @@
 import { expect, test } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { createShiftReadySchedule } from './support/tripsWorkspace';
-import { runCommand } from './support/ui';
+import { runCommand, shiftBar } from './support/ui';
 
 test('a Shift that would start a Trip before 0:00 is refused in the drawer, and the app stays usable', async ({ page }) => {
   await createShiftReadySchedule(page);
@@ -18,7 +18,7 @@ test('a Shift that would start a Trip before 0:00 is refused in the drawer, and 
   const tripsSection = page.locator('[aria-label="Trips section"]');
   await page.locator('.schedule-table tbody input[type="checkbox"]').check();
   await runCommand(page, 'trips.shift');
-  const drawer = page.getByRole('complementary', { name: 'Shift selected trips' });
+  const drawer = shiftBar(page);
   await expect(drawer).toBeVisible();
 
   // Six minutes earlier would be -0:01.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { abbreviatePlaceName, directionAbbreviation, generatedPatternShortName, nodeShortName, patternShortName } from './shortNames';
+import { abbreviatePlaceName, directionAbbreviation, generatedPatternShortName, nodeShortName, patternNameWithoutDirection, patternShortName } from './shortNames';
 
 const points = (...nodeIds: string[]) => nodeIds.map((nodeId, sequence) => ({ id: `p${sequence}`, nodeId, sequence, cumulativeMiles: sequence }));
 
@@ -52,6 +52,16 @@ describe('generatedPatternShortName', () => {
     expect(generatedPatternShortName({ name: 'Federal Boulevard Loop', points: points('e', 'w') }, undefined)).toBe('Federal Blvd Loop');
     expect(generatedPatternShortName({ name: 'Southbound:', points: [] }, 'Southbound')).toBe('SB Southbound:');
     expect(generatedPatternShortName({ name: ' ', points: [] }, undefined)).toBe('Unnamed pattern');
+  });
+});
+
+describe('patternNameWithoutDirection', () => {
+  it('drops a leading "<Direction>:" in any case and keeps any other name', () => {
+    expect(patternNameWithoutDirection('Northbound: Evans to Wagon Road', 'Northbound')).toBe('Evans to Wagon Road');
+    expect(patternNameWithoutDirection('northbound:Evans', 'Northbound')).toBe('Evans');
+    expect(patternNameWithoutDirection('Evans to Wagon Road', 'Northbound')).toBe('Evans to Wagon Road');
+    expect(patternNameWithoutDirection('Northbound:', 'Northbound')).toBe('Northbound:');
+    expect(patternNameWithoutDirection('Northbound: Evans', undefined)).toBe('Northbound: Evans');
   });
 });
 

@@ -40,9 +40,17 @@ test('the grid has one tab stop and the arrow keys, Home, End, Tab, and Shift+Ta
   // The roving tab stop follows the active cell.
   await expect(cell(page, 'Time band 2 segment 8')).toHaveAttribute('tabindex', '0');
   await expect(grid(page).locator('[role="gridcell"][tabindex="0"]')).toHaveCount(1);
-  // Tab at the row's end leaves the grid, to the row's Duplicate button.
+  // Tab at the row's end moves to the row's Duplicate and Remove buttons, then to the next row's first cell (UR-14); Shift+Tab is the reverse.
   await page.keyboard.press('Tab');
   expect(await focusedCell(page)).toBe('Duplicate time band 2');
+  await page.keyboard.press('Shift+Tab');
+  expect(await focusedCell(page)).toBe('Time band 2 segment 8');
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab');
+  expect(await focusedCell(page)).toBe('Remove time band 2');
+  await page.keyboard.press('Tab');
+  expect(await focusedCell(page)).toBe('Time band 3 start');
+  await expect(grid(page).locator('[role="gridcell"][tabindex="0"]')).toHaveCount(1);
   await cell(page, 'Time band 2 end').click();
   await page.keyboard.press('Shift+Tab');
   expect(await focusedCell(page)).toBe('Time band 2 start');

@@ -135,7 +135,7 @@ test('a failed startup shows the error banner, not the empty start screen, and n
   });
   await page.goto('/');
   await expect(banner(page)).toHaveText(/Unable to open your saved projects\. Reload this page and try again\./);
-  await expect(page.getByRole('heading', { name: 'Start a local planning project' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'No project', exact: true })).toHaveCount(0);
   await expect(banner(page)).not.toContainText(/UnknownError|indexedDB|backing store|Dexie/i);
 });
 

@@ -15,6 +15,8 @@ import { countAssumptionChanges } from '../../application/draftChangeCounts';
 type Props = {
   /** The element in the header's scope bar that receives the scope selectors (UR-5). */
   scopeSlot: HTMLElement | null;
+  /** Opens the Blocking tab; offered while the scenario has no blocking scenario (UR-16). Absent when that tab is unavailable. */
+  onOpenBlocking?: () => void;
   costingService: CostingCommands & CostingQueries;
   scenario: Scenario;
   serviceDays: ServiceDayDefinition[];
@@ -101,7 +103,7 @@ const annualHours = (value: number) => formatHours(value, 'annual');
 const rate = (value: number) => formatMoney(value, { cents: true });
 const money = (value: number) => formatMoney(value);
 
-export function CostingWorkspace({ scopeSlot, costingService, scenario, serviceDays, tripProfiles, onError, onRegisterNavigationGuard }: Props) {
+export function CostingWorkspace({ scopeSlot, onOpenBlocking, costingService, scenario, serviceDays, tripProfiles, onError, onRegisterNavigationGuard }: Props) {
   const [blockingScenarios, setBlockingScenarios] = useState<BlockingScenario[]>([]);
   const [blockingScenarioId, setBlockingScenarioId] = useState('');
   const [assumptions, setAssumptions] = useState<CostingAssumptionsInput>(() => initialAssumptions());
@@ -221,7 +223,7 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, serviceD
   }
 
   if (busy) return <section className="costing-workspace"><div className="prerequisite">Loading Costing…</div></section>;
-  if (!blockingScenarios.length) return <section className="costing-workspace"><div className="prerequisite"><h1>Costing</h1><p>Create a blocking scenario before estimating annual service cost.</p></div></section>;
+  if (!blockingScenarios.length) return <section className="costing-workspace"><div className="prerequisite"><h1>Costing</h1><p>Requires a blocking scenario. Create one on the Blocking tab.</p>{onOpenBlocking && <div className="empty-state__actions prerequisite__actions"><button type="button" className="primary" onClick={onOpenBlocking}>Open Blocking</button></div>}</div></section>;
 
   const annualDays = costingService.summarizeServiceDays(serviceDays);
 

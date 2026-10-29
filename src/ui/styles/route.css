@@ -1,5 +1,16 @@
 /* Route tab (UR-6a): supporting panels above, Nodes and Patterns as work surfaces below. */
 .route-workspace { display: grid; gap: var(--space-4); }
+/* UR-16: the setup line of a Route without a usable Pattern. The current step carries the accent; done steps a check. */
+.route-setup { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--inset-tight) var(--inset-panel); border: 1px solid var(--color-border); border-radius: var(--radius-panel); background: var(--color-surface); }
+.route-setup__title { color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
+.route-setup ol { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.route-setup__step { display: flex; align-items: center; color: var(--color-text-muted); font-size: var(--font-size-note); }
+.route-setup__step:not(:last-child)::after { content: '→'; margin-left: var(--space-1); color: var(--color-text-subtle); }
+.route-setup__step > button, .route-setup__step > span { display: inline-flex; align-items: center; gap: var(--space-inline); padding: 0 var(--space-2); color: inherit; font-size: inherit; }
+.route-setup__step[aria-current='step'] { color: var(--color-accent); font-weight: var(--font-weight-semibold); }
+.route-setup__step--done { color: var(--color-ok); }
+.route-setup__index { display: inline-grid; place-items: center; width: 18px; height: 18px; border: 1px solid currentColor; border-radius: 50%; font-size: var(--font-size-caption); }
+.route-setup__step[aria-current='step'] .route-setup__index { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-surface); }
 /* Route details stack their fields, so the two panels end at about the same height. */
 .route-top-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
 .route-bottom-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.6fr); gap: var(--space-4); align-items: start; }
@@ -14,13 +25,17 @@
 .route-nodes .work-surface__body .table-scroll { border: 0; }
 .route-nodes td select { min-width: 7.5em; }
 .pattern-layout { display: grid; grid-template-columns: minmax(170px, 230px) minmax(0, 1fr); }
-.pattern-list { display: flex; flex-direction: column; padding: var(--space-2); border-right: 1px solid var(--color-border-soft); }
-.pattern-list__group { padding: var(--space-2) var(--space-2) var(--space-1); color: var(--color-text-subtle); font-size: var(--font-size-caption); font-weight: var(--font-weight-semibold); }
-.pattern-list button { display: grid; width: 100%; min-height: 44px; text-align: left; border: 0; border-left: 3px solid transparent; border-radius: var(--radius-control); background: transparent; padding: var(--space-2); }
-.pattern-list button:hover:not(:disabled) { background: var(--color-surface-2); }
-.pattern-list button.selected { background: var(--color-accent-soft); border-left-color: var(--color-accent); }
-.pattern-list .pattern-list-add { display: block; min-height: 0; margin-top: var(--space-2); padding: var(--space-2); text-align: left; color: var(--color-accent); font-weight: var(--font-weight-semibold); }
-.pattern-list span { color: var(--color-text-muted); font-size: var(--font-size-caption); margin-top: 2px; }
+/* UR-14: each Pattern is a white card on the tinted list, with its short name as a chip, so neighbouring items read apart. */
+.pattern-list { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2); border-right: 1px solid var(--color-border-soft); background: var(--color-surface-2); border-radius: 0 0 0 var(--radius-panel); }
+.pattern-list__group { padding: var(--space-2) var(--space-1) 0; color: var(--color-text-subtle); font-size: var(--font-size-caption); font-weight: var(--font-weight-semibold); }
+.pattern-list__group:not(:first-child) { margin-top: var(--space-2); }
+.pattern-list button { display: grid; gap: var(--space-1); width: 100%; min-height: 44px; text-align: left; border: 1px solid var(--color-border-soft); border-radius: var(--radius-control); background: var(--color-surface); padding: var(--space-2); }
+.pattern-list button:hover:not(:disabled) { border-color: var(--color-border); }
+.pattern-list button.selected { border-color: var(--color-accent); background: var(--color-accent-soft); box-shadow: inset 3px 0 0 var(--color-accent); }
+.pattern-list .pattern-list-add { display: block; min-height: 0; margin-top: var(--space-2); padding: var(--space-2); border: 0; background: transparent; text-align: left; color: var(--color-accent); font-weight: var(--font-weight-semibold); }
+.pattern-list .pattern-list-add--first { min-height: var(--control-height); margin-top: var(--space-1); padding: 0 var(--space-3); border: 1px solid var(--color-accent); background: var(--color-accent); color: var(--color-surface); text-align: center; }
+.pattern-list__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-caption); }
+.pattern-list button.selected .chip { background: var(--color-surface); }
 .pattern-list em { display: inline-block; margin-left: var(--space-1); color: var(--color-text-muted); font-size: var(--font-size-caption); font-style: normal; font-weight: var(--font-weight-bold); }
 .pattern-list p { padding: var(--space-2); color: var(--color-text-muted); line-height: 1.4; }
 .pattern-editor { min-width: 0; padding: 0; }
