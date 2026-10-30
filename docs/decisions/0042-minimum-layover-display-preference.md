@@ -3,6 +3,7 @@
 - Status: Accepted and implemented
 - Date: 2026-10-22 (user decision C1 of the code review; the record was written on 2026-10-23)
 - Annotates: Decision 0020 item 19
+- Annotated by: Decision 0050 (the rule is set per direction: outbound, inbound, or both)
 
 ## Context
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
-import { createManagedDirections, createRouteDirection, mapPatternPointsToDirection, normalizeDirections, validateDirection, validatePatternDirection } from './directions';
+import { createManagedDirections, createRouteDirection, mapPatternPointsToDirection, normalizeDirections, patternDirectionGroups, validateDirection, validatePatternDirection } from './directions';
 import type { RoutePattern } from './types';
 
 const nodes = [
@@ -58,5 +58,13 @@ describe('route directions and timetable columns', () => {
     const direction = { ...createRouteDirection('s', 'r', 'Outbound'), columns: [{ id: 'col-a', nodeId: 'a', sequence: 0 }] };
     const pattern: RoutePattern = { id: 'p', scenarioId: 's', routeId: 'r', name: 'P', directionId: direction.id, points: [{ id: 'p1', nodeId: 'b', sequence: 0, cumulativeMiles: 0 }], ...metadata() };
     expect(validatePatternDirection(pattern, direction, nodes).map((finding) => finding.ruleId)).toContain('pattern.directionColumnRequired');
+  });
+
+  it('maps each Pattern to the group of its direction, leaving out Patterns with no direction or no group', () => {
+    const [outbound, inbound] = createManagedDirections('s', 'r');
+    const { group: _group, ...ungrouped } = createRouteDirection('s', 'r', 'Legacy');
+    const pattern = (id: string, directionId?: string): RoutePattern => ({ id, scenarioId: 's', routeId: 'r', name: id, ...(directionId ? { directionId } : {}), points: [], ...metadata() });
+    const groups = patternDirectionGroups([pattern('out', outbound.id), pattern('in', inbound.id), pattern('legacy', ungrouped.id), pattern('none'), pattern('missing', 'gone')], [outbound, inbound, ungrouped]);
+    expect([...groups]).toEqual([['out', 'outbound'], ['in', 'inbound']]);
   });
 });

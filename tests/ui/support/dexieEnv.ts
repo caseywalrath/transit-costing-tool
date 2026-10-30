@@ -17,6 +17,7 @@ export const SETUP = `return (async () => {
       listTrips: async (scenarioId, tripProfileId) => (await repository.db.trips.where('scenarioId').equals(scenarioId).toArray()).filter((t) => t.tripProfileId === tripProfileId),
       getTripProfile: (id) => repository.getTripProfile(id),
       listPatterns: (scenarioId) => repository.db.patterns.where('scenarioId').equals(scenarioId).toArray(),
+      listDirections: (scenarioId) => repository.db.directions.where('scenarioId').equals(scenarioId).toArray(),
     });
     const counts = async () => { const out = {}; for (const t of repository.db.tables) out[t.name] = await t.count(); return out; };
     return { db: repository.db, repository, backup, service, trips, blockingRepository, blocking, counts };

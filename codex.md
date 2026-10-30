@@ -183,3 +183,5 @@ Unsaved-change prompts now follow the Costing model (Cancel, Discard, Save): the
 - 2026-10-30: A blank Annual Service Days field on the Route tab is recorded as 0 (`NumericCommit` option `blankAsZero`). Other numeric fields still refuse a blank.
 
 - 2026-10-30: The Pattern point or Blocking trip moved last with the ↑/↓ buttons stays marked (`row-moved` in `tables.css`: accent bar, shading, and a short flash unless reduced motion is requested), so it can be followed to its new place. The marker is view state only.
+
+- 2026-10-30: The Blocking minimum layover can be set per direction (Decision 0050): `MinimumLayoverRules` (`outbound`/`inbound`), the direction of the preceding Trip picks the rule, an unknown direction takes the larger requirement, and a stored single rule reads as both directions. The dialog opens with "Same for both directions" checked.

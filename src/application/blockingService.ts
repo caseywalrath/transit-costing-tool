@@ -1,7 +1,8 @@
 import type { BlockingCommands, BlockingQueries, BlockingRepository } from './ports';
-import type { BlockingBlock, BlockingScenario, BlockActivity, RoutePattern, Trip, TripProfile, ValidationFinding } from '../domain/types';
-import { applyDeadheadToMatchingConnections, applyTripAssignment, assertBlockingScenarioSourceUnchanged, assertBlockLabelAvailable, calculateBlockDeletionImpact, calculateBlockingScenarioDeletionImpact, classifyBlockingInsertion, createBlockingBlock, createBlockingScenario, createBlockingScenarioSourceSignature, duplicateBlockingScenario, insertBlockActivity, moveRevenueTripGroup, normalizeBlockActivities, parseActivityInput, parseMinimumLayoverRule, planBulkBoundaryActivities, proposeBlockLabel, renameBlockingScenario, summarizeBlock, summarizeBlockingScenario, unassignedRouteTrips, validateBlockingAssignments, validateBlockingBlock, type BlockingScenarioGraph, type BulkBoundaryRequest, type BulkBoundaryPreview } from '../domain/blocking';
-import type { ActivityTextInput, BlockDeletionImpact, BlockingActivityAddRequest, BlockingActivityEditRequest, BlockingAssignmentRequest, BulkDeadheadRequest, ParsedActivityInput, ParsedMinimumLayover, BlockingBulkAssignmentRequest, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingCompatibility, BlockSummary, BlockingSummary, BlockingTripsAssignmentRequest, MinimumLayoverRule } from '../domain/blocking';
+import type { BlockingBlock, BlockingScenario, BlockActivity, RouteDirection, RoutePattern, Trip, TripProfile, ValidationFinding } from '../domain/types';
+import { applyDeadheadToMatchingConnections, applyTripAssignment, assertBlockingScenarioSourceUnchanged, assertBlockLabelAvailable, calculateBlockDeletionImpact, calculateBlockingScenarioDeletionImpact, classifyBlockingInsertion, createBlockingBlock, createBlockingScenario, createBlockingScenarioSourceSignature, duplicateBlockingScenario, insertBlockActivity, moveRevenueTripGroup, normalizeBlockActivities, parseActivityInput, parseMinimumLayoverRule, parseMinimumLayoverRules, planBulkBoundaryActivities, proposeBlockLabel, renameBlockingScenario, summarizeBlock, summarizeBlockingScenario, unassignedRouteTrips, validateBlockingAssignments, validateBlockingBlock, type BlockingScenarioGraph, type BulkBoundaryRequest, type BulkBoundaryPreview } from '../domain/blocking';
+import type { ActivityTextInput, BlockDeletionImpact, BlockingActivityAddRequest, BlockingActivityEditRequest, BlockingAssignmentRequest, BulkDeadheadRequest, ParsedActivityInput, ParsedMinimumLayover, BlockingBulkAssignmentRequest, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingCompatibility, BlockSummary, BlockingSummary, BlockingTripsAssignmentRequest, MinimumLayoverRule, MinimumLayoverRowInput, MinimumLayoverRules, ParsedMinimumLayoverRules } from '../domain/blocking';
+import { patternDirectionGroups, type DirectionGroup } from '../domain/directions';
 import { newId, withUpdatedAt } from '../domain/ids';
 import { blockingActivitiesCsv, blockingBlocksCsv, blockingScenariosCsv, blockingSummariesCsv } from '../persistence/csv';
 import { publishWrites, SaveStatusPublisher } from './saveStatus';
@@ -11,6 +12,8 @@ export interface BlockingContextProvider {
   listTrips(scenarioId: string, tripProfileId: string): Promise<Trip[]>;
   getTripProfile(id: string): Promise<TripProfile | undefined>;
   listPatterns(scenarioId: string): Promise<RoutePattern[]>;
+  /** The Scenario's Directions. Without it every Pattern's direction is unknown, and a minimum layover applies the larger of its two rules. */
+  listDirections?(scenarioId: string): Promise<RouteDirection[]>;
 }
 
 /** Removes the Trips in `tripIds` from a Block, with the deadheads next to them. */
@@ -272,25 +275,28 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
   }
   parseActivityInput(input: ActivityTextInput): ParsedActivityInput { return parseActivityInput(input); }
   parseMinimumLayover(mode: 'none' | MinimumLayoverRule['mode'], amount: string): ParsedMinimumLayover { return parseMinimumLayoverRule(mode, amount); }
+  parseMinimumLayoverRules(input: Record<DirectionGroup, MinimumLayoverRowInput>): ParsedMinimumLayoverRules { return parseMinimumLayoverRules(input); }
+  private async patternDirections(scenarioId: string, patterns: RoutePattern[]) { return patternDirectionGroups(patterns, await this.context.listDirections?.(scenarioId) ?? []); }
   async getBlockSummary(blockingScenarioId: string, blockId: string): Promise<BlockSummary | undefined> { const [scenario, block] = await Promise.all([this.repository.getBlockingScenario(blockingScenarioId), this.repository.getBlockingBlock(blockId)]); if (!scenario || !block) return undefined; const trips = await this.context.listTrips(scenario.scenarioId, scenario.tripProfileId); return summarizeBlock(block, { scenario: { id: scenario.scenarioId }, blockingScenario: scenario, trips, patterns: await this.context.listPatterns(scenario.scenarioId) }); }
   async getScenarioSummary(blockingScenarioId: string, serviceDayId?: string): Promise<BlockingSummary | undefined> { const scenario = await this.repository.getBlockingScenario(blockingScenarioId); if (!scenario) return undefined; const blocks = await this.repository.listBlockingBlocks(blockingScenarioId, serviceDayId); return summarizeBlockingScenario(scenario, blocks, { trips: await this.context.listTrips(scenario.scenarioId, scenario.tripProfileId), patterns: await this.context.listPatterns(scenario.scenarioId) }); }
-  async classifyInsertion(blockingScenarioId: string, blockId: string, tripId: string, insertAt?: number, minimumLayover?: MinimumLayoverRule): Promise<BlockingCompatibility> { const [scenario, block, trip] = await Promise.all([this.repository.getBlockingScenario(blockingScenarioId), this.repository.getBlockingBlock(blockId), this.context.getTrip(tripId)]); if (!scenario || !block || !trip) return { status: 'incomplete', findings: [] }; return classifyBlockingInsertion({ block, insertAt, trip, trips: await this.context.listTrips(scenario.scenarioId, scenario.tripProfileId), patterns: await this.context.listPatterns(scenario.scenarioId), minimumLayover }); }
+  async classifyInsertion(blockingScenarioId: string, blockId: string, tripId: string, insertAt?: number, minimumLayover?: MinimumLayoverRules): Promise<BlockingCompatibility> { const [scenario, block, trip] = await Promise.all([this.repository.getBlockingScenario(blockingScenarioId), this.repository.getBlockingBlock(blockId), this.context.getTrip(tripId)]); if (!scenario || !block || !trip) return { status: 'incomplete', findings: [] }; const patterns = await this.context.listPatterns(scenario.scenarioId); return classifyBlockingInsertion({ block, insertAt, trip, trips: await this.context.listTrips(scenario.scenarioId, scenario.tripProfileId), patterns, minimumLayover, patternDirections: minimumLayover ? await this.patternDirections(scenario.scenarioId, patterns) : undefined }); }
   /**
    * Classifies every listed Trip against one Block, reading the Blocking Scenario, the Block, the Trips, and the Patterns once.
    * A Trip that is not in the Scenario's Trip Profile is looked up on its own, as `classifyInsertion` does; one that cannot be found is
    * incomplete. When the Blocking Scenario or the Block is gone, every Trip is incomplete and nothing else is read.
    */
-  async classifyInsertions(blockingScenarioId: string, blockId: string, tripIds: string[], insertAt?: number, minimumLayover?: MinimumLayoverRule): Promise<Map<string, BlockingCompatibility>> {
+  async classifyInsertions(blockingScenarioId: string, blockId: string, tripIds: string[], insertAt?: number, minimumLayover?: MinimumLayoverRules): Promise<Map<string, BlockingCompatibility>> {
     const ids = [...new Set(tripIds)];
     const incomplete = (): BlockingCompatibility => ({ status: 'incomplete', findings: [] });
     const [scenario, block] = await Promise.all([this.repository.getBlockingScenario(blockingScenarioId), this.repository.getBlockingBlock(blockId)]);
     if (!scenario || !block || !ids.length) return new Map(ids.map((id) => [id, incomplete()]));
     const [trips, patterns] = await Promise.all([this.context.listTrips(scenario.scenarioId, scenario.tripProfileId), this.context.listPatterns(scenario.scenarioId)]);
+    const patternDirections = minimumLayover ? await this.patternDirections(scenario.scenarioId, patterns) : undefined;
     const byId = new Map(trips.map((item) => [item.id, item]));
     const result = new Map<string, BlockingCompatibility>();
     for (const id of ids) {
       const trip = byId.get(id) ?? await this.context.getTrip(id);
-      result.set(id, trip ? classifyBlockingInsertion({ block, insertAt, trip, trips, patterns, minimumLayover }) : incomplete());
+      result.set(id, trip ? classifyBlockingInsertion({ block, insertAt, trip, trips, patterns, minimumLayover, patternDirections }) : incomplete());
     }
     return result;
   }

@@ -198,7 +198,7 @@ Unallocated time remaining between connected block activities after any required
 
 ### Minimum layover (display preference)
 
-A planner's threshold, entered in the Unassigned Trips list as fixed minutes per connection or as a percentage of the preceding Trip's revenue runtime. It changes only which candidate Trips are classified as compatible. It is a browser preference, not Block data, and it does not change a Block's layover or validity (Decision 0042).
+A planner's threshold, entered in the Unassigned Trips list as fixed minutes per connection or as a percentage of the preceding Trip's revenue runtime. It is set for both directions together or separately for outbound and inbound; the direction of the preceding Trip picks the rule, and an unknown direction takes the larger requirement (Decision 0050). It changes only which candidate Trips are classified as compatible. It is a browser preference, not Block data, and it does not change a Block's layover or validity (Decision 0042).
 
 ### Revenue hours
 

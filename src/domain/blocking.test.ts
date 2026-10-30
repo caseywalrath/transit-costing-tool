@@ -104,8 +104,51 @@ describe('blocking domain contracts', () => {
     const first = trip('first', 600, 1200);
     const candidate = { ...trip('candidate', 1260, 1800), patternId: onward.id, stopTimes: [{ patternPointId: 'q1', sequence: 0, time: 1260 }, { patternPointId: 'q2', sequence: 1, time: 1800 }] };
     const value = block('minimum-layover', [{ id: 'r1', type: 'revenueTrip', sequence: 0, tripId: first.id }]);
-    expect(classifyBlockingInsertion({ block: value, insertAt: 1, trip: candidate, trips: [first, candidate], patterns: [pattern, onward], minimumLayover: { mode: 'minutes', value: 2 } }).status).toBe('insufficientLayover');
-    expect(classifyBlockingInsertion({ block: value, insertAt: 1, trip: candidate, trips: [first, candidate], patterns: [pattern, onward], minimumLayover: { mode: 'percent', value: 10 } }).status).toBe('compatible');
+    const both = (rule: { mode: 'minutes' | 'percent'; value: number }) => ({ outbound: rule, inbound: rule });
+    expect(classifyBlockingInsertion({ block: value, insertAt: 1, trip: candidate, trips: [first, candidate], patterns: [pattern, onward], minimumLayover: both({ mode: 'minutes', value: 2 }) }).status).toBe('insufficientLayover');
+    expect(classifyBlockingInsertion({ block: value, insertAt: 1, trip: candidate, trips: [first, candidate], patterns: [pattern, onward], minimumLayover: both({ mode: 'percent', value: 10 }) }).status).toBe('compatible');
+  });
+
+  describe('minimum layover by direction (Decision 0050)', () => {
+    const onward: RoutePattern = { ...pattern, id: 'onward', points: [{ id: 'q1', nodeId: 'B', sequence: 0, cumulativeMiles: 0 }, { id: 'q2', nodeId: 'C', sequence: 1, cumulativeMiles: 5 }] };
+    // The preceding Trip runs 600 to 1200 (10 minutes) and the candidate leaves 60 seconds later.
+    const first = trip('first', 600, 1200);
+    const candidate = { ...trip('candidate', 1260, 1800), patternId: onward.id, stopTimes: [{ patternPointId: 'q1', sequence: 0, time: 1260 }, { patternPointId: 'q2', sequence: 1, time: 1800 }] };
+    const value = block('by-direction', [{ id: 'r1', type: 'revenueTrip', sequence: 0, tripId: first.id }]);
+    const classify = (minimumLayover: Parameters<typeof classifyBlockingInsertion>[0]['minimumLayover'], precedingDirection?: 'outbound' | 'inbound') =>
+      classifyBlockingInsertion({ block: value, insertAt: 1, trip: candidate, trips: [first, candidate], patterns: [pattern, onward], minimumLayover, patternDirections: precedingDirection ? new Map([[pattern.id, precedingDirection]]) : undefined });
+    const twoMinutes = { mode: 'minutes', value: 2 } as const;
+
+    it('applies an outbound-only rule after outbound Trips and not after inbound Trips', () => {
+      expect(classify({ outbound: twoMinutes }, 'outbound').status).toBe('insufficientLayover');
+      expect(classify({ outbound: twoMinutes }, 'inbound').status).toBe('compatible');
+    });
+
+    it('applies an inbound-only rule after inbound Trips and not after outbound Trips', () => {
+      expect(classify({ inbound: twoMinutes }, 'inbound').status).toBe('insufficientLayover');
+      expect(classify({ inbound: twoMinutes }, 'outbound').status).toBe('compatible');
+    });
+
+    it('applies the rule of the preceding Trip when the two directions differ, and names the direction in the finding', () => {
+      const rules = { outbound: { mode: 'minutes', value: 1 }, inbound: twoMinutes } as const;
+      expect(classify(rules, 'outbound').status).toBe('compatible');
+      const short = classify(rules, 'inbound');
+      expect(short.status).toBe('insufficientLayover');
+      expect(short.findings[0]).toMatchObject({ ruleId: 'block.minimumLayoverShort', parameters: { availableSeconds: 60, requiredSeconds: 120, direction: 'inbound' } });
+    });
+
+    it('measures a percentage rule against the preceding Trip for its own direction', () => {
+      const rules = { outbound: { mode: 'percent', value: 10 }, inbound: { mode: 'percent', value: 20 } } as const;
+      expect(classify(rules, 'outbound').status).toBe('compatible');
+      expect(classify(rules, 'inbound').status).toBe('insufficientLayover');
+    });
+
+    it('applies the larger requirement when the direction of the preceding Trip is unknown', () => {
+      expect(classify({ outbound: { mode: 'minutes', value: 0 }, inbound: twoMinutes }).status).toBe('insufficientLayover');
+      expect(classify({ outbound: twoMinutes }).status).toBe('insufficientLayover');
+      expect(classify({ outbound: { mode: 'minutes', value: 1 }, inbound: { mode: 'percent', value: 10 } }).status).toBe('compatible');
+      expect(classify({}).status).toBe('compatible');
+    });
   });
 
   it('returns known valid subtotals and counts invalid or incomplete blocks', () => {

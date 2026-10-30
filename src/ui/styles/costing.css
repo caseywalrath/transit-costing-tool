@@ -31,6 +31,7 @@
 .activity-form input:not([type='checkbox']), .activity-form select { box-sizing: border-box; width: 100%; min-width: 0; height: 32px; min-height: 32px; }
 .activity-form label.activity-bulk-option { display: flex; grid-column: 1 / -1; align-items: center; justify-self: start; gap: var(--space-2); margin-top: 2px; }
 .activity-bulk-option input[type='checkbox'] { width: 15px; min-width: 15px; height: 15px; min-height: 15px; margin: 0; padding: 0; }
+.activity-form .layover-direction-title { grid-column: 1 / -1; margin: var(--space-1) 0 0; color: var(--color-text); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
 .activity-dialog .boundary-preview { margin: var(--space-3) 0 0; color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
 
 .costing-workspace .work-surface__body > .inline-note { margin: var(--space-2) 0; }

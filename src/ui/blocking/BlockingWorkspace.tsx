@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { directionGroupName, MANAGED_DIRECTION_GROUPS, type DirectionGroup } from '../../domain/directions';
 import { createPortal } from 'react-dom';
 import type { BlockingCommands, BlockingQueries } from '../../application/ports';
 import type { TripGenerationApplication } from '../../application/tripGenerationService';
-import { BlockingValidationError, createBlockingScenarioSourceSignature, type BlockDeletionImpact, type BlockingScenarioDeletionImpact, type BlockSummary, type BulkBoundaryPreview, type BulkBoundaryRequest, type CompatibilityStatus, type MinimumLayoverRule } from '../../domain/blocking';
+import { BlockingValidationError, createBlockingScenarioSourceSignature, normalizeMinimumLayoverRules, type MinimumLayoverRowInput, type MinimumLayoverRules, type ParsedMinimumLayoverRules, type BlockDeletionImpact, type BlockingScenarioDeletionImpact, type BlockSummary, type BulkBoundaryPreview, type BulkBoundaryRequest, type CompatibilityStatus, type MinimumLayoverRule } from '../../domain/blocking';
 import { newId } from '../../domain/ids';
 import { parseServiceTime } from '../../domain/time';
 import { sortServiceDays } from '../../domain/serviceDays';
@@ -41,16 +42,11 @@ type UnassignedFilters = { patternIds: string[]; startNodeIds: string[]; endNode
 const emptyUnassignedFilters = (): UnassignedFilters => ({ patternIds: [], startNodeIds: [], endNodeIds: [], fromTime: { from: '', to: '' }, toTime: { from: '', to: '' } });
 
 const preferenceKey = 'transit-costing-tool.blocking-selection.v1';
-type BlockingSelectionPreference = { tripProfileId?: string; blockingScenarioId?: string; blockingScenarioByProfile?: Record<string, string>; serviceDayId?: string; minimumLayover?: MinimumLayoverRule; blockSelections?: Record<string, string> };
-function storedLayoverRule(value: unknown): MinimumLayoverRule | undefined {
-  if (value === null || typeof value !== 'object') return undefined;
-  const { mode, value: amount } = value as Record<string, unknown>;
-  return (mode === 'minutes' || mode === 'percent') && typeof amount === 'number' && Number.isFinite(amount) && amount >= 0 ? { mode, value: amount } : undefined;
-}
+type BlockingSelectionPreference = { tripProfileId?: string; blockingScenarioId?: string; blockingScenarioByProfile?: Record<string, string>; serviceDayId?: string; minimumLayover?: MinimumLayoverRules; blockSelections?: Record<string, string> };
 /** The stored selection, with every field checked: a value of the wrong shape reads as not stored (finding 4-010). */
 function preference(): BlockingSelectionPreference {
   const stored = readStoredRecord(preferenceKey);
-  const minimumLayover = storedLayoverRule(stored.minimumLayover);
+  const minimumLayover = normalizeMinimumLayoverRules(stored.minimumLayover);
   return { tripProfileId: storedText(stored.tripProfileId), blockingScenarioId: storedText(stored.blockingScenarioId), blockingScenarioByProfile: storedTextMap(stored.blockingScenarioByProfile), serviceDayId: storedText(stored.serviceDayId), ...(minimumLayover ? { minimumLayover } : {}), blockSelections: storedTextMap(stored.blockSelections) };
 }
 /** Whether the planner collapsed the Unassigned trips panel to its rail. Kept per device (BL-A). Anything but `{"collapsed":true}` reads as not collapsed. */
@@ -94,7 +90,7 @@ const blockingMessages: Record<string, string> = {
   'block.tripContextMismatch': 'The trip belongs to a different scenario or service day.',
   'block.tripProfileMismatch': 'The trip belongs to a different trip profile.',
 };
-function message(finding: ValidationFinding) { return blockingMessages[finding.messageKey] ?? finding.messageKey.replace(/^block\./, '').replaceAll(/([A-Z])/g, ' $1').replace(/^./, (value) => value.toUpperCase()); }
+function message(finding: ValidationFinding) { if (finding.ruleId === 'block.minimumLayoverShort' && finding.parameters?.direction) return `The connection after an ${finding.parameters.direction} trip is shorter than the configured minimum layover.`; return blockingMessages[finding.messageKey] ?? finding.messageKey.replace(/^block\./, '').replaceAll(/([A-Z])/g, ' $1').replace(/^./, (value) => value.toUpperCase()); }
 const mileageFindingRules = new Set(['block.revenueMilesIncomplete', 'block.platformMilesIncomplete']);
 function isMileageFinding(finding: ValidationFinding) { return mileageFindingRules.has(finding.ruleId); }
 function BlockStatusIcon({ summary }: { summary?: BlockSummary }) {
@@ -157,7 +153,7 @@ export function BlockingWorkspace({ scopeSlot, blockingService, tripService, agg
   const days = sortServiceDays(records.serviceDays); const profiles = records.tripProfiles ?? [];
   const [tripProfileId, setTripProfileId] = useState(''); const [blockingScenarioId, setBlockingScenarioId] = useState(''); const [serviceDayId, setServiceDayId] = useState('');
   const [scenarios, setScenarios] = useState<BlockingScenario[]>([]); const [allBlocks, setAllBlocks] = useState<BlockingBlock[]>([]); const [selectedBlockId, setSelectedBlockId] = useState(''); const [scenarioSelectionCleared, setScenarioSelectionCleared] = useState(false);
-  const [summary, setSummary] = useState<Awaited<ReturnType<BlockingQueries['getScenarioSummary']>>>(); const [compatibility, setCompatibility] = useState(new Map<string, CompatibilityStatus>()); const [compatibilityPending, setCompatibilityPending] = useState(false); const [compatibleOnly, setCompatibleOnly] = useState(false); const [unassignedSort, setUnassignedSort] = useState<UnassignedSort>({ column: 'fromTime', direction: 'ascending' }); const [blockSort, setBlockSort] = useState<BlockSort>({ column: 'block', direction: 'ascending' }); const [unassignedFilters, setUnassignedFilters] = useState<UnassignedFilters>(emptyUnassignedFilters); const [minimumLayover, setMinimumLayover] = useState<MinimumLayoverRule | undefined>(() => preference().minimumLayover); const [layoverDialogOpen, setLayoverDialogOpen] = useState(false); const [trips, setTrips] = useState<Trip[]>([]); const [unassigned, setUnassigned] = useState<Trip[]>([]);
+  const [summary, setSummary] = useState<Awaited<ReturnType<BlockingQueries['getScenarioSummary']>>>(); const [compatibility, setCompatibility] = useState(new Map<string, CompatibilityStatus>()); const [compatibilityPending, setCompatibilityPending] = useState(false); const [compatibleOnly, setCompatibleOnly] = useState(false); const [unassignedSort, setUnassignedSort] = useState<UnassignedSort>({ column: 'fromTime', direction: 'ascending' }); const [blockSort, setBlockSort] = useState<BlockSort>({ column: 'block', direction: 'ascending' }); const [unassignedFilters, setUnassignedFilters] = useState<UnassignedFilters>(emptyUnassignedFilters); const [minimumLayover, setMinimumLayover] = useState<MinimumLayoverRules | undefined>(() => preference().minimumLayover); const layoverKey = JSON.stringify(minimumLayover ?? null); const [layoverDialogOpen, setLayoverDialogOpen] = useState(false); const [trips, setTrips] = useState<Trip[]>([]); const [unassigned, setUnassigned] = useState<Trip[]>([]);
   // The trip moved last stays shaded so it can be followed to its new place; `tick` restarts the flash on a repeated move.
   const [movedActivity, setMovedActivity] = useState<{ id: string; tick: number }>();
   const [scenarioDialog, setScenarioDialog] = useState<{ mode: 'create' | 'duplicate' | 'rename'; value: string }>(); const [deleteScenario, setDeleteScenario] = useState<{ scenario: BlockingScenario; impact: BlockingScenarioDeletionImpact }>(); const [blockDialog, setBlockDialog] = useState<{ mode: 'create' | 'rename'; block?: BlockingBlock; value: string }>(); const [notesDialog, setNotesDialog] = useState<BlockingBlock>(); const [deleteBlock, setDeleteBlock] = useState<{ block: BlockingBlock; impact: BlockDeletionImpact }>(); const [removeActivityPending, setRemoveActivityPending] = useState<{ activity: BlockActivity; title: string; text: string; label: string }>(); const blocksRequests = useRef(createLatestRequest()).current; const scenariosRequests = useRef(createLatestRequest()).current; const [activityDraft, setActivityDraft] = useState<ActivityDraft>(); const [boundaryReview, setBoundaryReview] = useState<BoundaryReview>(); const [deleteDeadhead, setDeleteDeadhead] = useState<DeadheadDeleteRequest>(); const [reassignTrips, setReassignTrips] = useState<{ trips: Trip[]; sourceBlockId: string }>(); const [removeTripsPending, setRemoveTripsPending] = useState(false); const [selectedTripIds, setSelectedTripIds] = useState<string[]>([]); const [selectedUnassignedTripIds, setSelectedUnassignedTripIds] = useState<string[]>([]); const blockSelectionAnchorId = useRef<string | undefined>(undefined); const unassignedSelectionAnchorId = useRef<string | undefined>(undefined); const compatibilityRequestRef = useRef(0); const [busy, setBusy] = useState(false);
@@ -248,7 +244,7 @@ export function BlockingWorkspace({ scopeSlot, blockingService, tripService, agg
     const prior = preference(); const blockSelections = { ...(prior.blockSelections ?? {}) }; if (blockingScenarioId && serviceDayId && selectedBlockId) blockSelections[blockSelectionKey(blockingScenarioId, serviceDayId)] = selectedBlockId;
     const settled = scenarios.some((item) => item.id === blockingScenarioId && item.tripProfileId === tripProfileId);
     savePreference({ ...prior, tripProfileId, serviceDayId, ...(settled ? { blockingScenarioId, blockingScenarioByProfile: { ...(prior.blockingScenarioByProfile ?? {}), [tripProfileId]: blockingScenarioId } } : {}), ...(minimumLayover ? { minimumLayover } : {}), blockSelections });
-  }, [tripProfileId, blockingScenarioId, serviceDayId, selectedBlockId, scenarios, minimumLayover?.mode, minimumLayover?.value]);
+  }, [tripProfileId, blockingScenarioId, serviceDayId, selectedBlockId, scenarios, layoverKey]);
   useEffect(() => { setUnassignedFilters(emptyUnassignedFilters()); }, [aggregate.route.id, serviceDayId, tripProfileId]);
   useEffect(() => { setSelectedTripIds([]); setSelectedUnassignedTripIds([]); blockSelectionAnchorId.current = undefined; unassignedSelectionAnchorId.current = undefined; }, [blockingScenarioId, serviceDayId, selectedBlockId]);
   useEffect(() => {
@@ -261,7 +257,7 @@ export function BlockingWorkspace({ scopeSlot, blockingService, tripService, agg
       .then((items) => { if (live && requestId === compatibilityRequestRef.current) { setCompatibility(new Map([...items].map(([tripId, item]) => [tripId, item.status] as const))); setCompatibilityPending(false); } })
       .catch((error) => { if (live && requestId === compatibilityRequestRef.current) { setCompatibilityPending(false); onError(error, 'Unable to review insertion compatibility.'); } });
     return () => { live = false; };
-  }, [blockingScenarioId, selectedBlock?.id, selectedBlockActivitySignature, unassigned.map((item) => item.id).join(','), minimumLayover?.mode, minimumLayover?.value]);
+  }, [blockingScenarioId, selectedBlock?.id, selectedBlockActivitySignature, unassigned.map((item) => item.id).join(','), layoverKey]);
 
   // When the panel and the rail swap and the focused control goes away, focus goes to the control that replaces it (keyboard users keep their place).
   useLayoutEffect(() => {
@@ -373,7 +369,7 @@ export function BlockingWorkspace({ scopeSlot, blockingService, tripService, agg
   const currentBlockMenu: MenuGroup[] = [
     { label: 'Blocks', items: [...dayBlocks].sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: 'base' })).map((block) => ({ id: block.id, label: block.label, checked: block.id === selectedBlockId, disabled: busy, onSelect: () => setSelectedBlockId(block.id) })) },
   ];
-  const layoverLabel = minimumLayover ? `Minimum layover: ${minimumLayover.value}${minimumLayover.mode === 'minutes' ? ' min' : '%'}` : 'Minimum layover…';
+  const layoverLabel = layoverSummary(minimumLayover);
   const unassignedActionsMenu: MenuGroup[] = [
     // "Compatible only" and "Clear filters" are visible in the panel header (BL-A); the minimum layover has no visible control, so it stays here.
     { label: 'Compatibility', items: [{ id: 'minimum-layover', label: layoverLabel, restoreFocus: false, onSelect: () => setLayoverDialogOpen(true) }] },
@@ -439,7 +435,7 @@ export function BlockingWorkspace({ scopeSlot, blockingService, tripService, agg
     {scenarioDialog && <NameDialog title={scenarioDialog.mode === 'create' ? 'New blocking scenario' : scenarioDialog.mode === 'duplicate' ? 'Duplicate blocking scenario' : 'Rename blocking scenario'} initialValue={scenarioDialog.value} submitLabel={scenarioDialog.mode === 'duplicate' ? 'Duplicate' : scenarioDialog.mode === 'rename' ? 'Rename' : 'Create'} busy={busy} onSubmit={saveScenario} onClose={() => setScenarioDialog(undefined)} />}
     {blockDialog && <NameDialog title={blockDialog.mode === 'create' ? 'New block' : 'Rename block'} initialValue={blockDialog.value} submitLabel={blockDialog.mode === 'create' ? 'Create block' : 'Rename'} busy={busy} onSubmit={saveBlock} onClose={() => setBlockDialog(undefined)} />}
     {notesDialog && <NotesDialog block={notesDialog} busy={busy} onSubmit={saveNotes} onClose={() => setNotesDialog(undefined)} />}
-    {layoverDialogOpen && <MinimumLayoverDialog value={minimumLayover} parse={(mode, amount) => blockingService.parseMinimumLayover(mode, amount)} onSubmit={(value) => { setMinimumLayover(value); setLayoverDialogOpen(false); }} onClose={() => setLayoverDialogOpen(false)} />}
+    {layoverDialogOpen && <MinimumLayoverDialog value={minimumLayover} parse={(input) => blockingService.parseMinimumLayoverRules(input)} onSubmit={(value) => { setMinimumLayover(value); setLayoverDialogOpen(false); }} onClose={() => setLayoverDialogOpen(false)} />}
     {deleteScenario && <Confirm title="Delete blocking scenario?" text={`Delete “${deleteScenario.scenario.name}” with ${plural(deleteScenario.impact.blockCount, 'block')} and ${plural(deleteScenario.impact.activityCount, 'activity', 'activities')} across every service day? This cannot be undone.`} label="Delete blocking scenario" busy={busy} onConfirm={() => { setBusy(true); void blockingService.deleteBlockingScenario(deleteScenario.scenario.id, deleteScenario.impact.sourceSignature).then(async () => { setScenarioSelectionCleared(true); setBlockingScenarioId(''); setDeleteScenario(undefined); await refresh(); }).catch((error) => { setDeleteScenario(undefined); failed(error, 'Unable to delete the blocking scenario.'); }).finally(() => setBusy(false)); }} onClose={() => setDeleteScenario(undefined)} />}
     {deleteBlock && <Confirm title="Delete block?" text={`Delete block “${deleteBlock.block.label}” with ${plural(deleteBlock.impact.tripCount, 'trip')}, ${plural(deleteBlock.impact.deadheadCount, 'deadhead')}, and ${plural(deleteBlock.impact.activityCount, 'activity', 'activities')} in all? Its trips will become unassigned in this blocking scenario. This cannot be undone.`} label="Delete block" busy={busy} onConfirm={() => { if (!blockingScenario) return; setBusy(true); void blockingService.deleteBlock(blockingScenario.id, deleteBlock.block.id, deleteBlock.impact.sourceSignature).then(async () => { setDeleteBlock(undefined); await loadBlocks(); }).catch((error) => { setDeleteBlock(undefined); failed(error, 'Unable to delete the block.'); }).finally(() => setBusy(false)); }} onClose={() => setDeleteBlock(undefined)} />}
     {activityDraft && <ActivityDialog draft={activityDraft} nodes={activityDraft.type === 'deadhead' ? [...nodes.values()] : records.nodes} busy={busy} boundaryPreview={boundaryReview?.preview} onSubmit={saveActivity} onReviewBulk={reviewBulkBoundary} onApplyBulk={() => void applyBulkBoundary()} onResetBulk={() => setBoundaryReview(undefined)} onRequestDelete={(values) => { if (!activityDraft.activity || activityDraft.type !== 'deadhead') return; setDeleteDeadhead({ draft: activityDraft, fromNodeId: values.fromNodeId, toNodeId: values.toNodeId, applyToSimilar: values.applyToSimilar }); setActivityDraft(undefined); }} onClose={() => { setBoundaryReview(undefined); setActivityDraft(undefined); }} />}
@@ -540,12 +536,33 @@ function NameDialog({ title, initialValue, submitLabel, busy, onSubmit, onClose 
   return <ModalDialog as="form" label={title} className="confirm-dialog" onSubmit={(event) => { event.preventDefault(); if (value.trim()) onSubmit(value.trim()); }} onClose={onClose} busy={busy}><h2>{title}</h2><label className="dialog-field">Name<input autoFocus value={value} onChange={(event) => setValue(event.target.value)} /></label><div className="dialog-actions"><button type="button" disabled={busy} onClick={onClose}>Cancel</button><button className="primary" disabled={busy || !value.trim()} type="submit">{busy ? 'Saving…' : submitLabel}</button></div></ModalDialog>;
 }
 function NotesDialog({ block, busy, onSubmit, onClose }: { block: BlockingBlock; busy: boolean; onSubmit: (value: string) => void; onClose: () => void }) { const [value, setValue] = useState(block.notes ?? ''); return <ModalDialog as="form" label="Edit block notes" className="confirm-dialog"onSubmit={(event) => { event.preventDefault(); onSubmit(value); }} onClose={onClose}><h2>Edit block notes</h2><label className="dialog-field">Notes<textarea autoFocus rows={4} value={value} onChange={(event) => setValue(event.target.value)} /></label><div className="dialog-actions"><button type="button" disabled={busy} onClick={onClose}>Cancel</button><button className="primary" disabled={busy} type="submit">{busy ? 'Saving…' : 'Save notes'}</button></div></ModalDialog>; }
-function MinimumLayoverDialog({ value, parse, onSubmit, onClose }: { value?: MinimumLayoverRule; parse: (mode: 'none' | MinimumLayoverRule['mode'], amount: string) => { rule?: MinimumLayoverRule; findings: ValidationFinding[] }; onSubmit: (value?: MinimumLayoverRule) => void; onClose: () => void }) {
-  const [mode, setMode] = useState<'none' | MinimumLayoverRule['mode']>(value?.mode ?? 'minutes');
-  const [amount, setAmount] = useState(value ? String(value.value) : '10');
-  const parsed = parse(mode, amount);
-  const valid = parsed.findings.length === 0;
-  return <ModalDialog as="form" label="Minimum layover" className="confirm-dialog activity-dialog" onSubmit={(event) => { event.preventDefault(); if (valid) onSubmit(parsed.rule); }} onClose={onClose}><h2>Minimum layover</h2><p className="profile-usage">Evaluate the connection before each candidate trip using a fixed duration or a percentage of the preceding trip’s revenue runtime.</p><div className="activity-form"><label>Rule<select autoFocus value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="none">No minimum</option><option value="minutes">Minutes per trip</option><option value="percent">Percent of preceding trip</option></select></label><label>{mode === 'percent' ? 'Percentage' : 'Minutes'}<input type="number" min="0" max={mode === 'percent' ? '100' : undefined} step={mode === 'percent' ? '0.1' : '1'} value={amount} disabled={mode === 'none'} onChange={(event) => setAmount(event.target.value)} /></label></div>{!valid && <p className="field-error" role="alert">Enter a non-negative value{mode === 'percent' ? ' from 0 through 100' : ''}.</p>}<div className="dialog-actions activity-dialog-actions activity-dialog-actions--two"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit" disabled={!valid}>Apply</button></div></ModalDialog>;
+type LayoverRowDraft = { mode: 'none' | MinimumLayoverRule['mode']; amount: string };
+function layoverText(rule?: MinimumLayoverRule) { return rule ? `${rule.value}${rule.mode === 'minutes' ? ' min' : '%'}` : 'none'; }
+/** The Actions menu label: the one rule when both directions share it, else each direction's. */
+function layoverSummary(rules?: MinimumLayoverRules) {
+  if (!rules) return 'Minimum layover…';
+  return JSON.stringify(rules.outbound) === JSON.stringify(rules.inbound) ? `Minimum layover: ${layoverText(rules.outbound)}` : `Minimum layover: Out ${layoverText(rules.outbound)} · In ${layoverText(rules.inbound)}`;
+}
+function MinimumLayoverDialog({ value, parse, onSubmit, onClose }: { value?: MinimumLayoverRules; parse: (input: Record<DirectionGroup, MinimumLayoverRowInput>) => ParsedMinimumLayoverRules; onSubmit: (value?: MinimumLayoverRules) => void; onClose: () => void }) {
+  const draftOf = (rule?: MinimumLayoverRule): LayoverRowDraft => rule ? { mode: rule.mode, amount: String(rule.value) } : { mode: 'none', amount: '10' };
+  const [same, setSame] = useState(!value || JSON.stringify(value.outbound) === JSON.stringify(value.inbound));
+  const [rows, setRows] = useState<Record<DirectionGroup, LayoverRowDraft>>(() => value ? { outbound: draftOf(value.outbound), inbound: draftOf(value.inbound) } : { outbound: { mode: 'minutes', amount: '10' }, inbound: { mode: 'minutes', amount: '10' } });
+  // With one rule for both directions, the Outbound row stands for both.
+  const parsed = parse(same ? { outbound: rows.outbound, inbound: rows.outbound } : rows);
+  const shown = same ? ['outbound' as const] : MANAGED_DIRECTION_GROUPS;
+  const invalid = shown.filter((group) => parsed.findings.some((item) => item.field === `${group}.amount`));
+  const valid = invalid.length === 0;
+  function change(group: DirectionGroup, patch: Partial<LayoverRowDraft>) { setRows((current) => ({ ...current, [group]: { ...current[group], ...patch } })); }
+  function toggleSame(next: boolean) { if (!next) setRows((current) => ({ ...current, inbound: current.outbound })); setSame(next); }
+  const fields = (group: DirectionGroup, first: boolean) => {
+    const row = rows[group]; const name = (text: string) => same ? text : `${directionGroupName(group)} ${text.toLowerCase()}`;
+    return <>
+      {!same && <p className="layover-direction-title">After {group} trips</p>}
+      <label>{name('Rule')}<select autoFocus={first} value={row.mode} onChange={(event) => change(group, { mode: event.target.value as LayoverRowDraft['mode'] })}><option value="none">No minimum</option><option value="minutes">Minutes per trip</option><option value="percent">Percent of preceding trip</option></select></label>
+      <label>{name(row.mode === 'percent' ? 'Percentage' : 'Minutes')}<input type="number" min="0" max={row.mode === 'percent' ? '100' : undefined} step={row.mode === 'percent' ? '0.1' : '1'} value={row.amount} disabled={row.mode === 'none'} onChange={(event) => change(group, { amount: event.target.value })} /></label>
+    </>;
+  };
+  return <ModalDialog as="form" label="Minimum layover" className="confirm-dialog activity-dialog" onSubmit={(event) => { event.preventDefault(); if (valid) onSubmit(parsed.rules); }} onClose={onClose}><h2>Minimum layover</h2><p className="profile-usage">Evaluate the connection after each trip using a fixed duration or a percentage of that trip’s revenue runtime. Clear “Same for both directions” to set a different rule after outbound and inbound trips.</p><div className="activity-form"><label className="activity-bulk-option"><input type="checkbox" checked={same} onChange={(event) => toggleSame(event.target.checked)} />Same for both directions</label>{shown.map((group, index) => <Fragment key={group}>{fields(group, index === 0)}</Fragment>)}</div>{invalid.map((group) => <p className="field-error" role="alert" key={group}>{same ? '' : `${directionGroupName(group)}: `}Enter a non-negative value{rows[group].mode === 'percent' ? ' from 0 through 100' : ''}.</p>)}<div className="dialog-actions activity-dialog-actions activity-dialog-actions--two"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit" disabled={!valid}>Apply</button></div></ModalDialog>;
 }
 function Confirm({ title, text, label, busy, onConfirm, onClose }: { title: string; text: string; label: string; busy: boolean; onConfirm: () => void; onClose: () => void }) { return <ModalDialog role="alertdialog" label={title} className="confirm-dialog" onClose={onClose}><h2>{title}</h2><p>{text}</p><div className="dialog-actions"><button autoFocus disabled={busy} onClick={onClose}>Cancel</button><button className="danger" disabled={busy} onClick={onConfirm}>{busy ? 'Deleting…' : label}</button></div></ModalDialog>; }
 function CircleXIcon() { return <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="8.5" /><path d="m9 9 6 6m0-6-6 6" /></svg>; }

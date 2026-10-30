@@ -269,7 +269,7 @@ The Blocking rules sit in `src/domain/blocking.ts` and are reached through `Bloc
 
 The initial Blocking UI filters candidate Trips by one selected Route and does not intentionally create multi-route Blocks. The data model remains scenario-wide. Existing or imported multi-route Blocks remain fully visible, and Route filtering never truncates their activities.
 
-Candidate compatibility may apply a UI preference for minimum layover (Decision 0042): either fixed minutes per connection or a percentage of the preceding Trip's revenue runtime. The pure Blocking classifier evaluates the preference; it does not become authoritative Block data. Persisted Block summaries continue to derive actual layover and deadhead hours from activities and Trip times. Deadhead hours include pull-out, pull-in, and between-Trip deadhead durations; layover remains separate.
+Candidate compatibility may apply a UI preference for minimum layover (Decision 0042): either fixed minutes per connection or a percentage of the preceding Trip's revenue runtime, set for both directions or separately for outbound and inbound (Decision 0050). The direction of the preceding Trip picks the rule: `BlockingApplicationService` reads the Scenario's Directions (optional `listDirections` on its context provider) and passes each Pattern's direction group to the classifier, and an unknown direction applies the larger requirement. The pure Blocking classifier evaluates the preference; it does not become authoritative Block data. Persisted Block summaries continue to derive actual layover and deadhead hours from activities and Trip times. Deadhead hours include pull-out, pull-in, and between-Trip deadhead durations; layover remains separate.
 
 ## Summary and Cost Model
 
