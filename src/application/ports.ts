@@ -180,6 +180,8 @@ export interface BlockingQueries {
   listBlockingBlocks(blockingScenarioId: string, serviceDayId?: string): Promise<BlockingBlock[]>;
   getBlockSummary(blockingScenarioId: string, blockId: string): Promise<BlockSummary | undefined>;
   getScenarioSummary(blockingScenarioId: string, serviceDayId?: string): Promise<import('../domain/blocking').BlockingSummary | undefined>;
+  /** Layover % and Deadhead % of the given service days together, weighted by annual service days (Decision 0051). `undefined` when the Blocking Scenario is gone. */
+  getEstimateFactorSummary(blockingScenarioId: string, serviceDays: ServiceDayDefinition[]): Promise<{ layoverPercent?: number; deadheadPercent?: number } | undefined>;
   classifyInsertion(blockingScenarioId: string, blockId: string, tripId: string, insertAt?: number, minimumLayover?: import('../domain/blocking').MinimumLayoverRules): Promise<BlockingCompatibility>;
   /** The compatibility of every listed Trip with one Block, from one read of the Trips and Patterns. Keyed by Trip id. */
   classifyInsertions(blockingScenarioId: string, blockId: string, tripIds: string[], insertAt?: number, minimumLayover?: import('../domain/blocking').MinimumLayoverRules): Promise<Map<string, BlockingCompatibility>>;

@@ -224,3 +224,12 @@ test('the labels are exact: Move Trip counts Trips only, "No current issues." is
   await expect(page.locator('[role="menu"][aria-label="Trip profile"]')).toHaveCount(1);
   expect(await page.locator('select[aria-label="Trip profile"]').count()).toBe(0);
 });
+
+test('the summary shows Layover % and Deadhead % for the day, and the All days values weighted by annual service days (Decision 0051)', async ({ page }) => {
+  await openBlocking(page);
+  const summary = page.getByLabel('Blocking summary');
+  const tile = (name: string) => summary.locator('.stat-strip > div').filter({ has: page.locator('dt', { hasText: name }) }).locator('dd');
+  await expect(tile('Layover %')).toHaveText('17.8%');
+  await expect(tile('Deadhead %')).toHaveText('5.5%');
+  await expect(summary.locator('.support-panel__aside')).toHaveText('All days, weighted by annual service days: layover 18.2% · deadhead 5.6%');
+});

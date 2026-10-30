@@ -1,9 +1,10 @@
 // Review package P15 (issue I-074c, finding 4-014). What the Trips screen derives from its data (rows, headways, shading, impact counts,
 // the Build Trips form) is computed here, not in App.tsx.
+import type { BlockConnection } from '../domain/blocking';
 import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
 import type { BlockActivity, BlockingBlock, RoutePattern, RuntimeBand, RuntimeProfile, Trip, TripRegenerationUndo } from '../domain/types';
-import { buildTripTableView, columnsWithTimes, buildTripsFieldProblems, parseBuildTripsForm, regenerationUndoApplies, tripBlockAssignmentImpact, tripBlockUnassignmentImpact, type BuildTripsFormValues } from './tripsWorkspaceView';
+import { summarizeTripTable, buildTripTableView, columnsWithTimes, buildTripsFieldProblems, parseBuildTripsForm, regenerationUndoApplies, tripBlockAssignmentImpact, tripBlockUnassignmentImpact, type BuildTripsFormValues } from './tripsWorkspaceView';
 
 const stamp = metadata('2026-10-23T00:00:00.000Z');
 const pattern = (id: string): RoutePattern => ({ ...stamp, id, scenarioId: 's', routeId: 'r', name: id, directionId: 'out', points: [0, 1].map((index) => ({ id: `${id}-${index}`, nodeId: `n${index}`, sequence: index, cumulativeMiles: index, directionColumnId: `col-${index}` })) });
@@ -188,5 +189,23 @@ describe('columns with times', () => {
 
   it('keeps every column when there are no Trips', () => {
     expect(columnsWithTimes(columns, [], [shortTurn])).toEqual(columns);
+  });
+});
+
+describe('summarizeTripTable (Decision 0051)', () => {
+  const trips = [trip('t1', 'a', [0, 3600]), trip('t2', 'a', [4000, 7600]), trip('t3', 'a', [8000, 9800]), { ...trip('t4', 'a', [100]), stopTimes: [{ patternPointId: 'a-0', sequence: 0, time: 100 }] }];
+  const connection = (usableLayoverSeconds: number | undefined, withDeadhead = false): { connection: BlockConnection; deadheadSeconds?: number } => ({ connection: { previousTripId: 'x', nextTripId: 'y', rawGapSeconds: 0, usableLayoverSeconds, ...(withDeadhead ? { deadhead: { id: 'dh', type: 'deadhead' as const, sequence: 1, fromNodeId: 'm', toNodeId: 'n' } } : {}), status: 'valid' as const, findings: [] }, ...(withDeadhead ? { deadheadSeconds: 300 } : {}) });
+
+  it('adds the running seconds, counts a Trip without a run time, and has no layover or deadhead without connections', () => {
+    expect(summarizeTripTable(trips)).toEqual({ tripCount: 4, runningSeconds: 3600 + 3600 + 1800, runTimeMissingCount: 1 });
+    expect(summarizeTripTable([])).toEqual({ tripCount: 0, runningSeconds: 0, runTimeMissingCount: 0 });
+  });
+
+  it('adds layover and deadhead only for assigned Trips that have a connection, as the table cells show them', () => {
+    const connections = new Map([['t1', connection(600, true)], ['t2', connection(900)], ['t3', connection(1200)]]);
+    expect(summarizeTripTable(trips, connections, new Set(['t1', 't2']))).toMatchObject({ layoverSeconds: 1500, deadheadSeconds: 300 });
+    expect(summarizeTripTable(trips, connections, new Set())).toMatchObject({ layoverSeconds: 0, deadheadSeconds: 0 });
+    expect(summarizeTripTable(trips, new Map([['t1', connection(undefined, true)]]), new Set(['t1']))).toMatchObject({ layoverSeconds: 0, deadheadSeconds: 300 });
+    expect(summarizeTripTable(trips, new Map(), new Set(['t1']))).toMatchObject({ layoverSeconds: 0, deadheadSeconds: 0 });
   });
 });

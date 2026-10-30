@@ -1,5 +1,6 @@
 import type { BlockingCommands, BlockingQueries, BlockingRepository } from './ports';
-import type { BlockingBlock, BlockingScenario, BlockActivity, RouteDirection, RoutePattern, Trip, TripProfile, ValidationFinding } from '../domain/types';
+import type { BlockingBlock, BlockingScenario, BlockActivity, RouteDirection, RoutePattern, ServiceDayDefinition, Trip, TripProfile, ValidationFinding } from '../domain/types';
+import { weightedEstimateFactors } from '../domain/blocking';
 import { applyDeadheadToMatchingConnections, applyTripAssignment, assertBlockingScenarioSourceUnchanged, assertBlockLabelAvailable, calculateBlockDeletionImpact, calculateBlockingScenarioDeletionImpact, classifyBlockingInsertion, createBlockingBlock, createBlockingScenario, createBlockingScenarioSourceSignature, duplicateBlockingScenario, insertBlockActivity, moveRevenueTripGroup, normalizeBlockActivities, parseActivityInput, parseMinimumLayoverRule, parseMinimumLayoverRules, planBulkBoundaryActivities, proposeBlockLabel, renameBlockingScenario, summarizeBlock, summarizeBlockingScenario, unassignedRouteTrips, validateBlockingAssignments, validateBlockingBlock, type BlockingScenarioGraph, type BulkBoundaryRequest, type BulkBoundaryPreview } from '../domain/blocking';
 import type { ActivityTextInput, BlockDeletionImpact, BlockingActivityAddRequest, BlockingActivityEditRequest, BlockingAssignmentRequest, BulkDeadheadRequest, ParsedActivityInput, ParsedMinimumLayover, BlockingBulkAssignmentRequest, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingCompatibility, BlockSummary, BlockingSummary, BlockingTripsAssignmentRequest, MinimumLayoverRule, MinimumLayoverRowInput, MinimumLayoverRules, ParsedMinimumLayoverRules } from '../domain/blocking';
 import { patternDirectionGroups, type DirectionGroup } from '../domain/directions';
@@ -279,6 +280,19 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
   private async patternDirections(scenarioId: string, patterns: RoutePattern[]) { return patternDirectionGroups(patterns, await this.context.listDirections?.(scenarioId) ?? []); }
   async getBlockSummary(blockingScenarioId: string, blockId: string): Promise<BlockSummary | undefined> { const [scenario, block] = await Promise.all([this.repository.getBlockingScenario(blockingScenarioId), this.repository.getBlockingBlock(blockId)]); if (!scenario || !block) return undefined; const trips = await this.context.listTrips(scenario.scenarioId, scenario.tripProfileId); return summarizeBlock(block, { scenario: { id: scenario.scenarioId }, blockingScenario: scenario, trips, patterns: await this.context.listPatterns(scenario.scenarioId) }); }
   async getScenarioSummary(blockingScenarioId: string, serviceDayId?: string): Promise<BlockingSummary | undefined> { const scenario = await this.repository.getBlockingScenario(blockingScenarioId); if (!scenario) return undefined; const blocks = await this.repository.listBlockingBlocks(blockingScenarioId, serviceDayId); return summarizeBlockingScenario(scenario, blocks, { trips: await this.context.listTrips(scenario.scenarioId, scenario.tripProfileId), patterns: await this.context.listPatterns(scenario.scenarioId) }); }
+  /**
+   * The Layover % and Deadhead % of all the given service days together, weighted by annual service days (Decision 0051), for typing into
+   * the estimate factors. The Blocks, Trips, and Patterns are read once and each service day is summarized from that one read.
+   */
+  async getEstimateFactorSummary(blockingScenarioId: string, serviceDays: ServiceDayDefinition[]): Promise<{ layoverPercent?: number; deadheadPercent?: number } | undefined> {
+    const scenario = await this.repository.getBlockingScenario(blockingScenarioId);
+    if (!scenario) return undefined;
+    const [blocks, trips, patterns] = await Promise.all([this.repository.listBlockingBlocks(blockingScenarioId), this.context.listTrips(scenario.scenarioId, scenario.tripProfileId), this.context.listPatterns(scenario.scenarioId)]);
+    return weightedEstimateFactors(serviceDays.map((day) => ({
+      annualServiceDays: day.annualServiceDays,
+      summary: summarizeBlockingScenario(scenario, blocks.filter((block) => block.serviceDayId === day.id), { trips, patterns }),
+    })));
+  }
   async classifyInsertion(blockingScenarioId: string, blockId: string, tripId: string, insertAt?: number, minimumLayover?: MinimumLayoverRules): Promise<BlockingCompatibility> { const [scenario, block, trip] = await Promise.all([this.repository.getBlockingScenario(blockingScenarioId), this.repository.getBlockingBlock(blockId), this.context.getTrip(tripId)]); if (!scenario || !block || !trip) return { status: 'incomplete', findings: [] }; const patterns = await this.context.listPatterns(scenario.scenarioId); return classifyBlockingInsertion({ block, insertAt, trip, trips: await this.context.listTrips(scenario.scenarioId, scenario.tripProfileId), patterns, minimumLayover, patternDirections: minimumLayover ? await this.patternDirections(scenario.scenarioId, patterns) : undefined }); }
   /**
    * Classifies every listed Trip against one Block, reading the Blocking Scenario, the Block, the Trips, and the Patterns once.

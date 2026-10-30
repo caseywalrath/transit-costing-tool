@@ -174,6 +174,8 @@ export class TripGenerationService {
   }
 
   async listServiceDayTrips(serviceDayId: string): Promise<Trip[]> { return this.repository.listTrips(serviceDayId); }
+  /** The saved Trips of one Route on one service day in one Trip Profile, both directions (Decision 0051: the Trips table's day totals). */
+  async listRouteDayTrips(routeId: string, serviceDayId: string, tripProfileId?: string): Promise<Trip[]> { return (await this.repository.listTrips(serviceDayId, tripProfileId)).filter((trip) => trip.routeId === routeId); }
 
   private async resolveAuthoritativeProfile(request: { scenarioId: string; serviceDayId: string; patternId: string }): Promise<{ pattern: RoutePattern; assignment: RuntimeAssignment; profile: RuntimeProfile }> {
     const pattern = await this.repository.getPattern(request.patternId);
@@ -683,4 +685,4 @@ export class TripShiftStalePreviewError extends Error {
 }
 
 // Keep the historical application surface while exposing the authoritative trip commands.
-export type TripGenerationApplication = Pick<TripGenerationService, 'getGenerationSet' | 'listGenerationSets' | 'previewTripShift' | 'previewStagedTripShift' | 'applyStagedTripShift' | 'previewPatternChange' | 'applyPatternChange' | 'listServiceDayTrips' | 'resolveRuntimeProfile' | 'previewGenerateTrips' | 'generateTrips' | 'addTrip' | 'previewTripPatternChange' | 'changeTripPattern' | 'previewRecalculateTrips' | 'applyRecalculationPreview' | 'recalculateTrips' | 'getLastTripRegenerationUndo' | 'undoLastTripRegeneration' | 'previewTripTableImport' | 'applyTripTableImport' | 'previewTripDeletion' | 'deleteTrips' | 'listStaleTrips' | 'inspectStaleTrips' | 'listScheduleTrips' | 'listTripProfiles' | 'renameTripProfile' | 'copyTripProfile' | 'previewTripProfileDeletion' | 'deleteTripProfile' | 'previewRuntimeCopy' | 'applyRuntimeCopy' | 'previewTripCopy' | 'applyTripCopy' | 'previewBatchPatternChange' | 'applyBatchPatternChange'>;
+export type TripGenerationApplication = Pick<TripGenerationService, 'getGenerationSet' | 'listGenerationSets' | 'previewTripShift' | 'previewStagedTripShift' | 'applyStagedTripShift' | 'previewPatternChange' | 'applyPatternChange' | 'listServiceDayTrips' | 'listRouteDayTrips' | 'resolveRuntimeProfile' | 'previewGenerateTrips' | 'generateTrips' | 'addTrip' | 'previewTripPatternChange' | 'changeTripPattern' | 'previewRecalculateTrips' | 'applyRecalculationPreview' | 'recalculateTrips' | 'getLastTripRegenerationUndo' | 'undoLastTripRegeneration' | 'previewTripTableImport' | 'applyTripTableImport' | 'previewTripDeletion' | 'deleteTrips' | 'listStaleTrips' | 'inspectStaleTrips' | 'listScheduleTrips' | 'listTripProfiles' | 'renameTripProfile' | 'copyTripProfile' | 'previewTripProfileDeletion' | 'deleteTripProfile' | 'previewRuntimeCopy' | 'applyRuntimeCopy' | 'previewTripCopy' | 'applyTripCopy' | 'previewBatchPatternChange' | 'applyBatchPatternChange'>;

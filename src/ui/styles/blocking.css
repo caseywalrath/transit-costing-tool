@@ -29,6 +29,7 @@
 .stat-strip > div:first-child { border-left: 0; padding-left: 0; }
 .stat-strip dt { color: var(--color-text-muted); font-size: var(--font-size-label); }
 .stat-strip dd { margin: 2px 0 0; font-size: var(--font-size-title); font-variant-numeric: tabular-nums; font-weight: var(--font-weight-bold); }
+.stat-strip dt small { display: block; font-weight: var(--font-weight-regular); color: var(--color-text-subtle); font-size: var(--font-size-caption); }
 .blocking-trips-table table { width: 100%; min-width: 0; table-layout: fixed; }
 .blocking-trips-table .blocking-selection-column { width: 34px; min-width: 34px; padding: var(--space-1) 7px; text-align: center; }
 .blocking-trips-table .blocking-selection-column input { width: 15px; min-height: 15px; vertical-align: middle; }

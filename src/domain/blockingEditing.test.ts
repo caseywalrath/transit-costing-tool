@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
 import type { BlockActivity, BlockingBlock, BlockingScenario, DeadheadActivity, RoutePattern, Trip } from './types';
 import {
-  applyDeadheadToMatchingConnections, BlockingValidationError, insertBlockActivity, layoverPercent, moveRevenueTripGroup, normalizeMinimumLayoverRules, parseActivityInput, parseMinimumLayoverRule, parseMinimumLayoverRules,
+  applyDeadheadToMatchingConnections, BlockingValidationError, deadheadPercent, weightedEstimateFactors, insertBlockActivity, layoverPercent, moveRevenueTripGroup, normalizeMinimumLayoverRules, parseActivityInput, parseMinimumLayoverRule, parseMinimumLayoverRules,
   proposeBlockLabel, summarizeBlock, summarizeBlockingScenario, unassignedRouteTrips, validateBlockLabel,
 } from './blocking';
 
@@ -234,5 +234,35 @@ describe('Block labels (Decision 0039)', () => {
     expect(proposeBlockLabel([block([], { label: 'Block 1' }), block([], { id: 'x', label: 'Block 3' })])).toBe('Block 2');
     expect(proposeBlockLabel([block([], { label: ' Block 1 ' }), block([], { id: 'x', label: 'Block 2' }), block([], { id: 'y', label: 'Block 3' })])).toBe('Block 4');
     expect(proposeBlockLabel([block([], { label: 'Express' })])).toBe('Block 1');
+  });
+});
+
+describe('estimate factor percentages (Decision 0051)', () => {
+  const summaryOf = (revenueHours: number, runningHours: number, platformHours: number | undefined) => ({ blockingScenarioId: 'bs', blockSummaries: [], revenueHours, runningHours, platformHours, deadheadHours: 0, layoverHours: revenueHours - runningHours, validBlockCount: 1, invalidBlockCount: 0, incompleteBlockCount: 0, complete: true });
+
+  it('deadheadPercent is (platform − revenue) ÷ platform, and undefined without platform hours', () => {
+    expect(deadheadPercent(8, 10)).toBe(20);
+    expect(deadheadPercent(10, 10)).toBe(0);
+    expect(deadheadPercent(8, undefined)).toBeUndefined();
+    expect(deadheadPercent(0, 0)).toBeUndefined();
+  });
+
+  it('weights each day by its annual service days and ignores days with none or no revenue', () => {
+    const result = weightedEstimateFactors([
+      { annualServiceDays: 200, summary: summaryOf(10, 8, 12.5) },
+      { annualServiceDays: 50, summary: summaryOf(5, 4, 5.5) },
+      { annualServiceDays: 0, summary: summaryOf(99, 1, 100) },
+      { annualServiceDays: 30, summary: summaryOf(0, 0, 0) },
+    ]);
+    expect(result.layoverPercent).toBeCloseTo((200 * 2 + 50 * 1) / (200 * 10 + 50 * 5) * 100, 9);
+    expect(result.deadheadPercent).toBeCloseTo((200 * 2.5 + 50 * 0.5) / (200 * 12.5 + 50 * 5.5) * 100, 9);
+  });
+
+  it('leaves the deadhead percentage out when a counted day has unknown platform hours, and returns nothing without counted days', () => {
+    const result = weightedEstimateFactors([{ annualServiceDays: 10, summary: summaryOf(10, 8, 12.5) }, { annualServiceDays: 10, summary: summaryOf(10, 9, undefined) }]);
+    expect(result.layoverPercent).toBeCloseTo(15, 9);
+    expect(result.deadheadPercent).toBeUndefined();
+    expect(weightedEstimateFactors([])).toEqual({});
+    expect(weightedEstimateFactors([{ annualServiceDays: 0, summary: summaryOf(10, 8, 12) }])).toEqual({});
   });
 });

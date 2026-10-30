@@ -196,11 +196,11 @@ test('the Current block header shows the subtitle, New block, and a menu with Re
   await expect(page.getByRole('menu', { name: 'Current block actions' }).getByRole('menuitem')).toHaveText(['Rename block…', 'Edit notes…', 'Delete block…']);
 });
 
-test('the day summary is a seven-cell strip above the Blocks table, and the footer counts the blocks', async ({ page }) => {
+test('the day summary is a nine-cell strip above the Blocks table, and the footer counts the blocks', async ({ page }) => {
   await openGoldenBlocking(page);
   const summary = page.getByLabel('Blocking summary');
   await expect(summary.getByRole('heading', { name: /^Weekday summary · \d+ blocks$/ })).toBeVisible();
-  await expect(summary.locator('.stat-strip dt')).toHaveText(['Revenue', 'Running', 'Platform', 'Layover', 'Deadhead', 'Revenue miles', 'Platform miles']);
+  await expect(summary.locator('.stat-strip dt')).toHaveText(['Revenue', 'Running', 'Platform', 'Layover', 'Layover %of revenue hours', 'Deadhead', 'Deadhead %of platform hours', 'Revenue miles', 'Platform miles']);
   const summaryBox = await summary.boundingBox();
   const blocksBox = await page.getByLabel('Blocks', { exact: true }).boundingBox();
   expect(summaryBox!.y + summaryBox!.height).toBeLessThanOrEqual(blocksBox!.y);
