@@ -14,7 +14,7 @@ Phase 4 must introduce named Blocking Scenarios without duplicating Trip Profile
 
 1. Add a scenario-owned `BlockingScenario` record with an immutable `tripProfileId`.
 2. A Blocking Scenario is one complete blocking alternative spanning every service day in its Scenario. Each Block still belongs to exactly one service day.
-3. A Scenario may contain zero or more Blocking Scenarios. The application does not automatically provision an empty Blocking Scenario for every Trip Profile.
+3. A Scenario may contain zero or more Blocking Scenarios. The application does not automatically provision an empty Blocking Scenario for every Trip Profile. *Amended 2026-10-30: creating a Scenario also creates one empty Blocking Scenario named "Default" on the Scenario's Default Trip Profile, so Blocking and Costing are usable without a setup step. Later Trip Profiles still get none, the user may rename or delete the Default one, and Scenarios and projects that already exist are not changed.*
 4. Users may create an empty Blocking Scenario or duplicate an existing one.
 5. Blocking Scenario names are non-empty and unique within the parent Scenario after trimming and case normalization.
 6. Duplicating a Blocking Scenario copies all service-day Blocks and activities, allocates new Blocking Scenario, Block, and activity IDs, retains the same source Trip Profile and Trip references, and commits atomically.

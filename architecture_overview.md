@@ -244,7 +244,7 @@ Operating spans and observed headways are derived from authoritative trips. The 
 
 ## Blocking Model
 
-A Blocking Scenario is one named arrangement of an immutable source Trip Profile across all service days. A Block belongs to one Blocking Scenario and one service day and is an ordered collection of activities. Initial activity types are:
+A Blocking Scenario is one named arrangement of an immutable source Trip Profile across all service days. A new Scenario starts with an empty "Default" Blocking Scenario on its Default Trip Profile (Decision 0019 item 3, amended); existing Scenarios are not backfilled. A Block belongs to one Blocking Scenario and one service day and is an ordered collection of activities. Initial activity types are:
 
 - pull-out;
 - revenue trip;
