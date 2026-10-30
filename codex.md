@@ -179,3 +179,5 @@ Package S1 (segment runtime copy and fill, `docs/implementation/segment-runtime-
 A new Scenario now also starts with an empty "Default" Blocking Scenario on its Default Trip Profile (`createScenarioRecords`; Decision 0019 item 3, amended). Existing Scenarios are not backfilled. Unit tests: 59 files, 840 tests.
 
 Unsaved-change prompts now follow the Costing model (Cancel, Discard, Save): the pattern-edit, staged-shift, and new-trip prompts gained Save. A new Pattern still being built has no Save. The activity minutes field has no placeholder, and a blank is still refused. A Blocking Scenario created on the Blocking tab becomes the Trips tab choice too. Browser suite: 229 tests.
+
+- 2026-10-30: A blank Annual Service Days field on the Route tab is recorded as 0 (`NumericCommit` option `blankAsZero`). Other numeric fields still refuse a blank.
