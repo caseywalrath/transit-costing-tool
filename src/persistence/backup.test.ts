@@ -135,7 +135,7 @@ describe('backup', () => {
       generationSets: [], trips: [], blocks: [],
     };
     const exported = JSON.parse(exportProjectJson(source));
-    expect(exported.exportSchemaVersion).toBe(6);
+    expect(exported.exportSchemaVersion).toBe(7);
     expect(exported.costingAssumptions).toEqual(source.costingAssumptions);
     expect(importProjectJson(JSON.stringify(exported)).costingAssumptions).toEqual(source.costingAssumptions);
 
@@ -143,6 +143,65 @@ describe('backup', () => {
     expect(copy.costingAssumptions?.[0].id).not.toBe('cost');
     expect(copy.costingAssumptions?.[0].scenarioId).toBe(copy.scenarios[0].id);
     expect(copy.costingAssumptions?.[0].enteredRate).toBe(100);
+  });
+
+  describe('estimate factors (schema 7, Decision 0051)', () => {
+    const factors = { allDays: { layoverFraction: 0.182, deadheadFraction: 0.056 }, serviceDays: [{ serviceDayId: 'd', layoverFraction: 0.178 }, { serviceDayId: 'e', deadheadFraction: 0.05 }] };
+    const sourceWith = (estimateFactors: unknown) => ({
+      project: { id: 'p', name: 'Costing', distanceUnit: 'miles' as const, currencyCode: 'USD', ...metadata() },
+      scenarios: [{ id: 's', projectId: 'p', name: 'Base', ...metadata() }, { id: 's2', projectId: 'p', name: 'Other', ...metadata() }],
+      serviceDays: [
+        { id: 'd', scenarioId: 's', kind: 'weekday' as const, name: 'Weekday', annualServiceDays: 255, sequence: 0, ...metadata() },
+        { id: 'e', scenarioId: 's', kind: 'saturday' as const, name: 'Saturday', annualServiceDays: 52, sequence: 1, ...metadata() },
+        { id: 'x', scenarioId: 's2', kind: 'weekday' as const, name: 'Weekday', annualServiceDays: 255, sequence: 0, ...metadata() },
+      ],
+      routes: [], nodes: [], patterns: [], runtimeProfiles: [], runtimeAssignments: [],
+      tripProfiles: [{ id: 'tp', scenarioId: 's', name: 'Default', ...metadata() }, { id: 'tp2', scenarioId: 's2', name: 'Default', ...metadata() }], blockingScenarios: [],
+      costingAssumptions: [{ id: 'cost', scenarioId: 's', currencyCode: 'USD' as const, enteredRate: 100, rateYear: 2026, sourceType: 'user' as const, baseServiceYear: 2026, futureYearCount: 0, annualEscalation: 0.03, estimateFactors, ...metadata() }],
+      generationSets: [], trips: [], blocks: [],
+    }) as unknown as Parameters<typeof exportProjectJson>[0];
+
+    it('round trips every factor in a version 7 file', () => {
+      const payload = exportProjectJson(sourceWith(factors));
+      expect(JSON.parse(payload).exportSchemaVersion).toBe(7);
+      expect(importProjectJson(payload).costingAssumptions?.[0].estimateFactors).toEqual(factors);
+    });
+
+    it('imports a version 6 file with costing assumptions and no factors', () => {
+      const file = JSON.parse(exportProjectJson(sourceWith(undefined)));
+      file.exportSchemaVersion = 6;
+      const restored = importProjectJson(JSON.stringify(file));
+      expect(restored.costingAssumptions?.[0].enteredRate).toBe(100);
+      expect(restored.costingAssumptions?.[0].estimateFactors).toBeUndefined();
+    });
+
+    it.each([
+      ['a non-object', 5, /costingAssumptions\[0\]\.estimateFactors must be an object/],
+      ['allDays that is not an object', { allDays: 3, serviceDays: [] }, /estimateFactors allDays must be an object/],
+      ['serviceDays that is not an array', { allDays: {}, serviceDays: {} }, /estimateFactors serviceDays must be an array/],
+      ['a row without a service day id', { allDays: {}, serviceDays: [{ layoverFraction: 0.1 }] }, /serviceDays\[0\]\.serviceDayId must be a non-empty string/],
+      ['a layover of 1', { allDays: { layoverFraction: 1 }, serviceDays: [] }, /allDays\.layoverFraction must be a number from 0 up to but not including 1/],
+      ['a negative deadhead', { allDays: {}, serviceDays: [{ serviceDayId: 'd', deadheadFraction: -0.1 }] }, /serviceDays\[0\]\.deadheadFraction/],
+      ['a text fraction', { allDays: { layoverFraction: '0.1' }, serviceDays: [] }, /allDays\.layoverFraction/],
+      ['a service day listed twice', { allDays: {}, serviceDays: [{ serviceDayId: 'd' }, { serviceDayId: 'd' }] }, /serviceDays\[1\] repeats service day d/],
+      ['a service day of another Scenario', { allDays: {}, serviceDays: [{ serviceDayId: 'x', layoverFraction: 0.1 }] }, /serviceDays\[0\]\.serviceDayId names a service day that is not in this Scenario/],
+    ])('refuses %s', (_label, estimateFactors, message) => {
+      const payload = JSON.parse(exportProjectJson(sourceWith(undefined)));
+      payload.costingAssumptions[0].estimateFactors = estimateFactors;
+      expect(() => importProjectJson(JSON.stringify(payload))).toThrow(message);
+    });
+
+    it('remaps the service-day identifiers when imported as a copy', () => {
+      const source = importProjectJson(exportProjectJson(sourceWith(factors)));
+      const copy = cloneProjectSnapshot(source, '2026-01-01T00:00:00.000Z');
+      const ownDays = copy.serviceDays.filter((day) => day.scenarioId === copy.costingAssumptions![0].scenarioId);
+      const rows = copy.costingAssumptions![0].estimateFactors!.serviceDays;
+      expect(rows.map((row) => row.serviceDayId)).toEqual(ownDays.map((day) => day.id));
+      expect(rows.map((row) => row.serviceDayId)).not.toContain('d');
+      expect(rows.map((row) => row.layoverFraction)).toEqual([0.178, undefined]);
+      expect(copy.costingAssumptions![0].estimateFactors!.allDays).toEqual(factors.allDays);
+      expect(source.costingAssumptions![0].estimateFactors!.serviceDays.map((row) => row.serviceDayId)).toEqual(['d', 'e']);
+    });
   });
 
   it('accepts version 5 backups without costing assumptions and keeps historical 366-day totals', () => {

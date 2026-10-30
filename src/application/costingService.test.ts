@@ -130,9 +130,14 @@ describe('CostingApplicationService', () => {
       expect(await service.calculateEstimate({ scenarioId, basis: { kind: 'estimated', tripProfileId: 'p-zeta' }, assumptions: input })).toBeUndefined();
     });
 
-    it('does not export the estimated basis CSV yet', async () => {
+    it('exports the estimated basis as the three Costing CSV files, and nothing for a Trip Profile outside the Scenario', async () => {
       const service = new CostingApplicationService(queries());
-      await expect(service.exportEstimateCsv({ scenarioId, basis: { kind: 'estimated', tripProfileId: 'p-alpha' }, assumptions: input })).rejects.toThrow('Estimated cost basis CSV is not available yet.');
+      const estimateFactors = { allDays: { layoverFraction: 0.2, deadheadFraction: 0.2 }, serviceDays: [] };
+      const files = await service.exportEstimateCsv({ scenarioId, basis: { kind: 'estimated', tripProfileId: 'p-alpha' }, assumptions: { ...input, estimateFactors } });
+      expect(files?.map((file) => file.suffix)).toEqual(['costing-assumptions', 'costing-results', 'costing-exclusions']);
+      expect(files?.[0].contents).toContain(',estimated,');
+      expect(files?.[1].contents).toContain('10.0000');
+      expect(await service.exportEstimateCsv({ scenarioId, basis: { kind: 'estimated', tripProfileId: 'p-zeta' }, assumptions: input })).toBeUndefined();
     });
 
     it('creates the record from the given assumptions when saving factors for a Scenario that has none, and normalizes them', async () => {

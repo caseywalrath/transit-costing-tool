@@ -50,8 +50,10 @@ describe('3-001: Block ownership survives export and import', () => {
     const again = JSON.parse(exportProjectJson(importProjectJson(goldenJson())));
     expect(again.blocks).toEqual(original.blocks);
     for (const key of new Set([...Object.keys(original), ...Object.keys(again)])) {
-      if (key !== 'exportedAt') expect(again[key], key).toEqual(original[key]);
+      // The golden file is a version 6 file; exporting writes the current version, 7, and nothing else changes (Decision 0051).
+      if (key !== 'exportedAt' && key !== 'exportSchemaVersion') expect(again[key], key).toEqual(original[key]);
     }
+    expect(again.exportSchemaVersion).toBe(7);
   });
 
   it('removes a Trip Profile that an older export stamped on a normalized Block when it matches the Blocking Scenario', () => {
@@ -141,7 +143,7 @@ describe('one runtime calculation method per Route on import (Decision 0045)', (
 });
 
 describe('versions 1 to 6 still import', () => {
-  for (const version of [1, 2, 3, 4, 5, 6]) {
+  for (const version of [1, 2, 3, 4, 5, 6, 7]) {
     it(`imports a version ${version} backup through the app path and normalizes it`, async () => {
       const { service, repository } = newBackupService();
       const project = await service.importProject(JSON.stringify(asVersion(version)));

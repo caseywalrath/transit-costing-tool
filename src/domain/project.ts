@@ -246,7 +246,14 @@ export function duplicateScenario(source: ScenarioRecords, targetName: string, n
   const blockingScenarios = (source.blockingScenarios ?? []).map((blockingScenario) => ({ ...blockingScenario, id: blockingScenarioIds.get(blockingScenario.id)!, scenarioId: scenario.id, tripProfileId: tripProfileIds.get(blockingScenario.tripProfileId) ?? defaultProfileId!, ...metadata(now) }));
   const normalizedBlocks = blocks.map((block) => ({ ...block, ...(block.blockingScenarioId ? { blockingScenarioId: blockingScenarioIds.get(block.blockingScenarioId) } : {}) }));
   const costingAssumptions = source.costingAssumptions
-    ? { ...source.costingAssumptions, id: newId(), scenarioId: scenario.id, ...metadata(now) }
+    ? {
+      ...source.costingAssumptions,
+      id: newId(),
+      scenarioId: scenario.id,
+      // The typed estimate factors name service days, which get new identifiers in the copy (Decision 0051).
+      ...(source.costingAssumptions.estimateFactors ? { estimateFactors: { ...source.costingAssumptions.estimateFactors, serviceDays: source.costingAssumptions.estimateFactors.serviceDays.map((row) => ({ ...row, serviceDayId: serviceDayIds.get(row.serviceDayId) ?? row.serviceDayId })) } } : {}),
+      ...metadata(now),
+    }
     : undefined;
 
   return { scenario, serviceDays, routes, nodes, patterns: copiedPatterns, ...(source.directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions ? { costingAssumptions } : {}), generationSets, trips, blocks: normalizedBlocks };

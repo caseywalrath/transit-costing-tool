@@ -116,12 +116,16 @@ export class CostingApplicationService implements CostingQueries, CostingCommand
   }
 
   async exportEstimateCsv(request: CostingEstimateRequest) {
-    // Package E2 replaces this with the estimated-basis CSV files.
-    if (request.basis.kind === 'estimated') throw new Error('Estimated cost basis CSV is not available yet.');
+    if (request.basis.kind === 'estimated') {
+      const context = await this.contextQueries.getEstimatedCostingContext(request.scenarioId, request.basis.tripProfileId);
+      if (!context || context.scenario.id !== request.scenarioId) return undefined;
+      const result = calculateEstimatedCosting({ ...context, assumptions: request.assumptions });
+      return costingCsvFiles(context.scenario, { kind: 'estimated', tripProfile: context.tripProfile }, request.assumptions, result);
+    }
     const resolved = await this.resolveCalculation(request.scenarioId, request.basis.blockingScenarioId, request.assumptions);
     if (!resolved) return undefined;
     const { context, result } = resolved;
-    return costingCsvFiles(context.scenario, context.blockingScenario, context.tripProfile, request.assumptions, result);
+    return costingCsvFiles(context.scenario, { kind: 'blocked', blockingScenario: context.blockingScenario, tripProfile: context.tripProfile }, request.assumptions, result);
   }
 
   private async resolveCalculation(scenarioId: string, blockingScenarioId: string, assumptions: CostingAssumptionsInput) {

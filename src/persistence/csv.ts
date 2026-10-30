@@ -1,6 +1,7 @@
 import type { Block, BlockingBlock, BlockingScenario, DirectionTimepointColumn, Node, Route, RouteDirection, RoutePattern, RuntimeProfile, Scenario, Trip, TripGenerationSet, TripProfile } from '../domain/types';
 import type { BlockSummary, BlockingSummary } from '../domain/blocking';
 import { roundCostingDisplay, type CostingAssumptionsInput, type CostingCalculationResult } from '../domain/costing';
+import type { EstimatedCostingCalculationResult } from '../domain/estimatedCosting';
 import { formatServiceTime } from '../domain/time';
 /** Quotes a field that contains a comma, a double quote, or a line break (LF, CR, or CRLF). Every CSV writer in the application uses this rule. */
 export function csvEscape(value: unknown): string { const s = String(value ?? ''); return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s; }
@@ -101,25 +102,33 @@ const usd = (value: number | undefined) => value === undefined || !Number.isFini
 const hours = (value: number | undefined) => value === undefined || !Number.isFinite(value) ? '' : roundCostingDisplay(value, 4).toFixed(4);
 const rate = (value: number | undefined) => value === undefined || !Number.isFinite(value) ? '' : roundCostingDisplay(value, 4).toFixed(4);
 
-/** Three CSV files for one selected Blocking Scenario. CSV is report output, not a restore format. */
+const fraction = (value: number | undefined) => value === undefined || !Number.isFinite(value) ? '' : roundCostingDisplay(value, 6).toFixed(6);
+
+/** What the CSV reports on: a Blocking Scenario's blocked hours, or a Trip Profile's estimated hours (Decision 0051). */
+export type CostingCsvBasis =
+  | { kind: 'blocked'; blockingScenario: BlockingScenario; tripProfile: TripProfile }
+  | { kind: 'estimated'; tripProfile: TripProfile };
+
+/** Three CSV files for one cost basis. CSV is report output, not a restore format. */
 export function costingCsvFiles(
   scenario: Scenario,
-  blockingScenario: BlockingScenario,
-  tripProfile: TripProfile,
+  basis: CostingCsvBasis,
   assumptions: CostingAssumptionsInput,
-  result: CostingCalculationResult,
+  result: CostingCalculationResult | EstimatedCostingCalculationResult,
 ): CostingCsvFile[] {
+  const { tripProfile } = basis;
   const context = {
     projectId: scenario.projectId,
     scenarioId: scenario.id,
     scenarioName: scenario.name,
-    blockingScenarioId: blockingScenario.id,
-    blockingScenarioName: blockingScenario.name,
+    blockingScenarioId: basis.kind === 'blocked' ? basis.blockingScenario.id : '',
+    blockingScenarioName: basis.kind === 'blocked' ? basis.blockingScenario.name : '',
     tripProfileId: tripProfile.id,
     tripProfileName: tripProfile.name,
+    costBasisKind: basis.kind,
   };
   const assumptionsContents = toCsv(
-    ['projectId', 'scenarioId', 'scenarioName', 'blockingScenarioId', 'blockingScenarioName', 'tripProfileId', 'tripProfileName', 'costBasis', 'currencyCode', 'rateUnit', 'enteredRateUsdPerRevenueHour', 'rateYear', 'sourceType', 'sourceNote', 'baseServiceYear', 'futureYearCount', 'annualEscalationFraction', 'roundingNote'],
+    ['projectId', 'scenarioId', 'scenarioName', 'blockingScenarioId', 'blockingScenarioName', 'tripProfileId', 'tripProfileName', 'costBasisKind', 'costBasis', 'currencyCode', 'rateUnit', 'enteredRateUsdPerRevenueHour', 'rateYear', 'sourceType', 'sourceNote', 'baseServiceYear', 'futureYearCount', 'annualEscalationFraction', 'allDaysLayoverFraction', 'allDaysDeadheadFraction', 'roundingNote'],
     [{
       ...context,
       costBasis: 'Revenue Hours',
@@ -132,68 +141,81 @@ export function costingCsvFiles(
       baseServiceYear: assumptions.baseServiceYear,
       futureYearCount: assumptions.futureYearCount,
       annualEscalationFraction: assumptions.annualEscalation,
-      roundingNote: 'USD amounts and applied rates are independently rounded to 2 and 4 decimals; hours to 4 decimals.',
+      allDaysLayoverFraction: fraction(assumptions.estimateFactors?.allDays.layoverFraction),
+      allDaysDeadheadFraction: fraction(assumptions.estimateFactors?.allDays.deadheadFraction),
+      roundingNote: 'USD amounts and applied rates are independently rounded to 2 and 4 decimals; hours to 4 decimals; factors to 6 decimals.',
     }],
     ['scenarioName', 'blockingScenarioName', 'tripProfileName', 'sourceNote'],
   );
 
   const resultHeaders = [
-    'rowType', 'projectId', 'scenarioId', 'scenarioName', 'blockingScenarioId', 'blockingScenarioName', 'tripProfileId', 'tripProfileName',
+    'rowType', 'projectId', 'scenarioId', 'scenarioName', 'blockingScenarioId', 'blockingScenarioName', 'tripProfileId', 'tripProfileName', 'costBasisKind',
     'estimateState', 'noEstimateReason', 'serviceYear', 'serviceDayId', 'serviceDayName', 'annualServiceDays', 'eligibleBlockCount', 'excludedBlockCount', 'unassignedTripCount',
+    'tripCount', 'tripsWithoutRunTimeCount', 'runningHoursPerDay', 'annualRunningHours', 'layoverFraction', 'layoverFactorSource', 'deadheadFraction', 'deadheadFactorSource',
     'revenueHoursPerDay', 'platformHoursPerDay', 'annualRevenueHours', 'annualPlatformHours', 'appliedRateUsdPerRevenueHour', 'costPerDayUsd', 'annualCostUsd', 'roundingNote',
   ];
   type ResultRow = Record<string, unknown>;
   const resultRows: ResultRow[] = [];
   const commonResult = { ...context, estimateState: result.state, noEstimateReason: result.noEstimateReason ?? '' };
-  for (const day of result.dailyRows) {
-    if (day.yearCosts.length === 0) {
-      resultRows.push({
-        rowType: 'serviceDay', ...commonResult, serviceDayId: day.serviceDayId, serviceDayName: day.serviceDayName,
-        annualServiceDays: day.annualServiceDays, eligibleBlockCount: day.eligibleBlockCount, excludedBlockCount: day.excludedBlockCount,
-        unassignedTripCount: day.unassignedTripCount, revenueHoursPerDay: hours(day.revenueHoursPerDay), platformHoursPerDay: hours(day.platformHoursPerDay),
-        annualRevenueHours: hours(day.annualRevenueHours), annualPlatformHours: hours(day.annualPlatformHours),
-      });
-      continue;
-    }
+  const sumWhenKnown = (values: Array<number | undefined>) => values.every((value) => value !== undefined) ? values.reduce<number>((sum, value) => sum + value!, 0) : undefined;
+  /** The columns that differ by basis, for one service-day row. Blocked rows leave the estimate columns blank, and estimated rows leave the Block counts blank. */
+  const dayColumns = (day: CostingCalculationResult['dailyRows'][number] | EstimatedCostingCalculationResult['dailyRows'][number]): ResultRow => 'eligibleBlockCount' in day
+    ? { eligibleBlockCount: day.eligibleBlockCount, excludedBlockCount: day.excludedBlockCount, unassignedTripCount: day.unassignedTripCount }
+    : {
+      tripCount: day.tripCount, tripsWithoutRunTimeCount: day.tripsWithoutRunTimeCount, runningHoursPerDay: hours(day.runningHoursPerDay), annualRunningHours: hours(day.annualRunningHours),
+      layoverFraction: fraction(day.factors.layoverFraction), layoverFactorSource: day.factors.layoverSource ?? '',
+      deadheadFraction: fraction(day.factors.deadheadFraction), deadheadFactorSource: day.factors.deadheadSource ?? '',
+    };
+  for (const day of result.dailyRows as Array<CostingCalculationResult['dailyRows'][number] | EstimatedCostingCalculationResult['dailyRows'][number]>) {
+    const common = {
+      rowType: 'serviceDay', ...commonResult, serviceDayId: day.serviceDayId, serviceDayName: day.serviceDayName, annualServiceDays: day.annualServiceDays, ...dayColumns(day),
+      revenueHoursPerDay: hours(day.revenueHoursPerDay), platformHoursPerDay: hours(day.platformHoursPerDay),
+      annualRevenueHours: hours(day.annualRevenueHours), annualPlatformHours: hours(day.annualPlatformHours),
+    };
+    if (day.yearCosts.length === 0) { resultRows.push(common); continue; }
     for (const yearCost of day.yearCosts) {
       const year = result.yearRows.find((candidate) => candidate.serviceYear === yearCost.serviceYear);
       resultRows.push({
-        rowType: 'serviceDay', ...commonResult, serviceYear: yearCost.serviceYear, serviceDayId: day.serviceDayId, serviceDayName: day.serviceDayName,
-        annualServiceDays: day.annualServiceDays, eligibleBlockCount: day.eligibleBlockCount, excludedBlockCount: day.excludedBlockCount,
-        unassignedTripCount: day.unassignedTripCount, revenueHoursPerDay: hours(day.revenueHoursPerDay), platformHoursPerDay: hours(day.platformHoursPerDay),
-        annualRevenueHours: hours(day.annualRevenueHours), annualPlatformHours: hours(day.annualPlatformHours),
+        ...common, serviceYear: yearCost.serviceYear,
         appliedRateUsdPerRevenueHour: rate(year?.appliedRateUsdPerRevenueHour), costPerDayUsd: usd(yearCost.costPerDayUsd), annualCostUsd: usd(yearCost.annualCostUsd),
       });
     }
   }
+  /** The total-row columns that differ by basis. */
+  const totalColumns = (running: number | undefined): ResultRow => result.basis === 'blocked'
+    ? { eligibleBlockCount: result.eligibleBlockCount, excludedBlockCount: result.excludedBlockCount, unassignedTripCount: result.unassignedTripCount }
+    : { tripCount: result.tripCount, tripsWithoutRunTimeCount: result.tripsWithoutRunTimeCount, annualRunningHours: hours(running) };
   for (const year of result.yearRows) {
     resultRows.push({
       rowType: 'total', ...commonResult, serviceYear: year.serviceYear,
-      eligibleBlockCount: result.eligibleBlockCount, excludedBlockCount: result.excludedBlockCount, unassignedTripCount: result.unassignedTripCount,
+      ...totalColumns('annualRunningHours' in year ? year.annualRunningHours : undefined),
       annualRevenueHours: hours(year.annualRevenueHours), annualPlatformHours: hours(year.annualPlatformHours),
       appliedRateUsdPerRevenueHour: rate(year.appliedRateUsdPerRevenueHour), annualCostUsd: usd(year.annualCostUsd),
       roundingNote: 'Total is rounded independently from unrounded service-day values.',
     });
   }
   if (result.dailyRows.length > 0 && result.yearRows.length === 0) {
+    const days = result.dailyRows as Array<{ annualRevenueHours?: number; annualPlatformHours?: number; annualRunningHours?: number }>;
     resultRows.push({
       rowType: 'total', ...commonResult,
-      eligibleBlockCount: result.eligibleBlockCount, excludedBlockCount: result.excludedBlockCount, unassignedTripCount: result.unassignedTripCount,
-      annualRevenueHours: hours(result.dailyRows.reduce((sum, day) => sum + day.annualRevenueHours, 0)),
-      annualPlatformHours: hours(result.dailyRows.reduce((sum, day) => sum + day.annualPlatformHours, 0)),
+      ...totalColumns(result.basis === 'estimated' ? sumWhenKnown(days.map((day) => day.annualRunningHours)) : undefined),
+      annualRevenueHours: hours(sumWhenKnown(days.map((day) => day.annualRevenueHours))),
+      annualPlatformHours: hours(sumWhenKnown(days.map((day) => day.annualPlatformHours))),
       roundingNote: 'Quantities are rounded independently from unrounded service-day values; no cost rate is available.',
     });
   }
   if (resultRows.length === 0) resultRows.push({ rowType: 'status', ...commonResult, roundingNote: '' });
 
-  const exclusionsContents = toCsv(
-    ['projectId', 'scenarioId', 'scenarioName', 'blockingScenarioId', 'blockingScenarioName', 'tripProfileId', 'tripProfileName', 'serviceDayId', 'serviceDayName', 'exclusionType', 'blockId', 'blockLabel', 'reasonCodes', 'unassignedTripCount'],
-    result.exclusions.flatMap((day) => [
+  const exclusionHeaders = ['projectId', 'scenarioId', 'scenarioName', 'blockingScenarioId', 'blockingScenarioName', 'tripProfileId', 'tripProfileName', 'serviceDayId', 'serviceDayName', 'exclusionType', 'blockId', 'blockLabel', 'reasonCodes', 'unassignedTripCount', 'tripsWithoutRunTimeCount'];
+  const exclusionRows: ResultRow[] = result.basis === 'blocked'
+    ? result.exclusions.flatMap((day) => [
       ...day.blocks.map((block) => ({ ...context, serviceDayId: day.serviceDayId, serviceDayName: day.serviceDayName, exclusionType: 'block', blockId: block.blockId, blockLabel: block.blockLabel, reasonCodes: block.reasonCodes.join('|') })),
       ...(day.unassignedTripCount > 0 ? [{ ...context, serviceDayId: day.serviceDayId, serviceDayName: day.serviceDayName, exclusionType: 'unassignedTrips', unassignedTripCount: day.unassignedTripCount }] : []),
-    ]),
-    ['scenarioName', 'blockingScenarioName', 'tripProfileName', 'serviceDayName', 'blockLabel'],
-  );
+    ])
+    : result.dailyRows
+      .filter((day) => day.tripsWithoutRunTimeCount > 0)
+      .map((day) => ({ ...context, serviceDayId: day.serviceDayId, serviceDayName: day.serviceDayName, exclusionType: 'tripsWithoutRunTime', tripsWithoutRunTimeCount: day.tripsWithoutRunTimeCount }));
+  const exclusionsContents = toCsv(exclusionHeaders, exclusionRows, ['scenarioName', 'blockingScenarioName', 'tripProfileName', 'serviceDayName', 'blockLabel']);
 
   return [
     { suffix: 'costing-assumptions', contents: assumptionsContents },
