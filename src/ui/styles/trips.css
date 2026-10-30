@@ -95,7 +95,10 @@
 .work-surface__context { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); min-width: 0; }
 .work-surface__context .menu-field, .runtimes-toolbar .menu-field { display: inline-flex; flex-direction: row; align-items: center; flex: none; gap: var(--space-inline); }
 .work-surface__context .menu-field .menu-trigger, .runtimes-toolbar .menu-field .menu-trigger { width: auto; min-width: 0; }
-.work-surface__actions .context-field select { width: auto; min-width: 180px; }
+.work-surface__actions .context-field select { width: auto; min-width: min(180px, 100%); max-width: 100%; }
+/* A long Pattern name must not make the header wider than the panel at phone width: the field shrinks and the select clips its text. */
+.work-surface__actions { min-width: 0; max-width: 100%; }
+.work-surface__actions .context-field { min-width: 0; max-width: 100%; }
 .runtimes-surface .work-surface__header { border-bottom: 0; }
 .runtimes-surface:has(.runtimes-body) .work-surface__header { border-bottom: 1px solid var(--color-border-soft); }
 .disclosure { display: inline-flex; align-items: center; gap: var(--space-inline); min-height: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: var(--font-weight-bold); }

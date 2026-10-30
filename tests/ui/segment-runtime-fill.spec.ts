@@ -104,6 +104,8 @@ test('the copy dialog has no horizontal page scroll at 390 px wide', async ({ pa
   await openGoldenTrips(page);
   await setWestminsterShared(page, 999);
   await openPattern(page, WAGON_TO_EVANS);
+  // The Pattern select sizes to its longest option. Lengthen one so the check does not depend on the runner's font metrics.
+  await page.evaluate(() => { const select = [...document.querySelectorAll('select')].find((item) => item.textContent?.includes('Wagon Road to Evans')); if (select) select.options[0].textContent += ' with a deliberately long pattern name'; });
   await openAction(page, 'Copy segments to other patterns…');
   const dialog = page.getByRole('dialog', { name: 'Copy segments to other patterns' });
   await expect(dialog.getByRole('button', { name: 'Replace runtimes' })).toBeVisible();
