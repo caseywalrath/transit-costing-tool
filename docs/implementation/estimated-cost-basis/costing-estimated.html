@@ -1,0 +1,130 @@
+<!doctype html>
+<!--
+  Mockup of the Costing screen with an estimated cost basis (Decision 0051, package E4). Open it in a browser from the repository:
+  it loads the app's own stylesheets. Sample data: the "Alt B" running hours are invented; the factors come from the Federal Boulevard
+  baseline. The <style> block below is the exact CSS that package E4 adds to src/ui/styles/costing.css (and responsive.css); everything
+  else uses existing classes. Only .mock-frame is mockup scaffolding.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Costing, estimated cost basis (mockup)</title>
+<link rel="stylesheet" href="../../../src/ui/styles/index.css">
+<style>
+.mock-frame { width: 1440px; }
+
+/* costing.css additions (package E4) */
+.costing-state.estimated { border-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-accent-strong); }
+.costing-top-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--inset-panel); align-items: start; min-width: 0; }
+.costing-top-grid > section { min-width: 0; }
+.costing-top-grid .costing-assumptions-grid { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
+.costing-factor-grid table { min-width: 0; width: 100%; }
+.costing-factor-grid th, .costing-factor-grid td { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.costing-factor-grid tbody th[scope='row'] { text-align: left; }
+.costing-factor-grid .costing-factor-fallback { background: var(--color-surface-2); }
+.costing-factor-hint { margin-top: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-note); }
+.costing-est-mark { display: block; font-weight: var(--font-weight-regular); color: var(--color-accent-strong); font-size: var(--font-size-caption); }
+.costing-row-note { display: block; font-weight: var(--font-weight-regular); color: var(--color-warn); font-size: var(--font-size-caption); }
+.costing-basis-notes { display: grid; gap: var(--space-2); }
+/* responsive.css: add .costing-top-grid to the existing max-width: 1100px single-column list */
+@media (max-width: 1100px) { .costing-top-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="mock-frame">
+<main class="app-shell">
+<div class="app-header">
+<header class="app-bar"><div class="app-bar__brand"><span class="app-bar__mark" aria-hidden="true"></span><strong>Transit Costing Tool</strong></div><nav aria-label="Primary"><button type="button" class="tab">Route</button><button type="button" class="tab">Trips</button><button type="button" class="tab">Blocking</button><button type="button" class="tab active" aria-current="page">Costing</button></nav><span class="app-bar__spacer"></span><span class="save-status save-status--saved" role="status"><span class="save-status__dot" aria-hidden="true"></span>Saved locally<span class="save-status__backup"> · backup today</span></span></header>
+<section class="scope-bar" aria-label="Scope">
+  <div class="scope-switchers"><div class="menu-button"><button type="button" class="menu-trigger switcher switcher--project"><small class="switcher__caption">Project</small><span class="switcher__name">Federal Boulevard BRT 2029 Service Plan</span><span aria-hidden="true" class="menu-chevron"> ▾</span></button></div><span class="scope-switchers__sep" aria-hidden="true">›</span><div class="menu-button"><button type="button" class="menu-trigger switcher switcher--scenario"><small class="switcher__caption">Scenario</small><span class="switcher__name">Alt B · Englewood extension</span><span aria-hidden="true" class="menu-chevron"> ▾</span></button></div></div>
+  <span class="scope-bar__divider" aria-hidden="true"></span>
+  <div class="scope-bar__slot">
+    <!-- E4: ContextField label "Cost basis", maxWidth 280. Option values are blocked:<id> and estimated:<id>. -->
+    <label class="context-field" style="max-width: 280px;"><span class="context-field__label">Cost basis</span>
+      <select aria-label="Cost basis">
+        <optgroup label="Blocked hours"><option value="blocked:bs-1">Blocked · Workbook Blocks</option></optgroup>
+        <optgroup label="Estimated from running time"><option value="estimated:tp-1" selected>Estimated · Default</option></optgroup>
+      </select>
+    </label>
+    <div class="context-field"><span class="context-field__label">Trip profile</span><span class="context-field__value">Default</span></div>
+    <label class="context-field"><span class="context-field__label">View year</span><select aria-label="View year"><option>2026</option></select></label>
+    <span class="scope-bar__spacer"></span>
+    <button type="button">Export costing CSV</button>
+  </div>
+</section>
+</div>
+
+<div class="costing-workspace">
+<div class="costing-top-grid">
+  <section class="work-surface" aria-label="Costing assumptions">
+    <header class="work-surface__header"><h2 class="work-surface__title">Costing assumptions</h2><span class="work-surface__subtitle">Shared by every cost basis in Alt B · Englewood extension</span></header>
+    <div class="work-surface__body">
+      <div class="costing-assumptions-grid"><label>Operating cost per revenue hour (USD)<input type="number" value="152.40"></label><label>Rate year<input type="number" value="2026"></label><label>Source<select><option>User entered</option></select></label><label>First year of service<input type="number" value="2026"></label><label>Future years<input type="number" value="10"></label><label>Inflation rate (%)<input type="number" value="3"></label></div>
+      <p class="costing-days">Annual service days: <span><strong>Weekday</strong> 255</span><span><strong>Saturday</strong> 52</span><span><strong>Sunday</strong> 52</span><span><strong>Holiday</strong> 6</span><span><strong>Total</strong> 365 of 365</span> · edit on the Route tab</p>
+    </div>
+  </section>
+
+  <section class="work-surface" aria-label="Estimate factors">
+    <header class="work-surface__header"><h2 class="work-surface__title">Estimate factors</h2><span class="work-surface__subtitle">Blank days use All days</span></header>
+    <div class="work-surface__body">
+      <!-- E4: a spreadsheet grid like the Runtimes grid (useGridNavigation). Cells show the value at rest and an input only while editing.
+           grid-cell--edited marks an unsaved cell; data-invalid marks a cell that does not parse. A blank day cell shows the All days value
+           in grid-cell__placeholder. -->
+      <div class="table-scroll data-grid costing-factor-grid"><table class="grid-table" role="grid" aria-label="Estimate factors">
+        <thead><tr><th scope="col"><span class="visually-hidden">Factor</span></th><th scope="col" class="costing-factor-fallback">All days</th><th scope="col">Weekday</th><th scope="col">Saturday</th><th scope="col">Sunday</th><th scope="col">Holiday</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Layover %</th><td class="grid-cell costing-factor-fallback" data-cell="All days layover percent"><span>18.2</span></td><td class="grid-cell grid-cell--edited" data-cell="Weekday layover percent"><span>17.8</span></td><td class="grid-cell" data-cell="Saturday layover percent"><span>19</span></td><td class="grid-cell" data-cell="Sunday layover percent"><span>20.2</span></td><td class="grid-cell" data-cell="Holiday layover percent"><span class="grid-cell__placeholder">18.2</span></td></tr>
+          <tr><th scope="row">Deadhead %</th><td class="grid-cell costing-factor-fallback" data-cell="All days deadhead percent"><span>5.6</span></td><td class="grid-cell" data-cell="Weekday deadhead percent"><span>5.5</span></td><td class="grid-cell" data-cell="Saturday deadhead percent"><span>5.8</span></td><td class="grid-cell" data-cell="Sunday deadhead percent"><span>6.5</span></td><td class="grid-cell" data-cell="Holiday deadhead percent"><span class="grid-cell__placeholder">5.6</span></td></tr>
+        </tbody>
+      </table></div>
+      <p class="costing-factor-hint">Layover % is of revenue hours; deadhead % is of platform hours, as on the Blocking summary.</p>
+    </div>
+    <div class="save-bar" role="region" aria-label="Unsaved changes"><span class="save-bar__message" role="status">1 unsaved change · the estimate below already includes it</span><button type="button">Discard</button><button type="button" class="primary">Save factors</button></div>
+  </section>
+</div>
+
+<section class="work-surface" aria-label="Cost breakdown">
+  <header class="work-surface__header"><h2 class="work-surface__title">Cost breakdown · 2026</h2><span class="costing-state estimated">Estimated</span><span class="work-surface__subtitle">Applied rate $152.40 per revenue hour · revenue and platform hours estimated from running time</span></header>
+  <div class="work-surface__body">
+    <div class="table-scroll data-grid costing-results-table"><table>
+      <thead><tr><th scope="col">Service day</th><th scope="col">Days</th><th scope="col">Trips</th><th scope="col">Daily running (h)</th><th scope="col">Daily revenue (h)<span class="costing-est-mark">estimated</span></th><th scope="col">Daily platform (h)<span class="costing-est-mark">estimated</span></th><th scope="col">Daily cost</th><th scope="col">Annual revenue (h)</th><th scope="col">Annual platform (h)</th><th scope="col">Annual cost</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Weekday</th><td>255</td><td>284</td><td>271.40</td><td>330.17</td><td>349.39</td><td>$50,318</td><td>84,193</td><td>89,094</td><td>$12,831,079</td></tr>
+        <tr><th scope="row">Saturday</th><td>52</td><td>268</td><td>240.10</td><td>296.42</td><td>314.67</td><td>$45,174</td><td>15,414</td><td>16,363</td><td>$2,349,067</td></tr>
+        <tr><th scope="row">Sunday</th><td>52</td><td>232</td><td>207.85</td><td>260.46</td><td>278.57</td><td>$39,695</td><td>13,544</td><td>14,486</td><td>$2,064,122</td></tr>
+        <tr><th scope="row">Holiday<span class="costing-row-note">All days factors</span></th><td>6</td><td>232</td><td>207.85</td><td>254.10</td><td>269.17</td><td>$38,724</td><td>1,525</td><td>1,615</td><td>$232,345</td></tr>
+      </tbody>
+      <tfoot><tr><th scope="row">Total</th><td>365</td><td>1,016</td><td></td><td></td><td></td><td></td><td>114,676</td><td>121,557</td><td>$17,476,613</td></tr></tfoot>
+    </table></div>
+    <p class="inline-note inline-note--info"><span class="inline-note__icon" aria-hidden="true">i</span><span>Totals are computed before rounding, so a total can differ by 1 from the sum of the rounded rows.</span></p>
+  </div>
+</section>
+
+<div class="costing-lower-grid">
+  <section class="support-panel" aria-label="Estimate basis">
+    <div class="support-panel__header"><h3 class="support-panel__title">Estimate basis</h3><span class="support-panel__aside">Trip profile Default · 1,016 trips · no blocks used</span></div>
+    <div class="support-panel__body"><div class="costing-basis-notes">
+      <p class="inline-note inline-note--info"><span class="inline-note__icon" aria-hidden="true">i</span><span>Running hours add each trip's first-to-last time in trip profile Default.</span></p>
+      <p class="inline-note inline-note--info"><span class="inline-note__icon" aria-hidden="true">i</span><span>Revenue hours = running ÷ (1 − layover %). Platform hours = revenue ÷ (1 − deadhead %).</span></p>
+      <p class="inline-note inline-note--warn"><span class="inline-note__icon" aria-hidden="true">!</span><span>Holiday uses All days: 18.2% layover, 5.6% deadhead.</span></p>
+    </div></div>
+  </section>
+  <section class="support-panel" aria-label="Yearly outlook">
+    <div class="support-panel__header"><h3 class="support-panel__title">Yearly outlook</h3></div>
+    <div class="support-panel__body"><div class="table-scroll data-grid costing-outlook-table"><table>
+      <thead><tr><th scope="col">Year</th><th scope="col">Applied $ per revenue hour</th><th scope="col">Annual cost</th></tr></thead>
+      <tbody>
+        <tr class="selected-costing-year"><th scope="row"><button class="link-button">2026</button></th><td>$152.40</td><td>$17,476,613</td></tr>
+        <tr><th scope="row"><button class="link-button">2027</button></th><td>$156.97</td><td>$18,000,912</td></tr>
+        <tr><th scope="row"><button class="link-button">2028</button></th><td>$161.68</td><td>$18,540,939</td></tr>
+        <tr><th scope="row"><button class="link-button">2029</button></th><td>$166.53</td><td>$19,097,167</td></tr>
+        <tr><th scope="row"><button class="link-button">2030</button></th><td>$171.53</td><td>$19,670,082</td></tr>
+      </tbody>
+    </table></div></div>
+  </section>
+</div>
+</div>
+</main>
+</div>
+</body>
+</html>

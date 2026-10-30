@@ -36,10 +36,11 @@ nav { display: flex; gap: 2px; }
 .action-menu--start { left: 0; right: auto; }
 @media (max-width: 1279px) { .switcher__caption { display: none; } }
 
-.scope-bar .context-field select { min-height: var(--control-height); max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--color-text); font-size: var(--font-size-body); appearance: none; border-color: var(--color-border); border-radius: var(--radius-control); background-color: var(--color-surface); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m1 1.5 5 5 5-5' fill='none' stroke='%233c5665' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-position: right 9px center; background-repeat: no-repeat; padding: 3px 28px 3px var(--space-2); }
-.scope-bar .context-field select:hover:not(:disabled) { border-color: var(--color-text-subtle); }
-.scope-bar .context-field select:focus-visible { border-color: var(--color-accent); }
-.scope-bar .context-field select:disabled { background-color: var(--color-sunken); background-image: none; }
+/* A select in a work surface header (the Runtimes Pattern select) is drawn the same way, so no browser draws a native control outside its box. */
+.scope-bar .context-field select, .work-surface__actions .context-field select { min-height: var(--control-height); max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--color-text); font-size: var(--font-size-body); appearance: none; border-color: var(--color-border); border-radius: var(--radius-control); background-color: var(--color-surface); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m1 1.5 5 5 5-5' fill='none' stroke='%233c5665' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-position: right 9px center; background-repeat: no-repeat; padding: 3px 28px 3px var(--space-2); }
+.scope-bar .context-field select:hover:not(:disabled), .work-surface__actions .context-field select:hover:not(:disabled) { border-color: var(--color-text-subtle); }
+.scope-bar .context-field select:focus-visible, .work-surface__actions .context-field select:focus-visible { border-color: var(--color-accent); }
+.scope-bar .context-field select:disabled, .work-surface__actions .context-field select:disabled { background-color: var(--color-sunken); background-image: none; }
 .context-field__value { display: inline-flex; align-items: center; min-height: var(--control-height); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-sunken); padding: 0 var(--space-2); }
 .scope-bar__slot > button { flex: none; white-space: nowrap; }
 .scope-bar .context-field__label { white-space: nowrap; }

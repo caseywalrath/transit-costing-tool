@@ -1,7 +1,7 @@
 # Estimated Cost Basis: Implementation Plan
 
 - Requested by the user on 2026-10-30. Design approved the same day: the Cost basis selector of mockup layout A and the Estimate factors panel of layout B. Decision 0051 records the rules.
-- Mockups: `docs/implementation/estimated-cost-basis/` (`costing-estimated.png`, `trips-totals.png`, `blocking-summary.png`). The user's design canvas is a private claude.ai artifact; the images are the reference for agents.
+- Mockups: see "Visual reference" below. Build the screens to match them closely.
 - Every package is sized for one Sonnet session. Classes follow `AGENTS.md`: E1, E2, and E3 are structural (Luna); E3 and E4 wire UI that this plan and the mockups specify exactly, so they stay in the structural class and must not invent other visual or interaction patterns.
 - Branch: the branch the user names for the session. Never push to another branch. Do not open a pull request unless the user asks.
 
@@ -22,6 +22,22 @@
 | E5 | Primary agent, Sonnet | E1 to E4 | Documentation, full verification, golden-data round trip, closeout | The user accepts the feature |
 
 No package starts automatically after its gate. At each gate, report what was done and verified, and recommend the next package and model.
+
+## Visual reference
+
+The approved design is in the repository, in `docs/implementation/estimated-cost-basis/`:
+
+| Screen | Markup and CSS (source) | Image | Package |
+|---|---|---|---|
+| Costing, estimated cost basis | `costing-estimated.html` | `costing-estimated.png` | E4 |
+| Trips table totals | `trips-totals.html` | `trips-totals.png` | E3 |
+| Blocking summary | `blocking-summary.html` | `blocking-summary.png` | E3 |
+
+- Each HTML file loads the app's own stylesheets (`src/ui/styles/index.css`) and uses the app's existing classes, so opening it from the repository in a browser shows the real look. Each image was rendered from its HTML file at 1440 px.
+- Each HTML file has one `<style>` block. Apart from the rules marked as mockup scaffolding (`.mock-*`), that block is the exact CSS the package adds, and a comment names the stylesheet it goes into. Copy those rules; do not restyle them.
+- Copy the markup structure (elements, classes, headings, accessible names, text) into the React components. Replace the sample numbers with calculated values. The comments in the HTML mark the parts that are new.
+- The user's design canvas, with the three layouts that were compared and the chosen one, is the claude.ai artifact https://claude.ai/artifact/J5kKeKWoKKFUHMs2KcUUmC. It is private to the user, so an agent may not be able to open it. The repository files above are the reference, and they carry the decisions taken after the canvas: the factor table is a spreadsheet grid like the Runtimes grid (the canvas drew boxed inputs), percentages read `17.8%` (`formatPercent`), and new values use the normal text colour.
+- Where this plan and a mockup differ, the plan wins. Report any difference you find at the package gate.
 
 ## Read first (every package)
 
@@ -247,7 +263,7 @@ export function summarizeTripTable(
   - one empty `<td>` spanning the timepoint columns;
   - Run time, Layover, and Deadhead cells in their columns, as hours with two decimals and the unit (`withUnit(formatHours(seconds / 3600, 'daily'), 'h')`, for example `129.60 h`); Layover and Deadhead empty when `undefined`;
   - empty Next trip, Block, and actions cells.
-  - Style: `background: var(--color-sunken)`, bold, tabular numbers, a top border in `var(--color-border)`; the label cell stays pinned to the left like the body's pinned cells. Tokens only.
+  - Style: the `<style>` rules of `trips-totals.html`, added to `src/ui/styles/trips-workflow.css` (a sunken bold row with a top border; the label cell is pinned to the left).
 - Under the table, inside the Trips work surface, an `InlineNote` (info): `Weekday, both directions: 276 trips · running 256.28 h · layover 55.31 h · deadhead between trips 0.00 h`. Leave out the layover and deadhead parts without a Blocking Scenario. Use the service day's name. Show nothing when the Route has no Trips that day.
 - The totals use saved Trips: a draft row is not counted, and a staged Shift does not change them until it is committed. The Trips CSV does not change (Decision 0044).
 
@@ -259,7 +275,7 @@ export function summarizeTripTable(
 - `BlockingWorkspace.tsx`: read it in `loadBlocks` with the other reads. `SummaryPanel`:
   - a "Layover %" tile after "Layover" and a "Deadhead %" tile after "Deadhead", each with a second caption line in `<small>` (`of revenue hours`, `of platform hours`), values through `formatPercent`;
   - the panel aside: `All days, weighted by annual service days: layover 18.2% · deadhead 5.6%`, with `—` for an undefined value.
-  - `blocking.css`: `.stat-strip dt small { display: block; font-weight: var(--font-weight-regular); color: var(--color-text-subtle); font-size: var(--font-size-caption); }`.
+  - `blocking.css`: the `<style>` rule of `blocking-summary.html` (`.stat-strip dt small`). Follow the markup of that file.
 
 ### 4. Tests
 
@@ -276,7 +292,7 @@ Typecheck, unit tests, build, and the browser suite pass. Screenshots at 1024 an
 
 ## Package E4: Costing workspace
 
-Mockup: `costing-estimated.png`. One change from the mockup canvas: the Cost basis control is a native `<select>` with option groups, not the custom menu drawn on the "Cost basis menu open" board.
+Mockup: `costing-estimated.html` (markup and CSS) and `costing-estimated.png`. Add the `<style>` rules of the HTML file to `src/ui/styles/costing.css`, and add `.costing-top-grid` to the existing `max-width: 1100px` single-column rule in `responsive.css`. The Cost basis control is a native `<select>` with option groups, not the custom menu drawn on the canvas's "Cost basis menu open" board.
 
 ### 1. Scope bar (`src/ui/costing/CostingWorkspace.tsx`)
 
@@ -290,16 +306,16 @@ Mockup: `costing-estimated.png`. One change from the mockup canvas: the Cost bas
 
 ### 2. Top row
 
-- Wrap Costing assumptions and a new Estimate factors work surface in `.costing-top-grid`: `grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px; align-items: start`; one column below 1100 px (`responsive.css`). Inside it, `.costing-assumptions-grid` keeps three columns with `minmax(140px, 1fr)`.
+- Wrap Costing assumptions and a new Estimate factors work surface in `.costing-top-grid` (assumptions about 60% of the width, factors about 40%; one column below 1100 px). Inside it, `.costing-assumptions-grid` keeps three narrower columns. The rules are in the HTML file.
 - Costing assumptions: subtitle `Shared by every cost basis in <Scenario>`. Otherwise unchanged; its save bar saves the assumptions only.
 
 ### 3. Estimate factors work surface
 
 - Title `Estimate factors`, subtitle `Blank days use All days`. Shown for both kinds of basis.
-- A table: a heading row with an empty first cell (visually hidden text `Factor`), then `All days` and each service day in service-day order; rows `Layover %` and `Deadhead %`. The All days column has `background: var(--color-surface-2)`.
-- Each cell is a text input with `inputMode="decimal"` and the accessible name `<Day> layover percent` or `<Day> deadhead percent` (`All days layover percent` for the first column). Use `useGridNavigation` (`src/ui/shared/useGridNavigation.ts`) as the Runtimes grid does (arrow keys, Enter commits and moves down, Tab moves right). An edited cell is marked like the other grids.
-- A value shows the fraction × 100 with up to two decimals and no trailing zeros (`17.8`). A blank day cell shows the resolved All days value as its placeholder.
-- Parsing: add `parseEstimateFactorPercent(text): { fraction?: number; error?: string }` to `src/domain/estimatedCosting.ts` with tests. Blank gives no value. A number from 0 up to but not including 100 gives the fraction. Anything else is an error: the cell gets `aria-invalid` and points to one alert under the table: `Enter a percentage from 0 up to 100, or leave the cell blank.`
+- A spreadsheet grid like the Runtimes grid (`src/ui/trips/RuntimeEditor.tsx`): `<div class="table-scroll data-grid costing-factor-grid"><table class="grid-table" role="grid" aria-label="Estimate factors">`. A heading row with an empty first cell (visually hidden text `Factor`), then `All days` and each service day in service-day order; rows `Layover %` and `Deadhead %` (`<th scope="row">`). The All days cells carry `costing-factor-fallback`.
+- Each value cell is a `td.grid-cell` driven by `useGridNavigation` (`src/ui/shared/useGridNavigation.ts`), exactly as the Runtimes cells: the value in a `<span>` at rest, a `grid-cell__input` while editing (with `inputMode="decimal"`), `grid-cell--edited` for an unsaved cell, `data-invalid` for a cell that does not parse, and `data-cell` and the input's accessible name `<Day> layover percent` or `<Day> deadhead percent` (`All days layover percent` for the first column). Arrow keys move, Enter commits and moves down, Tab moves right.
+- A value shows the fraction × 100 with up to two decimals and no trailing zeros (`17.8`). A blank day cell shows the resolved All days value in `<span class="grid-cell__placeholder">`.
+- Parsing: add `parseEstimateFactorPercent(text): { fraction?: number; error?: string }` to `src/domain/estimatedCosting.ts` with tests. Blank gives no value. A number from 0 up to but not including 100 gives the fraction. Anything else is an error: the cell gets `data-invalid`, and the grid message under the table (`grid-message`, as in the Runtimes grid) reads `Enter a percentage from 0 up to 100, or leave the cell blank.`
 - Hint under the table: `Layover % is of revenue hours; deadhead % is of platform hours, as on the Blocking summary.`
 - Save bar while the factors differ from the stored ones: `<n> unsaved change(s) · the estimate below already includes it/them`, Discard, and `Save factors` (disabled while a cell is invalid). Save calls `saveEstimateFactors` with the loaded default assumptions as `assumptionsIfNew`; never the edited, unsaved assumptions.
 - The estimate always uses the draft factors and draft assumptions, as the assumptions do today.
@@ -307,7 +323,7 @@ Mockup: `costing-estimated.png`. One change from the mockup canvas: the Cost bas
 
 ### 4. Cost breakdown
 
-- Badge: `Estimated` (new `.costing-state.estimated`: `border-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-accent-strong)`) when an estimated result is `complete`; `Partial estimate`, `Invalid inputs`, and `No estimate yet` as today.
+- Badge: `Estimated` (new `.costing-state.estimated`, in the HTML file) when an estimated result is `complete`; `Partial estimate`, `Invalid inputs`, and `No estimate yet` as today.
 - Subtitle for an estimated basis: `Applied rate $152.40 per revenue hour · revenue and platform hours estimated from running time`.
 - An estimated basis uses ten columns: Service day, Days, Trips, Daily running (h), Daily revenue (h), Daily platform (h), Daily cost, Annual revenue (h), Annual platform (h), Annual cost. Daily revenue and Daily platform headings carry a second line `estimated` (`.costing-est-mark`, caption size, `var(--color-accent-strong)`).
 - Under a day name, a caption in `var(--color-warn)` when a factor came from All days: `All days factors` (both), `All days layover %`, or `All days deadhead %`.
@@ -320,7 +336,7 @@ Mockup: `costing-estimated.png`. One change from the mockup canvas: the Cost bas
 - For an estimated basis, an `Estimate basis` supporting panel replaces Exclusions. Aside: `Trip profile <name> · <n> trips · no blocks used`. Notes, in order:
   1. info: `Running hours add each trip's first-to-last time in trip profile <name>.`
   2. info: `Revenue hours = running ÷ (1 − layover %). Platform hours = revenue ÷ (1 − deadhead %).`
-  3. warn, when any day falls back: `<days> use All days: <L> layover, <D> deadhead.`
+  3. warn, when any day falls back: `Holiday uses All days: 18.2% layover, 5.6% deadhead.` (`use` for more than one day; the values through `formatPercent`).
   4. warn, when Trips lack run times: `<n> trips have no run time and are not counted.`
   5. warn, when a deadhead factor is missing: `No deadhead % for <days>: platform hours are not estimated.`
 - Yearly outlook: unchanged, fed by the estimated year rows.
@@ -336,7 +352,7 @@ Mockup: `costing-estimated.png`. One change from the mockup canvas: the Cost bas
   - Save factors, reload: the values are kept, and the remembered basis is still selected; Discard restores the saved values;
   - leaving the tab with unsaved factors opens the guard dialog;
   - the export contains `costBasisKind` `estimated`;
-  - an invalid cell (`100`, `abc`) sets `aria-invalid` and disables Save factors;
+  - an invalid cell (`100`, `abc`) is marked `data-invalid`, shows the grid message, and disables Save factors;
   - at 1024 px the ten-column table shows Annual cost without scrolling the table, and the page never scrolls sideways (extend the AC7 test).
 - `keyboard.spec.ts` axe run passes on the Costing tab with both bases.
 - Run the new spec ten times with eight workers. Take the visual tour (`UI_TOUR=1`) and compare with the mockup.

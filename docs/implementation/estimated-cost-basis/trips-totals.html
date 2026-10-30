@@ -1,0 +1,46 @@
+<!doctype html>
+<!--
+  Mockup of the Trips table totals (Decision 0051, package E3). Open it in a browser from the repository: it loads the app's own
+  stylesheets. Numbers are the Federal Boulevard baseline, Weekday Southbound. The <style> block is the exact CSS that package E3 adds to
+  src/ui/styles/trips-workflow.css; everything else uses existing classes. .mock-frame and .mock-rows-above are mockup scaffolding.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Trips table totals (mockup)</title>
+<link rel="stylesheet" href="../../../src/ui/styles/index.css">
+<style>
+.mock-frame { width: 1440px; }
+.mock-rows-above td { color: var(--color-text-subtle); text-align: center; font-size: var(--font-size-note); }
+
+/* trips-workflow.css additions (package E3) */
+.schedule-table tfoot th, .schedule-table tfoot td { background: var(--color-sunken); font-weight: var(--font-weight-bold); font-variant-numeric: tabular-nums; border-top: 1px solid var(--color-border); }
+.schedule-table tfoot th[scope='row'] { position: sticky; left: 0; z-index: 1; text-align: left; font-size: var(--font-size-note); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="mock-frame">
+<main class="app-shell">
+<div class="app-header">
+<header class="app-bar"><div class="app-bar__brand"><span class="app-bar__mark" aria-hidden="true"></span><strong>Transit Costing Tool</strong></div><nav aria-label="Primary"><button type="button" class="tab">Route</button><button type="button" class="tab active" aria-current="page">Trips</button><button type="button" class="tab">Blocking</button><button type="button" class="tab">Costing</button></nav><span class="app-bar__spacer"></span><span class="save-status save-status--saved" role="status"><span class="save-status__dot" aria-hidden="true"></span>Saved locally<span class="save-status__backup"> · backup today</span></span></header>
+<section class="scope-bar" aria-label="Scope"><div class="scope-switchers"><div class="menu-button"><button type="button" class="menu-trigger switcher switcher--project"><small class="switcher__caption">Project</small><span class="switcher__name">Federal Boulevard BRT 2029 Service Plan</span><span aria-hidden="true" class="menu-chevron"> ▾</span></button></div><span class="scope-switchers__sep" aria-hidden="true">›</span><div class="menu-button"><button type="button" class="menu-trigger switcher switcher--scenario"><small class="switcher__caption">Scenario</small><span class="switcher__name">Workbook Service Plan</span><span aria-hidden="true" class="menu-chevron"> ▾</span></button></div></div><span class="scope-bar__divider" aria-hidden="true"></span><div class="scope-bar__slot"><label class="context-field"><span class="context-field__label">Route</span><select aria-label="Route"><option>Federal BRT</option></select></label><label class="context-field"><span class="context-field__label">Day</span><select aria-label="Day"><option>Weekday</option></select></label><label class="context-field"><span class="context-field__label">Direction</span><select aria-label="Direction"><option>Southbound</option></select></label><span class="scope-bar__spacer"></span></div></section>
+</div>
+<div class="trips-workspace">
+<section class="work-surface" aria-label="Trips"><header class="work-surface__header"><h2 class="work-surface__title">Trips</h2><span class="work-surface__subtitle">138</span></header><div class="work-surface__body">
+<div class="table-scroll data-grid schedule-table"><table>
+<thead><tr><th scope="col" class="trip-selection-column"><input aria-label="Select all trips" type="checkbox"></th><th scope="col" class="trip-pattern-column trip-pinned-last">Pattern</th><th scope="col" class="trip-timepoint-column">Wagon Road</th><th scope="col" class="trip-timepoint-column">112th Ave</th><th scope="col" class="trip-timepoint-column">104th Ave</th><th scope="col" class="trip-timepoint-column">Westminster Station</th><th scope="col" class="trip-timepoint-column">Clear Creek &amp; Federal</th><th scope="col" class="trip-timepoint-column">Federal-32nd</th><th scope="col" class="trip-timepoint-column">Decatur - Federal</th><th scope="col" class="trip-timepoint-column">Alameda</th><th scope="col" class="trip-timepoint-column">Evans</th><th scope="col" class="trip-timepoint-column">Yale</th><th scope="col" class="trip-timepoint-column">Englewood</th><th scope="col" class="trip-run-time-column">Run time</th><th scope="col" class="trip-connection-column">Layover</th><th scope="col" class="trip-connection-column">Deadhead</th><th scope="col" class="trip-next-trip-column">Next trip</th><th scope="col" class="trip-block-column">Block</th><th scope="col" class="trip-actions-column"><span class="visually-hidden">Actions</span></th></tr></thead>
+<tbody>
+<tr class="mock-rows-above"><td colspan="19">⋮ 134 earlier trips</td></tr>
+<tr><td class="trip-selection-column"><input type="checkbox" aria-label="Select trip"></td><td class="trip-pattern-column trip-pinned-last"><span class="chip">SB Wagon Rd–Englewood</span></td><td class="trip-timepoint-column">23:54</td><td class="trip-timepoint-column">23:59</td><td class="trip-timepoint-column">24:01</td><td class="trip-timepoint-column">24:13</td><td class="trip-timepoint-column">24:18</td><td class="trip-timepoint-column">24:26</td><td class="trip-timepoint-column">24:33</td><td class="trip-timepoint-column">24:39</td><td class="trip-timepoint-column">24:47</td><td class="trip-timepoint-column">24:49</td><td class="trip-timepoint-column">24:57</td><td class="trip-run-time-column">1:03</td><td class="trip-connection-column"></td><td class="trip-connection-column"></td><td class="trip-next-trip-column"></td><td class="trip-block-column">14</td><td class="trip-actions-column"></td></tr>
+<tr><td class="trip-selection-column"><input type="checkbox" aria-label="Select trip"></td><td class="trip-pattern-column trip-pinned-last"><span class="chip">SB Wagon Rd–Englewood</span></td><td class="trip-timepoint-column">24:24</td><td class="trip-timepoint-column">24:29</td><td class="trip-timepoint-column">24:31</td><td class="trip-timepoint-column">24:43</td><td class="trip-timepoint-column">24:48</td><td class="trip-timepoint-column">24:56</td><td class="trip-timepoint-column">25:03</td><td class="trip-timepoint-column">25:09</td><td class="trip-timepoint-column">25:17</td><td class="trip-timepoint-column">25:19</td><td class="trip-timepoint-column">25:27</td><td class="trip-run-time-column">1:03</td><td class="trip-connection-column"></td><td class="trip-connection-column"></td><td class="trip-next-trip-column"></td><td class="trip-block-column">15</td><td class="trip-actions-column"></td></tr>
+</tbody>
+<!-- E3: the label spans the selection and Pattern columns (and Departs when headways are shown); one empty cell spans the timepoint columns. -->
+<tfoot><tr><th scope="row" colspan="2">Total · 138 trips</th><td colspan="11"></td><td class="trip-run-time-column">129.60 h</td><td class="trip-connection-column">26.69 h</td><td class="trip-connection-column">0.00 h</td><td class="trip-next-trip-column"></td><td class="trip-block-column"></td><td class="trip-actions-column"></td></tr></tfoot>
+</table></div>
+<p class="inline-note inline-note--info"><span class="inline-note__icon" aria-hidden="true">i</span><span>Weekday, both directions: 276 trips · running 256.28 h · layover 55.31 h · deadhead between trips 0.00 h</span></p>
+</div></section>
+</div>
+</main>
+</div>
+</body>
+</html>
