@@ -2,7 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
 import type { CostingAssumptionsInput } from '../domain/costing';
 import type { Node, RoutePattern } from '../domain/types';
-import { countAssumptionChanges, countNodeChanges, countPatternChanges } from './draftChangeCounts';
+import { countAssumptionChanges, countEstimateFactorChanges, countNodeChanges, countPatternChanges } from './draftChangeCounts';
+
+describe('countEstimateFactorChanges', () => {
+  const saved = { allDays: { layoverFraction: 0.18, deadheadFraction: 0.05 }, serviceDays: [{ serviceDayId: 'weekday', layoverFraction: 0.17 }] };
+
+  it('counts one per changed cell across All days and every service day', () => {
+    expect(countEstimateFactorChanges(saved, saved)).toBe(0);
+    expect(countEstimateFactorChanges(undefined, undefined)).toBe(0);
+    expect(countEstimateFactorChanges(saved, { ...saved, allDays: { layoverFraction: 0.2, deadheadFraction: 0.05 } })).toBe(1);
+    expect(countEstimateFactorChanges(saved, { allDays: {}, serviceDays: [] })).toBe(3);
+    expect(countEstimateFactorChanges(undefined, { allDays: { layoverFraction: 0.2 }, serviceDays: [{ serviceDayId: 'sunday', layoverFraction: 0.1, deadheadFraction: 0.02 }] })).toBe(3);
+  });
+
+  it('counts a changed value in a day row once, and a cleared one as a change', () => {
+    expect(countEstimateFactorChanges(saved, { ...saved, serviceDays: [{ serviceDayId: 'weekday', layoverFraction: 0.19 }] })).toBe(1);
+    expect(countEstimateFactorChanges(saved, { ...saved, serviceDays: [{ serviceDayId: 'weekday' }] })).toBe(1);
+  });
+});
 
 const node = (id: string, name: string, extra: Partial<Node> = {}): Node => ({ id, scenarioId: 's', routeId: 'r', name, kind: 'timepoint', ...metadata('2026-01-01T00:00:00.000Z'), ...extra });
 const pattern = (overrides: Partial<RoutePattern> = {}): RoutePattern => ({

@@ -155,8 +155,8 @@ export function CostingWorkspace({ scopeSlot, onOpenBlocking, costingService, sc
     if (!blockingScenarioId || validation.some((finding) => finding.severity === 'error')) { setResult(undefined); setCalculating(false); return; }
     let current = true;
     setCalculating(true);
-    void costingService.calculateEstimate({ scenarioId: scenario.id, blockingScenarioId, assumptions })
-      .then((next) => { if (current) setResult(next); })
+    void costingService.calculateEstimate({ scenarioId: scenario.id, basis: { kind: 'blocked', blockingScenarioId }, assumptions })
+      .then((next) => { if (current && next?.basis !== 'estimated') setResult(next); })
       .catch((error) => onErrorRef.current(error, 'Unable to calculate the cost estimate.'))
       .finally(() => { if (current) setCalculating(false); });
     return () => { current = false; };
@@ -214,7 +214,7 @@ export function CostingWorkspace({ scopeSlot, onOpenBlocking, costingService, sc
     if (!blockingScenarioId || !result) return;
     setSaving(true);
     try {
-      const files = await costingService.exportEstimateCsv({ scenarioId: scenario.id, blockingScenarioId, assumptions });
+      const files = await costingService.exportEstimateCsv({ scenarioId: scenario.id, basis: { kind: 'blocked', blockingScenarioId }, assumptions });
       if (!files) throw new Error('The selected blocking scenario is unavailable.');
       const safe = (blockingScenarios.find((item) => item.id === blockingScenarioId)?.name ?? 'costing').replaceAll(/[^a-z0-9]+/gi, '-').replaceAll(/^-|-$/g, '') || 'costing';
       downloadBlob(`${safe}-costing.zip`, createCsvArchive(files.map((file) => ({ filename: `${safe}-${file.suffix}.csv`, contents: file.contents }))));

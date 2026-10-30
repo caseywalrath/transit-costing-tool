@@ -74,7 +74,7 @@ describe('CSV serializers', () => {
       baseServiceYear: 2026, futureYearCount: 0, annualEscalation: 0.03,
     };
     const result: CostingCalculationResult = {
-      state: 'partial', sourceRate: 1.00005, sourceRateYear: 2024, annualEscalation: 0.03,
+      basis: 'blocked', state: 'partial', sourceRate: 1.00005, sourceRateYear: 2024, annualEscalation: 0.03,
       eligibleBlockCount: 2, excludedBlockCount: 1, unassignedTripCount: 2, findings: [],
       exclusions: [
         { serviceDayId: 'weekday', serviceDayName: 'Weekday', excludedBlockCount: 1, unassignedTripCount: 0, blocks: [{ blockId: 'bad-block', blockLabel: '3', reasonCodes: ['block.connectionIncomplete'] }] },

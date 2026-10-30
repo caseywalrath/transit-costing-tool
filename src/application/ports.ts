@@ -1,8 +1,9 @@
-import type { Block, BlockingBlock, BlockingScenario, CostingAssumptions, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, Trip, TripGenerationSet, TripProfile, ValidationFinding } from '../domain/types';
+import type { Block, BlockingBlock, BlockingScenario, CostingAssumptions, CostingEstimateFactors, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, Trip, TripGenerationSet, TripProfile, ValidationFinding } from '../domain/types';
 import type { RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
 import type { ScenarioRecords } from '../domain/project';
 import type { ActivityTextInput, BlockDeletionImpact, BlockSummary, BlockingActivityAddRequest, BlockingAssignmentRequest, BlockingCompatibility, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingActivityEditRequest, BlockingTripsAssignmentRequest, BulkDeadheadRequest, MinimumLayoverRule, ParsedActivityInput, ParsedMinimumLayover } from '../domain/blocking';
 import type { CostingAssumptionsInput, CostingCalculationContext, CostingCalculationResult, CostingFinding } from '../domain/costing';
+import type { EstimatedCostingCalculationResult, EstimatedCostingContext } from '../domain/estimatedCosting';
 
 export interface RouteDefinitionRepository {
   listProjects(): Promise<Project[]>;
@@ -207,6 +208,7 @@ export interface CostingContextSources {
   getScenario(scenarioId: string): Promise<Scenario | undefined>;
   listServiceDays(scenarioId: string): Promise<ServiceDayDefinition[]>;
   listBlockingScenarios(scenarioId: string): Promise<BlockingScenario[]>;
+  listTripProfiles(scenarioId: string): Promise<TripProfile[]>;
   getTripProfile(tripProfileId: string): Promise<TripProfile | undefined>;
   /** Every saved Trip of the Scenario that belongs to the Trip Profile. */
   listTrips(scenarioId: string, tripProfileId: string): Promise<Trip[]>;
@@ -217,8 +219,17 @@ export interface CostingContextSources {
 /** Read source contract needed to assemble a calculation without persisting derived costs. */
 export interface CostingCalculationContextQueries {
   listBlockingScenarios(scenarioId: string): Promise<BlockingScenario[]>;
+  listServiceDays(scenarioId: string): Promise<ServiceDayDefinition[]>;
+  listTripProfiles(scenarioId: string): Promise<TripProfile[]>;
   getCostingCalculationContext(scenarioId: string, blockingScenarioId: string): Promise<CostingCalculationContext | undefined>;
+  /** `undefined` when the Trip Profile is not the Scenario's. */
+  getEstimatedCostingContext(scenarioId: string, tripProfileId: string): Promise<EstimatedCostingContext | undefined>;
 }
+
+/** Decision 0051. A blocked basis is a Blocking Scenario; an estimated basis is a Trip Profile costed from running hours. */
+export type CostBasis = { kind: 'blocked'; blockingScenarioId: string } | { kind: 'estimated'; tripProfileId: string };
+export interface CostBasisOption { kind: CostBasis['kind']; id: string; name: string; tripProfileId: string; tripProfileName: string }
+export type CostingResult = CostingCalculationResult | EstimatedCostingCalculationResult;
 
 /** Persistence boundary for one editable assumption set owned by a Scenario. */
 export interface CostingAssumptionsRepository {
@@ -229,12 +240,20 @@ export interface CostingAssumptionsRepository {
 /** Application commands for the single Scenario-owned Costing assumptions record. */
 export interface CostingCommands {
   loadAssumptions(scenarioId: string): Promise<CostingAssumptions | undefined>;
+  /** Never changes the stored estimate factors; `saveEstimateFactors` does. */
   saveAssumptions(scenarioId: string, assumptions: CostingAssumptionsInput): Promise<CostingAssumptions>;
+  /**
+   * Saves the typed layover and deadhead factors of an estimated cost basis. Blank rows and rows of days outside the Scenario are dropped.
+   * `assumptionsIfNew` creates the assumptions record when the Scenario has none yet.
+   */
+  saveEstimateFactors(scenarioId: string, factors: CostingEstimateFactors | undefined, assumptionsIfNew: CostingAssumptionsInput): Promise<CostingAssumptions>;
 }
 
 /** Application query surface for the selected Blocking Scenario's derived cost estimate. */
 export interface CostingQueries {
   listBlockingScenarios(scenarioId: string): Promise<BlockingScenario[]>;
+  /** The Blocking Scenarios first, then every Trip Profile in name order. */
+  listCostBases(scenarioId: string): Promise<CostBasisOption[]>;
   /** The findings that make a set of assumptions unusable. Empty when they are valid. */
   validateAssumptions(assumptions: CostingAssumptionsInput): CostingFinding[];
   /** The total of the annual service-day counts and the limit it must stay within (Phase 5 plan, PL05-07). */
@@ -245,12 +264,12 @@ export interface CostingQueries {
   normalizeFutureYearCount(value: number): number;
   calculateEstimate(request: {
     scenarioId: string;
-    blockingScenarioId: string;
+    basis: CostBasis;
     assumptions: CostingAssumptionsInput;
-  }): Promise<CostingCalculationResult | undefined>;
+  }): Promise<CostingResult | undefined>;
   exportEstimateCsv(request: {
     scenarioId: string;
-    blockingScenarioId: string;
+    basis: CostBasis;
     assumptions: CostingAssumptionsInput;
   }): Promise<Array<{ suffix: string; contents: string }> | undefined>;
 }

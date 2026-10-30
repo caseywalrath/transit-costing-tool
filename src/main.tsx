@@ -48,6 +48,7 @@ async function start() {
     getScenario: (id) => repository.db.scenarios.get(id),
     listServiceDays: (id) => repository.db.serviceDays.where('scenarioId').equals(id).toArray(),
     listBlockingScenarios: (id) => blocking.listBlockingScenarios(id),
+    listTripProfiles: (id) => repository.listTripProfiles(id),
     getTripProfile: (id) => repository.getTripProfile(id),
     listTrips: listProfileTrips,
     listPatterns: listScenarioPatterns,

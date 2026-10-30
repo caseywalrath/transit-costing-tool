@@ -1,6 +1,6 @@
 import type { BlockSummary } from './blocking';
 import { sortServiceDays } from './serviceDays';
-import type { BlockingBlock, BlockingScenario, CostingAssumptions, Scenario, ServiceDayDefinition, Trip, TripProfile, ValidationFinding } from './types';
+import type { BlockingBlock, BlockingScenario, CostingAssumptions, CostingEstimateFactors, Scenario, ServiceDayDefinition, Trip, TripProfile, ValidationFinding } from './types';
 
 export const MAX_ANNUAL_SERVICE_DAYS = 365;
 export const MAX_COSTING_FUTURE_YEARS = 10;
@@ -18,6 +18,8 @@ export interface CostingAssumptionsInput {
   baseServiceYear: number;
   futureYearCount: number;
   annualEscalation: number;
+  /** Decision 0051. Used only by an estimated cost basis. */
+  estimateFactors?: CostingEstimateFactors;
 }
 
 export interface CostingCalculationContext {
@@ -121,6 +123,7 @@ export type CostingEstimateState = 'invalid' | 'noEstimate' | 'partial' | 'compl
 export type CostingNoEstimateReason = 'noEligibleBlocks' | 'rateMissing';
 
 export interface CostingCalculationResult {
+  basis: 'blocked';
   state: CostingEstimateState;
   noEstimateReason?: CostingNoEstimateReason;
   sourceRate?: number;
@@ -178,6 +181,38 @@ export function validateCostingAssumptions(assumptions: CostingAssumptionsInput,
   }
   if (assumptions.sourceNote !== undefined && typeof assumptions.sourceNote !== 'string') {
     findings.push(assumptionFinding('costing.sourceNoteInvalid', 'sourceNote'));
+  }
+  if (assumptions.estimateFactors !== undefined) findings.push(...validateEstimateFactors(assumptions.estimateFactors, scenarioId));
+  return findings;
+}
+
+const isFraction = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value < 1;
+
+/** Decision 0051: each typed factor is a fraction from 0 up to but not including 1, and a service day appears once. */
+function validateEstimateFactors(factors: CostingEstimateFactors, scenarioId: string): CostingFinding[] {
+  const findings: CostingFinding[] = [];
+  const invalid = (serviceDayId: string, factor?: 'layover' | 'deadhead') =>
+    costingFinding('costing.estimateFactorInvalid', 'error', 'costingAssumptions', scenarioId, 'estimateFactors', { serviceDayId, ...(factor ? { factor } : {}) });
+  const checkPair = (pair: { layoverFraction?: unknown; deadheadFraction?: unknown }, serviceDayId: string) => {
+    if (pair.layoverFraction !== undefined && !isFraction(pair.layoverFraction)) findings.push(invalid(serviceDayId, 'layover'));
+    if (pair.deadheadFraction !== undefined && !isFraction(pair.deadheadFraction)) findings.push(invalid(serviceDayId, 'deadhead'));
+  };
+  if (typeof factors.allDays !== 'object' || factors.allDays === null || Array.isArray(factors.allDays)) {
+    findings.push(invalid('allDays'));
+  } else {
+    checkPair(factors.allDays, 'allDays');
+  }
+  if (!Array.isArray(factors.serviceDays)) {
+    findings.push(invalid('allDays'));
+    return findings;
+  }
+  const seen = new Set<string>();
+  for (const row of factors.serviceDays) {
+    if (seen.has(row.serviceDayId)) {
+      findings.push(costingFinding('costing.estimateFactorDuplicateDay', 'error', 'costingAssumptions', scenarioId, 'estimateFactors', { serviceDayId: row.serviceDayId }));
+    }
+    seen.add(row.serviceDayId);
+    checkPair(row, row.serviceDayId);
   }
   return findings;
 }
@@ -342,11 +377,7 @@ export function calculateCosting(input: CostingCalculationInput): CostingCalcula
     return makeResult(input, 'noEstimate', findings, coverage, dailyQuantities, [], 'rateMissing');
   }
 
-  const years = Array.from({ length: assumptions.futureYearCount + 1 }, (_, index) => assumptions.baseServiceYear + index);
-  const appliedRates = years.map((serviceYear) => ({
-    serviceYear,
-    rate: assumptions.enteredRate! * Math.pow(1 + assumptions.annualEscalation, serviceYear - assumptions.rateYear),
-  }));
+  const appliedRates = costingAppliedRates(assumptions);
   if (appliedRates.some(({ rate }) => !Number.isFinite(rate) || rate < 0)) {
     findings.push(costingFinding('costing.adjustedRateInvalid', 'error', 'costingAssumptions', scenario.id, 'annualEscalation'));
     return makeResult(input, 'invalid', findings, coverage, [], []);
@@ -374,6 +405,15 @@ export function calculateCosting(input: CostingCalculationInput): CostingCalcula
 
   const hasExclusions = coverage.excludedBlockCount > 0 || coverage.unassignedTripCount > 0;
   return makeResult(input, hasExclusions ? 'partial' : 'complete', findings, coverage, dayCosts, yearRows);
+}
+
+/** The rate applied in each service year: the entered rate escalated from its rate year. Requires an entered rate. */
+export function costingAppliedRates(assumptions: CostingAssumptionsInput): { serviceYear: number; rate: number }[] {
+  const years = Array.from({ length: assumptions.futureYearCount + 1 }, (_, index) => assumptions.baseServiceYear + index);
+  return years.map((serviceYear) => ({
+    serviceYear,
+    rate: assumptions.enteredRate! * Math.pow(1 + assumptions.annualEscalation, serviceYear - assumptions.rateYear),
+  }));
 }
 
 /** Round a displayed number using decimal half-away-from-zero rules. */
@@ -485,6 +525,7 @@ function makeResult(
   noEstimateReason?: CostingNoEstimateReason,
 ): CostingCalculationResult {
   return {
+    basis: 'blocked',
     state,
     ...(noEstimateReason ? { noEstimateReason } : {}),
     ...(input.assumptions.enteredRate !== undefined && Number.isFinite(input.assumptions.enteredRate) ? { sourceRate: input.assumptions.enteredRate } : {}),

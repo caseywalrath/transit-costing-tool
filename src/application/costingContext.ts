@@ -1,5 +1,6 @@
 import { summarizeBlockingScenario } from '../domain/blocking';
 import type { CostingCalculationContext } from '../domain/costing';
+import type { EstimatedCostingContext } from '../domain/estimatedCosting';
 import type { CostingCalculationContextQueries, CostingContextSources } from './ports';
 
 /**
@@ -26,10 +27,24 @@ export async function buildCostingCalculationContext(sources: CostingContextSour
   return { scenario, serviceDays, blockingScenario, tripProfile, trips, blocks, blockSummaries };
 }
 
+/**
+ * Builds the context of an estimated cost basis (Decision 0051): the Scenario, its service days, the Trip Profile, and the Profile's Trips,
+ * each read once. Returns `undefined` when the Scenario is gone or the Trip Profile is not the Scenario's.
+ */
+export async function buildEstimatedCostingContext(sources: CostingContextSources, scenarioId: string, tripProfileId: string): Promise<EstimatedCostingContext | undefined> {
+  const [scenario, serviceDays, tripProfile] = await Promise.all([sources.getScenario(scenarioId), sources.listServiceDays(scenarioId), sources.getTripProfile(tripProfileId)]);
+  if (!scenario || !tripProfile || tripProfile.scenarioId !== scenarioId) return undefined;
+  const trips = await sources.listTrips(scenarioId, tripProfile.id);
+  return { scenario, serviceDays, tripProfile, trips };
+}
+
 /** The read side `CostingApplicationService` needs, over the given sources. */
 export function createCostingContextQueries(sources: CostingContextSources): CostingCalculationContextQueries {
   return {
     listBlockingScenarios: (scenarioId) => sources.listBlockingScenarios(scenarioId),
+    listServiceDays: (scenarioId) => sources.listServiceDays(scenarioId),
+    listTripProfiles: (scenarioId) => sources.listTripProfiles(scenarioId),
     getCostingCalculationContext: (scenarioId, blockingScenarioId) => buildCostingCalculationContext(sources, scenarioId, blockingScenarioId),
+    getEstimatedCostingContext: (scenarioId, tripProfileId) => buildEstimatedCostingContext(sources, scenarioId, tripProfileId),
   };
 }

@@ -51,6 +51,7 @@ function world(blocksPerScenario = 2) {
     getScenario: async (id) => scenarios.find((item) => item.id === id),
     listServiceDays: async (scenarioId) => days.filter((day) => day.scenarioId === scenarioId),
     listBlockingScenarios: async (scenarioId) => blockingScenarios.filter((item) => item.scenarioId === scenarioId),
+    listTripProfiles: async (scenarioId) => profiles.filter((item) => item.scenarioId === scenarioId),
     getTripProfile: async (id) => profiles.find((item) => item.id === id),
     listTrips: async (scenarioId, tripProfileId) => { reads.listTrips += 1; return trips.filter((item) => item.scenarioId === scenarioId && item.tripProfileId === tripProfileId); },
     listPatterns: async (scenarioId) => { reads.listPatterns += 1; return patterns.filter((item) => item.scenarioId === scenarioId); },
@@ -58,6 +59,28 @@ function world(blocksPerScenario = 2) {
   };
   return { scenarios, days, profiles, patterns, trips, blocks, blockingScenarios, sources, reads };
 }
+
+describe('Estimated costing context', () => {
+  it('holds the Scenario, its service days, the Trip Profile, and that Profile’s Trips, reading the Trips once', async () => {
+    const { sources, reads } = world();
+    const context = (await createCostingContextQueries(sources).getEstimatedCostingContext('s1', 's1-plan-b'))!;
+    expect(context.scenario.id).toBe('s1');
+    expect(context.serviceDays.map((day) => day.id).sort()).toEqual(['s1-saturday', 's1-weekday']);
+    expect(context.tripProfile.id).toBe('s1-plan-b');
+    expect(context.trips.every((item) => item.scenarioId === 's1' && item.tripProfileId === 's1-plan-b')).toBe(true);
+    expect(context.trips).toHaveLength(5);
+    expect(reads).toEqual({ listTrips: 1, listPatterns: 0, listBlockingBlocks: 0 });
+  });
+
+  it('is undefined for a Trip Profile of another Scenario, an unknown Trip Profile, or an unknown Scenario, and reads no Trips then', async () => {
+    const { sources, reads } = world();
+    const queries = createCostingContextQueries(sources);
+    expect(await queries.getEstimatedCostingContext('s1', 's2-plan-a')).toBeUndefined();
+    expect(await queries.getEstimatedCostingContext('s1', 'missing')).toBeUndefined();
+    expect(await queries.getEstimatedCostingContext('none', 's1-plan-a')).toBeUndefined();
+    expect(reads.listTrips).toBe(0);
+  });
+});
 
 describe('Costing calculation context', () => {
   it('holds only the selected Blocking Scenario, its Trip Profile, its Trips and Blocks, and its Scenario', async () => {
