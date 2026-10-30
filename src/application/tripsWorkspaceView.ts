@@ -33,6 +33,21 @@ export function regenerationUndoApplies(undo: TripRegenerationUndo | undefined, 
 }
 
 
+/**
+ * The timepoint columns the Trips table and the Trips CSV show: those where at least one Trip has a time. A schedule with no Trips keeps
+ * every column, so a new Direction still shows its structure. The columns keep their order.
+ */
+export function columnsWithTimes<Column extends { id: string }>(columns: Column[], trips: Trip[], patterns: RoutePattern[]): Column[] {
+  if (!trips.length) return columns;
+  const patternById = new Map(patterns.map((pattern) => [pattern.id, pattern]));
+  const used = new Set<string>();
+  for (const trip of trips) {
+    const timedPointIds = new Set(trip.stopTimes.filter((stop) => stop.time !== undefined).map((stop) => stop.patternPointId));
+    for (const point of patternById.get(trip.patternId)?.points ?? []) if (point.directionColumnId && timedPointIds.has(point.id)) used.add(point.directionColumnId);
+  }
+  return columns.filter((column) => used.has(column.id));
+}
+
 export interface TripRowView { runTimeSeconds?: number; duplicate: boolean; singleBand?: RuntimeBand; segments?: BlendedSegment[] }
 /**
  * One Trip's visit to a timetable column. `changed` (UR-8, HW-X) is true when this headway and the previous headway in the same column
