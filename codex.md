@@ -181,3 +181,5 @@ A new Scenario now also starts with an empty "Default" Blocking Scenario on its 
 Unsaved-change prompts now follow the Costing model (Cancel, Discard, Save): the pattern-edit, staged-shift, and new-trip prompts gained Save. A new Pattern still being built has no Save. The activity minutes field has no placeholder, and a blank is still refused. A Blocking Scenario created on the Blocking tab becomes the Trips tab choice too. Browser suite: 229 tests.
 
 - 2026-10-30: A blank Annual Service Days field on the Route tab is recorded as 0 (`NumericCommit` option `blankAsZero`). Other numeric fields still refuse a blank.
+
+- 2026-10-30: The Pattern point or Blocking trip moved last with the ↑/↓ buttons stays marked (`row-moved` in `tables.css`: accent bar, shading, and a short flash unless reduced motion is requested), so it can be followed to its new place. The marker is view state only.
