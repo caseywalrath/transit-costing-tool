@@ -148,3 +148,75 @@ test('a Block label is unique on its service day, and New Block proposes the fir
   await rename.getByRole('button', { name: 'Cancel' }).click();
   expect(await blockNames()).toEqual(['Block 1', 'Block 2', 'Block 3']);
 });
+
+// Decision 0050: the minimum layover can be set by direction.
+test('the minimum layover is one rule for both directions until "Same for both directions" is cleared', async ({ page }) => {
+  await openBlockingWithTrips(page, 3);
+  await (await newBlock(page)).getByRole('button', { name: 'Create block', exact: true }).click();
+  const openDialog = async () => {
+    await page.getByLabel('Unassigned trips').getByRole('button', { name: 'Unassigned trip actions', exact: true }).click();
+    await page.getByRole('menuitem', { name: /^Minimum layover/ }).click();
+    return page.getByRole('dialog', { name: 'Minimum layover' });
+  };
+  const menuLabel = async () => {
+    await page.getByLabel('Unassigned trips').getByRole('button', { name: 'Unassigned trip actions', exact: true }).click();
+    const label = (await page.getByRole('menuitem', { name: /^Minimum layover/ }).innerText()).trim();
+    await page.keyboard.press('Escape');
+    return label;
+  };
+
+  // The default is the single rule of today: one Rule and one Minutes field, shared by both directions.
+  let dialog = await openDialog();
+  await expect(dialog.getByLabel('Same for both directions')).toBeChecked();
+  await expect(dialog.getByLabel(/^Rule/)).toHaveValue('minutes');
+  await expect(dialog.getByLabel('Outbound rule')).toHaveCount(0);
+  await dialog.getByLabel('Minutes', { exact: true }).fill('10');
+  await dialog.getByRole('button', { name: 'Apply' }).click();
+  expect(await menuLabel()).toBe('Minimum layover: 10 min');
+
+  // Clearing the checkbox shows one row per direction, both starting from the shared rule.
+  dialog = await openDialog();
+  await dialog.getByLabel('Same for both directions').uncheck();
+  await expect(dialog.getByText('After outbound trips')).toBeVisible();
+  await expect(dialog.getByText('After inbound trips')).toBeVisible();
+  await expect(dialog.getByLabel('Inbound minutes')).toHaveValue('10');
+  // A blank amount in one direction refuses Apply and names that direction; "No minimum" needs no amount.
+  await dialog.getByLabel('Outbound minutes').fill('');
+  await expect(dialog.getByRole('alert')).toHaveText(/^Outbound: Enter a non-negative value\.$/);
+  await expect(dialog.getByRole('button', { name: 'Apply' })).toBeDisabled();
+  await dialog.getByLabel('Outbound rule').selectOption('none');
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await dialog.getByLabel('Inbound rule').selectOption('percent');
+  await dialog.getByLabel('Inbound percentage').fill('8');
+  await dialog.getByRole('button', { name: 'Apply' }).click();
+  expect(await menuLabel()).toBe('Minimum layover: Out none · In 8%');
+
+  // Reopening shows the two rules; setting the same rule again and checking the box returns to one rule.
+  dialog = await openDialog();
+  await expect(dialog.getByLabel('Same for both directions')).not.toBeChecked();
+  await expect(dialog.getByLabel('Outbound rule')).toHaveValue('none');
+  await expect(dialog.getByLabel('Inbound percentage')).toHaveValue('8');
+  await dialog.getByLabel('Outbound rule').selectOption('percent');
+  await dialog.getByLabel('Outbound percentage').fill('8');
+  await dialog.getByRole('button', { name: 'Apply' }).click();
+  expect(await menuLabel()).toBe('Minimum layover: 8%');
+  dialog = await openDialog();
+  await expect(dialog.getByLabel('Same for both directions')).toBeChecked();
+  await dialog.getByLabel(/^Rule/).selectOption('none');
+  await dialog.getByRole('button', { name: 'Apply' }).click();
+  expect(await menuLabel()).toBe('Minimum layover…');
+});
+
+test('a minimum layover stored before the change is read as the rule for both directions', async ({ page }) => {
+  await openBlockingWithTrips(page, 2);
+  await page.evaluate(() => {
+    const key = 'transit-costing-tool.blocking-selection.v1';
+    window.localStorage.setItem(key, JSON.stringify({ ...JSON.parse(window.localStorage.getItem(key) ?? '{}'), minimumLayover: { mode: 'minutes', value: 7 } }));
+  });
+  await page.reload();
+  await page.getByRole('button', { name: 'Blocking', exact: true }).click();
+  await (await newBlock(page)).getByRole('button', { name: 'Create block', exact: true }).click();
+  await expect(page.getByLabel('Current block').getByText('This empty block is valid.')).toBeVisible();
+  await page.getByLabel('Unassigned trips').getByRole('button', { name: 'Unassigned trip actions', exact: true }).click();
+  await expect(page.getByRole('menuitem', { name: /^Minimum layover/ })).toHaveText('Minimum layover: 7 min');
+});

@@ -11,8 +11,11 @@ export function Field({ label, required, errors = [], wide, children }: { label:
   return <label className={wide ? 'wide' : ''}><span>{label}{required && <b aria-hidden="true"> *</b>}</span>{control}{errors.map((error, index) => <small className="field-error" id={`${id}-error-${index}`} key={error}>{error}</small>)}</label>;
 }
 
-/** `onCommit` may return the reason the value was refused; it is shown beside the field and the saved value stays. */
-export function NumericCommit({ label, value, integer = false, step = '1', onCommit }: { label: string; value: number; integer?: boolean; step?: string; onCommit: (value: number) => Promise<string | void> | void }) {
+/**
+ * `onCommit` may return the reason the value was refused; it is shown beside the field and the saved value stays.
+ * With `blankAsZero`, a blank field is committed as 0 (and shows 0) instead of being refused.
+ */
+export function NumericCommit({ label, value, integer = false, step = '1', blankAsZero = false, onCommit }: { label: string; value: number; integer?: boolean; step?: string; blankAsZero?: boolean; onCommit: (value: number) => Promise<string | void> | void }) {
   const [draft, setDraft] = useState(String(value));
   const [error, setError] = useState('');
   // "✓ Saved" shows for 1.8 s after a commit the service accepted (UR-7b).
@@ -23,8 +26,10 @@ export function NumericCommit({ label, value, integer = false, step = '1', onCom
   useEffect(() => { setDraft(String(value)); }, [value]);
   function commit() {
     if (cancelled.current) { cancelled.current = false; return; }
-    const parsed = Number(draft);
-    if (!draft.trim()) { setError('A value is required. Zero is valid.'); return; }
+    const blank = !draft.trim();
+    if (blank && blankAsZero) setDraft('0');
+    const parsed = blank && blankAsZero ? 0 : Number(draft);
+    if (blank && !blankAsZero) { setError('A value is required. Zero is valid.'); return; }
     if (!Number.isFinite(parsed) || parsed < 0 || (integer && !Number.isInteger(parsed))) { setError(integer ? 'Enter a non-negative whole number.' : 'Enter a non-negative number.'); return; }
     setError('');
     const outcome = onCommit(parsed);

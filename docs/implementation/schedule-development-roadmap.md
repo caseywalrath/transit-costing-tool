@@ -44,7 +44,7 @@ These plans form one scheduling-development sequence. Each phase contains smalle
 - Recalculation retains stable trip IDs and therefore retains block references.
 - Each Route has two application-managed Directions, Outbound and Inbound. The application keeps the ordered timetable columns of each Direction, aligned from Pattern point order and shared by its Patterns. The interface does not create, delete, rename, or edit Directions or their columns (Decision 0011).
 - Blocking Scenarios are named all-service-day arrangements with one immutable source Trip Profile. Blocks belong to one Blocking Scenario and service day and remain ordered activity lists rather than a block-number field on each Trip.
-- Layover is derived. No minimum-layover rule is applied to persisted data. A minimum-layover display preference classifies candidate compatibility in the Unassigned Trips list and does not modify Blocks (Decision 0042, which annotates Decision 0020 item 19).
+- Layover is derived. No minimum-layover rule is applied to persisted data. A minimum-layover display preference classifies candidate compatibility in the Unassigned Trips list and does not modify Blocks (Decision 0042, which annotates Decision 0020 item 19); it can be set per direction (Decision 0050).
 - Pull-out, pull-in, and deadhead values are entered manually in the first build.
 - Revenue hours and platform hours are primary summaries. Miles are derived where route data is complete.
 - Tables remain compact and reuse accepted Route-tab conventions where applicable. Current UI/UX model recommendations are in `codex.md`: Luna for precise UI wiring that reuses established patterns; Sol for novel or complex design and interaction.

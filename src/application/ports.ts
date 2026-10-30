@@ -179,9 +179,9 @@ export interface BlockingQueries {
   listBlockingBlocks(blockingScenarioId: string, serviceDayId?: string): Promise<BlockingBlock[]>;
   getBlockSummary(blockingScenarioId: string, blockId: string): Promise<BlockSummary | undefined>;
   getScenarioSummary(blockingScenarioId: string, serviceDayId?: string): Promise<import('../domain/blocking').BlockingSummary | undefined>;
-  classifyInsertion(blockingScenarioId: string, blockId: string, tripId: string, insertAt?: number, minimumLayover?: import('../domain/blocking').MinimumLayoverRule): Promise<BlockingCompatibility>;
+  classifyInsertion(blockingScenarioId: string, blockId: string, tripId: string, insertAt?: number, minimumLayover?: import('../domain/blocking').MinimumLayoverRules): Promise<BlockingCompatibility>;
   /** The compatibility of every listed Trip with one Block, from one read of the Trips and Patterns. Keyed by Trip id. */
-  classifyInsertions(blockingScenarioId: string, blockId: string, tripIds: string[], insertAt?: number, minimumLayover?: import('../domain/blocking').MinimumLayoverRule): Promise<Map<string, BlockingCompatibility>>;
+  classifyInsertions(blockingScenarioId: string, blockId: string, tripIds: string[], insertAt?: number, minimumLayover?: import('../domain/blocking').MinimumLayoverRules): Promise<Map<string, BlockingCompatibility>>;
   /** The Trips of the Route and service day that no Block of the Blocking Scenario holds. */
   listUnassignedTrips(blockingScenarioId: string, serviceDayId: string, routeId: string): Promise<Trip[]>;
   /** The first free "Block <n>" on the service day of the Blocking Scenario. */
@@ -194,6 +194,8 @@ export interface BlockingQueries {
   parseActivityInput(input: ActivityTextInput): ParsedActivityInput;
   /** Reads the minimum-layover rule typed in the dialog. A blank amount is refused, not read as 0. */
   parseMinimumLayover(mode: 'none' | MinimumLayoverRule['mode'], amount: string): ParsedMinimumLayover;
+  /** Reads the minimum-layover rule typed for each direction. A blank amount in a direction with a rule is refused, not read as 0. */
+  parseMinimumLayoverRules(input: Record<import('../domain/directions').DirectionGroup, import('../domain/blocking').MinimumLayoverRowInput>): import('../domain/blocking').ParsedMinimumLayoverRules;
   exportBlockingScenarioCsv(blockingScenarioId: string): Promise<Array<{ suffix: 'blocking-scenarios' | 'blocking-blocks' | 'blocking-activities' | 'blocking-summaries'; contents: string }>>;
 }
 

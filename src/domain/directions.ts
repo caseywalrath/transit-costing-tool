@@ -25,6 +25,12 @@ function directionFinding(direction: RouteDirection, ruleId: string, messageKey:
   };
 }
 
+/** The direction group of each Pattern, by Pattern id. A Pattern without a direction, or whose direction has no group, is left out. */
+export function patternDirectionGroups(patterns: RoutePattern[], directions: RouteDirection[]): Map<EntityId, DirectionGroup> {
+  const groups = new Map(directions.flatMap((direction) => direction.group ? [[direction.id, direction.group] as const] : []));
+  return new Map(patterns.flatMap((pattern) => { const group = pattern.directionId ? groups.get(pattern.directionId) : undefined; return group ? [[pattern.id, group] as const] : []; }));
+}
+
 /** Normalize a direction and its columns without changing stable IDs. */
 export function normalizeDirection(direction: RouteDirection): RouteDirection {
   const columns = direction.columns

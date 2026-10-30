@@ -26,3 +26,13 @@ th:first-child { z-index: 2; background: var(--color-surface-2); }
 .draft-indicator { margin: var(--space-2) 0 0; }
 .local-conflict { margin: var(--space-2) 0 0; border-left: 3px solid var(--color-danger); background: var(--color-danger-soft); padding: var(--space-2) var(--space-2); }
 .value-incomplete { color: var(--color-warn); font-weight: var(--font-weight-semibold); }
+
+/* The row whose ↑/↓ button was pressed last stays shaded, so the eye can follow it to its new place. The two animation names
+   alternate between moves so the flash replays when the same row is moved again. */
+.row-moved > td:first-child { box-shadow: inset 3px 0 0 var(--color-accent); }
+.row-moved:not([class*="blocking-row-"]) > td { background: var(--color-accent-soft); }
+.row-moved--0 > td { animation: row-moved-flash-0 900ms ease-out; }
+.row-moved--1 > td { animation: row-moved-flash-1 900ms ease-out; }
+@keyframes row-moved-flash-0 { from { background-color: color-mix(in srgb, var(--color-accent) 35%, transparent); } }
+@keyframes row-moved-flash-1 { from { background-color: color-mix(in srgb, var(--color-accent) 35%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .row-moved--0 > td, .row-moved--1 > td { animation: none; } }

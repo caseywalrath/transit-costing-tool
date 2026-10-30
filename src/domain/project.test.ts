@@ -17,6 +17,13 @@ describe('scenario duplication', () => {
     expect(records.tripProfiles?.[0].scenarioId).toBe(records.scenario.id);
   });
 
+  it('creates an empty Default Blocking Scenario on the Default Trip Profile', () => {
+    const records = createScenarioRecords('project', 'Base', '2026-01-01T00:00:00.000Z');
+    expect(records.blockingScenarios).toHaveLength(1);
+    expect(records.blockingScenarios?.[0]).toMatchObject({ name: 'Default', scenarioId: records.scenario.id, tripProfileId: records.tripProfiles?.[0].id });
+    expect(records.blocks).toEqual([]);
+  });
+
   it('deep-copies route records and remaps all references', () => {
     const source = {
       scenario: { id: 'source-scenario', projectId: 'project', name: 'Base', ...metadata('2026-01-01T00:00:00.000Z') },

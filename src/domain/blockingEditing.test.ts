@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
 import type { BlockActivity, BlockingBlock, BlockingScenario, DeadheadActivity, RoutePattern, Trip } from './types';
 import {
-  applyDeadheadToMatchingConnections, BlockingValidationError, insertBlockActivity, layoverPercent, moveRevenueTripGroup, parseActivityInput, parseMinimumLayoverRule,
+  applyDeadheadToMatchingConnections, BlockingValidationError, insertBlockActivity, layoverPercent, moveRevenueTripGroup, normalizeMinimumLayoverRules, parseActivityInput, parseMinimumLayoverRule, parseMinimumLayoverRules,
   proposeBlockLabel, summarizeBlock, summarizeBlockingScenario, unassignedRouteTrips, validateBlockLabel,
 } from './blocking';
 
@@ -79,6 +79,33 @@ describe('Minimum layover input (I-077)', () => {
 
   it.each([['minutes', '-1'], ['minutes', 'abc'], ['percent', '101'], ['percent', 'NaN']] as const)('rejects %s %j', (mode, amount) => {
     expect(parseMinimumLayoverRule(mode, amount).findings.map((item) => item.ruleId)).toEqual(['block.minimumLayoverAmountInvalid']);
+  });
+});
+
+describe('Minimum layover by direction (Decision 0050)', () => {
+  const row = (mode: 'none' | 'minutes' | 'percent', amount = '') => ({ mode, amount });
+  it('reads one rule per direction, and a direction set to No minimum has no entry', () => {
+    expect(parseMinimumLayoverRules({ outbound: row('minutes', '10'), inbound: row('percent', '8') })).toEqual({ rules: { outbound: { mode: 'minutes', value: 10 }, inbound: { mode: 'percent', value: 8 } }, findings: [] });
+    expect(parseMinimumLayoverRules({ outbound: row('minutes', '10'), inbound: row('none') })).toEqual({ rules: { outbound: { mode: 'minutes', value: 10 } }, findings: [] });
+    expect(parseMinimumLayoverRules({ outbound: row('none'), inbound: row('none') })).toEqual({ findings: [] });
+  });
+
+  it('refuses a blank or invalid amount in a direction that has a rule, naming the direction in the field', () => {
+    const result = parseMinimumLayoverRules({ outbound: row('minutes', '10'), inbound: row('percent', ' ') });
+    expect(result.findings.map((item) => [item.ruleId, item.field])).toEqual([['block.minimumLayoverAmountRequired', 'inbound.amount']]);
+    expect(result.rules).toEqual({ outbound: { mode: 'minutes', value: 10 } });
+    expect(parseMinimumLayoverRules({ outbound: row('percent', '101'), inbound: row('minutes', '-1') }).findings.map((item) => item.field)).toEqual(['outbound.amount', 'inbound.amount']);
+  });
+
+  it('reads a single rule stored before the change as the rule for both directions', () => {
+    const rule = { mode: 'minutes', value: 10 };
+    expect(normalizeMinimumLayoverRules(rule)).toEqual({ outbound: rule, inbound: rule });
+  });
+
+  it('reads the per-direction form, and anything of the wrong shape as no minimum', () => {
+    expect(normalizeMinimumLayoverRules({ outbound: { mode: 'percent', value: 8 } })).toEqual({ outbound: { mode: 'percent', value: 8 } });
+    expect(normalizeMinimumLayoverRules({ outbound: { mode: 'minutes', value: 5 }, inbound: { mode: 'bad', value: 5 } })).toEqual({ outbound: { mode: 'minutes', value: 5 } });
+    for (const stored of ['none', 5, null, undefined, [], {}, { mode: 'minutes', value: -1 }, { outbound: { mode: 'minutes', value: Number.NaN } }]) expect(normalizeMinimumLayoverRules(stored)).toBeUndefined();
   });
 });
 

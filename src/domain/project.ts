@@ -17,6 +17,7 @@ import type {
   BlockingScenario,
   CostingAssumptions,
 } from './types';
+import { createBlockingScenario } from './blocking';
 import { metadata, newId, withUpdatedAt } from './ids';
 import { createStandardServiceDays } from './serviceDays';
 
@@ -56,7 +57,9 @@ export interface ScenarioRecords {
 
 export function createScenarioRecords(projectId: string, name: string, now = new Date().toISOString()): ScenarioRecords {
   const scenario = createScenario(projectId, name, now);
-  return { scenario, serviceDays: createStandardServiceDays(scenario.id, undefined, now), routes: [], nodes: [], patterns: [], directions: [], runtimeProfiles: [], runtimeAssignments: [], tripProfiles: [{ id: newId(), scenarioId: scenario.id, name: 'Default', ...metadata(now) }], generationSets: [], trips: [], blocks: [] };
+  const tripProfile = { id: newId(), scenarioId: scenario.id, name: 'Default', ...metadata(now) };
+  // A new Scenario starts with an empty Blocking Scenario on its Default Trip Profile, so Blocking and Costing are usable at once.
+  return { scenario, serviceDays: createStandardServiceDays(scenario.id, undefined, now), routes: [], nodes: [], patterns: [], directions: [], runtimeProfiles: [], runtimeAssignments: [], tripProfiles: [tripProfile], generationSets: [], trips: [], blocks: [], blockingScenarios: [createBlockingScenario({ scenarioId: scenario.id, tripProfileId: tripProfile.id, name: 'Default' }, now)] };
 }
 
 /** Duplicate one complete Route planning graph inside its current Scenario.

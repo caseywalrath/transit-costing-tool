@@ -17,7 +17,7 @@ import { runtimeProfileCsv } from '../runtimeProfileCsv';
 import { tripTableCsv } from '../../application/tripTableCsv';
 import { type RouteNavigationGuard } from '../shared/types';
 import { type RuntimeEditorHandle, type RuntimeEditorState, RuntimeEditor2, RouteRuntimeMethodDialog } from './RuntimeEditor';
-import { type BuildTripsValues, EMPTY_BUILD_VALUES, type NewRuntimeDialog, TripBlockAssignmentDialog, TripBlockUnassignmentDialog, BuildTripsDrawer, RuntimeProfileDialog2, DeleteRuntimeProfileDialog, DeleteTripsDialog, RecalculationDialog, RuntimeDayCopyDialog, TripDayCopyDialog, BatchPatternChangeDialog, TripPatternChangeDialog } from './dialogs';
+import { type BuildTripsValues, EMPTY_BUILD_VALUES, type NewRuntimeDialog, TripBlockAssignmentDialog, TripBlockUnassignmentDialog, BuildTripsDrawer, RuntimeProfileDialog2, DeleteRuntimeProfileDialog, DeleteTripsDialog, RecalculationDialog, RuntimeDayCopyDialog, SegmentRuntimeDialog, TripDayCopyDialog, BatchPatternChangeDialog, TripPatternChangeDialog } from './dialogs';
 import { type TripBlockAssignmentDraft, type TripBlockOption, type TripSelectionRequest, ScheduleTable } from './ScheduleTable';
 import { combineSelection, invertSelection, tripIdsMatching } from '../../application/tripSelection';
 import { download } from '../shared/download';
@@ -101,6 +101,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   const [roundDisplayedTimes, setRoundDisplayedTimes] = useState(false);
   const [busy, setBusy] = useState(false);
   const [runtimeCopyOpen, setRuntimeCopyOpen] = useState(false);
+  const [segmentRuntimeDialog, setSegmentRuntimeDialog] = useState<'copy' | 'fill'>();
   const [routeMethodChange, setRouteMethodChange] = useState<{ method: RuntimeCalculationMethod; impact?: { profileCount: number; tripCount: number }; busy: boolean }>();
   const [tripCopyOpen, setTripCopyOpen] = useState(false);
   const [batchPatternChangeOpen, setBatchPatternChangeOpen] = useState(false);
@@ -433,9 +434,10 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
     if (shiftOperations.length) { setShiftDiscardAction(() => () => undefined); return; }
     discardStagedShift();
   }
-  async function completeStagedShift() {
-    if (!shiftPreview) return;
-    if (!shiftOperations.length || shiftPreview.netOffsetSeconds === 0) { setSelectedTripIds([]); discardStagedShift(); return; }
+  /** Applies the staged shift. Resolves true when it was applied or there was nothing to apply, false when the save failed. */
+  async function completeStagedShift(): Promise<boolean> {
+    if (!shiftPreview) return true;
+    if (!shiftOperations.length || shiftPreview.netOffsetSeconds === 0) { setSelectedTripIds([]); discardStagedShift(); return true; }
     setBusy(true);
     const pagePosition = { left: window.scrollX, top: window.scrollY, tableLeft: tripsTableScrollRef.current?.scrollLeft ?? 0, tableTop: tripsTableScrollRef.current?.scrollTop ?? 0 };
     try {
@@ -446,8 +448,10 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
         if (tripsTableScrollRef.current) { tripsTableScrollRef.current.scrollLeft = pagePosition.tableLeft; tripsTableScrollRef.current.scrollTop = pagePosition.tableTop; }
         tripsActionsRef.current?.focus({ preventScroll: true });
       }));
+      return true;
     } catch (error) {
       setShiftError(error instanceof TripShiftStalePreviewError || (error instanceof Error && error.name === 'TripShiftStalePreviewError') ? 'Selected trips changed. Discard this review and reopen shift.' : shiftErrorText(error, 'Unable to save the staged shift. Your trips were not changed. Try again.'));
+      return false;
     } finally { setBusy(false); }
   }
   useEffect(() => {
@@ -472,11 +476,17 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
     } catch (error) { onError(error); }
   }
   const reverseCandidates = reverseRuntimeCandidates(selectedPattern, patterns);
+  // Decision 0049. The service keeps the one level of undo in memory; every runtime write calls `onRuntimeChanged`, which renders this again.
+  const segmentUndo = service.getSegmentRuntimeUndo();
+  const segmentUndoApplies = segmentUndo?.routeId === aggregate.route.id;
+  const segmentActionsUnavailable = !selectedProfile || tripProfileBusy || aggregate.patterns.length < 2;
+  async function undoSegmentRuntimes() { try { await service.undoSegmentRuntimePlan(); } catch (error) { onError(error); } onRuntimeChanged(); }
   async function requestProfileDeletion() { if (!selectedProfile) return; try { const impact = await service.getRuntimeProfileDeletionImpact(selectedProfile.id); setProfileDeletionImpact(impact); setDeleteProfileOpen(true); } catch (error) { onError(error); } }
   async function deleteProfile(replacementProfileId?: string) { if (!selectedProfile || !profileDeletionImpact) return; try { await service.deleteRuntimeProfile(selectedProfile.id, replacementProfileId, profileDeletionImpact.reviewToken); setDeleteProfileOpen(false); setProfileDeletionImpact(undefined); onRuntimeChanged(); } catch (error) { setDeleteProfileOpen(false); setProfileDeletionImpact(undefined); onError(error, 'Unable to delete the runtime profile. Your data was not changed.'); } }
-  async function saveDraftTrip() {
-    if (!draftTrip?.patternId || !draftTrip.firstTrip.trim()) return;
-    try { const firstTrip = parseServiceTime(draftTrip.firstTrip); setBusy(true); const result = await tripService.addTrip({ scenarioId: records.scenario.id, routeId: aggregate.route.id, serviceDayId, directionId, patternId: draftTrip.patternId, tripProfileId, firstTrip }); setDraftTrip(undefined); clearTripShiftHistory(); await loadTrips(); if (result.warnings.length) onError(new TripGenerationError(result.warnings)); } catch (error) { onError(error); } finally { setBusy(false); }
+  /** Adds the new Trip row. Resolves true when it was added, false when the row is incomplete or the save failed. */
+  async function saveDraftTrip(): Promise<boolean> {
+    if (!draftTrip?.patternId || !draftTrip.firstTrip.trim()) return false;
+    try { const firstTrip = parseServiceTime(draftTrip.firstTrip); setBusy(true); const result = await tripService.addTrip({ scenarioId: records.scenario.id, routeId: aggregate.route.id, serviceDayId, directionId, patternId: draftTrip.patternId, tripProfileId, firstTrip }); setDraftTrip(undefined); clearTripShiftHistory(); await loadTrips(); if (result.warnings.length) onError(new TripGenerationError(result.warnings)); return true; } catch (error) { onError(error); return false; } finally { setBusy(false); }
   }
   const changedRuntimeTripIds = new Set(tripsWithChangedRuntimes.map((trip) => trip.id));
   const selectedChangedRuntimeTripIds = selectedTripIds.filter((id) => changedRuntimeTripIds.has(id));
@@ -566,6 +576,11 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
       { id: 'copy', label: 'Copy profile…', disabled: !selectedProfile || tripProfileBusy, onSelect: () => requestScopeChange(() => { if (selectedProfile) setRuntimeDialog({ mode: 'copy', initialName: `${selectedProfile.name} Copy` }); }) },
       ...(reverseCandidates.length ? [{ id: 'reverse-copy', label: 'Reverse-copy profile…', disabled: !selectedProfile || tripProfileBusy, onSelect: () => requestScopeChange(() => { if (selectedProfile) setRuntimeDialog({ mode: 'reverse', initialName: `${selectedProfile.name} Reverse` }); }) }] : []),
       { id: 'delete', label: 'Delete profile…', destructive: true, disabled: !selectedProfile || tripProfileBusy, onSelect: () => requestScopeChange(() => void requestProfileDeletion()) },
+    ] },
+    { items: [
+      { id: 'copy-segments', label: 'Copy segments to other patterns…', disabled: segmentActionsUnavailable, onSelect: () => requestScopeChange(() => setSegmentRuntimeDialog('copy')) },
+      { id: 'fill-segments', label: 'Fill from other patterns…', disabled: segmentActionsUnavailable, onSelect: () => requestScopeChange(() => setSegmentRuntimeDialog('fill')) },
+      ...(segmentUndoApplies ? [{ id: 'undo-segments', label: 'Undo last segment copy', disabled: tripProfileBusy, onSelect: () => requestScopeChange(() => void undoSegmentRuntimes()) }] : []),
     ] },
   ];
   const tripProfiles = records.tripProfiles ?? [];
@@ -688,8 +703,9 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
     {tripBlockAssignment?.operation === 'assign' && <TripBlockAssignmentDialog draft={tripBlockAssignment} blockingScenarioName={selectedBlockingScenario?.name ?? 'blocking scenario'} serviceDayName={selectedDay?.name ?? 'selected service day'} blocks={dayBlockingBlocks} blockOptions={tripBlockOptions} currentAssignments={tripBlockByTripId} onConfirm={(destinationId) => void confirmTripBlockAssignment(destinationId)} onClose={closeTripBlockAssignment} busy={busy} error={tripBlockAssignmentError} />}
     {tripBlockAssignment?.operation === 'unassign' && <TripBlockUnassignmentDialog draft={tripBlockAssignment} blockingScenarioName={selectedBlockingScenario?.name ?? 'blocking scenario'} serviceDayName={selectedDay?.name ?? 'selected service day'} blocks={dayBlockingBlocks} currentAssignments={tripBlockByTripId} onConfirm={() => void confirmTripBlockAssignment('')} onClose={closeTripBlockAssignment} busy={busy} error={tripBlockAssignmentError} />}
     {runtimeLeave && <RouteNavigationDraftDialog title="Save runtime changes before leaving?" text="The runtime profile has unsaved edits." onCancel={() => setRuntimeLeave(undefined)} onDiscard={() => { const { action, leavesContext } = runtimeLeave; setRuntimeLeave(undefined); runtimeEditorRef.current?.discard(); (leavesContext ? requestShiftAndDraftScopeChange : requestShiftScopeChange)(action); }} onSave={() => { const { action, leavesContext } = runtimeLeave; setRuntimeLeave(undefined); saveRuntimeThen(action, leavesContext); }} />}
-    {shiftDiscardAction && <ShiftDiscardDialog onDiscard={() => discardStagedShift(shiftDiscardAction)} onCancel={() => setShiftDiscardAction(undefined)} />}
-    {draftTripDiscardAction && <ShiftDiscardDialog title="Discard new trip?" text="The new trip row has not been added. Discard it before leaving this schedule context?" onDiscard={() => { const action = draftTripDiscardAction; setDraftTripDiscardAction(undefined); setDraftTrip(undefined); action(); }} onCancel={() => setDraftTripDiscardAction(undefined)} />}
+    {shiftDiscardAction && <ShiftDiscardDialog onDiscard={() => discardStagedShift(shiftDiscardAction)} onCancel={() => setShiftDiscardAction(undefined)} onSave={shiftError ? undefined : () => { const action = shiftDiscardAction; setShiftDiscardAction(undefined); void completeStagedShift().then((saved) => { if (saved) action(); }); }} />}
+    {draftTripDiscardAction && <ShiftDiscardDialog title="Discard new trip?" text="The new trip row has not been added. Discard it before leaving this schedule context?" onDiscard={() => { const action = draftTripDiscardAction; setDraftTripDiscardAction(undefined); setDraftTrip(undefined); action(); }} onCancel={() => setDraftTripDiscardAction(undefined)} onSave={draftTrip?.patternId && draftTrip.firstTrip.trim() ? () => { const action = draftTripDiscardAction; setDraftTripDiscardAction(undefined); void saveDraftTrip().then((saved) => { if (saved) action(); }); } : undefined} />}
+    {segmentRuntimeDialog && selectedProfile && <SegmentRuntimeDialog service={service} mode={segmentRuntimeDialog} profileId={selectedProfile.id} onDone={() => { setSegmentRuntimeDialog(undefined); onRuntimeChanged(); }} onClose={() => setSegmentRuntimeDialog(undefined)} />}
     {runtimeDialog && <RuntimeProfileDialog2 dialog={runtimeDialog} candidates={reverseCandidates} onSubmit={submitRuntimeDialog} onClose={() => setRuntimeDialog(undefined)} />}
     {deleteProfileOpen && selectedProfile && profileDeletionImpact && <DeleteRuntimeProfileDialog profile={selectedProfile} profiles={profiles} assignmentCount={profileDeletionImpact.assignmentCount} tripCount={profileDeletionImpact.tripCount} onDelete={deleteProfile} onClose={() => { setDeleteProfileOpen(false); setProfileDeletionImpact(undefined); }} />}
     {buildOpen && <BuildTripsDrawer tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} serviceDayId={serviceDayId} tripProfileId={tripProfileId} patterns={patterns} profileName={selectedProfile?.name} initialValues={buildValues.current} onValuesChange={(values) => { buildValues.current = values; }} onDone={async () => { buildValues.current = EMPTY_BUILD_VALUES; closeBuildDrawer(); clearTripShiftHistory(); await loadTrips(); }} onClose={closeBuildDrawer} />}

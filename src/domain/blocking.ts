@@ -1,10 +1,13 @@
 import type { BlockingBlock, BlockingScenario, BlockActivity, DeadheadActivity, EntityId, Miles, RoutePattern, ServiceSeconds, Trip, ValidationFinding } from './types';
 import { metadata, newId, withUpdatedAt } from './ids';
 import { patternTotalMiles } from './patterns';
+import { MANAGED_DIRECTION_GROUPS, type DirectionGroup } from './directions';
 
 export type BlockingStatus = 'complete' | 'incomplete' | 'invalid';
 export type CompatibilityStatus = 'compatible' | 'deadheadRequired' | 'insufficientLayover' | 'conflict' | 'incomplete';
 export type MinimumLayoverRule = { mode: 'minutes' | 'percent'; value: number };
+/** The minimum layover by direction (Decision 0050). A direction without an entry has no minimum. */
+export type MinimumLayoverRules = Partial<Record<DirectionGroup, MinimumLayoverRule>>;
 export interface BlockingScenarioInput { scenarioId: EntityId; tripProfileId: EntityId; name: string; description?: string; }
 export interface BlockingScenarioGraph { scenario: BlockingScenario; blocks: BlockingBlock[]; }
 
@@ -222,6 +225,38 @@ export function parseMinimumLayoverRule(mode: 'none' | MinimumLayoverRule['mode'
   if (!Number.isFinite(value) || value < 0 || (mode === 'percent' && value > 100)) return { findings: [finding('minimumLayover', 'minimum-layover', 'block.minimumLayoverAmountInvalid', 'block.minimumLayoverAmountInvalid', 'structural', 'error', 'amount')] };
   return { rule: { mode, value }, findings: [] };
 }
+export type MinimumLayoverRowInput = { mode: 'none' | MinimumLayoverRule['mode']; amount: string };
+export interface ParsedMinimumLayoverRules { rules?: MinimumLayoverRules; findings: ValidationFinding[] }
+/**
+ * Reads the minimum-layover rule a planner typed for each direction. A finding's field is `outbound.amount` or `inbound.amount`.
+ * A direction set to "No minimum" has no entry; when neither direction has one, there are no rules at all.
+ */
+export function parseMinimumLayoverRules(input: Record<DirectionGroup, MinimumLayoverRowInput>): ParsedMinimumLayoverRules {
+  const rules: MinimumLayoverRules = {}; const findings: ValidationFinding[] = [];
+  for (const group of MANAGED_DIRECTION_GROUPS) {
+    const parsed = parseMinimumLayoverRule(input[group].mode, input[group].amount);
+    findings.push(...parsed.findings.map((item) => ({ ...item, field: `${group}.amount` })));
+    if (parsed.rule) rules[group] = parsed.rule;
+  }
+  return { ...(Object.keys(rules).length ? { rules } : {}), findings };
+}
+function storedLayoverRule(value: unknown): MinimumLayoverRule | undefined {
+  if (value === null || typeof value !== 'object') return undefined;
+  const { mode, value: amount } = value as Record<string, unknown>;
+  return (mode === 'minutes' || mode === 'percent') && typeof amount === 'number' && Number.isFinite(amount) && amount >= 0 ? { mode, value: amount } : undefined;
+}
+/**
+ * Reads a stored minimum-layover preference of unknown shape. A single rule (the form stored before Decision 0050) applies to both
+ * directions. Anything of the wrong shape, or with no usable rule, reads as no minimum.
+ */
+export function normalizeMinimumLayoverRules(value: unknown): MinimumLayoverRules | undefined {
+  if (value === null || typeof value !== 'object') return undefined;
+  const single = storedLayoverRule(value);
+  if (single) return { outbound: single, inbound: single };
+  const record = value as Record<string, unknown>; const rules: MinimumLayoverRules = {};
+  for (const group of MANAGED_DIRECTION_GROUPS) { const rule = storedLayoverRule(record[group]); if (rule) rules[group] = rule; }
+  return Object.keys(rules).length ? rules : undefined;
+}
 
 function renumbered(block: BlockingBlock, activities: BlockActivity[]): BlockingBlock { return { ...block, activities: activities.map((activity, sequence) => ({ ...activity, sequence })) }; }
 /**
@@ -293,7 +328,7 @@ export function proposeBlockLabel(blocks: BlockingBlock[]): string {
   return `Block ${number}`;
 }
 
-export interface BlockingInsertionContext { block: BlockingBlock; insertAt?: number; trip: Trip; trips: Trip[] | Map<EntityId, Trip>; patterns?: RoutePattern[] | Map<EntityId, RoutePattern>; minimumLayover?: MinimumLayoverRule; }
+export interface BlockingInsertionContext { block: BlockingBlock; insertAt?: number; trip: Trip; trips: Trip[] | Map<EntityId, Trip>; patterns?: RoutePattern[] | Map<EntityId, RoutePattern>; minimumLayover?: MinimumLayoverRules; /** The direction group of each Pattern, by Pattern id. A Pattern missing here has an unknown direction. */ patternDirections?: Map<EntityId, DirectionGroup>; }
 export interface BlockingCompatibility { status: CompatibilityStatus; predecessorTripId?: EntityId; successorTripId?: EntityId; findings: ValidationFinding[]; }
 export function classifyBlockingInsertion(input: BlockingInsertionContext): BlockingCompatibility {
   const activities = sortedActivities(input.block.activities);
@@ -340,12 +375,16 @@ export function classifyBlockingInsertion(input: BlockingInsertionContext): Bloc
       findings.push(finding('block', input.block.id, 'block.deadheadRequired', 'block.deadheadRequired', 'operational'));
       return 'deadheadRequired';
     }
-    const rule = input.minimumLayover;
-    if (rule && Number.isFinite(rule.value) && rule.value >= 0) {
-      const runtime = leftStart === undefined || leftEnd === undefined ? undefined : leftEnd - leftStart;
-      const required = rule.mode === 'minutes' ? rule.value * 60 : runtime === undefined || runtime < 0 ? undefined : Math.ceil(runtime * rule.value / 100);
-      if (required === undefined) return 'incomplete';
-      if (usableGap < required) { findings.push(finding('block', input.block.id, 'block.minimumLayoverShort', 'block.minimumLayoverShort', 'operational', 'warning', undefined, { availableSeconds: usableGap, requiredSeconds: required })); return 'insufficientLayover'; }
+    // The layover is taken at the end of the preceding Trip, so that Trip's direction picks the rule (Decision 0050). With an
+    // unknown direction the larger of the two requirements applies, so a requirement is never waived by missing data.
+    const direction = input.patternDirections?.get(left.patternId);
+    const rules = direction ? [input.minimumLayover?.[direction]] : MANAGED_DIRECTION_GROUPS.map((group) => input.minimumLayover?.[group]);
+    const runtime = leftStart === undefined || leftEnd === undefined ? undefined : leftEnd - leftStart;
+    const requirements = rules.flatMap((rule) => rule && Number.isFinite(rule.value) && rule.value >= 0 ? [rule.mode === 'minutes' ? rule.value * 60 : runtime === undefined || runtime < 0 ? undefined : Math.ceil(runtime * rule.value / 100)] : []);
+    if (requirements.length) {
+      if (requirements.includes(undefined)) return 'incomplete';
+      const required = Math.max(...(requirements as number[]));
+      if (usableGap < required) { findings.push(finding('block', input.block.id, 'block.minimumLayoverShort', 'block.minimumLayoverShort', 'operational', 'warning', undefined, { availableSeconds: usableGap, requiredSeconds: required, ...(direction ? { direction } : {}) })); return 'insufficientLayover'; }
     }
     return 'compatible';
   };

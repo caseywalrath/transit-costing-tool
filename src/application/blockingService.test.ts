@@ -241,3 +241,36 @@ describe('Batch insertion classification', () => {
     expect((await setup().service.classifyInsertions(scenario.id, block.id, [])).size).toBe(0);
   });
 });
+
+// Decision 0050: the service reads the Scenario's Directions so the minimum layover follows the direction of the preceding Trip.
+describe('Minimum layover by direction', () => {
+  const scenario = { id: 'blocking', scenarioId: 'scenario', tripProfileId: profile.id, name: 'Base', ...metadata() };
+  const onward: RoutePattern = { ...pattern, id: 'onward', points: [{ id: 'c', nodeId: 'B', sequence: 0, cumulativeMiles: 0 }, { id: 'd', nodeId: 'C', sequence: 1, cumulativeMiles: 1 }] };
+  const existing: Trip = { ...trip, id: 'existing', patternId: 'dir-pattern', stopTimes: [{ patternPointId: 'a', sequence: 0, time: 1000 }, { patternPointId: 'b', sequence: 1, time: 1100 }] };
+  const candidate: Trip = { ...trip, id: 'candidate', patternId: onward.id, stopTimes: [{ patternPointId: 'c', sequence: 0, time: 1160 }, { patternPointId: 'd', sequence: 1, time: 1260 }] };
+  const block: BlockingBlock = { id: 'block', scenarioId: 'scenario', blockingScenarioId: scenario.id, serviceDayId: 'weekday', label: '1', activities: [{ id: 'existing-activity', type: 'revenueTrip', sequence: 0, tripId: existing.id }], ...metadata() };
+  const direction = (group?: 'outbound' | 'inbound') => ({ id: 'dir', scenarioId: 'scenario', routeId: 'route', name: 'Direction', sequence: 0, columns: [], ...(group ? { group } : {}), ...metadata() });
+  function setup(directions?: ReturnType<typeof direction>[]) {
+    return new BlockingApplicationService(new InMemoryBlockingRepository([scenario], [block]), {
+      getTrip: async (id) => [existing, candidate].find((item) => item.id === id),
+      listTrips: async () => [existing, candidate],
+      getTripProfile: async () => profile,
+      listPatterns: async () => [{ ...pattern, id: 'dir-pattern', directionId: 'dir' }, onward],
+      ...(directions ? { listDirections: async () => directions } : {}),
+    });
+  }
+  const twoMinutes = { mode: 'minutes', value: 2 } as const;
+  const status = async (service: BlockingApplicationService, rules: { outbound?: typeof twoMinutes; inbound?: typeof twoMinutes }) =>
+    [(await service.classifyInsertion(scenario.id, block.id, candidate.id, undefined, rules)).status, (await service.classifyInsertions(scenario.id, block.id, [candidate.id], undefined, rules)).get(candidate.id)?.status];
+
+  it('applies the rule for the direction of the preceding Trip, in a single and a batch classification', async () => {
+    expect(await status(setup([direction('outbound')]), { outbound: twoMinutes })).toEqual(['insufficientLayover', 'insufficientLayover']);
+    expect(await status(setup([direction('outbound')]), { inbound: twoMinutes })).toEqual(['compatible', 'compatible']);
+    expect(await status(setup([direction('inbound')]), { inbound: twoMinutes })).toEqual(['insufficientLayover', 'insufficientLayover']);
+  });
+
+  it('applies the larger requirement when the Directions are not provided or the direction has no group', async () => {
+    expect(await status(setup(), { inbound: twoMinutes })).toEqual(['insufficientLayover', 'insufficientLayover']);
+    expect(await status(setup([direction()]), { inbound: twoMinutes })).toEqual(['insufficientLayover', 'insufficientLayover']);
+  });
+});

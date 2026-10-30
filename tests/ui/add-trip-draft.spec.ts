@@ -55,7 +55,7 @@ for (const scope of scopeChanges) {
     // Cancel keeps the row, its entries, and the scope.
     await scope.change(page);
     await expect(draftDialog(page)).toBeVisible();
-    await expect(draftDialogBox(page).getByRole('button')).toHaveText(['Cancel', 'Discard']);
+    await expect(draftDialogBox(page).getByRole('button')).toHaveText(['Cancel', 'Discard', 'Save']);
     await draftDialogBox(page).getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(draftDialog(page)).toHaveCount(0);
     await expect(draftRow(page)).toHaveCount(1);
@@ -80,6 +80,8 @@ test('a Pattern alone counts as entered, and an empty Add-trip row is dropped wi
   await openDraft(page, 'pattern');
   await day.selectOption({ index: 1 });
   await expect(draftDialog(page)).toBeVisible();
+  // The row has no first time yet, so it cannot be saved and the dialog offers no Save.
+  await expect(draftDialogBox(page).getByRole('button')).toHaveText(['Cancel', 'Discard']);
   await draftDialogBox(page).getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(day).toHaveValue(original);
   await draftRow(page).getByRole('button', { name: 'Cancel', exact: true }).click();
@@ -128,4 +130,36 @@ test('saving the Runtime profile keeps an entered Add-trip row', async ({ page }
   await expect(draftDialog(page)).toHaveCount(0);
   await expect(draftRow(page)).toHaveCount(1);
   await expect(draftRow(page).getByLabel('First trip time')).toHaveValue('09:30');
+});
+
+test('Save in the Discard-new-trip dialog adds the row and then changes the scope', async ({ page }) => {
+  await createShiftReadySchedule(page, '06:10');
+  const day = scopeField(page, 'Day');
+  const original = await day.inputValue();
+  const rows = page.locator('.schedule-table tbody tr:not(.draft-trip-row)');
+  const before = await rows.count();
+  await openDraft(page, 'time');
+  await day.selectOption({ index: 1 });
+  await draftDialogBox(page).getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(draftDialog(page)).toHaveCount(0);
+  await expect(day).not.toHaveValue(original);
+  await day.selectOption(original);
+  await expect(rows).toHaveCount(before + 1);
+});
+
+test('Save in the Discard-staged-shift dialog applies the shift and then changes the scope', async ({ page }) => {
+  await createShiftReadySchedule(page);
+  await page.locator('.schedule-table tbody input[type="checkbox"]').check();
+  await runCommand(page, 'trips.shift');
+  await shiftBar(page).getByRole('button', { name: /min later/ }).click();
+  await expect(page.getByText('Staged 1 minute later')).toBeVisible();
+  const day = scopeField(page, 'Day');
+  const original = await day.inputValue();
+  await day.selectOption({ index: 1 });
+  await expect(shiftDialogBox(page).getByRole('button')).toHaveText(['Cancel', 'Discard', 'Save']);
+  await shiftDialogBox(page).getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(shiftDialog(page)).toHaveCount(0);
+  await expect(day).not.toHaveValue(original);
+  await day.selectOption(original);
+  await expect(page.locator('.schedule-table')).toContainText('6:01');
 });

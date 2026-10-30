@@ -40,7 +40,7 @@ The product is a planning tool. It is not intended to dispatch service, manage o
 | Time representation | Integer seconds from service-day midnight |
 | Extended time | Times greater than 24:00 are supported |
 | Runtime selection | Each profile selects one band for the trip or a band at each segment start. Existing continuous-blend profiles remain readable. Single-band anchored regeneration may use a uniquely nearest band within ten minutes or a band explicitly chosen in its preview |
-| Runtime ownership | Complete pattern-specific profiles in the first build |
+| Runtime ownership | Complete pattern-specific profiles; matching segments are copied or filled between the profiles of a Route on request (Decision 0049) |
 | Trip authority | Saved trips and scheduled points; generation requests are transient |
 | Runtime changes | Existing trips remain fixed until explicit recalculation |
 | Timetable alternatives | Scenario-wide Trip profiles; Runtime profiles remain independent |
@@ -214,6 +214,8 @@ Runtime segment durations are parsed from decimal minutes, standard `MM:SS`, or 
 
 Every Runtime profile of a Route uses one calculation method (Decision 0045), so one Trips table never mixes methods. The method stays stored on each profile; the application keeps a Route's profiles in agreement (`setRouteRuntimeCalculationMethod`, and `saveRuntimeProfile` applies a method change to the whole Route), and the Route's method is derived by `routeRuntimeCalculationMethod`. Runtime **Actions > Method (all Patterns on this Route)** changes it after a confirmation that states how many profiles change and how many Trips will be marked as having changed run times. Dexie version 9 and JSON backup import unify Routes whose profiles disagree to the method most of them use. Runtime paste and Runtime profile CSV import were removed; Runtime Actions export the selected profile as CSV (output only).
 
+Two Runtime profile actions share segment values between the Patterns of one Route (Decision 0049, `src/domain/segmentRuntimeMatching.ts`). **Copy segments to other patterns…** replaces the matching cells of other Patterns' profiles with the open profile's values. **Fill from other patterns…** writes only the open profile's `:00` cells. A segment matches by its ordered node pair, a profile qualifies by sharing a Service day assignment, and a band matches only with the same start and end time. Matching is derived from stored profiles and is never stored, so Runtime storage, the backup schema, and the Dexie schema do not change. Each action previews its cell changes, writes in one transaction, raises each changed profile's calculation revision (saved Trip times are not rewritten), and keeps one in-memory undo.
+
 Runtime bands are continuous half-open intervals: start time is inclusive and end time is exclusive. A label covering disjoint periods must use separate bands. For example, off-peak service from 04:00-06:00 and 22:00-26:00 uses two bands.
 
 New profiles default to band-at-segment-start calculation: each segment uses the runtime band containing its departure time. Existing profiles without an explicit method retain legacy single-band behavior, where the trip's initial departure selects the band for the full trip. Profiles may also retain the legacy continuous blend method, which integrates progress at each band's segment runtime rate. For blending, gaps use the nearest adjacent band's rate while a trip is in motion; the first and last bands extend beyond their outer bounds for trips that started within a defined band. Changing the method increments the profile's calculation revision and marks existing trips stale until explicit regeneration. The optional Trips band view derives segment contributions from saved times and the current profile; it omits shading when those times do not match the profile. See Decision 0035.
@@ -242,7 +244,7 @@ Operating spans and observed headways are derived from authoritative trips. The 
 
 ## Blocking Model
 
-A Blocking Scenario is one named arrangement of an immutable source Trip Profile across all service days. A Block belongs to one Blocking Scenario and one service day and is an ordered collection of activities. Initial activity types are:
+A Blocking Scenario is one named arrangement of an immutable source Trip Profile across all service days. A new Scenario starts with an empty "Default" Blocking Scenario on its Default Trip Profile (Decision 0019 item 3, amended); existing Scenarios are not backfilled. A Block belongs to one Blocking Scenario and one service day and is an ordered collection of activities. Initial activity types are:
 
 - pull-out;
 - revenue trip;
@@ -267,7 +269,7 @@ The Blocking rules sit in `src/domain/blocking.ts` and are reached through `Bloc
 
 The initial Blocking UI filters candidate Trips by one selected Route and does not intentionally create multi-route Blocks. The data model remains scenario-wide. Existing or imported multi-route Blocks remain fully visible, and Route filtering never truncates their activities.
 
-Candidate compatibility may apply a UI preference for minimum layover (Decision 0042): either fixed minutes per connection or a percentage of the preceding Trip's revenue runtime. The pure Blocking classifier evaluates the preference; it does not become authoritative Block data. Persisted Block summaries continue to derive actual layover and deadhead hours from activities and Trip times. Deadhead hours include pull-out, pull-in, and between-Trip deadhead durations; layover remains separate.
+Candidate compatibility may apply a UI preference for minimum layover (Decision 0042): either fixed minutes per connection or a percentage of the preceding Trip's revenue runtime, set for both directions or separately for outbound and inbound (Decision 0050). The direction of the preceding Trip picks the rule: `BlockingApplicationService` reads the Scenario's Directions (optional `listDirections` on its context provider) and passes each Pattern's direction group to the classifier, and an unknown direction applies the larger requirement. The pure Blocking classifier evaluates the preference; it does not become authoritative Block data. Persisted Block summaries continue to derive actual layover and deadhead hours from activities and Trip times. Deadhead hours include pull-out, pull-in, and between-Trip deadhead durations; layover remains separate.
 
 ## Summary and Cost Model
 
