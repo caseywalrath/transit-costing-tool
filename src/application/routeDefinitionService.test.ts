@@ -94,6 +94,15 @@ describe('RouteDefinitionService', () => {
     expect(service.getSaveStatus()).toEqual({ state: 'error', errorMessage: 'IndexedDB unavailable' });
   });
 
+  it('saves a new project with a Default Blocking Scenario on its Default Trip Profile', async () => {
+    const repository = new InMemoryRouteDefinitionRepository();
+    const { service } = createService(repository);
+    const created = await service.createProject('Blocking default');
+    const stored = await repository.getProjectSnapshot(created.project.id);
+    expect(stored?.blockingScenarios).toHaveLength(1);
+    expect(stored?.blockingScenarios?.[0]).toMatchObject({ name: 'Default', tripProfileId: stored?.tripProfiles?.[0].id });
+  });
+
   it('provisions one Default profile and standard-day assignments idempotently', async () => {
     const { service } = createService();
     const created = await service.createProject('Defaults');

@@ -400,7 +400,7 @@ export class RouteDefinitionService {
   async createProject(name: string): Promise<{ project: Project; records: ScenarioRecords }> {
     const project = createProject(name, this.now());
     const records = createScenarioRecords(project.id, 'Scenario 1', this.now());
-    await this.save(() => this.repository.saveProjectSnapshot({ project, scenarios: [records.scenario], serviceDays: records.serviceDays, routes: [], nodes: [], patterns: [], runtimeProfiles: [], runtimeAssignments: [], tripProfiles: records.tripProfiles, generationSets: [], trips: [], blocks: [] }));
+    await this.save(() => this.repository.saveProjectSnapshot({ project, scenarios: [records.scenario], serviceDays: records.serviceDays, routes: [], nodes: [], patterns: [], runtimeProfiles: [], runtimeAssignments: [], tripProfiles: records.tripProfiles, blockingScenarios: records.blockingScenarios, generationSets: [], trips: [], blocks: [] }));
     return { project, records };
   }
 
