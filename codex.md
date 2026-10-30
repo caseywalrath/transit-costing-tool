@@ -184,4 +184,6 @@ Unsaved-change prompts now follow the Costing model (Cancel, Discard, Save): the
 
 - 2026-10-30: The Pattern point or Blocking trip moved last with the ↑/↓ buttons stays marked (`row-moved` in `tables.css`: accent bar, shading, and a short flash unless reduced motion is requested), so it can be followed to its new place. The marker is view state only.
 
+- 2026-10-30: Estimated cost basis (Decision 0051) is approved and not implemented. The plan `docs/implementation/estimated-cost-basis.md` divides it into packages E1 to E5 for Sonnet sessions, with mockups in `docs/implementation/estimated-cost-basis/`. No package has started.
+
 - 2026-10-30: The Blocking minimum layover can be set per direction (Decision 0050): `MinimumLayoverRules` (`outbound`/`inbound`), the direction of the preceding Trip picks the rule, an unknown direction takes the larger requirement, and a stored single rule reads as both directions. The dialog opens with "Same for both directions" checked.

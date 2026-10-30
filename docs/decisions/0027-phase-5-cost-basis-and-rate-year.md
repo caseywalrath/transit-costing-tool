@@ -2,6 +2,7 @@
 
 - Status: Accepted and implemented (Phase 5 Packages 5A through 5C)
 - Date: 2026-09-22
+- Superseded in part by: Decision 0051, items 1 and 7 (an estimated cost basis and a Cost basis selector; not yet implemented)
 
 ## Context
 
