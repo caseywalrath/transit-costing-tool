@@ -102,6 +102,10 @@ A continuous departure-time interval with one set of segment runtimes. The start
 
 The association selecting a runtime profile for one pattern and service day.
 
+### Matching segment
+
+The same ordered node pair (`from>to`) on two Patterns of one Route. Direction matters: `A→B` does not match `B→A`. A pair that occurs more than once in a Pattern is ambiguous and never matches. Runtime values move between matching segments only in bands with the same start and end time (Decision 0049).
+
 ### Calculation revision
 
 The integer version of a runtime profile's calculation method, band bounds, and segment values. It increments when those calculation inputs change and remains unchanged when only the profile name or a band label changes: a band label is a display name, not a calculation input. Trips record the revision used for their current times.

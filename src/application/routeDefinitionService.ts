@@ -5,6 +5,8 @@ import { duplicatePattern, getSegmentMiles, normalizePattern, reversePattern, va
 import { createManagedDirections, ensureManagedDirections, oppositeDirectionGroup } from '../domain/directions';
 import { classifyPatternEdit, describePatternPointChange, getPatternServiceImpact, rebalanceRuntimeProfile, rebalanceTripForPattern, reconcileRouteTimetables, resetPatternService, type DirectionOrderConflict, type PatternServiceImpact, type RouteEditClassification, type RouteEditMode } from '../domain/safeRouteEditing';
 import { sortServiceDays } from '../domain/serviceDays';
+import { applySegmentRuntimePlan, planCopyToOthers, planFillFromOthers, qualifyingProfiles, type SegmentRuntimePlan } from '../domain/segmentRuntimeMatching';
+import { formatServiceTime } from '../domain/time';
 import { copyRuntimeProfile, normalizeRuntimeProfile, reverseCopyRuntimeProfile, routeRuntimeCalculationMethod, unifyRouteRuntimeCalculationMethods, validateRuntimeProfile, withRuntimeCalculationRevision, RuntimeProfileDeletionError, type RuntimeCalculationMethod } from '../domain/runtime';
 import type { Block, BlockActivity, Node, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, ValidationFinding } from '../domain/types';
 import { validateNodeDeletion, validateRouteDefinition } from '../domain/validation';
@@ -228,6 +230,29 @@ type StoredRouteEditPreview = {
   proposedNodes?: Node[];
 };
 
+/** What the segment copy and fill dialogs show (Decision 0049): the domain plan plus the names, band ranges, and Trip counts to display it. */
+export interface SegmentRuntimePreview extends SegmentRuntimePlan {
+  scenarioId: string;
+  routeId: string;
+  /** Profiles left out of a copy (always empty for a fill). */
+  excludedProfileIds: string[];
+  /** Every profile a copy could write to, with whether it is included. Empty for a fill. */
+  copyCandidates: { profileId: string; patternId: string; included: boolean }[];
+  patternNames: Record<string, string>;
+  profileNames: Record<string, string>;
+  /** Band id to its time range, for example `6:00–10:00`. */
+  bandRanges: Record<string, string>;
+  /** Profile id to the segment labels of its Pattern, such as `FRCC → 112AVE`, by segment index. */
+  segmentLabels: Record<string, string[]>;
+  /** Trips that record the profile as their runtime source and would be reported as having changed runtimes. */
+  staleTripCountByProfileId: Record<string, number>;
+}
+
+export const SEGMENT_RUNTIME_UNDO_REFUSED = "These runtimes were changed after the copy, so it can't be undone.";
+const SEGMENT_RUNTIME_PREVIEW_STALE = 'Runtimes changed after the preview. Review the changes again.';
+
+interface SegmentRuntimeUndo { routeId: string; scenarioId: string; before: RuntimeProfile[]; writtenRevisions: Map<string, number> }
+
 export class RouteEditPreviewExpiredError extends Error {
   constructor() {
     super('Route or service data changed after this review. Review the impacts again.');
@@ -267,6 +292,8 @@ export const ROUTE_DEFINITION_WRITE_METHODS: readonly string[] = [
 
 export class RouteDefinitionService {
   private readonly routeEditPreviews = new Map<string, StoredRouteEditPreview>();
+  /** The last confirmed segment copy or fill, for one undo. It lives in memory only and is cleared by any other runtime write (Decision 0049). */
+  private segmentRuntimeUndo?: SegmentRuntimeUndo;
 
   /**
    * `saveStatus` is the one publisher of the visible save status; the application passes the same instance to every service that writes
@@ -656,6 +683,7 @@ export class RouteDefinitionService {
    * with the method the Route's other profiles use.
    */
   async saveRuntimeProfile(profile: RuntimeProfile): Promise<RuntimeProfile> {
+    this.segmentRuntimeUndo = undefined;
     const aggregate = await this.repository.getRouteDefinition(profile.routeId);
     const pattern = aggregate?.patterns.find((item) => item.id === profile.patternId);
     if (!pattern || !aggregate) throw new Error('The selected pattern is no longer available.');
@@ -686,6 +714,7 @@ export class RouteDefinitionService {
    * calculation revision, so the Trips calculated from it are reported as having changed runtimes; saved Trip times are not rewritten.
    */
   async setRouteRuntimeCalculationMethod(routeId: string, method: RuntimeCalculationMethod): Promise<void> {
+    this.segmentRuntimeUndo = undefined;
     const aggregate = await this.repository.getRouteDefinition(routeId);
     if (!aggregate) throw new Error('The selected route is no longer available.');
     const stored = await this.repository.getScenarioRecords(aggregate.route.scenarioId);
@@ -702,6 +731,109 @@ export class RouteDefinitionService {
     const tripCount = records.trips.filter((trip) => changed.has(trip.provenance.calculationSource?.runtimeProfileId ?? trip.provenance.runtimeProfileId ?? '')).length;
     return { records: changed.size ? { ...records, runtimeProfiles: records.runtimeProfiles.map((profile) => byId.get(profile.id) ?? profile) } : records, changedProfileIds, tripCount };
   }
+  /** What "Copy segments to other patterns" would write from the stored profile; nothing is written (Decision 0049). */
+  async previewSegmentRuntimeCopy(profileId: string, excludedProfileIds: string[] = []): Promise<SegmentRuntimePreview> {
+    return this.segmentRuntimePreview('copyToOthers', profileId, excludedProfileIds);
+  }
+  /** What "Fill from other patterns" would write into the stored profile; nothing is written. */
+  async previewSegmentRuntimeFill(profileId: string): Promise<SegmentRuntimePreview> {
+    return this.segmentRuntimePreview('fillFromOthers', profileId, []);
+  }
+
+  private async segmentRuntimePreview(mode: SegmentRuntimePlan['mode'], profileId: string, excludedProfileIds: string[]): Promise<SegmentRuntimePreview> {
+    const profile = await this.repository.getRuntimeProfile(profileId);
+    if (!profile) throw new Error('The selected runtime profile is no longer available.');
+    const records = await this.repository.getScenarioRecords(profile.scenarioId);
+    if (!records) throw new Error('The selected scenario is no longer available.');
+    return this.describeSegmentRuntimePlan(records, mode, profileId, excludedProfileIds);
+  }
+
+  private planSegmentRuntimes(records: ScenarioRecords, mode: SegmentRuntimePlan['mode'], profileId: string, excludedProfileIds: string[]): { plan: SegmentRuntimePlan; open: RuntimeProfile; routePatterns: RoutePattern[]; routeProfiles: RuntimeProfile[] } {
+    const open = records.runtimeProfiles.find((profile) => profile.id === profileId);
+    if (!open) throw new Error('The selected runtime profile is no longer available.');
+    const routePatterns = records.patterns.filter((pattern) => pattern.routeId === open.routeId);
+    const routeProfiles = records.runtimeProfiles.filter((profile) => profile.routeId === open.routeId);
+    const input = { openProfile: open, patterns: routePatterns, profiles: routeProfiles, assignments: records.runtimeAssignments, excludedProfileIds };
+    return { plan: mode === 'copyToOthers' ? planCopyToOthers(input) : planFillFromOthers(input), open, routePatterns, routeProfiles };
+  }
+
+  private describeSegmentRuntimePlan(records: ScenarioRecords, mode: SegmentRuntimePlan['mode'], profileId: string, excludedProfileIds: string[]): SegmentRuntimePreview {
+    const { plan, open, routePatterns, routeProfiles } = this.planSegmentRuntimes(records, mode, profileId, excludedProfileIds);
+    const nodeName = (nodeId: string) => { const node = records.nodes.find((candidate) => candidate.id === nodeId); return node?.shortName || node?.name || 'Unnamed point'; };
+    const patternNames: Record<string, string> = {};
+    const profileNames: Record<string, string> = {};
+    const bandRanges: Record<string, string> = {};
+    const segmentLabels: Record<string, string[]> = {};
+    for (const profile of routeProfiles) {
+      const pattern = routePatterns.find((candidate) => candidate.id === profile.patternId);
+      profileNames[profile.id] = profile.name;
+      if (pattern) {
+        patternNames[pattern.id] = pattern.name;
+        const points = [...pattern.points].sort((left, right) => left.sequence - right.sequence);
+        segmentLabels[profile.id] = points.slice(1).map((point, index) => `${nodeName(points[index].nodeId)} → ${nodeName(point.nodeId)}`);
+      }
+      for (const band of profile.bands) bandRanges[band.id] = `${formatServiceTime(band.startTime)}–${formatServiceTime(band.endTime)}`;
+    }
+    const changed = new Set(plan.affectedProfiles.map((item) => item.profileId));
+    const staleTripCountByProfileId: Record<string, number> = {};
+    for (const profileIdWithChanges of changed) staleTripCountByProfileId[profileIdWithChanges] = records.trips.filter((trip) => (trip.provenance.calculationSource?.runtimeProfileId ?? trip.provenance.runtimeProfileId) === profileIdWithChanges).length;
+    const excluded = mode === 'copyToOthers' ? excludedProfileIds : [];
+    const others = routeProfiles.filter((profile) => profile.id !== open.id && profile.patternId !== open.patternId);
+    const copyCandidates = mode === 'copyToOthers' ? qualifyingProfiles(open, others, records.runtimeAssignments).map((profile) => ({ profileId: profile.id, patternId: profile.patternId, included: !excluded.includes(profile.id) })) : [];
+    return { ...plan, scenarioId: open.scenarioId, routeId: open.routeId, excludedProfileIds: excluded, copyCandidates, patternNames, profileNames, bandRanges, segmentLabels, staleTripCountByProfileId };
+  }
+
+  /**
+   * Writes a confirmed preview. The plan is built again from the stored records inside the write (Decision 0036); if it no longer
+   * matches the preview, nothing is written. Every changed profile gets the next calculation revision; saved Trip times are not rewritten.
+   */
+  async applySegmentRuntimePlan(preview: SegmentRuntimePreview): Promise<void> {
+    if (!preview.changes.length) return;
+    let undo: SegmentRuntimeUndo | undefined;
+    await this.updateScenarioRecords(preview.scenarioId, (current) => {
+      const { plan } = this.planSegmentRuntimes(current, preview.mode, preview.sourceProfileId, preview.excludedProfileIds);
+      if (JSON.stringify(plan.changes) !== JSON.stringify(preview.changes)) throw new Error(SEGMENT_RUNTIME_PREVIEW_STALE);
+      const now = this.now();
+      const before = new Map(current.runtimeProfiles.map((profile) => [profile.id, profile]));
+      const written = applySegmentRuntimePlan(current.runtimeProfiles, plan).map((profile) => {
+        const previous = before.get(profile.id)!;
+        const next = withRuntimeCalculationRevision(previous, withUpdatedAt(normalizeRuntimeProfile(profile), now));
+        const pattern = current.patterns.find((candidate) => candidate.id === next.patternId);
+        if (!pattern || validateRuntimeProfile(next, pattern).some((finding) => finding.severity === 'error')) throw new Error('Review the runtime profile before saving it.');
+        return next;
+      });
+      undo = { routeId: preview.routeId, scenarioId: preview.scenarioId, before: written.map((profile) => before.get(profile.id)!), writtenRevisions: new Map(written.map((profile) => [profile.id, profile.calculationRevision ?? 0])) };
+      const byId = new Map(written.map((profile) => [profile.id, profile]));
+      return { ...current, runtimeProfiles: current.runtimeProfiles.map((profile) => byId.get(profile.id) ?? profile) };
+    });
+    this.segmentRuntimeUndo = undo;
+  }
+
+  /** The segment copy or fill that "Undo last segment copy" would reverse, if any. */
+  getSegmentRuntimeUndo(): { routeId: string; profileCount: number } | undefined {
+    return this.segmentRuntimeUndo ? { routeId: this.segmentRuntimeUndo.routeId, profileCount: this.segmentRuntimeUndo.before.length } : undefined;
+  }
+
+  /** Restores the profiles of the last segment copy or fill, only if none has been changed since. The revisions increase again. */
+  async undoSegmentRuntimePlan(): Promise<void> {
+    const undo = this.segmentRuntimeUndo;
+    if (!undo) throw new Error('There is no segment copy to undo.');
+    this.segmentRuntimeUndo = undefined;
+    await this.updateScenarioRecords(undo.scenarioId, (current) => {
+      const now = this.now();
+      const restored = undo.before.map((previous) => {
+        const stored = current.runtimeProfiles.find((profile) => profile.id === previous.id);
+        if (!stored || (stored.calculationRevision ?? 0) !== undo.writtenRevisions.get(previous.id)) throw new Error(SEGMENT_RUNTIME_UNDO_REFUSED);
+        const next = withRuntimeCalculationRevision(stored, withUpdatedAt(normalizeRuntimeProfile({ ...previous, calculationRevision: stored.calculationRevision }), now));
+        const pattern = current.patterns.find((candidate) => candidate.id === next.patternId);
+        if (!pattern || validateRuntimeProfile(next, pattern).some((finding) => finding.severity === 'error')) throw new Error(SEGMENT_RUNTIME_UNDO_REFUSED);
+        return next;
+      });
+      const byId = new Map(restored.map((profile) => [profile.id, profile]));
+      return { ...current, runtimeProfiles: current.runtimeProfiles.map((profile) => byId.get(profile.id) ?? profile) };
+    });
+  }
+
   async renameRuntimeProfile(profileId: string, name: string): Promise<RuntimeProfile> {
     const profile = await this.repository.getRuntimeProfile(profileId);
     if (!profile) throw new Error('The selected runtime profile is no longer available.');
@@ -715,6 +847,7 @@ export class RouteDefinitionService {
     return this.save(async () => { await this.repository.saveRuntimeAssignment(assignment); return assignment; });
   }
   async copyRuntimeProfile(profileId: string, name: string): Promise<RuntimeProfile> {
+    this.segmentRuntimeUndo = undefined;
     const source = await this.repository.getRuntimeProfile(profileId);
     if (!source) throw new Error('The selected runtime profile is no longer available.');
     const copy = copyRuntimeProfile(source, { name }, this.now());
@@ -777,6 +910,7 @@ export class RouteDefinitionService {
 
   /** Deletes the profile only if the stored data still matches the review (`getRuntimeProfileDeletionImpact`) that `reviewToken` came from. */
   async deleteRuntimeProfile(profileId: string, replacementProfileId: string | undefined, reviewToken: string): Promise<void> {
+    this.segmentRuntimeUndo = undefined;
     const review = await this.runtimeProfileDeletionReview(profileId);
     assertReviewCurrent('runtime profile', reviewToken, review.reviewToken);
     if (review.referencingTrips.length) throw new RuntimeProfileTripReferenceError(profileId, review.referencingTrips.map((trip) => trip.id));
@@ -816,6 +950,7 @@ export class RouteDefinitionService {
     return sortServiceDays((records?.serviceDays ?? []).filter((day) => dayIds.has(day.id)));
   }
   async reverseCopyRuntimeProfile(profileId: string, sourcePatternId: string, targetPatternId: string, name: string): Promise<RuntimeProfile> {
+    this.segmentRuntimeUndo = undefined;
     const source = await this.repository.getRuntimeProfile(profileId);
     if (!source) throw new Error('The selected runtime profile is no longer available.');
     const aggregate = await this.repository.getRouteDefinition(source.routeId);
@@ -1144,6 +1279,11 @@ export type RouteDefinitionApplication = Pick<RouteDefinitionService,
   | 'setRouteRuntimeCalculationMethod'
   | 'assignRuntimeProfile'
   | 'copyRuntimeProfile'
+  | 'previewSegmentRuntimeCopy'
+  | 'previewSegmentRuntimeFill'
+  | 'applySegmentRuntimePlan'
+  | 'getSegmentRuntimeUndo'
+  | 'undoSegmentRuntimePlan'
   | 'reverseCopyRuntimeProfile'
   | 'deleteRuntimeProfile'
   | 'getRuntimeProfileDeletionImpact'

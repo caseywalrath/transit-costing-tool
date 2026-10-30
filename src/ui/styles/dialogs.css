@@ -16,3 +16,17 @@
 .dialog-actions.activity-dialog-actions--two { grid-template-columns: repeat(2, minmax(104px, 1fr)); }
 .activity-dialog-actions button { min-width: 0; min-height: 32px; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Decision 0049: the segment copy and fill dialog. The table scrolls inside the dialog, and the dialog never exceeds the window. */
+.confirm-dialog.segment-runtime-dialog { width: min(720px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; min-width: 0; }
+.segment-runtime-dialog table { min-width: 0; }
+.segment-runtime-dialog th { white-space: normal; }
+.segment-runtime-dialog :is(th, td):first-child { position: static; }
+.segment-runtime-dialog th:first-child { background: var(--color-surface-2); }
+.segment-runtime-dialog td:first-child { background: transparent; }
+/* The generic `.confirm-dialog > div` rule makes direct child divs right-aligned flex rows; these two are blocks (the U08 note in trips.css). */
+.confirm-dialog.segment-runtime-dialog > div.preview-times, .confirm-dialog.segment-runtime-dialog > div.segment-runtime-skips { display: block; }
+.segment-runtime-dialog .preview-times { overflow-x: auto; }
+.segment-runtime-dialog input[type=checkbox] { width: auto; min-height: 0; }
+.segment-runtime-dialog .segment-runtime-skips p { margin: var(--space-3) 0 var(--space-1); }
+.segment-runtime-dialog ul { margin: 0 0 var(--space-3); padding-left: 18px; line-height: 1.45; }

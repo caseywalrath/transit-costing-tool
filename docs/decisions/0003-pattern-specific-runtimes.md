@@ -2,7 +2,7 @@
 
 - Status: Accepted for the initial runtime build; review required after user testing. Partly superseded: the last sentence of the Decision (one band for the full trip) holds only for the single-band method; see below
 - Date: 2026-09-10
-- Superseded in part by: Decision 0032 (blend method), Decision 0033 (`segmentStart` method), and Decision 0035 item 1 (`segmentStart` is the default for new profiles). A profile saved without a method keeps the single-band method.
+- Superseded in part by: Decision 0049 (copy and fill of matching segments between patterns), Decision 0032 (blend method), Decision 0033 (`segmentStart` method), and Decision 0035 item 1 (`segmentStart` is the default for new profiles). A profile saved without a method keeps the single-band method.
 
 ## Context
 

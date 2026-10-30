@@ -1,4 +1,6 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { formatRuntimeDuration } from '../../domain/runtime';
+import { type RouteDefinitionApplication, type SegmentRuntimePreview } from '../../application/routeDefinitionService';
 import { userFacingError } from '../errorMessages';
 import { ModalDialog } from '../ModalDialog';
 import { type TripGenerationApplication } from '../../application/tripGenerationService';
@@ -88,6 +90,81 @@ export function BuildTripsDrawer({ tripService, scenarioId, routeId, serviceDayI
 
 export function RuntimeProfileDialog2({ dialog, candidates, onSubmit, onClose }: { dialog: Exclude<NewRuntimeDialog, undefined>; candidates: RoutePattern[]; onSubmit: (name: string, targetPatternId?: string) => Promise<void>; onClose: () => void }) { const [name, setName] = useState(dialog.initialName); const [targetPatternId, setTargetPatternId] = useState(candidates[0]?.id ?? ''); const [error, setError] = useState(''); const reverse = dialog.mode === 'reverse'; async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!name.trim()) { setError('Enter a name.'); return; } if (reverse && !targetPatternId) { setError('Select a pattern.'); return; } await onSubmit(name.trim(), reverse ? targetPatternId : undefined); } return <ModalDialog as="form" labelledBy="runtime-profile-dialog-title" className="confirm-dialog" onSubmit={(event) => void submit(event)} onClose={onClose}><h2 id="runtime-profile-dialog-title">{dialog.mode === 'rename' ? 'Rename runtime profile' : dialog.mode === 'new' ? 'New runtime profile' : dialog.mode === 'reverse' ? 'Reverse-copy runtime profile' : 'Copy runtime profile'}</h2><label className="dialog-field">Name<input autoFocus value={name} aria-invalid={error === 'Enter a name.'} aria-describedby={error === 'Enter a name.' ? 'runtime-profile-dialog-error' : undefined} onChange={(event) => { setName(event.target.value); setError(''); }} /></label>{reverse && <label className="dialog-field">Reverse pattern<select value={targetPatternId} aria-invalid={error === 'Select a pattern.'} aria-describedby={error === 'Select a pattern.' ? 'runtime-profile-dialog-error' : undefined} onChange={(event) => setTargetPatternId(event.target.value)}>{candidates.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label>}{error && <p className="field-error" id="runtime-profile-dialog-error">{error}</p>}<div className="dialog-actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">{dialog.mode === 'rename' ? 'Rename' : dialog.mode === 'new' ? 'Create' : 'Copy'}</button></div></ModalDialog>; }
 export function DeleteRuntimeProfileDialog({ profile, profiles, assignmentCount, tripCount, onDelete, onClose }: { profile: RuntimeProfile; profiles: RuntimeProfile[]; assignmentCount: number; tripCount: number; onDelete: (replacementProfileId?: string) => Promise<void>; onClose: () => void }) { const alternatives = profiles.filter((item) => item.id !== profile.id); const [replacement, setReplacement] = useState(alternatives[0]?.id ?? ''); const requiresReplacement = assignmentCount > 0; const blocked = tripCount > 0 || (requiresReplacement && !alternatives.length); return <ModalDialog labelledBy="delete-runtime-profile-title" className="confirm-dialog" onClose={onClose}><h2 id="delete-runtime-profile-title">Delete runtime profile?</h2>{tripCount > 0 ? <p className="field-error">{tripCount} saved trip{tripCount === 1 ? '' : 's'} retain this profile as their run-time source. Delete or recalculate those trips before deleting this profile.</p> : requiresReplacement ? <><p>This profile is assigned to {assignmentCount} service-day pattern combination{assignmentCount === 1 ? '' : 's'}. Select a replacement profile.</p>{alternatives.length > 0 ? <label className="dialog-field">Replacement<select value={replacement} onChange={(event) => setReplacement(event.target.value)}>{alternatives.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : <p className="field-error">Create another profile before deleting this one.</p>}</> : <p>This profile is not assigned to service and is not used by a saved trip.</p>}<div className="dialog-actions"><button onClick={onClose}>Cancel</button><button className="subtle-danger" disabled={blocked} onClick={() => void onDelete(requiresReplacement ? replacement : undefined)}>Delete</button></div></ModalDialog>; }
+const SEGMENT_SKIP_TITLES = {
+  ambiguous: 'Segment appears more than once in a pattern',
+  bandMismatch: 'No band with the same start and end time',
+  unassigned: 'Profile is not assigned to any service day',
+  conflict: 'Other patterns disagree',
+} as const;
+
+/** Decision 0049: preview, then confirm, a copy of this profile's segment runtimes to other patterns or a fill of its `:00` cells from them. */
+export function SegmentRuntimeDialog({ service, mode, profileId, onDone, onClose }: { service: Pick<RouteDefinitionApplication, 'previewSegmentRuntimeCopy' | 'previewSegmentRuntimeFill' | 'applySegmentRuntimePlan'>; mode: 'copy' | 'fill'; profileId: string; onDone: () => void; onClose: () => void }) {
+  const copy = mode === 'copy';
+  const [excluded, setExcluded] = useState<string[]>([]);
+  const [preview, setPreview] = useState<SegmentRuntimePreview>();
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const firstCheckbox = useRef<HTMLInputElement>(null);
+  const focused = useRef(false);
+  useEffect(() => {
+    let current = true;
+    (copy ? service.previewSegmentRuntimeCopy(profileId, excluded) : service.previewSegmentRuntimeFill(profileId))
+      .then((next) => { if (current) { setPreview(next); setError(''); } })
+      .catch((reason) => { if (current) setError(userFacingError(reason, 'The runtimes could not be previewed.')); });
+    return () => { current = false; };
+  }, [service, copy, profileId, excluded]);
+  useEffect(() => { if (preview && copy && !focused.current) { focused.current = true; firstCheckbox.current?.focus(); } }, [preview, copy]);
+  async function apply() {
+    if (!preview) return;
+    setBusy(true);
+    try { await service.applySegmentRuntimePlan(preview); onDone(); } catch (reason) { setError(userFacingError(reason, 'The runtimes could not be saved.')); setBusy(false); }
+  }
+  const seconds = (value: number) => formatRuntimeDuration(value) || ':00';
+  const name = (id: string) => preview?.profileNames[id] ?? 'Profile';
+  const pattern = (patternId: string) => preview?.patternNames[patternId] ?? 'Pattern';
+  const who = (id: string, patternId: string) => `${pattern(patternId)} · ${name(id)}`;
+  const rows = preview ? (copy ? preview.copyCandidates.filter((candidate) => excluded.includes(candidate.profileId) || preview.affectedProfiles.some((item) => item.profileId === candidate.profileId)).map((candidate) => ({ ...candidate, included: !excluded.includes(candidate.profileId) })) : preview.affectedProfiles.map((item) => ({ profileId: item.profileId, patternId: item.patternId, included: true }))) : [];
+  const affected = new Map((preview?.affectedProfiles ?? []).map((item) => [item.profileId, item]));
+  // A band mismatch is reported for each band, so the dialog lists each profile once with its unmatched bands.
+  const bandMismatches = new Map<string, SegmentRuntimePreview['skips'][number] & { ranges: string[] }>();
+  for (const skip of preview?.skips ?? []) if (skip.reason === 'bandMismatch') { const entry = bandMismatches.get(skip.profileId) ?? { ...skip, ranges: [] }; const range = preview?.bandRanges[skip.bandId ?? '']; if (range && !entry.ranges.includes(range)) entry.ranges.push(range); bandMismatches.set(skip.profileId, entry); }
+  const skipGroups = (['ambiguous', 'bandMismatch', 'unassigned', 'conflict'] as const).map((reason) => ({ reason, skips: reason === 'bandMismatch' ? [...bandMismatches.values()] : (preview?.skips ?? []).filter((skip) => skip.reason === reason) })).filter((group) => group.skips.length);
+  const skipText = (skip: SegmentRuntimePreview['skips'][number] & { ranges?: string[] }) => {
+    const parts = [who(skip.profileId, skip.patternId)];
+    if (skip.ranges) parts.push(skip.ranges.join(', '));
+    else if (skip.bandId && preview?.bandRanges[skip.bandId]) parts.push(preview.bandRanges[skip.bandId]);
+    if (skip.reason !== 'bandMismatch' && skip.segmentIndex !== undefined) parts.push(preview?.segmentLabels[skip.profileId]?.[skip.segmentIndex] ?? 'Segment');
+    if (skip.candidates) parts.push(skip.candidates.map((candidate) => `${seconds(candidate.seconds)} (${candidate.profileIds.map(name).join(', ')})`).join(' vs '));
+    return parts.join(' · ');
+  };
+  const title = copy ? 'Copy segments to other patterns' : 'Fill from other patterns';
+  return <ModalDialog labelledBy="segment-runtime-title" className="confirm-dialog preview-dialog segment-runtime-dialog" onClose={onClose} busy={busy}>
+    <h2 id="segment-runtime-title">{title}</h2>
+    <p>{copy ? "Runtimes for segments shared with other patterns will be replaced with this profile's values, for bands with the same start and end times." : 'Runtimes of :00 in this profile will be filled from other patterns that share the segment, for bands with the same start and end times.'}</p>
+    {!preview && !error && <p role="status">Loading preview…</p>}
+    {preview && <>
+      {rows.length > 0 && <div className="preview-times"><table>
+        <thead><tr>{copy && <th scope="col">Include</th>}<th scope="col">Pattern</th><th scope="col">Profile</th><th scope="col">Cells changed</th>{copy && <th scope="col">Replaced</th>}<th scope="col">Trips to regenerate</th></tr></thead>
+        <tbody>{rows.map((row, index) => {
+          const item = affected.get(row.profileId);
+          return <tr key={row.profileId}>
+            {copy && <td><input ref={index === 0 ? firstCheckbox : undefined} type="checkbox" checked={row.included} disabled={busy} aria-label={`Include ${who(row.profileId, row.patternId)}`} onChange={(event) => setExcluded((current) => event.target.checked ? current.filter((id) => id !== row.profileId) : [...current, row.profileId])} /></td>}
+            <td>{pattern(row.patternId)}</td><td>{name(row.profileId)}</td><td>{item?.changeCount ?? 0}</td>{copy && <td>{item?.overwriteCount ?? 0}</td>}<td>{item ? preview.staleTripCountByProfileId[row.profileId] ?? 0 : 0}</td>
+          </tr>;
+        })}</tbody>
+      </table></div>}
+      {preview.changes.length === 0 && <p>No runtimes would change.</p>}
+      {preview.changes.length > 0 && <>
+        <button type="button" className="disclosure" aria-expanded={detailsOpen} aria-controls="segment-runtime-details" onClick={() => setDetailsOpen((open) => !open)}><span aria-hidden="true" className="disclosure__arrow">{detailsOpen ? '▾' : '▸'}</span>Show cell details</button>
+        {detailsOpen && <ul id="segment-runtime-details" className="recalculation-candidates">{preview.changes.map((change) => <li key={`${change.profileId}:${change.bandId}:${change.segmentIndex}`}>{who(change.profileId, change.patternId)} · {preview.bandRanges[change.bandId]} · {preview.segmentLabels[change.profileId]?.[change.segmentIndex]} · {seconds(change.previousSeconds)} → {seconds(change.nextSeconds)}</li>)}</ul>}
+      </>}
+      {skipGroups.map((group) => <div key={group.reason} className="segment-runtime-skips"><p><strong>{SEGMENT_SKIP_TITLES[group.reason]}</strong></p><ul className="recalculation-candidates">{group.skips.map((skip, index) => <li key={index}>{skipText(skip)}</li>)}</ul></div>)}
+    </>}
+    {error && <p className="field-error" role="alert">{error}</p>}
+    <div className="dialog-actions"><button autoFocus={!copy} type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="primary" type="button" onClick={() => void apply()} disabled={!preview || preview.changes.length === 0 || busy}>{busy ? 'Saving…' : copy ? 'Replace runtimes' : 'Fill runtimes'}</button></div>
+  </ModalDialog>;
+}
 export function DeleteTripsDialog({ tripCount, affectedBlockCount, onDelete, onClose, busy }: { tripCount: number; affectedBlockCount: number; onDelete: () => void; onClose: () => void; busy: boolean }) { return <ModalDialog role="alertdialog" labelledBy="delete-trips-title" className="confirm-dialog" onClose={onClose} busy={busy}><h2 id="delete-trips-title">Delete {tripCount === 1 ? 'trip' : `${tripCount} trips`}?</h2><p>{affectedBlockCount ? `This will also remove their revenue activities from ${affectedBlockCount} block${affectedBlockCount === 1 ? '' : 's'}.` : 'These trips are not assigned to a block.'} This cannot be undone.</p><div className="dialog-actions"><button onClick={onClose} disabled={busy}>Cancel</button><button className="danger" onClick={onDelete} disabled={busy}>{busy ? 'Deleting…' : 'Delete'}</button></div></ModalDialog>; }
 
 export function formatPreviewTime(value: number | undefined): string {
