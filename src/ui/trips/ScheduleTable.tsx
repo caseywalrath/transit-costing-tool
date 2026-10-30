@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { createPortal } from 'react-dom';
 import { MenuButton, type MenuGroup, type MenuSelectEvent } from '../MenuButton';
 import { formatDuration, MISSING } from '../format';
-import { buildTripTableView, formatStagedShift, roundServiceTimeToMinute } from '../../application/tripsWorkspaceView';
+import { buildTripTableView, columnsWithTimes, formatStagedShift, roundServiceTimeToMinute } from '../../application/tripsWorkspaceView';
 import { patternShortName } from '../../application/shortNames';
 import { formatServiceTime } from '../../domain/time';
 import { type SelectionMode } from '../../application/tripSelection';
@@ -27,12 +27,14 @@ export function formatTripTableClock(value: number, roundToMinute: boolean): str
 export type StickyScheduleHeaderMetrics = { left: number; width: number; height: number; tableWidth: number; columnWidths: number[] };
 
 export function ScheduleTable({ trips, previewTrips, stagedShiftSeconds, draft, patterns, direction, nodes, runtimeProfiles, showRuntimeBands, showHeadways, roundDisplayedTimes, blockAssignments, tripConnections, blockWarnings, blockOptions, blockAssignmentDisabled, onAssignBlock, onUnassignBlock, selectedIds, changedRuntimeTripIds, onToggle, onSelectAll, onSelectBy, onDelete, onDraftChange, onDraftSave, onDraftCancel, selectionBar, busy }: { selectionBar?: (compact: boolean) => ReactNode; trips: Trip[]; previewTrips?: Trip[]; stagedShiftSeconds?: number; draft?: { patternId: string; firstTrip: string }; patterns: RoutePattern[]; direction: NonNullable<RouteDefinitionAggregate['directions']>[number]; nodes: Node[]; runtimeProfiles: Map<string, RuntimeProfile | undefined>; showRuntimeBands: boolean; showHeadways: boolean; roundDisplayedTimes: boolean; blockAssignments: Map<string, BlockingBlock>; tripConnections: Map<string, { connection: BlockConnection; deadheadSeconds?: number; nextTripStart?: number }>; blockWarnings: Map<string, string[]>; blockOptions: TripBlockOption[]; blockAssignmentDisabled: boolean; onAssignBlock: (trip: Trip, blockId: string, trigger: HTMLButtonElement | null) => void; onUnassignBlock: (trip: Trip, trigger: HTMLButtonElement | null) => void; selectedIds: string[]; changedRuntimeTripIds: Set<string>; onToggle: (id: string, index: number, shiftKey: boolean) => void; onSelectAll: (selected: boolean) => void; onSelectBy: (request: TripSelectionRequest) => void; onDelete: (trip: Trip) => void; onDraftChange: (draft: { patternId: string; firstTrip: string }) => void; onDraftSave: () => void; onDraftCancel: () => void; busy: boolean }) {
-  const columns = [...direction.columns].sort((left, right) => left.sequence - right.sequence);
+  const previewById = new Map((previewTrips ?? []).map((trip) => [trip.id, trip]));
+  // Timepoints no Trip serves are hidden; an open draft row needs every column to hold its first-trip time.
+  const orderedColumns = [...direction.columns].sort((left, right) => left.sequence - right.sequence);
+  const columns = draft ? orderedColumns : columnsWithTimes(orderedColumns, trips.map((trip) => previewById.get(trip.id) ?? trip), patterns);
   const pointFor = (pattern: RoutePattern, columnId: string) => pattern.points.find((point) => point.directionColumnId === columnId);
   const columnName = (column: typeof columns[number]) => column.labelOverride || nodes.find((node) => node.id === column.nodeId)?.shortName || nodes.find((node) => node.id === column.nodeId)?.name || 'Unnamed point';
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const chipText = (pattern: RoutePattern) => patternShortName(pattern, direction.name, nodeById);
-  const previewById = new Map((previewTrips ?? []).map((trip) => [trip.id, trip]));
   const view = buildTripTableView({ savedTrips: trips, previewTrips, patterns, runtimeProfiles, changedRuntimeTripIds, showRuntimeBands, showHeadways });
   const headwaysByColumn = view.headways;
   const allTripsSelected = trips.length > 0 && trips.every((trip) => selectedIds.includes(trip.id));

@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
 import type { BlockActivity, BlockingBlock, RoutePattern, RuntimeBand, RuntimeProfile, Trip, TripRegenerationUndo } from '../domain/types';
-import { buildTripTableView, buildTripsFieldProblems, parseBuildTripsForm, regenerationUndoApplies, tripBlockAssignmentImpact, tripBlockUnassignmentImpact, type BuildTripsFormValues } from './tripsWorkspaceView';
+import { buildTripTableView, columnsWithTimes, buildTripsFieldProblems, parseBuildTripsForm, regenerationUndoApplies, tripBlockAssignmentImpact, tripBlockUnassignmentImpact, type BuildTripsFormValues } from './tripsWorkspaceView';
 
 const stamp = metadata('2026-10-23T00:00:00.000Z');
 const pattern = (id: string): RoutePattern => ({ ...stamp, id, scenarioId: 's', routeId: 'r', name: id, directionId: 'out', points: [0, 1].map((index) => ({ id: `${id}-${index}`, nodeId: `n${index}`, sequence: index, cumulativeMiles: index, directionColumnId: `col-${index}` })) });
@@ -170,3 +170,23 @@ describe('when the regeneration undo applies to the schedule on screen (Decision
 });
 
 
+
+describe('columns with times', () => {
+  const column = (id: string) => ({ id });
+  const pt = (id: string, columnId: string, sequence: number) => ({ id, nodeId: columnId, sequence, cumulativeMiles: sequence, directionColumnId: columnId });
+  const shortTurn = { ...metadata(), id: 'short', scenarioId: 's', routeId: 'r', name: 'Short', points: [pt('s1', 'a', 0), pt('s2', 'b', 1)] } as RoutePattern;
+  const timed = (patternId: string, times: Array<[string, number | undefined]>) => ({ ...metadata(), id: `trip-${patternId}`, scenarioId: 's', routeId: 'r', serviceDayId: 'd', tripProfileId: 'p', patternId, publicLabel: '', stopTimes: times.map(([patternPointId, time], sequence) => ({ patternPointId, sequence, time })), provenance: { kind: 'generated', manuallyChangedFields: [] } }) as unknown as Trip;
+  const columns = [column('a'), column('b'), column('c')];
+
+  it('drops columns no Trip has a time in, keeping order', () => {
+    expect(columnsWithTimes(columns, [timed('short', [['s1', 100], ['s2', 200]])], [shortTurn]).map((item) => item.id)).toEqual(['a', 'b']);
+  });
+
+  it('does not count a stop with no time', () => {
+    expect(columnsWithTimes(columns, [timed('short', [['s1', 100], ['s2', undefined]])], [shortTurn]).map((item) => item.id)).toEqual(['a']);
+  });
+
+  it('keeps every column when there are no Trips', () => {
+    expect(columnsWithTimes(columns, [], [shortTurn])).toEqual(columns);
+  });
+});

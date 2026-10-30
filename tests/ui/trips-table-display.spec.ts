@@ -159,3 +159,17 @@ test('discards a Shift whose net offset is zero without writing any Trip', async
   expect(await stored()).not.toEqual(before);
 });
 
+
+test('hides a timepoint column no Trip has a time in', async ({ page }) => {
+  await createShiftReadySchedule(page);
+  const headers = () => page.locator('.trips-workspace .schedule-table thead th.trip-timepoint-column').allTextContents();
+  const before = await headers();
+  expect(before).toHaveLength(2);
+
+  // Direction timepoint C is served by no Pattern, so no Trip has a time there.
+  await runInPage(page, `const directions = await e.db.directions.toArray(); for (const d of directions) { d.columns.push({ id: 'unserved-column', nodeId: 'missing-node', sequence: d.columns.length, labelOverride: 'Unserved' }); await e.db.directions.put(d); }`);
+  await page.reload();
+  await page.getByRole('button', { name: 'Trips', exact: true }).click();
+  await expect(rows(page)).toHaveCount(await runInPage(page, 'return await e.db.trips.count()'));
+  expect(await headers()).toEqual(before);
+});

@@ -22,6 +22,12 @@ describe('Trips table CSV export', () => {
     expect(header).toEqual(['Direction', 'Pattern', 'Alpha', 'Bravo', 'Charlie', 'Delta', 'Run Time', 'Layover', 'Deadhead', 'Next Trip', 'Block']);
   });
 
+  it('leaves out timepoint columns no Trip has a time in', () => {
+    const [header, row] = csvRows(tripTableCsv(input({ trips: [trip('1', 'trunk', [['t1', 18000], ['t2', 18300], ['t3', 18900]])] })));
+    expect(header).toEqual(['Direction', 'Pattern', 'Alpha', 'Bravo', 'Charlie', 'Run Time', 'Layover', 'Deadhead', 'Next Trip', 'Block']);
+    expect(row.slice(2, 5)).toEqual(['5:00', '5:05', '5:15']);
+  });
+
   it('interlaces Patterns that share Direction columns, one row per Trip', () => {
     const rows = csvRows(tripTableCsv(input()));
     expect(rows[1]).toEqual(['Southbound', 'Southbound to C', '5:00', '5:05', '5:15', '', ':15', '', '', '', '']);
@@ -31,7 +37,7 @@ describe('Trips table CSV export', () => {
   it('writes run time with seconds, layover, deadhead, next trip, and Block for a Trip in a Block', () => {
     const connections = new Map([['1', { connection: { usableLayoverSeconds: 600, deadhead: {} }, deadheadSeconds: 240, nextTripStart: 19800 }]]);
     const rows = csvRows(tripTableCsv(input({ trips: [trip('1', 'trunk', [['t1', 18000], ['t3', 18930]])], blockLabels: new Map([['1', 'Block 7']]), connections })));
-    expect(rows[1].slice(6)).toEqual([':15:30', '0:10', '0:04', '5:30', 'Block 7']);
+    expect(rows[1].slice(-5)).toEqual([':15:30', '0:10', '0:04', '5:30', 'Block 7']);
   });
 
   it('leaves connection columns empty for a Trip that is not in a Block', () => {
