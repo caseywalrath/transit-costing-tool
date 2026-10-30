@@ -34,7 +34,7 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
   const [patternFindings, setPatternFindings] = useState<ValidationFinding[]>([]);
   const [conflict, setConflict] = useState<string>();
   const [impactDialog, setImpactDialog] = useState<{ preview: NodeChangePreview | SafePatternChangePreview; mode: RouteEditMode; afterCommit?: () => void }>();
-  const [discardDialog, setDiscardDialog] = useState<{ title: string; action: () => void }>();
+  const [discardDialog, setDiscardDialog] = useState<{ title: string; action: () => void; saveFirst: boolean }>();
   const [navigationDialog, setNavigationDialog] = useState<{ action: () => void }>();
   const newNodeButton = useRef<HTMLButtonElement>(null);
   const addPatternButton = useRef<HTMLButtonElement>(null);
@@ -113,11 +113,11 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
   function requestPattern(id: string) {
     if (id === patternDraft?.id) return;
     if (!patternDirty) { cloneSavedPattern(id); return; }
-    setDiscardDialog({ title: 'Discard unsaved pattern changes?', action: () => cloneSavedPattern(id) });
+    setDiscardDialog({ title: 'Discard unsaved pattern changes?', action: () => cloneSavedPattern(id), saveFirst: !isNewPattern });
   }
   function newPattern() {
     const action = () => { const draft = service.createPatternDraft(aggregate); setPatternDraft(draft); setPatternFindings([]); setConflict(undefined); onSelectPattern(draft.id); };
-    if (patternDirty) setDiscardDialog({ title: 'Discard unsaved pattern changes?', action }); else action();
+    if (patternDirty) setDiscardDialog({ title: 'Discard unsaved pattern changes?', action, saveFirst: !isNewPattern }); else action();
   }
   function duplicatePattern(reverse = false) {
     if (!patternDraft) return;
@@ -125,7 +125,7 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
       try { const draft = reverse ? service.reversePatternDraft(aggregate, patternDraft.id) : service.duplicatePatternDraft(aggregate, patternDraft.id); setPatternDraft(draft); setPatternFindings([]); setConflict(undefined); onSelectPattern(draft.id); }
       catch (error) { onError(error); }
     };
-    if (patternDirty) setDiscardDialog({ title: 'Discard unsaved pattern changes?', action }); else action();
+    if (patternDirty) setDiscardDialog({ title: 'Discard unsaved pattern changes?', action, saveFirst: !isNewPattern }); else action();
   }
   function updateDraft(patch: Partial<RoutePattern>) { setPatternDraft((current) => current ? { ...current, ...patch, points: patch.points ? patch.points.map((point, sequence) => ({ ...point, sequence })) : current.points } : current); setPatternFindings([]); setConflict(undefined); }
   function addPoint() {
@@ -227,7 +227,7 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
     <div className="route-bottom-grid"><WorkSurface title="Nodes" count={nodeDraft.length} className="route-nodes" footer={nodeDirty && <SaveBar message={`${plural(Math.max(1, countNodeChanges(aggregate.nodes, nodeDraft, pendingNodeDeletes)), 'unsaved change')} in Nodes`} saveLabel="Save nodes" busy={nodeSaving} onSave={() => void reviewNodeSave()} onDiscard={discardNodes} />}><NodesGrid nodes={nodeDraft} savedNodes={aggregate.nodes} pendingDeletes={pendingNodeDeletes} saving={nodeSaving} errorsFor={(id) => messages(nodeFindings, id)} newNodeButton={newNodeButton} onAdd={addNode} onChange={(id, patch) => { setNodeDraft((current) => current.map((candidate) => candidate.id === id ? { ...candidate, ...patch } : candidate)); if ('name' in patch) setNodeFindings([]); }} onSetPendingDelete={(id, pending) => setPendingNodeDeletes((current) => { const next = new Set(current); if (pending) next.add(id); else next.delete(id); return next; })} /></WorkSurface>
       <WorkSurface title="Patterns" count={displayPatterns.length} className="route-patterns"><div className="pattern-layout"><aside className="pattern-list" aria-label="Patterns">{sortedDisplayPatterns.length ? sortedDisplayPatterns.map((pattern, index) => { const direction = patternDirectionName(pattern); const miles = patternTotalMiles(pattern); return <Fragment key={pattern.id}>{(index === 0 || patternDirectionName(sortedDisplayPatterns[index - 1]) !== direction) && <div className="pattern-list__group">{direction}</div>}<button className={patternDraft?.id === pattern.id ? 'selected' : ''} title={pattern.name || 'Untitled pattern'} onClick={() => requestPattern(pattern.id)}><strong>{patternNameWithoutDirection(pattern.name, direction) || 'Untitled pattern'} {isNewPattern && pattern.id === patternDraft?.id ? <em>Unsaved</em> : null}</strong><span className="pattern-list__meta"><span className="chip">{patternShortName(pattern, direction, nodeById)}</span>{plural(pattern.points.length, 'point')}{miles === undefined ? '' : ` · ${formatMiles(miles)} mi`}</span></button></Fragment>; }) : <p>No patterns. A pattern is an ordered list of 2 or more nodes.</p>}<button ref={addPatternButton} className={sortedDisplayPatterns.length ? 'pattern-list-add' : 'pattern-list-add pattern-list-add--first primary'} onClick={newPattern} disabled={nodeSaving || patternSaving}><span aria-hidden="true">+ </span>Add pattern</button></aside>{patternDraft && <PatternEditor pattern={patternDraft} savedPattern={savedPattern} directionName={patternDirectionName(patternDraft)} directions={aggregate.directions ?? []} nodes={aggregate.nodes} segmentMiles={segmentMiles} errors={patternErrors} conflict={conflict} isNew={isNewPattern} dirty={patternDirty} saving={patternSaving} canDuplicate={!isNewPattern} onPattern={updateDraft} onAddPoint={addPoint} onUpdatePoint={updatePoint} onMovePoint={movePoint} onRemovePoint={removePoint} onReverse={() => duplicatePattern(true)} onDuplicate={() => duplicatePattern(false)} onDelete={() => isNewPattern ? discardPattern() : onDeletePattern()} onSave={() => void reviewPatternSave()} onDiscard={discardPattern} />}</div></WorkSurface></div>
     {impactDialog && <RouteEditImpactDialog preview={impactDialog.preview} mode={impactDialog.mode} onClose={() => setImpactDialog(undefined)} onCommit={() => impactDialog.preview.kind === 'nodes' ? void commitNodes(impactDialog.preview, impactDialog.afterCommit) : void commitPattern(impactDialog.preview, impactDialog.mode, impactDialog.afterCommit)} />}
-    {discardDialog && <DiscardRouteDraftDialog title={discardDialog.title} onDiscard={() => { discardDialog.action(); setDiscardDialog(undefined); }} onClose={() => setDiscardDialog(undefined)} />}
+    {discardDialog && <DiscardRouteDraftDialog title={discardDialog.title} onDiscard={() => { discardDialog.action(); setDiscardDialog(undefined); }} onClose={() => setDiscardDialog(undefined)} {...(discardDialog.saveFirst ? { onSave: () => { const { action } = discardDialog; setDiscardDialog(undefined); void reviewPatternSave(action); } } : {})} />}
     {navigationDialog && <RouteNavigationDraftDialog onCancel={() => setNavigationDialog(undefined)} onDiscard={() => { const action = navigationDialog.action; discardAllDrafts(); setNavigationDialog(undefined); action(); }} onSave={() => { const action = navigationDialog.action; setNavigationDialog(undefined); saveDraftsThenNavigate(action); }} />}
   </div>;
 }

@@ -58,6 +58,9 @@ test('the setup line is gone once the Route has a usable Pattern, and the Route 
 
 test('Costing without a blocking scenario offers Open Blocking', async ({ page }) => {
   await createRouteWithPattern(page, 'Onboarding costing');
+  // A new Scenario starts with a Default Blocking Scenario, so the prerequisite shows only once it is deleted.
+  await runInPage(page, 'await e.db.blockingScenarios.clear()');
+  await page.reload();
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await page.getByRole('button', { name: 'Open Blocking', exact: true }).click();

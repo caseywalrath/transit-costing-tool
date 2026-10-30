@@ -17,6 +17,7 @@ import { createLatestRequest } from '../latestRequest';
 import { formatClock, formatDuration, formatHours, formatMiles, formatPercent, MISSING, withUnit } from '../format';
 import { figure } from '../shared/figures';
 import { ContextField } from '../shared/ContextField';
+import { rememberTripBlockingScenario } from '../trips/TripsWorkspace';
 import { SelectionBar } from '../shared/bars';
 import { InlineNote, SupportPanel, WorkSurface } from '../shared/surfaces';
 import { routeOptionLabel } from '../shell/headerStatus';
@@ -279,7 +280,7 @@ export function BlockingWorkspace({ scopeSlot, blockingService, tripService, agg
     }
     onError(new Error(blockingError(error, fallback)), fallback);
   }
-  async function saveScenario(name: string) { if (!profile) return; setBusy(true); try { if (scenarioDialog?.mode === 'rename' && blockingScenario) await blockingService.renameBlockingScenario(blockingScenario.id, name, sourceSignature()); else if (scenarioDialog?.mode === 'duplicate' && blockingScenario) await blockingService.duplicateBlockingScenario(blockingScenario.id, name, sourceSignature()); else await blockingService.createBlockingScenario({ scenarioId: records.scenario.id, tripProfileId: profile.id, name }); setScenarioDialog(undefined); await refresh(); } catch (error) { failed(error, 'Unable to save the blocking scenario.'); } finally { setBusy(false); } }
+  async function saveScenario(name: string) { if (!profile) return; setBusy(true); try { if (scenarioDialog?.mode === 'rename' && blockingScenario) await blockingService.renameBlockingScenario(blockingScenario.id, name, sourceSignature()); else if (scenarioDialog?.mode === 'duplicate' && blockingScenario) await blockingService.duplicateBlockingScenario(blockingScenario.id, name, sourceSignature()); else { const created = await blockingService.createBlockingScenario({ scenarioId: records.scenario.id, tripProfileId: profile.id, name }); setBlockingScenarioId(created.id); rememberTripBlockingScenario(records.scenario.id, profile.id, created.id); } setScenarioDialog(undefined); await refresh(); } catch (error) { failed(error, 'Unable to save the blocking scenario.'); } finally { setBusy(false); } }
   async function openNewBlockDialog() { if (!blockingScenario || !serviceDayId) return; try { setBlockDialog({ mode: 'create', value: await blockingService.proposeBlockLabel(blockingScenario.id, serviceDayId) }); } catch (error) { onError(error, 'Unable to propose a block label.'); } }
   async function saveBlock(name: string) { if (!blockingScenario || !serviceDayId) return; setBusy(true); try { const saved = blockDialog?.mode === 'rename' && blockDialog.block ? await blockingService.updateBlock({ ...blockDialog.block, label: name }, sourceSignature()) : await blockingService.createBlock(blockingScenario.id, serviceDayId, name, sourceSignature()); setSelectedBlockId(saved.id); setBlockDialog(undefined); await loadBlocks(); } catch (error) { failed(error, 'Unable to save the block.'); } finally { setBusy(false); } }
   async function assign(trip: Trip) { if (!selectedBlock || !blockingScenario || busy || compatibilityPending) return; compatibilityRequestRef.current += 1; setBusy(true); setCompatibilityPending(true); try { await blockingService.assignTrip({ blockingScenarioId: blockingScenario.id, serviceDayId, tripId: trip.id, destinationBlockId: selectedBlock.id, sourceSignature: sourceSignature() }); setSelectedUnassignedTripIds((ids) => ids.filter((id) => id !== trip.id)); await loadBlocks(); } catch (error) { setCompatibilityPending(false); failed(error, 'Unable to assign the trip.'); } finally { setBusy(false); } }
@@ -564,7 +565,7 @@ function ActivityDialog({ draft, nodes, busy, boundaryPreview, onSubmit, onRevie
     <h2>{activity ? 'Edit ' : 'Add '}{label}</h2>
     {draft.type === 'deadhead' && <p className="profile-usage">{draft.connectionDescription ?? 'The deadhead begins when its preceding revenue trip ends. Remaining connection time is derived layover.'}</p>}
     <div className="activity-form">
-      <label>{offsetLabel}<input autoFocus disabled={busy} inputMode="numeric" value={minutes} placeholder="0" onChange={(event) => setMinutes(event.target.value)} /></label>
+      <label>{offsetLabel}<input autoFocus disabled={busy} inputMode="numeric" value={minutes} onChange={(event) => setMinutes(event.target.value)} /></label>
       <label>Miles (optional)<input disabled={busy} inputMode="decimal" value={miles} onChange={(event) => setMiles(event.target.value)} /></label>
       <label>From<select disabled={busy} value={fromNodeId} onChange={(event) => setFrom(event.target.value)}><option value="">{draft.type === 'pullOut' ? 'Optional' : 'Select node'}</option>{nodes.map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label>
       <label>To<select disabled={busy} value={toNodeId} onChange={(event) => setTo(event.target.value)}><option value="">{draft.type === 'pullIn' ? 'Optional' : 'Select node'}</option>{nodes.map((node) => <option key={node.id} value={node.id}>{node.name}</option>)}</select></label>

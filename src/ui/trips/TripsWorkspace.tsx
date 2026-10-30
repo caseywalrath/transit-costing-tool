@@ -434,9 +434,10 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
     if (shiftOperations.length) { setShiftDiscardAction(() => () => undefined); return; }
     discardStagedShift();
   }
-  async function completeStagedShift() {
-    if (!shiftPreview) return;
-    if (!shiftOperations.length || shiftPreview.netOffsetSeconds === 0) { setSelectedTripIds([]); discardStagedShift(); return; }
+  /** Applies the staged shift. Resolves true when it was applied or there was nothing to apply, false when the save failed. */
+  async function completeStagedShift(): Promise<boolean> {
+    if (!shiftPreview) return true;
+    if (!shiftOperations.length || shiftPreview.netOffsetSeconds === 0) { setSelectedTripIds([]); discardStagedShift(); return true; }
     setBusy(true);
     const pagePosition = { left: window.scrollX, top: window.scrollY, tableLeft: tripsTableScrollRef.current?.scrollLeft ?? 0, tableTop: tripsTableScrollRef.current?.scrollTop ?? 0 };
     try {
@@ -447,8 +448,10 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
         if (tripsTableScrollRef.current) { tripsTableScrollRef.current.scrollLeft = pagePosition.tableLeft; tripsTableScrollRef.current.scrollTop = pagePosition.tableTop; }
         tripsActionsRef.current?.focus({ preventScroll: true });
       }));
+      return true;
     } catch (error) {
       setShiftError(error instanceof TripShiftStalePreviewError || (error instanceof Error && error.name === 'TripShiftStalePreviewError') ? 'Selected trips changed. Discard this review and reopen shift.' : shiftErrorText(error, 'Unable to save the staged shift. Your trips were not changed. Try again.'));
+      return false;
     } finally { setBusy(false); }
   }
   useEffect(() => {
@@ -480,9 +483,10 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   async function undoSegmentRuntimes() { try { await service.undoSegmentRuntimePlan(); } catch (error) { onError(error); } onRuntimeChanged(); }
   async function requestProfileDeletion() { if (!selectedProfile) return; try { const impact = await service.getRuntimeProfileDeletionImpact(selectedProfile.id); setProfileDeletionImpact(impact); setDeleteProfileOpen(true); } catch (error) { onError(error); } }
   async function deleteProfile(replacementProfileId?: string) { if (!selectedProfile || !profileDeletionImpact) return; try { await service.deleteRuntimeProfile(selectedProfile.id, replacementProfileId, profileDeletionImpact.reviewToken); setDeleteProfileOpen(false); setProfileDeletionImpact(undefined); onRuntimeChanged(); } catch (error) { setDeleteProfileOpen(false); setProfileDeletionImpact(undefined); onError(error, 'Unable to delete the runtime profile. Your data was not changed.'); } }
-  async function saveDraftTrip() {
-    if (!draftTrip?.patternId || !draftTrip.firstTrip.trim()) return;
-    try { const firstTrip = parseServiceTime(draftTrip.firstTrip); setBusy(true); const result = await tripService.addTrip({ scenarioId: records.scenario.id, routeId: aggregate.route.id, serviceDayId, directionId, patternId: draftTrip.patternId, tripProfileId, firstTrip }); setDraftTrip(undefined); clearTripShiftHistory(); await loadTrips(); if (result.warnings.length) onError(new TripGenerationError(result.warnings)); } catch (error) { onError(error); } finally { setBusy(false); }
+  /** Adds the new Trip row. Resolves true when it was added, false when the row is incomplete or the save failed. */
+  async function saveDraftTrip(): Promise<boolean> {
+    if (!draftTrip?.patternId || !draftTrip.firstTrip.trim()) return false;
+    try { const firstTrip = parseServiceTime(draftTrip.firstTrip); setBusy(true); const result = await tripService.addTrip({ scenarioId: records.scenario.id, routeId: aggregate.route.id, serviceDayId, directionId, patternId: draftTrip.patternId, tripProfileId, firstTrip }); setDraftTrip(undefined); clearTripShiftHistory(); await loadTrips(); if (result.warnings.length) onError(new TripGenerationError(result.warnings)); return true; } catch (error) { onError(error); return false; } finally { setBusy(false); }
   }
   const changedRuntimeTripIds = new Set(tripsWithChangedRuntimes.map((trip) => trip.id));
   const selectedChangedRuntimeTripIds = selectedTripIds.filter((id) => changedRuntimeTripIds.has(id));
@@ -699,8 +703,8 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
     {tripBlockAssignment?.operation === 'assign' && <TripBlockAssignmentDialog draft={tripBlockAssignment} blockingScenarioName={selectedBlockingScenario?.name ?? 'blocking scenario'} serviceDayName={selectedDay?.name ?? 'selected service day'} blocks={dayBlockingBlocks} blockOptions={tripBlockOptions} currentAssignments={tripBlockByTripId} onConfirm={(destinationId) => void confirmTripBlockAssignment(destinationId)} onClose={closeTripBlockAssignment} busy={busy} error={tripBlockAssignmentError} />}
     {tripBlockAssignment?.operation === 'unassign' && <TripBlockUnassignmentDialog draft={tripBlockAssignment} blockingScenarioName={selectedBlockingScenario?.name ?? 'blocking scenario'} serviceDayName={selectedDay?.name ?? 'selected service day'} blocks={dayBlockingBlocks} currentAssignments={tripBlockByTripId} onConfirm={() => void confirmTripBlockAssignment('')} onClose={closeTripBlockAssignment} busy={busy} error={tripBlockAssignmentError} />}
     {runtimeLeave && <RouteNavigationDraftDialog title="Save runtime changes before leaving?" text="The runtime profile has unsaved edits." onCancel={() => setRuntimeLeave(undefined)} onDiscard={() => { const { action, leavesContext } = runtimeLeave; setRuntimeLeave(undefined); runtimeEditorRef.current?.discard(); (leavesContext ? requestShiftAndDraftScopeChange : requestShiftScopeChange)(action); }} onSave={() => { const { action, leavesContext } = runtimeLeave; setRuntimeLeave(undefined); saveRuntimeThen(action, leavesContext); }} />}
-    {shiftDiscardAction && <ShiftDiscardDialog onDiscard={() => discardStagedShift(shiftDiscardAction)} onCancel={() => setShiftDiscardAction(undefined)} />}
-    {draftTripDiscardAction && <ShiftDiscardDialog title="Discard new trip?" text="The new trip row has not been added. Discard it before leaving this schedule context?" onDiscard={() => { const action = draftTripDiscardAction; setDraftTripDiscardAction(undefined); setDraftTrip(undefined); action(); }} onCancel={() => setDraftTripDiscardAction(undefined)} />}
+    {shiftDiscardAction && <ShiftDiscardDialog onDiscard={() => discardStagedShift(shiftDiscardAction)} onCancel={() => setShiftDiscardAction(undefined)} onSave={shiftError ? undefined : () => { const action = shiftDiscardAction; setShiftDiscardAction(undefined); void completeStagedShift().then((saved) => { if (saved) action(); }); }} />}
+    {draftTripDiscardAction && <ShiftDiscardDialog title="Discard new trip?" text="The new trip row has not been added. Discard it before leaving this schedule context?" onDiscard={() => { const action = draftTripDiscardAction; setDraftTripDiscardAction(undefined); setDraftTrip(undefined); action(); }} onCancel={() => setDraftTripDiscardAction(undefined)} onSave={draftTrip?.patternId && draftTrip.firstTrip.trim() ? () => { const action = draftTripDiscardAction; setDraftTripDiscardAction(undefined); void saveDraftTrip().then((saved) => { if (saved) action(); }); } : undefined} />}
     {segmentRuntimeDialog && selectedProfile && <SegmentRuntimeDialog service={service} mode={segmentRuntimeDialog} profileId={selectedProfile.id} onDone={() => { setSegmentRuntimeDialog(undefined); onRuntimeChanged(); }} onClose={() => setSegmentRuntimeDialog(undefined)} />}
     {runtimeDialog && <RuntimeProfileDialog2 dialog={runtimeDialog} candidates={reverseCandidates} onSubmit={submitRuntimeDialog} onClose={() => setRuntimeDialog(undefined)} />}
     {deleteProfileOpen && selectedProfile && profileDeletionImpact && <DeleteRuntimeProfileDialog profile={selectedProfile} profiles={profiles} assignmentCount={profileDeletionImpact.assignmentCount} tripCount={profileDeletionImpact.tripCount} onDelete={deleteProfile} onClose={() => { setDeleteProfileOpen(false); setProfileDeletionImpact(undefined); }} />}

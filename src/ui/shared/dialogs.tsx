@@ -3,8 +3,9 @@ import { ModalDialog } from '../ModalDialog';
 
 export type NameDialog = { title: string; label?: string; initialValue?: string; submitLabel: string; action: (name: string) => Promise<void> | void };
 export type Confirmation = { title: string; text: string; action: () => void; confirmLabel?: string };
-export function DiscardRouteDraftDialog({ title, onDiscard, onClose }: { title: string; onDiscard: () => void; onClose: () => void }) {
-  return <ModalDialog role="alertdialog" labelledBy="discard-route-draft-title" className="confirm-dialog" onClose={onClose}><h2 id="discard-route-draft-title">{title}</h2><p>These edits have not been saved.</p><div className="dialog-actions"><button autoFocus onClick={onClose}>Cancel</button><button className="danger" onClick={onDiscard}>Discard</button></div></ModalDialog>;
+/** Cancel and Discard, plus Save when the draft can be saved (a new Pattern that is still being built cannot). */
+export function DiscardRouteDraftDialog({ title, onDiscard, onClose, onSave }: { title: string; onDiscard: () => void; onClose: () => void; onSave?: () => void }) {
+  return <ModalDialog role="alertdialog" labelledBy="discard-route-draft-title" className="confirm-dialog" onClose={onClose}><h2 id="discard-route-draft-title">{title}</h2><p>These edits have not been saved.</p><div className="dialog-actions"><button autoFocus onClick={onClose}>Cancel</button><button className="danger" onClick={onDiscard}>Discard</button>{onSave && <button className="primary" onClick={onSave}>Save</button>}</div></ModalDialog>;
 }
 
 export function RouteNavigationDraftDialog({ title = 'Save route changes before leaving?', text = 'Nodes or a pattern have unsaved edits.', onCancel, onDiscard, onSave }: { title?: string; text?: string; onCancel: () => void; onDiscard: () => void; onSave: () => void }) {
@@ -22,6 +23,7 @@ export function ConfirmDialog({ dialog, onClose }: { dialog: Confirmation; onClo
   return <ModalDialog role="alertdialog" labelledBy="confirm-title" className="confirm-dialog" onClose={onClose}><h2 id="confirm-title">{dialog.title}</h2><p>{dialog.text}</p><div><button autoFocus onClick={onClose}>Cancel</button><button className="danger" onClick={() => { dialog.action(); onClose(); }}>{dialog.confirmLabel ?? 'Confirm'}</button></div></ModalDialog>;
 }
 
-export function ShiftDiscardDialog({ title = 'Discard staged shift?', text = 'The selected trips have not been changed. Discard the staged shift before leaving this schedule context?', onDiscard, onCancel }: { title?: string; text?: string; onDiscard: () => void; onCancel: () => void }) {
-  return <ModalDialog labelledBy="shift-discard-title" className="confirm-dialog" onClose={onCancel}><h2 id="shift-discard-title">{title}</h2><p>{text}</p><div><button onClick={onCancel}>Cancel</button><button className="subtle-danger" onClick={onDiscard}>Discard</button></div></ModalDialog>;
+/** Cancel and Discard, plus Save when the staged change can be saved. */
+export function ShiftDiscardDialog({ title = 'Discard staged shift?', text = 'The selected trips have not been changed. Discard the staged shift before leaving this schedule context?', onDiscard, onCancel, onSave }: { title?: string; text?: string; onDiscard: () => void; onCancel: () => void; onSave?: () => void }) {
+  return <ModalDialog labelledBy="shift-discard-title" className="confirm-dialog" onClose={onCancel}><h2 id="shift-discard-title">{title}</h2><p>{text}</p><div><button onClick={onCancel}>Cancel</button><button className="subtle-danger" onClick={onDiscard}>Discard</button>{onSave && <button className="primary" onClick={onSave}>Save</button>}</div></ModalDialog>;
 }

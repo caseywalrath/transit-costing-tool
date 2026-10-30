@@ -28,7 +28,7 @@ test('uses one header action layer, and Shift opens in the selection bar', async
   await expect(runtimeActions.getByLabel('Pattern')).toBeVisible();
   await expect(runtimeSection.locator('.runtimes-toolbar').getByRole('button')).toHaveText(['Default ▾', '']);
   // Trips: the profile and Blocking scenario menus follow the title; View, Add trip, Build trips…, and Actions sit at the right.
-  await expect(tripsSection.locator('.work-surface__context').getByRole('button')).toHaveText(['Default ▾', 'No blocking scenario ▾']);
+  await expect(tripsSection.locator('.work-surface__context').getByRole('button')).toHaveText(['Default ▾', 'Default ▾']);
   await expect(tripActions.getByRole('button')).toHaveText(['View ▾', 'Add trip', 'Build trips…', '']);
   await expect(tripActions.getByRole('button', { name: 'Build trips…', exact: true })).toHaveClass(/primary/);
   await expect(runtimeSection.locator('.runtime-editor-toolbar')).toHaveCount(0);
