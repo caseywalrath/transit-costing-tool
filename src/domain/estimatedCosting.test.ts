@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { summarizeBlockingScenario } from './blocking';
 import { calculateCosting, costingAppliedRates, type CostingAssumptionsInput } from './costing';
-import { calculateEstimatedCosting, normalizeEstimateFactors, resolveDayFactors, type EstimatedCostingInput } from './estimatedCosting';
+import { calculateEstimatedCosting, formatEstimateFactorPercent, normalizeEstimateFactors, parseEstimateFactorPercent, resolveDayFactors, type EstimatedCostingInput } from './estimatedCosting';
 import { metadata } from './ids';
 import { createStandardServiceDays } from './serviceDays';
 import type { BlockingBlock, BlockingScenario, CostingEstimateFactors, RoutePattern, Scenario, ServiceDayDefinition, Trip, TripProfile } from './types';
@@ -210,5 +210,28 @@ describe('normalizeEstimateFactors', () => {
 
   it('keeps an invalid value so validation can report it', () => {
     expect(normalizeEstimateFactors(factors({ layoverFraction: Number.NaN }), days)?.allDays.layoverFraction).toBeNaN();
+  });
+});
+
+describe('parseEstimateFactorPercent and formatEstimateFactorPercent', () => {
+  it('reads blank as no value and a percentage from 0 up to 100 as a fraction', () => {
+    expect(parseEstimateFactorPercent('')).toEqual({});
+    expect(parseEstimateFactorPercent('  ')).toEqual({});
+    expect(parseEstimateFactorPercent('17.8').fraction).toBeCloseTo(0.178, 12);
+    expect(parseEstimateFactorPercent('0')).toEqual({ fraction: 0 });
+    expect(parseEstimateFactorPercent('5.5%').fraction).toBeCloseTo(0.055, 12);
+    expect(parseEstimateFactorPercent('99.99').fraction).toBeCloseTo(0.9999, 12);
+  });
+
+  it.each(['100', '150', '-1', 'abc', '1e2', '5,5'])('refuses %s', (text) => {
+    expect(parseEstimateFactorPercent(text)).toEqual({ error: 'Enter a percentage from 0 up to 100, or leave the cell blank.' });
+  });
+
+  it('shows up to two decimals with no trailing zeros', () => {
+    expect(formatEstimateFactorPercent(0.178)).toBe('17.8');
+    expect(formatEstimateFactorPercent(0.19)).toBe('19');
+    expect(formatEstimateFactorPercent(0.182346)).toBe('18.23');
+    expect(formatEstimateFactorPercent(parseEstimateFactorPercent('17.8').fraction)).toBe('17.8');
+    expect(formatEstimateFactorPercent(undefined)).toBe('');
   });
 });

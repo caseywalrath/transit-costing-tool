@@ -56,13 +56,13 @@ test('the setup line is gone once the Route has a usable Pattern, and the Route 
   await expect(scopeField(page, 'Route')).not.toHaveValue('__new-route__');
 });
 
-test('Costing without a blocking scenario offers Open Blocking', async ({ page }) => {
+test('Costing without a blocking scenario opens on the estimated cost basis of the Trip profile (Decision 0051)', async ({ page }) => {
   await createRouteWithPattern(page, 'Onboarding costing');
-  // A new Scenario starts with a Default Blocking Scenario, so the prerequisite shows only once it is deleted.
+  // A new Scenario starts with a Default Blocking Scenario; without it, Costing still opens, on the Trip profile's estimated basis.
   await runInPage(page, 'await e.db.blockingScenarios.clear()');
   await page.reload();
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
-  await page.getByRole('button', { name: 'Open Blocking', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Blocking', exact: true })).toHaveAttribute('aria-current', /page|true/);
+  await expect(scopeField(page, 'Cost basis').locator('option:checked')).toHaveText('Estimated · Default');
+  await expect(page.getByRole('button', { name: 'Open Blocking', exact: true })).toHaveCount(0);
 });

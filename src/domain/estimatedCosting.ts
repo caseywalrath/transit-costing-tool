@@ -226,3 +226,20 @@ export function calculateEstimatedCosting(input: EstimatedCostingInput): Estimat
   const tripsWithoutRunTime = costedRows.reduce((sum, row) => sum + row.tripsWithoutRunTimeCount, 0);
   return result(tripsWithoutRunTime > 0 ? 'partial' : 'complete', costedRows, yearRows);
 }
+
+export const ESTIMATE_FACTOR_PERCENT_ERROR = 'Enter a percentage from 0 up to 100, or leave the cell blank.';
+
+/** Reads a typed Layover % or Deadhead %: blank is no value; a number from 0 up to but not including 100 is the fraction. */
+export function parseEstimateFactorPercent(text: string): { fraction?: number; error?: string } {
+  const trimmed = text.trim().replace(/%$/, '').trim();
+  if (!trimmed) return {};
+  if (!/^(\d+(\.\d*)?|\.\d+)$/.test(trimmed)) return { error: ESTIMATE_FACTOR_PERCENT_ERROR };
+  const percent = Number(trimmed);
+  if (!Number.isFinite(percent) || percent >= 100) return { error: ESTIMATE_FACTOR_PERCENT_ERROR };
+  return { fraction: percent / 100 };
+}
+
+/** A stored fraction as the Estimate factors grid shows it: × 100, up to two decimals, no trailing zeros (`0.178` → `17.8`). */
+export function formatEstimateFactorPercent(fraction: number | undefined): string {
+  return fraction === undefined ? '' : String(Number((fraction * 100).toFixed(2)));
+}
