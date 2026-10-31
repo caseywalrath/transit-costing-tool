@@ -1,6 +1,6 @@
 # Decision 0051: Estimated Cost Basis from Running Hours and Typed Factors
 
-- Status: Accepted (not implemented). Implementation plan: `docs/implementation/estimated-cost-basis.md`.
+- Status: Accepted and implemented (2026-10-31). Implementation plan: `docs/implementation/estimated-cost-basis.md`.
 - Date: 2026-10-30 (user design review of the mockups)
 - Supersedes in part: Decision 0027 item 1 (Revenue Hours come only from Blocks) and item 7 (the Costing selector lists only Blocking Scenarios)
 
