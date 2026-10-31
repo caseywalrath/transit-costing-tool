@@ -1,5 +1,5 @@
 import type { CostingAssumptionsInput } from '../domain/costing';
-import type { Node, RoutePattern } from '../domain/types';
+import type { CostingEstimateFactors, CostingFactorPair, Node, RoutePattern } from '../domain/types';
 
 const nodeKey = (node: Node) => JSON.stringify([node.name, node.shortName ?? '', node.kind, node.notes ?? '']);
 
@@ -21,6 +21,21 @@ export function countPatternChanges(saved: RoutePattern | undefined, draft: Rout
 }
 
 const assumptionKeys = ['enteredRate', 'rateYear', 'sourceType', 'sourceNote', 'baseServiceYear', 'futureYearCount', 'annualEscalation'] as const;
+
+/** How many typed estimate factors differ from the saved ones: one per cell (All days and each service day, layover and deadhead). */
+export function countEstimateFactorChanges(saved?: CostingEstimateFactors, draft?: CostingEstimateFactors): number {
+  let changed = 0;
+  const compare = (before: CostingFactorPair | undefined, after: CostingFactorPair | undefined) => {
+    if (before?.layoverFraction !== after?.layoverFraction) changed += 1;
+    if (before?.deadheadFraction !== after?.deadheadFraction) changed += 1;
+  };
+  compare(saved?.allDays, draft?.allDays);
+  const dayIds = new Set([...(saved?.serviceDays ?? []), ...(draft?.serviceDays ?? [])].map((row) => row.serviceDayId));
+  for (const serviceDayId of dayIds) {
+    compare(saved?.serviceDays.find((row) => row.serviceDayId === serviceDayId), draft?.serviceDays.find((row) => row.serviceDayId === serviceDayId));
+  }
+  return changed;
+}
 
 /** How many Costing assumption fields differ from the saved values. */
 export function countAssumptionChanges(saved: CostingAssumptionsInput, draft: CostingAssumptionsInput): number {

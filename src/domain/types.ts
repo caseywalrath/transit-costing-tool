@@ -106,7 +106,13 @@ export interface CostingAssumptions extends EntityMetadata {
   baseServiceYear: number;
   futureYearCount: number;
   annualEscalation: number;
+  /** Decision 0051. Typed layover and deadhead factors for an estimated cost basis. Absent until the user enters one. */
+  estimateFactors?: CostingEstimateFactors;
 }
+/** Decision 0051. A value absent means "not entered". Fractions are in [0, 1). */
+export interface CostingFactorPair { layoverFraction?: number; deadheadFraction?: number }
+export interface CostingServiceDayFactors extends CostingFactorPair { serviceDayId: EntityId }
+export interface CostingEstimateFactors { allDays: CostingFactorPair; serviceDays: CostingServiceDayFactors[] }
 export type ValidationSeverity = 'error' | 'warning';
 export type ValidationCategory = 'structural' | 'operational';
 export interface ValidationFinding { ruleId: string; severity: ValidationSeverity; category?: ValidationCategory; entityType: string; entityId: EntityId; field?: string; messageKey: string; parameters?: Record<string, string | number>; }

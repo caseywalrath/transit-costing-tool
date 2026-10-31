@@ -151,7 +151,7 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       await repository.saveProjectSnapshot(snapshot);
       const backup = new ProjectBackupService((id) => repository.getProjectSnapshot(id), (value) => repository.saveProjectSnapshot(value));
       const payload = await backup.exportProject(snapshot.project.id);
-      expect(JSON.parse(payload).exportSchemaVersion).toBe(6);
+      expect(JSON.parse(payload).exportSchemaVersion).toBe(7);
       const before = JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value);
       await backup.importProject(payload, 'replace');
       expect(JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value)).toBe(before);
@@ -522,6 +522,16 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       await expect(repository.saveCostingAssumptions(assumptions('second', scenarioId))).rejects.toThrow('Scenario already has a different costing assumptions record.');
       await expect(repository.saveCostingAssumptions(assumptions('orphan', 'missing'))).rejects.toThrow('Costing assumptions reference a missing Scenario.');
       await expect(repository.saveCostingAssumptions(assumptions('negative', scenarioId, -1))).rejects.toThrow(/Invalid costing assumptions/);
+    });
+
+    it('saves and reads the typed estimate factors with the assumptions (Decision 0051)', async () => {
+      const { snapshot, scenarioId } = fixture();
+      await repository.saveProjectSnapshot(snapshot);
+      const estimateFactors = { allDays: { layoverFraction: 0.182, deadheadFraction: 0.056 }, serviceDays: [{ serviceDayId: snapshot.serviceDays[0].id, layoverFraction: 0.178 }] };
+      await repository.saveCostingAssumptions({ ...assumptions('first', scenarioId), estimateFactors });
+      expect((await repository.getCostingAssumptions(scenarioId))?.estimateFactors).toEqual(estimateFactors);
+      expect((await repository.getScenarioRecords(scenarioId))?.costingAssumptions?.estimateFactors).toEqual(estimateFactors);
+      await expect(repository.saveCostingAssumptions({ ...assumptions('first', scenarioId), estimateFactors: { allDays: { layoverFraction: 1 }, serviceDays: [] } })).rejects.toThrow(/Invalid costing assumptions/);
     });
   });
 });

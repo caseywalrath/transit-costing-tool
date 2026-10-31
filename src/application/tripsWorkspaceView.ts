@@ -1,7 +1,7 @@
 // What the Trips and Runtime screens derive from their data (review package P15, issue I-074c, finding 4-014). The screen calls these
 // instead of calculating, so the rules have one home and a test. Everything here is pure: no reads, no writes.
 import { sortServiceDays } from '../domain/serviceDays';
-import { createBlockingScenarioSourceSignature } from '../domain/blocking';
+import { createBlockingScenarioSourceSignature, type BlockConnection } from '../domain/blocking';
 import { isUsablePattern, orderDirections, usableDirectionPatterns } from '../domain/directions';
 import { parseRuntimeDuration, RuntimeDurationError } from '../domain/durations';
 import { patternTotalMiles } from '../domain/patterns';
@@ -46,6 +46,33 @@ export function columnsWithTimes<Column extends { id: string }>(columns: Column[
     for (const point of patternById.get(trip.patternId)?.points ?? []) if (point.directionColumnId && timedPointIds.has(point.id)) used.add(point.directionColumnId);
   }
   return columns.filter((column) => used.has(column.id));
+}
+
+export interface TripTableTotals { tripCount: number; runningSeconds: number; runTimeMissingCount: number; layoverSeconds?: number; deadheadSeconds?: number }
+
+/**
+ * The totals of the Trips table (Decision 0051): the number of Trips, their running seconds, and, with a Blocking Scenario, the layover and
+ * deadhead the table shows in its cells. A Trip adds layover and deadhead only when it is in `assignedTripIds` and has a connection, exactly
+ * as its row shows them. Without `connections` (no Blocking Scenario) the layover and deadhead totals are `undefined`.
+ */
+export function summarizeTripTable(
+  trips: Trip[],
+  connections?: ReadonlyMap<string, { connection: BlockConnection; deadheadSeconds?: number }>,
+  assignedTripIds?: ReadonlySet<string>,
+): TripTableTotals {
+  let runningSeconds = 0;
+  let runTimeMissingCount = 0;
+  let layoverSeconds = 0;
+  let deadheadSeconds = 0;
+  for (const trip of trips) {
+    const runTime = tripRunTimeSeconds(trip);
+    if (runTime === undefined) runTimeMissingCount += 1; else runningSeconds += runTime;
+    const entry = connections && assignedTripIds?.has(trip.id) ? connections.get(trip.id) : undefined;
+    if (!entry) continue;
+    if (entry.connection.usableLayoverSeconds !== undefined) layoverSeconds += entry.connection.usableLayoverSeconds;
+    if (entry.connection.deadhead && entry.deadheadSeconds !== undefined) deadheadSeconds += entry.deadheadSeconds;
+  }
+  return { tripCount: trips.length, runningSeconds, runTimeMissingCount, ...(connections ? { layoverSeconds, deadheadSeconds } : {}) };
 }
 
 export interface TripRowView { runTimeSeconds?: number; duplicate: boolean; singleBand?: RuntimeBand; segments?: BlendedSegment[] }

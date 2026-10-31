@@ -1,0 +1,47 @@
+<!doctype html>
+<!--
+  Mockup of the Blocking summary with Layover % and Deadhead % (Decision 0051, package E3). Open it in a browser from the repository: it
+  loads the app's own stylesheets. Numbers are the Federal Boulevard baseline, Weekday. The <style> block is the exact CSS that package
+  E3 adds to src/ui/styles/blocking.css; everything else uses existing classes. .mock-frame and .mock-body are mockup scaffolding.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Blocking summary with percentages (mockup)</title>
+<link rel="stylesheet" href="../../../src/ui/styles/index.css">
+<style>
+.mock-frame { width: 1440px; }
+.mock-body { padding-top: var(--space-4); }
+
+/* blocking.css addition (package E3) */
+.stat-strip dt small { display: block; font-weight: var(--font-weight-regular); color: var(--color-text-subtle); font-size: var(--font-size-caption); }
+</style>
+</head>
+<body>
+<div class="mock-frame">
+<main class="app-shell">
+<div class="app-header">
+<header class="app-bar"><div class="app-bar__brand"><span class="app-bar__mark" aria-hidden="true"></span><strong>Transit Costing Tool</strong></div><nav aria-label="Primary"><button type="button" class="tab">Route</button><button type="button" class="tab">Trips</button><button type="button" class="tab active" aria-current="page">Blocking</button><button type="button" class="tab">Costing</button></nav><span class="app-bar__spacer"></span><span class="save-status save-status--saved" role="status"><span class="save-status__dot" aria-hidden="true"></span>Saved locally<span class="save-status__backup"> · backup today</span></span></header>
+<section class="scope-bar" aria-label="Scope"><div class="scope-switchers"><div class="menu-button"><button type="button" class="menu-trigger switcher switcher--project"><small class="switcher__caption">Project</small><span class="switcher__name">Federal Boulevard BRT 2029 Service Plan</span><span aria-hidden="true" class="menu-chevron"> ▾</span></button></div><span class="scope-switchers__sep" aria-hidden="true">›</span><div class="menu-button"><button type="button" class="menu-trigger switcher switcher--scenario"><small class="switcher__caption">Scenario</small><span class="switcher__name">Workbook Service Plan</span><span aria-hidden="true" class="menu-chevron"> ▾</span></button></div></div><span class="scope-bar__divider" aria-hidden="true"></span><div class="scope-bar__slot"><label class="context-field"><span class="context-field__label">Route</span><select aria-label="Route"><option>Federal BRT</option></select></label><label class="context-field"><span class="context-field__label">Trip profile</span><select aria-label="Trip profile"><option>Default</option></select></label><label class="context-field" style="max-width: 210px;"><span class="context-field__label">Blocking scenario</span><select aria-label="Blocking scenario"><option>Workbook Blocks</option></select></label><label class="context-field"><span class="context-field__label">Day</span><select aria-label="Day"><option>Weekday</option></select></label><span class="scope-bar__spacer"></span></div></section>
+</div>
+<div class="mock-body">
+<!-- E3: SummaryPanel. The aside is new; the two percentage tiles are inserted after Layover and after Deadhead. -->
+<section class="support-panel" aria-label="Blocking summary">
+  <div class="support-panel__header"><h3 class="support-panel__title">Weekday summary · 18 blocks</h3><span class="support-panel__aside">All days, weighted by annual service days: layover 18.2% · deadhead 5.6%</span></div>
+  <div class="support-panel__body"><dl class="stat-strip">
+    <div><dt>Revenue</dt><dd>311.59 h</dd></div>
+    <div><dt>Running</dt><dd>256.28 h</dd></div>
+    <div><dt>Platform</dt><dd>329.59 h</dd></div>
+    <div><dt>Layover</dt><dd>55.31 h</dd></div>
+    <div><dt>Layover %<small>of revenue hours</small></dt><dd>17.8%</dd></div>
+    <div><dt>Deadhead</dt><dd>18.00 h</dd></div>
+    <div><dt>Deadhead %<small>of platform hours</small></dt><dd>5.5%</dd></div>
+    <div><dt>Revenue miles</dt><dd>4,488.50 mi</dd></div>
+    <div><dt>Platform miles</dt><dd><span class="value-incomplete">Incomplete</span></dd></div>
+  </dl></div>
+</section>
+</div>
+</main>
+</div>
+</body>
+</html>

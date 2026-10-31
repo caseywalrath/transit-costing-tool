@@ -1,5 +1,7 @@
 # Phase 5: Costing — Implementation Plan
 
+> **Amended 2026-10-31 (Decision 0051).** The Costing selector is now **Cost basis** and also offers an estimated basis: a Trip Profile costed from running hours and typed layover and deadhead factors, without Blocks. Eligibility, rounding, rate-year, and CSV rules below stay in force for the blocked basis; the CSV files gain cost-basis and factor columns. See `docs/implementation/estimated-cost-basis.md`.
+
 ## Status and gate
 
 Approved planning scope, 2026-09-22. Decision 0027 records the accepted Revenue-Hour basis, rate-year adjustment, one assumption set per parent Scenario, 3% editable default, base year plus up to ten future years, and selector-only Blocking Scenario view. Phase 4 is the input baseline. Packages 5A and 5B were implemented and verified on 2026-09-23. Package 5C was requested and implemented on 2026-09-23; its user-directed toolbar revision is recorded in Decision 0028. Automated behavior, accessibility structure, desktop overflow, responsive layout, typecheck, unit tests, and production build pass. The user accepted the Package 5C Costing workspace on 2026-10-22 (code review user decision 2), so the 5C stop gate is closed and Costing UI findings are regressions, not open 5C work. The October 2026 code review replaces Package 5D, except user acceptance (code review user decision 1; see the Packages table).

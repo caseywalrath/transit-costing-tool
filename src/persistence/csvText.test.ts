@@ -88,12 +88,12 @@ function cases(): Case[] {
   const scenario: Scenario = { id: H, projectId: H, name: H, ...meta };
   const assumptions: CostingAssumptionsInput = { enteredRate: 100, rateYear: 2024, sourceType: 'user', sourceNote: H, baseServiceYear: 2026, futureYearCount: 0, annualEscalation: 0.03 };
   const result: CostingCalculationResult = {
-    state: 'partial', sourceRate: 100, sourceRateYear: 2024, annualEscalation: 0.03, eligibleBlockCount: 1, excludedBlockCount: 1, unassignedTripCount: 1, findings: [],
+    basis: 'blocked', state: 'partial', sourceRate: 100, sourceRateYear: 2024, annualEscalation: 0.03, eligibleBlockCount: 1, excludedBlockCount: 1, unassignedTripCount: 1, findings: [],
     exclusions: [{ serviceDayId: H, serviceDayName: H, excludedBlockCount: 1, unassignedTripCount: 1, blocks: [{ blockId: H, blockLabel: H, reasonCodes: ['block.invalid'] }] }],
     dailyRows: [{ serviceDayId: H, serviceDayName: H, serviceDayKind: 'weekday', annualServiceDays: 1, eligibleBlockCount: 1, excludedBlockCount: 1, unassignedTripCount: 1, revenueHoursPerDay: 1, platformHoursPerDay: 1, annualRevenueHours: 1, annualPlatformHours: 1, yearCosts: [{ serviceYear: 2026, costPerDayUsd: 100, annualCostUsd: 100 }] }],
     yearRows: [{ serviceYear: 2026, appliedRateUsdPerRevenueHour: 100, annualRevenueHours: 1, annualPlatformHours: 1, annualCostUsd: 100 }],
   };
-  const [costAssumptions, costResults, costExclusions] = costingCsvFiles(scenario, blockingScenario, profile, assumptions, result).map((file) => file.contents);
+  const [costAssumptions, costResults, costExclusions] = costingCsvFiles(scenario, { kind: 'blocked', blockingScenario, tripProfile: profile }, assumptions, result).map((file) => file.contents);
   return [
     { name: 'routeCsv', csv: [routeCsv(route)], freeText: ['name', 'shortName', 'description'] },
     { name: 'nodesCsv', csv: [nodesCsv([node])], freeText: ['name', 'shortName', 'notes'] },

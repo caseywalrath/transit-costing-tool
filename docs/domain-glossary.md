@@ -236,7 +236,7 @@ Additional vehicles added through a spare ratio or explicit input. This is defer
 
 ### Costing assumptions
 
-The single Scenario-owned set of entered USD/Revenue-Hour rate, source year, service year, and annual escalation inputs. It applies to whichever Blocking Scenario is selected. The Phase 5 implementation plan specifies its persistence lifecycle. The interface labels annual escalation as **Inflation rate (%)**.
+The single Scenario-owned set of entered USD/Revenue-Hour rate, source year, service year, and annual escalation inputs. It applies to whichever cost basis is selected, and holds the typed estimate factors. The Phase 5 implementation plan specifies its persistence lifecycle. The interface labels annual escalation as **Inflation rate (%)**.
 
 ### Cost estimate
 
@@ -245,6 +245,26 @@ A derived calculation for eligible Blocks using Revenue Hours, one entered USD/R
 ### Cost basis
 
 The service quantity multiplied by a rate. Revenue Hours are the only initial cost basis. A platform-sensitive supplement is deferred and must not double count the Revenue-Hour estimate.
+
+### Cost basis (selector: blocked or estimated)
+
+What Costing takes its Revenue and Platform Hours from (Decision 0051); the Costing screen's **Cost basis** selector. A **blocked** basis is a Blocking Scenario: the hours of its eligible Blocks. An **estimated** basis is a Trip Profile costed from running hours and typed factors, without Blocks. Both use the same Costing assumptions.
+
+### Running hours
+
+The sum of each Trip's first-to-last scheduled time (`tripRunTimeSeconds`). A Trip with fewer than two usable times has none and is reported as without a run time.
+
+### Layover %
+
+Layover as a share of Revenue Hours. In an estimate, Revenue Hours = running hours ÷ (1 − layover %). The Blocking summary shows the same figure for a Blocking Scenario.
+
+### Deadhead %
+
+Pull-out, pull-in, and deadhead as a share of Platform Hours. In an estimate, Platform Hours = Revenue Hours ÷ (1 − deadhead %).
+
+### Estimate factors
+
+The typed Layover % and Deadhead % of an estimated cost basis, per service day with an All days row that any blank day falls back to, each factor independently. Stored with the Scenario's Costing assumptions as fractions from 0 up to but not including 1.
 
 ### NTD assumption
 

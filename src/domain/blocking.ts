@@ -154,7 +154,7 @@ export function summarizeBlock(block: BlockingBlock, context: BlockingValidation
   else if (pullOutTiming.startTime < 0 || pullInTiming.endTime < 0 || pullInTiming.endTime < pullOutTiming.startTime) operational.push(finding('block', block.id, 'block.platformBoundaryTimeInvalid', 'block.platformBoundaryTimeInvalid', 'operational'));
   else platformSeconds = pullInTiming.endTime - pullOutTiming.startTime;
   const revenueMilesValues = revenue.map(({ trip }) => revenueDistance(trip, patterns)); const revenueMiles = revenueMilesValues.every((value) => value !== undefined) ? revenueMilesValues.reduce((sum, value) => sum + (value ?? 0), 0) : undefined; if (revenue.length && revenueMiles === undefined) operational.push(finding('block', block.id, 'block.revenueMilesIncomplete', 'block.revenueMilesIncomplete', 'operational')); const nonRevenue = activities.filter((activity) => activity.type === 'pullOut' || activity.type === 'pullIn' || activity.type === 'deadhead'); const nonRevenueMiles = nonRevenue.map((activity) => activity.miles); const platformMiles = revenueMiles !== undefined && nonRevenueMiles.every((value) => value !== undefined) ? revenueMiles + nonRevenueMiles.reduce((sum, value) => sum + (value ?? 0), 0) : undefined; if (platformMiles === undefined && (revenue.length > 0 || nonRevenue.length > 0)) operational.push(finding('block', block.id, 'block.platformMilesIncomplete', 'block.platformMilesIncomplete', 'operational')); const allFindings = [...structural, ...operational]; const valid = !allFindings.some((item) => item.severity === 'error' || INVALIDATING_RULES.has(item.ruleId)); const complete = !operational.some((item) => item.ruleId.includes('Missing') || item.ruleId.includes('Incomplete') || item.ruleId.includes('Invalid')) && platformSeconds !== undefined && platformMiles !== undefined; return { blockId: block.id, revenueHours: (runningSeconds + layoverSeconds) / 3600, revenueSeconds: runningSeconds + layoverSeconds, runningHours: runningSeconds / 3600, platformHours: platformSeconds === undefined ? undefined : platformSeconds / 3600, ...(platformSeconds === undefined ? {} : { platformSeconds }), deadheadHours: deadheadSeconds / 3600, layoverHours: layoverSeconds / 3600, layoverPercent: layoverPercent(layoverSeconds / 3600, (runningSeconds + layoverSeconds) / 3600), ...(revenueMiles !== undefined ? { revenueMiles } : {}), ...(platformMiles !== undefined ? { platformMiles } : {}), status: !valid ? 'invalid' : !complete ? 'incomplete' : 'complete', complete, valid, findings: allFindings, connections, activityTimings }; }
-export interface BlockingSummary { blockingScenarioId: EntityId; blockSummaries: BlockSummary[]; revenueHours: number; runningHours: number; platformHours?: number; deadheadHours: number; layoverHours: number; layoverPercent?: number; revenueMiles?: Miles; platformMiles?: Miles; validBlockCount: number; invalidBlockCount: number; incompleteBlockCount: number; complete: boolean; }
+export interface BlockingSummary { blockingScenarioId: EntityId; blockSummaries: BlockSummary[]; revenueHours: number; runningHours: number; platformHours?: number; deadheadHours: number; layoverHours: number; layoverPercent?: number; /** Decision 0051. Deadhead as a share of platform hours, in percent. */ deadheadPercent?: number; revenueMiles?: Miles; platformMiles?: Miles; validBlockCount: number; invalidBlockCount: number; incompleteBlockCount: number; complete: boolean; }
 export function summarizeBlockingScenario(scenario: BlockingScenario, blocks: BlockingBlock[], context: Omit<BlockingValidationContext, 'blockingScenario'>): BlockingSummary {
   const blockSummaries = blocks.filter((block) => block.blockingScenarioId === scenario.id).map((block) => summarizeBlock(block, { ...context, blockingScenario: scenario }));
   const valid = blockSummaries.filter((summary) => summary.valid);
@@ -170,6 +170,7 @@ export function summarizeBlockingScenario(scenario: BlockingScenario, blocks: Bl
     deadheadHours: valid.reduce((sum, summary) => sum + summary.deadheadHours, 0),
     layoverHours,
     layoverPercent: layoverPercent(layoverHours, revenueHours),
+    deadheadPercent: deadheadPercent(revenueHours, sumWhenKnown((summary) => summary.platformHours)),
     revenueMiles: sumWhenKnown((summary) => summary.revenueMiles),
     platformMiles: sumWhenKnown((summary) => summary.platformMiles),
     validBlockCount: completeValid.length,
@@ -200,6 +201,23 @@ export function suggestChronologicalInsertionIndex(block: BlockingBlock, candida
 
 /** Layover as a share of Revenue hours, in percent. Unknown when there are no Revenue hours. */
 export function layoverPercent(layoverHours: number, revenueHours: number): number | undefined { return revenueHours > 0 ? layoverHours / revenueHours * 100 : undefined; }
+/** Deadhead as a share of platform hours, in percent: (platform − revenue) ÷ platform. Undefined when platform hours are unknown or not above 0 (Decision 0051). */
+export function deadheadPercent(revenueHours: number, platformHours: number | undefined): number | undefined { return platformHours !== undefined && platformHours > 0 ? (platformHours - revenueHours) / platformHours * 100 : undefined; }
+/**
+ * The layover and deadhead percentages of all service days together, weighted by annual service days, for typing into the estimate factors
+ * (Decision 0051). Only days with annual service days above 0 and revenue hours above 0 count. Layover % = Σ n·(V − R) ÷ Σ n·V with V the
+ * revenue and R the running hours; deadhead % = Σ n·(P − V) ÷ Σ n·P, undefined when a counted day's platform hours are unknown.
+ */
+export function weightedEstimateFactors(days: Array<{ annualServiceDays: number; summary: BlockingSummary }>): { layoverPercent?: number; deadheadPercent?: number } {
+  const counted = days.filter((day) => day.annualServiceDays > 0 && day.summary.revenueHours > 0);
+  const revenue = counted.reduce((sum, day) => sum + day.annualServiceDays * day.summary.revenueHours, 0);
+  if (!(revenue > 0)) return {};
+  const layover = counted.reduce((sum, day) => sum + day.annualServiceDays * (day.summary.revenueHours - day.summary.runningHours), 0);
+  const platformKnown = counted.every((day) => day.summary.platformHours !== undefined);
+  const platform = platformKnown ? counted.reduce((sum, day) => sum + day.annualServiceDays * day.summary.platformHours!, 0) : 0;
+  const deadhead = platformKnown ? counted.reduce((sum, day) => sum + day.annualServiceDays * (day.summary.platformHours! - day.summary.revenueHours), 0) : 0;
+  return { layoverPercent: layover / revenue * 100, ...(platformKnown && platform > 0 ? { deadheadPercent: deadhead / platform * 100 } : {}) };
+}
 
 function inputFinding(ruleId: string, field: string): ValidationFinding { return finding('blockActivity', 'new-activity', ruleId, ruleId, 'structural', 'error', field); }
 export interface ActivityTextInput { minutes: string; miles: string }

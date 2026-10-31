@@ -184,3 +184,6 @@
 .runtime-table .segment-header { min-width: 72px; max-width: 88px; }
 .runtime-table .runtime-total-heading, .runtime-table .runtime-total { min-width: 78px; width: 78px; text-align: center; white-space: nowrap; }
 .runtime-table .runtime-total { font-weight: var(--font-weight-bold); }
+/* Totals row of the Trips table (Decision 0051, package E3). */
+.schedule-table tfoot th, .schedule-table tfoot td { background: var(--color-sunken); font-weight: var(--font-weight-bold); font-variant-numeric: tabular-nums; border-top: 1px solid var(--color-border); }
+.schedule-table tfoot th[scope='row'] { position: sticky; left: 0; z-index: 1; text-align: left; font-size: var(--font-size-note); white-space: nowrap; }

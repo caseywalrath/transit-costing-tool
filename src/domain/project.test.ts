@@ -57,6 +57,23 @@ describe('scenario duplication', () => {
     expect(copy.runtimeAssignments[0].runtimeProfileId).toBe(copy.runtimeProfiles[0].id);
     expect(copy.runtimeAssignments[0].serviceDayId).toBe(copy.serviceDays[0].id);
   });
+
+  it('points the copy’s estimate factors at the copy’s service days (Decision 0051)', () => {
+    const stamp = metadata('2026-01-01T00:00:00.000Z');
+    const source = {
+      scenario: { id: 'src', projectId: 'project', name: 'Base', ...stamp },
+      serviceDays: [
+        { id: 'wk', scenarioId: 'src', kind: 'weekday' as const, name: 'Weekday', annualServiceDays: 255, sequence: 0, ...stamp },
+        { id: 'sa', scenarioId: 'src', kind: 'saturday' as const, name: 'Saturday', annualServiceDays: 52, sequence: 1, ...stamp },
+      ],
+      routes: [], nodes: [], patterns: [], runtimeProfiles: [], runtimeAssignments: [], generationSets: [], trips: [], blocks: [],
+      costingAssumptions: { id: 'cost', scenarioId: 'src', currencyCode: 'USD' as const, enteredRate: 100, rateYear: 2026, sourceType: 'user' as const, baseServiceYear: 2026, futureYearCount: 0, annualEscalation: 0.03, estimateFactors: { allDays: { layoverFraction: 0.18 }, serviceDays: [{ serviceDayId: 'sa', deadheadFraction: 0.05 }, { serviceDayId: 'wk', layoverFraction: 0.17 }] }, ...stamp },
+    };
+    const copy = duplicateScenario(source, 'Alternative', '2026-02-01T00:00:00.000Z');
+    const dayIdOf = (name: string) => copy.serviceDays.find((day) => day.name === name)!.id;
+    expect(copy.costingAssumptions?.estimateFactors).toEqual({ allDays: { layoverFraction: 0.18 }, serviceDays: [{ serviceDayId: dayIdOf('Saturday'), deadheadFraction: 0.05 }, { serviceDayId: dayIdOf('Weekday'), layoverFraction: 0.17 }] });
+    expect(source.costingAssumptions.estimateFactors.serviceDays.map((row) => row.serviceDayId)).toEqual(['sa', 'wk']);
+  });
 });
 
 describe('route duplication', () => {

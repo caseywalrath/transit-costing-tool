@@ -39,3 +39,16 @@
 .support-panel__aside { color: var(--color-text-muted); font-size: var(--font-size-note); }
 .costing-lower-grid .table-scroll { background: var(--color-surface); }
 .costing-lower-grid .support-panel__header > .support-panel__aside { margin-left: 0; }
+/* Estimated cost basis (Decision 0051, package E4): the top row of assumptions and estimate factors, the factor grid, and the estimate marks. */
+.costing-state.estimated { border-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-accent-strong); }
+.costing-top-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--inset-panel); align-items: start; min-width: 0; }
+.costing-top-grid > section { min-width: 0; }
+.costing-top-grid .costing-assumptions-grid { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
+.costing-factor-grid table { min-width: 0; width: 100%; }
+.costing-factor-grid th, .costing-factor-grid td { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.costing-factor-grid tbody th[scope='row'] { text-align: left; }
+.costing-factor-grid .costing-factor-fallback { background: var(--color-surface-2); }
+.costing-factor-hint { margin-top: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-note); }
+.costing-est-mark { display: block; font-weight: var(--font-weight-regular); color: var(--color-accent-strong); font-size: var(--font-size-caption); }
+.costing-row-note { display: block; font-weight: var(--font-weight-regular); color: var(--color-warn); font-size: var(--font-size-caption); }
+.costing-basis-notes { display: grid; gap: var(--space-2); }

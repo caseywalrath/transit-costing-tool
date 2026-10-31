@@ -9,7 +9,7 @@ import { type RouteDefinitionApplication, type ScenarioRecords } from '../../app
 import { TripShiftStalePreviewError, type TripGenerationApplication } from '../../application/tripGenerationService';
 import { TripShiftValidationError, type TripShiftPreview } from '../../domain/tripShift';
 import { TripGenerationError } from '../../domain/trips';
-import { createBlockingScenarioSourceSignature, formatNetShift, isUsablePattern, orderDirections, parseShiftSeconds, regenerationUndoApplies, reverseRuntimeCandidates, routeRuntimeCalculationMethod, sortServiceDays, usableDirectionPatterns, type RuntimeCalculationMethod } from '../../application/tripsWorkspaceView';
+import { createBlockingScenarioSourceSignature, formatNetShift, isUsablePattern, orderDirections, parseShiftSeconds, regenerationUndoApplies, reverseRuntimeCandidates, routeRuntimeCalculationMethod, sortServiceDays, summarizeTripTable, usableDirectionPatterns, type RuntimeCalculationMethod } from '../../application/tripsWorkspaceView';
 import { formatServiceTime, parseServiceTime } from '../../domain/time';
 import { type BlockingBlock, type Route, type RouteDefinitionAggregate, type RuntimeAssignment, type RuntimeProfile, type ServiceDayDefinition, type Trip } from '../../domain/types';
 import { type BlockConnection } from '../../domain/blocking';
@@ -24,6 +24,7 @@ import { download } from '../shared/download';
 import { messages, userMessage } from '../shared/messages';
 import { RouteNavigationDraftDialog, ShiftDiscardDialog } from '../shared/dialogs';
 import { InlineNote, WorkSurface } from '../shared/surfaces';
+import { formatHours, withUnit } from '../format';
 import { SaveBar, SelectionBar } from '../shared/bars';
 import { ContextField } from '../shared/ContextField';
 
@@ -76,6 +77,8 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   const [deleteProfileOpen, setDeleteProfileOpen] = useState(false);
   const [profileDeletionImpact, setProfileDeletionImpact] = useState<{ assignmentCount: number; tripCount: number; reviewToken: string }>();
   const [trips, setTrips] = useState<Trip[]>([]);
+  /** The saved Trips of the Route on the service day, both directions, for the day line under the Trips table (Decision 0051). */
+  const [routeDayTrips, setRouteDayTrips] = useState<Trip[]>([]);
   const [lastRegenerationUndo, setLastRegenerationUndo] = useState<import('../../domain/types').TripRegenerationUndo>();
   const [tripsWithChangedRuntimes, setTripsWithChangedRuntimes] = useState<Trip[]>([]);
   const [staleReasons, setStaleReasons] = useState<StaleTripNotice>();
@@ -172,11 +175,11 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
     } catch (error) { onError(error); } finally { setLoading(false); }
   }
   async function loadTrips() {
-    if (!serviceDayId || !directionId) { setTrips([]); setTripsWithChangedRuntimes([]); setStaleReasons(undefined); setLastRegenerationUndo(await tripService.getLastTripRegenerationUndo()); return; }
+    if (!serviceDayId || !directionId) { setTrips([]); setRouteDayTrips([]); setTripsWithChangedRuntimes([]); setStaleReasons(undefined); setLastRegenerationUndo(await tripService.getLastTripRegenerationUndo()); return; }
     try {
-      const [nextTrips, nextStale, undo] = await Promise.all([tripService.listScheduleTrips(serviceDayId, directionId, tripProfileId), tripService.inspectStaleTrips(serviceDayId, tripProfileId), tripService.getLastTripRegenerationUndo()]);
+      const [nextTrips, nextStale, undo, nextRouteDayTrips] = await Promise.all([tripService.listScheduleTrips(serviceDayId, directionId, tripProfileId), tripService.inspectStaleTrips(serviceDayId, tripProfileId), tripService.getLastTripRegenerationUndo(), tripService.listRouteDayTrips(aggregate.route.id, serviceDayId, tripProfileId)]);
       const shownTripIds = new Set(nextTrips.map((item) => item.id));
-      setTrips(nextTrips); setTripsWithChangedRuntimes(nextStale.trips.filter((trip) => shownTripIds.has(trip.id))); setStaleReasons(staleTripNotice(nextStale.findings, shownTripIds, userMessage)); setLastRegenerationUndo(undo);
+      setTrips(nextTrips); setRouteDayTrips(nextRouteDayTrips); setTripsWithChangedRuntimes(nextStale.trips.filter((trip) => shownTripIds.has(trip.id))); setStaleReasons(staleTripNotice(nextStale.findings, shownTripIds, userMessage)); setLastRegenerationUndo(undo);
     } catch (error) { onError(error); }
   }
   useEffect(() => { void loadRuntime(); }, [aggregate.route.id, selectedPattern?.id, serviceDayId, records.scenario.id, runtimeVersion]);
@@ -266,6 +269,14 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   const tripBlockByTripId = new Map(dayBlockingBlocks.flatMap((block) => block.activities
     .filter((activity) => activity.type === 'revenueTrip')
     .map((activity) => [activity.tripId, block] as const)));
+  // Totals of the saved Trips: the shown schedule, and the Route's whole day. Layover and deadhead follow the table cells (Decision 0051).
+  const assignedTripIds = new Set(tripBlockByTripId.keys());
+  const connectionsForTotals = tripBlockingScenarioId ? tripConnections : undefined;
+  const tableTotals = summarizeTripTable(trips, connectionsForTotals, assignedTripIds);
+  const dayTotals = summarizeTripTable(routeDayTrips, connectionsForTotals, assignedTripIds);
+  const hoursText = (seconds: number) => withUnit(formatHours(seconds / 3600, 'daily'), 'h');
+  const dayLine = dayTotals.tripCount === 0 || !selectedDay ? undefined
+    : `${selectedDay.name}, both directions: ${dayTotals.tripCount} ${dayTotals.tripCount === 1 ? 'trip' : 'trips'} · running ${hoursText(dayTotals.runningSeconds)}${dayTotals.layoverSeconds === undefined ? '' : ` · layover ${hoursText(dayTotals.layoverSeconds)} · deadhead between trips ${hoursText(dayTotals.deadheadSeconds ?? 0)}`}`;
 
   function tripBlockOption(block: BlockingBlock): TripBlockOption {
     const revenueTripIds = block.activities.filter((activity) => activity.type === 'revenueTrip').map((activity) => activity.tripId);
@@ -688,7 +699,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
       {tripsWithChangedRuntimes.length > 0 && <InlineNote kind="warn"><b>Run times have changed</b> for {tripsWithChangedRuntimes.length} {tripsWithChangedRuntimes.length === 1 ? 'trip' : 'trips'}. <button type="button" className="small" disabled={busy || tripProfileBusy} onClick={selectTripsWithChangedRuntimes}>Select these trips</button></InlineNote>}
       {staleReasons && <InlineNote kind="warn" live>{staleTripNoticeText(staleReasons)}</InlineNote>}
       {tripBlockAssignmentStatus && <InlineNote kind="ok" live>{tripBlockAssignmentStatus}</InlineNote>}
-      <ScheduleTable selectionBar={renderSelectionBar} trips={trips} previewTrips={shiftPreview?.shiftedTrips} stagedShiftSeconds={shiftPreview?.netOffsetSeconds} draft={draftTrip} patterns={patterns} direction={directions.find((direction) => directionId === direction.id)!} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} showRuntimeBands={showRuntimeBands} showHeadways={showHeadways} roundDisplayedTimes={roundDisplayedTimes} blockAssignments={tripBlockByTripId} tripConnections={tripConnections} blockWarnings={tripBlockWarnings} blockOptions={tripBlockOptions} blockAssignmentDisabled={busy || tripProfileBusy || tripBlockingBlocksBusy || shiftOperations.length > 0 || shiftDrawerOpen || Boolean(tripBlockAssignment)} onAssignBlock={(trip, blockId, trigger) => openTripBlockAssignment([trip.id], blockId, 'pill', trigger)} onUnassignBlock={(trip, trigger) => openTripBlockAssignment([trip.id], '', 'pill', trigger, 'unassign')} selectedIds={selectedTripIds} changedRuntimeTripIds={changedRuntimeTripIds} onToggle={(id, index, shiftKey) => requestShiftScopeChange(() => {
+      <ScheduleTable selectionBar={renderSelectionBar} trips={trips} previewTrips={shiftPreview?.shiftedTrips} stagedShiftSeconds={shiftPreview?.netOffsetSeconds} draft={draftTrip} patterns={patterns} direction={directions.find((direction) => directionId === direction.id)!} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} showRuntimeBands={showRuntimeBands} showHeadways={showHeadways} roundDisplayedTimes={roundDisplayedTimes} blockAssignments={tripBlockByTripId} tripConnections={tripConnections} totals={tableTotals} blockWarnings={tripBlockWarnings} blockOptions={tripBlockOptions} blockAssignmentDisabled={busy || tripProfileBusy || tripBlockingBlocksBusy || shiftOperations.length > 0 || shiftDrawerOpen || Boolean(tripBlockAssignment)} onAssignBlock={(trip, blockId, trigger) => openTripBlockAssignment([trip.id], blockId, 'pill', trigger)} onUnassignBlock={(trip, trigger) => openTripBlockAssignment([trip.id], '', 'pill', trigger, 'unassign')} selectedIds={selectedTripIds} changedRuntimeTripIds={changedRuntimeTripIds} onToggle={(id, index, shiftKey) => requestShiftScopeChange(() => {
         setSelectedTripIds((current) => {
           const anchorIndex = selectionAnchorId.current ? trips.findIndex((trip) => trip.id === selectionAnchorId.current) : -1;
           if (shiftKey && anchorIndex >= 0) {
@@ -699,6 +710,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
           return current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
         });
       })} onSelectAll={(selected) => requestShiftScopeChange(() => { selectionAnchorId.current = undefined; setSelectedTripIds(selected ? trips.map((trip) => trip.id) : []); })} onSelectBy={selectTripsBy} onDelete={(trip) => requestShiftScopeChange(() => void requestTripDeletion([trip.id]))} onDraftChange={setDraftTrip} onDraftSave={() => void saveDraftTrip()} onDraftCancel={() => setDraftTrip(undefined)} busy={busy || tripProfileBusy} />
+      {dayLine && <InlineNote>{dayLine}</InlineNote>}
     </WorkSurface>
     {tripBlockAssignment?.operation === 'assign' && <TripBlockAssignmentDialog draft={tripBlockAssignment} blockingScenarioName={selectedBlockingScenario?.name ?? 'blocking scenario'} serviceDayName={selectedDay?.name ?? 'selected service day'} blocks={dayBlockingBlocks} blockOptions={tripBlockOptions} currentAssignments={tripBlockByTripId} onConfirm={(destinationId) => void confirmTripBlockAssignment(destinationId)} onClose={closeTripBlockAssignment} busy={busy} error={tripBlockAssignmentError} />}
     {tripBlockAssignment?.operation === 'unassign' && <TripBlockUnassignmentDialog draft={tripBlockAssignment} blockingScenarioName={selectedBlockingScenario?.name ?? 'blocking scenario'} serviceDayName={selectedDay?.name ?? 'selected service day'} blocks={dayBlockingBlocks} currentAssignments={tripBlockByTripId} onConfirm={() => void confirmTripBlockAssignment('')} onClose={closeTripBlockAssignment} busy={busy} error={tripBlockAssignmentError} />}

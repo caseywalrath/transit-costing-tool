@@ -408,10 +408,17 @@ interface CostingAssumptions extends EntityMetadata {
   baseServiceYear: number;
   futureYearCount: number; // integer from 0 through 10
   annualEscalation: number; // fraction; default 0.03, must be finite and greater than -1
+  /** Decision 0051. Typed layover and deadhead factors of an estimated cost basis. Absent until one is entered. */
+  estimateFactors?: CostingEstimateFactors;
 }
+interface CostingFactorPair { layoverFraction?: number; deadheadFraction?: number } // each absent or a fraction from 0 up to but not including 1
+interface CostingServiceDayFactors extends CostingFactorPair { serviceDayId: EntityId } // a service day of the same Scenario, at most once
+interface CostingEstimateFactors { allDays: CostingFactorPair; serviceDays: CostingServiceDayFactors[] }
 ```
 
-Repository and backup validation require one record at most per Scenario, USD currency, a finite nonnegative rate when entered, year values from 1 through 9999, a source year no later than the base service year, and a valid horizon and escalation. Scenario duplication assigns a fresh assumptions ID and Scenario ID. Scenario deletion removes the record. Blocking Scenario lifecycle does not change it.
+`estimateFactors` is saved only by `CostingCommands.saveEstimateFactors`, which drops blank rows and rows of days outside the Scenario and removes the field when nothing is left; `saveAssumptions` never changes it. Estimated hours and costs are derived and are not stored. The Dexie schema does not change (version 9): the field is part of the stored `costingAssumptions` record.
+
+Repository and backup validation require one record at most per Scenario, USD currency, a finite nonnegative rate when entered, year values from 1 through 9999, a source year no later than the base service year, and a valid horizon and escalation. Scenario duplication and import as copy assign a fresh assumptions ID and Scenario ID, and map each `estimateFactors` row to the copy's service day. Backup validation of `estimateFactors` (version 7) requires an object with an `allDays` object and a `serviceDays` array, finite fractions from 0 up to but not including 1, and each row's `serviceDayId` a service day of the same Scenario, at most once. Scenario deletion removes the record. Blocking Scenario lifecycle does not change it.
 
 ## Validation result
 
@@ -524,7 +531,7 @@ The first implementation starts at database version 1. Version 2 adds a non-uniq
 4. include a migration test;
 5. update this document when entity meaning or ownership changes.
 
-Database version and export-schema version are related but distinct: the export-schema version (6) is written into every JSON export by `exportProjectJson`, and no code stores it in `appMetadata`. The optional `applicationVersion` field of an export is accepted on import but no caller supplies it yet.
+Database version and export-schema version are related but distinct: the export-schema version (7) is written into every JSON export by `exportProjectJson`, and no code stores it in `appMetadata`. The optional `applicationVersion` field of an export is accepted on import but no caller supplies it yet.
 
 ## Backup schema
 
@@ -536,9 +543,9 @@ A JSON backup contains:
 - application version when available;
 - one complete project graph: the project, scenarios, service days, routes, nodes, directions, patterns, pattern points, runtimes, Trip profiles, trips, Blocking scenarios, and blocks.
 
-The implemented export schema is version 6 and stores directions, runtime profiles, assignments, Trip profiles, Blocking Scenarios, optional Costing assumptions, trips, and Blocks as top-level arrays. Versions 1 through 5 remain readable; versions 1 through 4 predate normalized Blocking Scenarios and retain their existing import normalization. Version 5 imports with no Costing assumptions. The schema 6 parser validates assumptions and their Scenario ownership before any repository write. Historical service-day totals above 365 remain intact and make Costing calculations invalid until corrected. Empty authoritative exports omit the historical `generationSets` property; populated historical records remain readable for transition purposes. Version 1 through version 3 imports are normalized to one Default Trip profile per Scenario. Current normalized Blocks reference only their Blocking Scenario; Trip Profile ownership is derived through that relationship.
+The implemented export schema is version 7 and stores directions, runtime profiles, assignments, Trip profiles, Blocking Scenarios, optional Costing assumptions (with their optional estimate factors, Decision 0051), trips, and Blocks as top-level arrays. Version 7 differs from version 6 only by the optional `estimateFactors`. Versions 1 through 6 remain readable; versions 1 through 4 predate normalized Blocking Scenarios and retain their existing import normalization. Version 5 imports with no Costing assumptions. The schema 6 and 7 parsers validate assumptions and their Scenario ownership before any repository write. Historical service-day totals above 365 remain intact and make Costing calculations invalid until corrected. Empty authoritative exports omit the historical `generationSets` property; populated historical records remain readable for transition purposes. Version 1 through version 3 imports are normalized to one Default Trip profile per Scenario. Current normalized Blocks reference only their Blocking Scenario; Trip Profile ownership is derived through that relationship.
 
-Costing CSV reporting produces one ZIP containing `costing-assumptions.csv`, `costing-results.csv`, and `costing-exclusions.csv`. Result rows cover each service day and service year plus independently calculated annual totals. USD values use two decimals, hour quantities use four decimals, and applied USD/VRH rates use four decimals. Exclusion rows identify affected Blocks and reason codes and report unassigned Trip counts by service day. CSV does not restore project data.
+Costing CSV reporting produces one ZIP containing `costing-assumptions.csv`, `costing-results.csv`, and `costing-exclusions.csv`, for a blocked basis (a Blocking Scenario) or an estimated basis (a Trip Profile, Decision 0051). Each file has a `costBasisKind` column (`blocked` or `estimated`) after `tripProfileName` (exclusions excepted); an estimated basis leaves the Blocking Scenario columns blank. Assumptions add `allDaysLayoverFraction` and `allDaysDeadheadFraction`. Result rows cover each service day and service year plus independently calculated annual totals, and add trip count, trips without a run time, running hours, and the layover and deadhead factors with their source (`serviceDay` or `allDays`); blocked rows leave these blank and estimated rows leave the Block counts blank. USD values use two decimals, hour quantities use four decimals, applied USD/VRH rates use four decimals, and factors use six decimals. Exclusion rows identify affected Blocks and reason codes and report unassigned Trip counts by service day; an estimated basis reports `tripsWithoutRunTime` rows instead. CSV does not restore project data.
 
 Import must validate the complete payload before opening a write transaction. ID collision policy must be explicit: replace an existing project only after confirmation, or import with remapped IDs as a new project.
 

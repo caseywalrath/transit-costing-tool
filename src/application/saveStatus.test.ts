@@ -178,7 +178,7 @@ describe('every write of the four services publishes through one publisher', () 
     const route = new RouteDefinitionService(repository, backup, () => at, publisher);
     const trips = new TripGenerationService(repository, () => at, publisher);
     const blocking = new BlockingApplicationService(blockingRepository, blockingContext, publisher);
-    const costing = new CostingApplicationService({ listBlockingScenarios: async () => [], getCostingCalculationContext: async () => undefined }, repository, () => at, publisher);
+    const costing = new CostingApplicationService({ listBlockingScenarios: async () => [], listServiceDays: async () => [], listTripProfiles: async () => [], getCostingCalculationContext: async () => undefined, getEstimatedCostingContext: async () => undefined }, repository, () => at, publisher);
     const created = await route.createProject('One publisher');
     return { repository, blockingRepository, publisher, states, route, trips, blocking, costing, created, scenarioId: created.records.scenario.id, tripProfileId: created.records.tripProfiles![0].id };
   }
