@@ -106,7 +106,9 @@ Acceptance: `pnpm typecheck` and `pnpm test` pass. No UI or documentation edits.
 
 ## BC4: UI (primary agent)
 
-Entry point: Blocking actions menu, item "Copy blocks from day…", next to "Duplicate blocking scenario…". Disabled without a Blocking Scenario or while busy. The dialog follows the Trip-copy dialog (`src/ui/trips/dialogs.tsx`): source Day select (all days except the selected one), the preview loaded on selection, and a confirm button.
+Status: all packages implemented on 2026-11-02; awaiting user acceptance. BC4 decisions: the menu label follows the Trips item ("Copy blocks from another day…"); the review loads automatically when the Source day changes (no Review button), and there are three summary figures. BC3 dropped the `minimumLayover` parameter, because `validateBlockingBlock` does not use it.
+
+Entry point: Blocking actions menu, item "Copy blocks from another day…", next to "Duplicate blocking scenario…". Disabled without a Blocking Scenario or while busy. The dialog follows the Trip-copy dialog (`src/ui/trips/dialogs.tsx`): source Day select (all days except the selected one), the preview loaded on selection, and a confirm button.
 
 Review content: the target day and Blocking Scenario in the title line; a summary line (blocks copied, target blocks replaced); a per-Route table (Route, Trips held, exact, times differ, not found, target trips left unassigned); notes for removed deadheads, blocks left without trips, ambiguous pairs, and validation findings on the copy compared with the source.
 

@@ -1,6 +1,6 @@
 # Decision 0052: Copy Blocks from Another Service Day
 
-- Status: Accepted (user decisions of 2026-11-02); implementation in progress
+- Status: Accepted (user decisions of 2026-11-02); implemented, awaiting user acceptance
 - Date: 2026-11-02
 - Extends: Decision 0017 (service-day copy workflows), which copied Runtimes and Trips but not Blocks
 
@@ -30,7 +30,7 @@ A Block names its Trips by Trip ID. Trip IDs belong to one service day, Trip cop
 8. **Blocks left without Trips are kept.** They keep their label, notes, and remaining boundary activities, so the planner's block numbering survives.
 9. **Copied content.** Each copied Block and activity gets a new ID and the target service day. Labels, notes, Nodes, miles, and pull-out, pull-in, and deadhead timing are copied unchanged. Relative timing (Decisions 0022, 0023) follows the matched Trips. Absolute times are kept as entered, and validation flags them if they no longer fit.
 10. **Target Trips that no Block holds after the copy** stay unassigned. They appear in Unassigned trips.
-11. **Review.** The preview validates every proposed Block with the existing Blocking rules and reports the findings. It also reports per-Route match counts, the removed Trips and deadheads, the Blocks left without Trips, the target Blocks replaced, and the unassigned target Trips.
+11. **Review.** The preview validates every proposed Block with the existing Blocking rules (`validateBlockingBlock`, which does not apply the minimum-layover preference) and reports the findings. It also reports per-Route match counts, the removed Trips and deadheads, the Blocks left without Trips, the target Blocks replaced, and the unassigned target Trips.
 12. **Stale protection and transaction.** The review token covers the request, both days' Blocks, and both days' in-scope Trips. Applying the copy previews again and refuses if the token changed (Decision 0036). The write replaces the target-day Blocks in one transaction, which checks the Blocking Scenario signature again. There is no undo.
 13. **Trip copy is unchanged.** Copying Trips still removes the revenue activities of replaced target Trips (Decision 0017 item 8). Copying Trips first and Blocks second gives a 100% exact match.
 
