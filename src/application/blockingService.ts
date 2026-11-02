@@ -1,6 +1,6 @@
 import type { BlockingCommands, BlockingQueries, BlockingRepository } from './ports';
 import type { BlockingBlock, BlockingScenario, BlockActivity, RouteDirection, RoutePattern, ServiceDayDefinition, Trip, TripProfile, ValidationFinding } from '../domain/types';
-import { weightedEstimateFactors } from '../domain/blocking';
+import { removeSelectedTripsFromBlock, weightedEstimateFactors } from '../domain/blocking';
 import { applyDeadheadToMatchingConnections, applyTripAssignment, assertBlockingScenarioSourceUnchanged, assertBlockLabelAvailable, calculateBlockDeletionImpact, calculateBlockingScenarioDeletionImpact, classifyBlockingInsertion, createBlockingBlock, createBlockingScenario, createBlockingScenarioSourceSignature, duplicateBlockingScenario, insertBlockActivity, moveRevenueTripGroup, normalizeBlockActivities, parseActivityInput, parseMinimumLayoverRule, parseMinimumLayoverRules, planBulkBoundaryActivities, proposeBlockLabel, renameBlockingScenario, summarizeBlock, summarizeBlockingScenario, unassignedRouteTrips, validateBlockingAssignments, validateBlockingBlock, type BlockingScenarioGraph, type BulkBoundaryRequest, type BulkBoundaryPreview } from '../domain/blocking';
 import type { ActivityTextInput, BlockDeletionImpact, BlockingActivityAddRequest, BlockingActivityEditRequest, BlockingAssignmentRequest, BulkDeadheadRequest, ParsedActivityInput, ParsedMinimumLayover, BlockingBulkAssignmentRequest, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingCompatibility, BlockSummary, BlockingSummary, BlockingTripsAssignmentRequest, MinimumLayoverRule, MinimumLayoverRowInput, MinimumLayoverRules, ParsedMinimumLayoverRules } from '../domain/blocking';
 import { patternDirectionGroups, type DirectionGroup } from '../domain/directions';
@@ -17,20 +17,7 @@ export interface BlockingContextProvider {
   listDirections?(scenarioId: string): Promise<RouteDirection[]>;
 }
 
-/** Removes the Trips in `tripIds` from a Block, with the deadheads next to them. */
-export function removeSelectedTripsFromBlock(block: BlockingBlock, tripIds: Set<string>): BlockingBlock {
-  const activities = [...block.activities].sort((left, right) => left.sequence - right.sequence || left.id.localeCompare(right.id));
-  const removeActivityIds = new Set<string>();
-  activities.forEach((activity, index) => {
-    if (activity.type === 'revenueTrip' && tripIds.has(activity.tripId)) removeActivityIds.add(activity.id);
-    if (activity.type !== 'deadhead') return;
-    const previous = [...activities.slice(0, index)].reverse().find((candidate) => candidate.type === 'revenueTrip');
-    const next = activities.slice(index + 1).find((candidate) => candidate.type === 'revenueTrip');
-    if ((previous?.type === 'revenueTrip' && tripIds.has(previous.tripId)) || (next?.type === 'revenueTrip' && tripIds.has(next.tripId))) removeActivityIds.add(activity.id);
-  });
-  if (!removeActivityIds.size) return block;
-  return normalizeBlockActivities(withUpdatedAt({ ...block, activities: activities.filter((activity) => !removeActivityIds.has(activity.id)) }));
-}
+export { removeSelectedTripsFromBlock };
 
 /** The `BlockingRepository` methods that write. Every call to one is published through the save-status publisher. */
 export const BLOCKING_WRITE_METHODS: readonly string[] = ['saveBlockingScenario', 'saveBlockingScenarioGraphAtomically', 'deleteBlockingScenarioAtomically', 'saveBlockingBlocksAtomically'];
