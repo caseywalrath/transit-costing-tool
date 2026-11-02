@@ -146,7 +146,12 @@ export interface BlockingRepository {
   listBlockingBlocks(blockingScenarioId: string, serviceDayId?: string): Promise<BlockingBlock[]>;
   getBlockingBlock(id: string): Promise<BlockingBlock | undefined>;
   saveBlockingBlocksAtomically(blocks: BlockingBlock[], sourceSignature: string, blockingScenarioId?: string): Promise<void>;
+  /** Decision 0052. In one transaction, replaces the Blocking Scenario's Blocks of one service day with `blocks`. Other days are untouched. Refused when the Blocking Scenario changed since `expectedBlockingScenarioSignature` or when a Block belongs to another Blocking Scenario, Scenario, or service day. */
+  replaceBlocksForDayAtomically(blockingScenarioId: string, serviceDayId: string, blocks: BlockingBlock[], expectedBlockingScenarioSignature: string): Promise<void>;
 }
+
+/** A reviewed day copy: the preview and the Blocking Scenario token that `applyBlockingDayCopy` writes against. */
+export interface BlockingDayCopyReview { preview: import('../domain/blockingDayCopy').BlockingDayCopyPreview; blockingScenarioSignature: string }
 
 /** Behavior-oriented command contract consumed by the future Blocking workspace. */
 export interface BlockingCommands {
@@ -168,6 +173,8 @@ export interface BlockingCommands {
   /** Gives every connection that ends at the deadhead's From Node and starts at its To Node the same deadhead. Refuses when no connection matches. */
   applyDeadheadToMatchingConnections(request: BulkDeadheadRequest): Promise<{ block: BlockingBlock; appliedCount: number }>;
   /** Moves a revenue Trip, with the deadhead after it, one Trip earlier (-1) or later (1). A move past either end changes nothing. */
+  /** Decision 0052. Re-previews `review.preview.request`, refuses a stale or refusing preview, then replaces the target day's Blocks. */
+  applyBlockingDayCopy(review: BlockingDayCopyReview): Promise<import('../domain/blockingDayCopy').BlockingDayCopyPreview>;
   moveTripGroup(blockingScenarioId: string, blockId: string, activityId: string, movement: -1 | 1, sourceSignature: string): Promise<BlockingBlock>;
   previewBulkBoundaryActivities(request: import('../domain/blocking').BulkBoundaryRequest): Promise<import('../domain/blocking').BulkBoundaryPreview>;
   applyBulkBoundaryActivities(request: import('../domain/blocking').BulkBoundaryRequest): Promise<import('../domain/blocking').BulkBoundaryPreview>;
@@ -185,6 +192,8 @@ export interface BlockingQueries {
   classifyInsertion(blockingScenarioId: string, blockId: string, tripId: string, insertAt?: number, minimumLayover?: import('../domain/blocking').MinimumLayoverRules): Promise<BlockingCompatibility>;
   /** The compatibility of every listed Trip with one Block, from one read of the Trips and Patterns. Keyed by Trip id. */
   classifyInsertions(blockingScenarioId: string, blockId: string, tripIds: string[], insertAt?: number, minimumLayover?: import('../domain/blocking').MinimumLayoverRules): Promise<Map<string, BlockingCompatibility>>;
+  /** Decision 0052. Reviews copying the Blocking Scenario's Blocks from the source service day onto the target day. Writes nothing. */
+  previewBlockingDayCopy(request: import('../domain/blockingDayCopy').BlockingDayCopyRequest): Promise<BlockingDayCopyReview>;
   /** The Trips of the Route and service day that no Block of the Blocking Scenario holds. */
   listUnassignedTrips(blockingScenarioId: string, serviceDayId: string, routeId: string): Promise<Trip[]>;
   /** The first free "Block <n>" on the service day of the Blocking Scenario. */

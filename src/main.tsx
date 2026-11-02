@@ -42,6 +42,7 @@ async function start() {
     getTripProfile: (id) => repository.getTripProfile(id),
     listPatterns: listScenarioPatterns,
     listDirections: (scenarioId) => repository.db.directions.where('scenarioId').equals(scenarioId).toArray(),
+    listServiceDays: (scenarioId) => repository.db.serviceDays.where('scenarioId').equals(scenarioId).toArray(),
   }, saveStatus);
 
   const costing = new CostingApplicationService(createCostingContextQueries({

@@ -1,7 +1,8 @@
-import type { BlockingCommands, BlockingQueries, BlockingRepository } from './ports';
+import type { BlockingCommands, BlockingDayCopyReview, BlockingQueries, BlockingRepository } from './ports';
+import { buildBlockingDayCopyPreview, type BlockingDayCopyPreview, type BlockingDayCopyRequest } from '../domain/blockingDayCopy';
 import type { BlockingBlock, BlockingScenario, BlockActivity, RouteDirection, RoutePattern, ServiceDayDefinition, Trip, TripProfile, ValidationFinding } from '../domain/types';
 import { removeSelectedTripsFromBlock, weightedEstimateFactors } from '../domain/blocking';
-import { applyDeadheadToMatchingConnections, applyTripAssignment, assertBlockingScenarioSourceUnchanged, assertBlockLabelAvailable, calculateBlockDeletionImpact, calculateBlockingScenarioDeletionImpact, classifyBlockingInsertion, createBlockingBlock, createBlockingScenario, createBlockingScenarioSourceSignature, duplicateBlockingScenario, insertBlockActivity, moveRevenueTripGroup, normalizeBlockActivities, parseActivityInput, parseMinimumLayoverRule, parseMinimumLayoverRules, planBulkBoundaryActivities, proposeBlockLabel, renameBlockingScenario, summarizeBlock, summarizeBlockingScenario, unassignedRouteTrips, validateBlockingAssignments, validateBlockingBlock, type BlockingScenarioGraph, type BulkBoundaryRequest, type BulkBoundaryPreview } from '../domain/blocking';
+import { applyDeadheadToMatchingConnections, applyTripAssignment, assertBlockingScenarioSourceUnchanged, BlockingValidationError, assertBlockLabelAvailable, calculateBlockDeletionImpact, calculateBlockingScenarioDeletionImpact, classifyBlockingInsertion, createBlockingBlock, createBlockingScenario, createBlockingScenarioSourceSignature, duplicateBlockingScenario, insertBlockActivity, moveRevenueTripGroup, normalizeBlockActivities, parseActivityInput, parseMinimumLayoverRule, parseMinimumLayoverRules, planBulkBoundaryActivities, proposeBlockLabel, renameBlockingScenario, summarizeBlock, summarizeBlockingScenario, unassignedRouteTrips, validateBlockingAssignments, validateBlockingBlock, type BlockingScenarioGraph, type BulkBoundaryRequest, type BulkBoundaryPreview } from '../domain/blocking';
 import type { ActivityTextInput, BlockDeletionImpact, BlockingActivityAddRequest, BlockingActivityEditRequest, BlockingAssignmentRequest, BulkDeadheadRequest, ParsedActivityInput, ParsedMinimumLayover, BlockingBulkAssignmentRequest, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingCompatibility, BlockSummary, BlockingSummary, BlockingTripsAssignmentRequest, MinimumLayoverRule, MinimumLayoverRowInput, MinimumLayoverRules, ParsedMinimumLayoverRules } from '../domain/blocking';
 import { patternDirectionGroups, type DirectionGroup } from '../domain/directions';
 import { newId, withUpdatedAt } from '../domain/ids';
@@ -15,12 +16,14 @@ export interface BlockingContextProvider {
   listPatterns(scenarioId: string): Promise<RoutePattern[]>;
   /** The Scenario's Directions. Without it every Pattern's direction is unknown, and a minimum layover applies the larger of its two rules. */
   listDirections?(scenarioId: string): Promise<RouteDirection[]>;
+  /** The Scenario's service days. Without it a Block day copy cannot be previewed. */
+  listServiceDays?(scenarioId: string): Promise<ServiceDayDefinition[]>;
 }
 
 export { removeSelectedTripsFromBlock };
 
 /** The `BlockingRepository` methods that write. Every call to one is published through the save-status publisher. */
-export const BLOCKING_WRITE_METHODS: readonly string[] = ['saveBlockingScenario', 'saveBlockingScenarioGraphAtomically', 'deleteBlockingScenarioAtomically', 'saveBlockingBlocksAtomically'];
+export const BLOCKING_WRITE_METHODS: readonly string[] = ['saveBlockingScenario', 'saveBlockingScenarioGraphAtomically', 'deleteBlockingScenarioAtomically', 'saveBlockingBlocksAtomically', 'replaceBlocksForDayAtomically'];
 
 /** Application coordinator for lifecycle and transactional Blocking operations. */
 export class BlockingApplicationService implements BlockingCommands, BlockingQueries {
@@ -227,6 +230,32 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
     const { scenario, blocks, preview } = await this.planBoundaryWrite(request);
     await this.repository.saveBlockingBlocksAtomically(blocks, request.sourceSignature, scenario.id);
     return preview;
+  }
+
+  async previewBlockingDayCopy(request: BlockingDayCopyRequest): Promise<BlockingDayCopyReview> {
+    const scenario = await this.repository.getBlockingScenario(request.blockingScenarioId); if (!scenario) throw new Error('Blocking Scenario not found.');
+    if (!this.context.listServiceDays) throw new Error('Copying Blocks between days is not available: the service days cannot be read.');
+    const [blocks, trips, patterns, serviceDays, directions] = await Promise.all([
+      this.repository.listBlockingBlocks(scenario.id), this.context.listTrips(scenario.scenarioId, scenario.tripProfileId), this.context.listPatterns(scenario.scenarioId),
+      this.context.listServiceDays(scenario.scenarioId), this.context.listDirections?.(scenario.scenarioId) ?? Promise.resolve([] as RouteDirection[]),
+    ]);
+    const preview = buildBlockingDayCopyPreview({
+      request, blockingScenario: scenario, serviceDays, sourceBlocks: blocks, targetBlocks: blocks, sourceTrips: trips, targetTrips: trips, patterns,
+      patternDirections: patternDirectionGroups(patterns, directions), now: new Date().toISOString(),
+    });
+    return { preview, blockingScenarioSignature: createBlockingScenarioSourceSignature(scenario, blocks) };
+  }
+
+  async applyBlockingDayCopy(review: BlockingDayCopyReview): Promise<BlockingDayCopyPreview> {
+    const request = review.preview.request;
+    const current = await this.previewBlockingDayCopy(request);
+    if (current.preview.sourceSignature !== review.preview.sourceSignature) {
+      throw new BlockingValidationError('Blocks or Trips changed since the copy was reviewed. Reload and review it again.', [{ ruleId: 'blockingScenario.sourceChanged', severity: 'error', category: 'structural', entityType: 'blockingScenario', entityId: request.blockingScenarioId, messageKey: 'blockingScenario.sourceChanged' }]);
+    }
+    const errors = current.preview.findings.filter((item) => item.severity === 'error');
+    if (errors.length) throw new BlockingValidationError(errors.map((item) => item.messageKey).join(', '), errors);
+    await this.repository.replaceBlocksForDayAtomically(request.blockingScenarioId, request.targetServiceDayId, current.preview.blocks, review.blockingScenarioSignature);
+    return current.preview;
   }
 
   async reorderActivities(blockingScenarioId: string, blockId: string, activityIds: string[], sourceSignature: string): Promise<BlockingBlock> {

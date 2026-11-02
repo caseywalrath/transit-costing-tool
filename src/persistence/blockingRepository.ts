@@ -16,6 +16,12 @@ function assertScenarioNameUnique(scenarios: BlockingScenario[], candidate: Bloc
   }
 }
 
+function assertDayReplacementBlocks(scenario: BlockingScenario, serviceDayId: string, blocks: BlockingBlock[]): void {
+  for (const block of blocks) {
+    if (block.blockingScenarioId !== scenario.id || block.scenarioId !== scenario.scenarioId || block.serviceDayId !== serviceDayId) throw new Error(`Block ${block.id} is outside the Blocking Scenario and service day being replaced.`);
+  }
+}
+
 /** In-memory implementation used by application and transaction tests. */
 export class InMemoryBlockingRepository implements BlockingRepository {
   readonly scenarios = new Map<string, BlockingScenario>();
@@ -74,6 +80,19 @@ export class InMemoryBlockingRepository implements BlockingRepository {
     }
     catch (error) { this.blocks.clear(); previous.forEach((value, key) => this.blocks.set(key, value)); throw error; }
   }
+
+  async replaceBlocksForDayAtomically(blockingScenarioId: string, serviceDayId: string, blocks: BlockingBlock[], expectedBlockingScenarioSignature: string): Promise<void> {
+    const scenario = this.scenarios.get(blockingScenarioId);
+    if (!scenario) throw new Error('Blocking Scenario not found.');
+    assertBlockingScenarioSourceUnchanged(scenario, [...this.blocks.values()].filter((block) => block.blockingScenarioId === blockingScenarioId), expectedBlockingScenarioSignature);
+    assertDayReplacementBlocks(scenario, serviceDayId, blocks);
+    const previous = new Map(this.blocks);
+    try {
+      for (const [id, existing] of this.blocks) if (existing.blockingScenarioId === blockingScenarioId && existing.serviceDayId === serviceDayId) this.blocks.delete(id);
+      blocks.forEach((block) => this.blocks.set(block.id, normalized(block)));
+    }
+    catch (error) { this.blocks.clear(); previous.forEach((value, key) => this.blocks.set(key, value)); throw error; }
+  }
 }
 
 /** Dexie implementation with IndexedDB transaction boundaries. */
@@ -126,6 +145,18 @@ export class DexieBlockingRepository implements BlockingRepository {
       for (const block of blocks) { if (block.scenarioId !== scenario.scenarioId) throw new Error(`Block ${block.id} is outside the Scenario boundary.`); }
       const incomingIds = new Set(blocks.map((block) => block.id));
       const removed = existing.filter((block) => !incomingIds.has(block.id));
+      if (removed.length) await this.db.blocks.bulkDelete(removed.map((block) => block.id));
+      if (blocks.length) await this.db.blocks.bulkPut(blocks.map(normalized) as Block[]);
+    });
+  }
+
+  async replaceBlocksForDayAtomically(blockingScenarioId: string, serviceDayId: string, blocks: BlockingBlock[], expectedBlockingScenarioSignature: string): Promise<void> {
+    await this.db.transaction('rw', [this.db.blockingScenarios, this.db.blocks], async () => {
+      const scenario = await this.db.blockingScenarios.get(blockingScenarioId); if (!scenario) throw new Error('Blocking Scenario not found.');
+      const existing = await this.db.blocks.where('blockingScenarioId').equals(blockingScenarioId).toArray() as BlockingBlock[];
+      assertBlockingScenarioSourceUnchanged(scenario, existing, expectedBlockingScenarioSignature);
+      assertDayReplacementBlocks(scenario, serviceDayId, blocks);
+      const removed = existing.filter((block) => block.serviceDayId === serviceDayId);
       if (removed.length) await this.db.blocks.bulkDelete(removed.map((block) => block.id));
       if (blocks.length) await this.db.blocks.bulkPut(blocks.map(normalized) as Block[]);
     });
