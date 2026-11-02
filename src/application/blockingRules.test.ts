@@ -168,6 +168,19 @@ describe('Deletion previews (I-035 port; finding 4-014)', () => {
     await expect(service.deleteBlock('bs', 'b2', impact.sourceSignature)).rejects.toThrow('changed since the operation was reviewed');
   });
 
+  it('previews and deletes several Blocks in one write (Decision 0053)', async () => {
+    const { service, repository, signature } = setup(blocks, trips);
+    const impact = await service.previewDeleteBlocks('bs', ['b1', 'b2', 'b1']);
+    expect(impact).toEqual({ blockIds: ['b1', 'b2'], labels: ['Block 1', 'Block 2'], blockCount: 2, activityCount: 5, tripCount: 3, deadheadCount: 1, sourceSignature: await signature() });
+    await expect(service.previewDeleteBlocks('bs', [])).rejects.toThrow('Block not found.');
+    await expect(service.previewDeleteBlocks('bs', ['b1', 'missing'])).rejects.toThrow('Block not found.');
+    await expect(service.deleteBlocks('bs', ['b1', 'missing'], impact.sourceSignature)).rejects.toThrow('Block not found.');
+    expect(await repository.listBlockingBlocks('bs')).toHaveLength(3);
+    await service.deleteBlocks('bs', impact.blockIds, impact.sourceSignature);
+    expect((await repository.listBlockingBlocks('bs')).map((block) => block.id)).toEqual(['b3']);
+    await expect(service.deleteBlocks('bs', ['b3'], impact.sourceSignature)).rejects.toThrow('changed since the operation was reviewed');
+  });
+
   it('counts what deleting a Blocking Scenario would remove', async () => {
     const { service, repository, signature } = setup(blocks, trips);
     const impact = await service.previewDeleteBlockingScenario('bs');

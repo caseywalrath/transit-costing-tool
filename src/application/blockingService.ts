@@ -2,8 +2,8 @@ import type { BlockingCommands, BlockingDayCopyReview, BlockingQueries, Blocking
 import { buildBlockingDayCopyPreview, type BlockingDayCopyPreview, type BlockingDayCopyRequest } from '../domain/blockingDayCopy';
 import type { BlockingBlock, BlockingScenario, BlockActivity, RouteDirection, RoutePattern, ServiceDayDefinition, Trip, TripProfile, ValidationFinding } from '../domain/types';
 import { removeSelectedTripsFromBlock, weightedEstimateFactors } from '../domain/blocking';
-import { applyDeadheadToMatchingConnections, applyTripAssignment, assertBlockingScenarioSourceUnchanged, BlockingValidationError, assertBlockLabelAvailable, calculateBlockDeletionImpact, calculateBlockingScenarioDeletionImpact, classifyBlockingInsertion, createBlockingBlock, createBlockingScenario, createBlockingScenarioSourceSignature, duplicateBlockingScenario, insertBlockActivity, moveRevenueTripGroup, normalizeBlockActivities, parseActivityInput, parseMinimumLayoverRule, parseMinimumLayoverRules, planBulkBoundaryActivities, proposeBlockLabel, renameBlockingScenario, summarizeBlock, summarizeBlockingScenario, unassignedRouteTrips, validateBlockingAssignments, validateBlockingBlock, type BlockingScenarioGraph, type BulkBoundaryRequest, type BulkBoundaryPreview } from '../domain/blocking';
-import type { ActivityTextInput, BlockDeletionImpact, BlockingActivityAddRequest, BlockingActivityEditRequest, BlockingAssignmentRequest, BulkDeadheadRequest, ParsedActivityInput, ParsedMinimumLayover, BlockingBulkAssignmentRequest, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingCompatibility, BlockSummary, BlockingSummary, BlockingTripsAssignmentRequest, MinimumLayoverRule, MinimumLayoverRowInput, MinimumLayoverRules, ParsedMinimumLayoverRules } from '../domain/blocking';
+import { applyDeadheadToMatchingConnections, applyTripAssignment, assertBlockingScenarioSourceUnchanged, BlockingValidationError, assertBlockLabelAvailable, calculateBlockDeletionImpact, calculateBlocksDeletionImpact, calculateBlockingScenarioDeletionImpact, classifyBlockingInsertion, createBlockingBlock, createBlockingScenario, createBlockingScenarioSourceSignature, duplicateBlockingScenario, insertBlockActivity, moveRevenueTripGroup, normalizeBlockActivities, parseActivityInput, parseMinimumLayoverRule, parseMinimumLayoverRules, planBulkBoundaryActivities, proposeBlockLabel, renameBlockingScenario, summarizeBlock, summarizeBlockingScenario, unassignedRouteTrips, validateBlockingAssignments, validateBlockingBlock, type BlockingScenarioGraph, type BulkBoundaryRequest, type BulkBoundaryPreview } from '../domain/blocking';
+import type { ActivityTextInput, BlockDeletionImpact, BlocksDeletionImpact, BlockingActivityAddRequest, BlockingActivityEditRequest, BlockingAssignmentRequest, BulkDeadheadRequest, ParsedActivityInput, ParsedMinimumLayover, BlockingBulkAssignmentRequest, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingCompatibility, BlockSummary, BlockingSummary, BlockingTripsAssignmentRequest, MinimumLayoverRule, MinimumLayoverRowInput, MinimumLayoverRules, ParsedMinimumLayoverRules } from '../domain/blocking';
 import { patternDirectionGroups, type DirectionGroup } from '../domain/directions';
 import { newId, withUpdatedAt } from '../domain/ids';
 import { blockingActivitiesCsv, blockingBlocksCsv, blockingScenariosCsv, blockingSummariesCsv } from '../persistence/csv';
@@ -90,6 +90,15 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
     const blocks = await this.repository.listBlockingBlocks(blockingScenarioId); assertBlockingScenarioSourceUnchanged(scenario, blocks, sourceSignature);
     if (!blocks.some((block) => block.id === blockId)) throw new Error('Block not found.');
     await this.repository.saveBlockingBlocksAtomically(blocks.filter((block) => block.id !== blockId), sourceSignature, scenario.id);
+  }
+
+  /** Deletes every listed Block in one atomic write, only if the stored data still matches the review (`previewDeleteBlocks`) that `sourceSignature` came from (Decision 0053). */
+  async deleteBlocks(blockingScenarioId: string, blockIds: string[], sourceSignature: string): Promise<void> {
+    const scenario = await this.repository.getBlockingScenario(blockingScenarioId); if (!scenario) throw new Error('Blocking Scenario not found.');
+    const blocks = await this.repository.listBlockingBlocks(blockingScenarioId); assertBlockingScenarioSourceUnchanged(scenario, blocks, sourceSignature);
+    const impact = calculateBlocksDeletionImpact(scenario, blocks, blockIds); if (!impact) throw new Error('Block not found.');
+    const removed = new Set(impact.blockIds);
+    await this.repository.saveBlockingBlocksAtomically(blocks.filter((block) => !removed.has(block.id)), sourceSignature, scenario.id);
   }
 
   async assignTrip(request: BlockingAssignmentRequest): Promise<{ blocks: BlockingBlock[]; findings: ValidationFinding[] }> {
@@ -284,6 +293,11 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
   async previewDeleteBlock(blockingScenarioId: string, blockId: string): Promise<BlockDeletionImpact> {
     const scenario = await this.repository.getBlockingScenario(blockingScenarioId); if (!scenario) throw new Error('Blocking Scenario not found.');
     const impact = calculateBlockDeletionImpact(scenario, await this.repository.listBlockingBlocks(scenario.id), blockId); if (!impact) throw new Error('Block not found.');
+    return impact;
+  }
+  async previewDeleteBlocks(blockingScenarioId: string, blockIds: string[]): Promise<BlocksDeletionImpact> {
+    const scenario = await this.repository.getBlockingScenario(blockingScenarioId); if (!scenario) throw new Error('Blocking Scenario not found.');
+    const impact = calculateBlocksDeletionImpact(scenario, await this.repository.listBlockingBlocks(scenario.id), blockIds); if (!impact) throw new Error('Block not found.');
     return impact;
   }
   async previewDeleteBlockingScenario(blockingScenarioId: string): Promise<BlockingScenarioDeletionImpact> {

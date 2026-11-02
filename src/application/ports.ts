@@ -1,7 +1,7 @@
 import type { Block, BlockingBlock, BlockingScenario, CostingAssumptions, CostingEstimateFactors, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, Trip, TripGenerationSet, TripProfile, ValidationFinding } from '../domain/types';
 import type { RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
 import type { ScenarioRecords } from '../domain/project';
-import type { ActivityTextInput, BlockDeletionImpact, BlockSummary, BlockingActivityAddRequest, BlockingAssignmentRequest, BlockingCompatibility, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingActivityEditRequest, BlockingTripsAssignmentRequest, BulkDeadheadRequest, MinimumLayoverRule, ParsedActivityInput, ParsedMinimumLayover } from '../domain/blocking';
+import type { ActivityTextInput, BlockDeletionImpact, BlocksDeletionImpact, BlockSummary, BlockingActivityAddRequest, BlockingAssignmentRequest, BlockingCompatibility, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingActivityEditRequest, BlockingTripsAssignmentRequest, BulkDeadheadRequest, MinimumLayoverRule, ParsedActivityInput, ParsedMinimumLayover } from '../domain/blocking';
 import type { CostingAssumptionsInput, CostingCalculationContext, CostingCalculationResult, CostingFinding } from '../domain/costing';
 import type { EstimatedCostingCalculationResult, EstimatedCostingContext } from '../domain/estimatedCosting';
 
@@ -162,6 +162,8 @@ export interface BlockingCommands {
   createBlock(blockingScenarioId: string, serviceDayId: string, label: string, sourceSignature: string): Promise<BlockingBlock>;
   updateBlock(block: BlockingBlock, sourceSignature: string): Promise<BlockingBlock>;
   deleteBlock(blockingScenarioId: string, blockId: string, sourceSignature: string): Promise<void>;
+  /** Deletes several Blocks in one atomic write (Decision 0053). `sourceSignature` comes from `previewDeleteBlocks`. */
+  deleteBlocks(blockingScenarioId: string, blockIds: string[], sourceSignature: string): Promise<void>;
   assignTrip(request: BlockingAssignmentRequest): Promise<{ blocks: BlockingBlock[]; findings: ValidationFinding[] }>;
   reassignTrips(request: import('../domain/blocking').BlockingBulkAssignmentRequest): Promise<{ blocks: BlockingBlock[]; findings: ValidationFinding[] }>;
   assignTripsToBlock(request: BlockingTripsAssignmentRequest): Promise<{ blocks: BlockingBlock[]; findings: ValidationFinding[] }>;
@@ -200,6 +202,8 @@ export interface BlockingQueries {
   proposeBlockLabel(blockingScenarioId: string, serviceDayId: string): Promise<string>;
   /** What deleting the Block would remove. `sourceSignature` is the review token that `deleteBlock` takes. */
   previewDeleteBlock(blockingScenarioId: string, blockId: string): Promise<BlockDeletionImpact>;
+  /** What deleting several Blocks would remove. `sourceSignature` is the review token that `deleteBlocks` takes. */
+  previewDeleteBlocks(blockingScenarioId: string, blockIds: string[]): Promise<BlocksDeletionImpact>;
   /** What deleting the Blocking Scenario would remove. `sourceSignature` is the review token that `deleteBlockingScenario` takes. */
   previewDeleteBlockingScenario(blockingScenarioId: string): Promise<BlockingScenarioDeletionImpact>;
   /** Reads the minutes and miles typed for a pull-out, pull-in, or deadhead. Blank minutes are refused, not read as 0. */

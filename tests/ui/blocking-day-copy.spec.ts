@@ -15,7 +15,7 @@ test('copies blocks from another day with exact, acknowledged, and refused match
   await scopeField(page, 'Day').selectOption({ label: 'Holiday' });
   await expect(scopeField(page, 'Blocking scenario')).toHaveValue(/.+/);
 
-  await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
+  await page.getByRole('button', { name: 'Blocks actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Copy blocks from another day…', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Copy blocks' });
   await expect(dialog).toContainText('To Holiday');
