@@ -244,7 +244,7 @@ Operating spans and observed headways are derived from authoritative trips. The 
 
 ## Blocking Model
 
-A Blocking Scenario is one named arrangement of an immutable source Trip Profile across all service days. A new Scenario starts with an empty "Default" Blocking Scenario on its Default Trip Profile (Decision 0019 item 3, amended); existing Scenarios are not backfilled. A Block belongs to one Blocking Scenario and one service day and is an ordered collection of activities. Initial activity types are:
+A Blocking Scenario is one named arrangement of an immutable source Trip Profile across all service days. A new Scenario starts with an empty "Default" Blocking Scenario on its Default Trip Profile (Decision 0019 item 3, amended); existing Scenarios are not backfilled. The Blocks of one service day can be copied into another day of the same Blocking Scenario (Decision 0052). `src/domain/blockingDayCopy.ts` pairs source-day and target-day Trips by content: first exact stop times, then the same first departure. Unmatched Trips are dropped together with the deadheads next to them. A match rate below 50% is refused, and a partial match needs acknowledgment. `BlockingApplicationService.previewBlockingDayCopy` and `applyBlockingDayCopy` re-preview and compare the review token. The write goes through `BlockingRepository.replaceBlocksForDayAtomically`, which replaces only that day's Blocks in one transaction. Matches are derived and never stored, so the schema does not change. A Block belongs to one Blocking Scenario and one service day and is an ordered collection of activities. Initial activity types are:
 
 - pull-out;
 - revenue trip;

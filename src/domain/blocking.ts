@@ -37,6 +37,21 @@ export function createBlockingScenarioSourceSignature(scenario: BlockingScenario
 export function calculateBlockingScenarioDeletionImpact(scenario: BlockingScenario, blocks: BlockingBlock[]): BlockingScenarioDeletionImpact { const owned = blocks.filter((block) => block.blockingScenarioId === scenario.id); return { blockingScenarioId: scenario.id, blockIds: owned.map((block) => block.id), blockCount: owned.length, activityCount: owned.reduce((sum, block) => sum + block.activities.length, 0), sourceSignature: createBlockingScenarioSourceSignature(scenario, blocks) }; }
 export function assertBlockingScenarioSourceUnchanged(scenario: BlockingScenario, blocks: BlockingBlock[], sourceSignature: string): void { if (createBlockingScenarioSourceSignature(scenario, blocks) !== sourceSignature) reject('Blocking Scenario changed since the operation was reviewed. Reload and review it again.', 'blockingScenario.sourceChanged', 'blockingScenario', scenario.id); }
 export function normalizeBlockActivities<T extends BlockingBlock>(block: T): T { return { ...block, activities: sortedActivities(block.activities).map((activity, sequence) => ({ ...activity, sequence })) } as T; }
+/** Removes the Trips in `tripIds` from a Block, with the deadheads next to them. */
+export function removeSelectedTripsFromBlock(block: BlockingBlock, tripIds: Set<string>): BlockingBlock {
+  const activities = [...block.activities].sort((left, right) => left.sequence - right.sequence || left.id.localeCompare(right.id));
+  const removeActivityIds = new Set<string>();
+  activities.forEach((activity, index) => {
+    if (activity.type === 'revenueTrip' && tripIds.has(activity.tripId)) removeActivityIds.add(activity.id);
+    if (activity.type !== 'deadhead') return;
+    const previous = [...activities.slice(0, index)].reverse().find((candidate) => candidate.type === 'revenueTrip');
+    const next = activities.slice(index + 1).find((candidate) => candidate.type === 'revenueTrip');
+    if ((previous?.type === 'revenueTrip' && tripIds.has(previous.tripId)) || (next?.type === 'revenueTrip' && tripIds.has(next.tripId))) removeActivityIds.add(activity.id);
+  });
+  if (!removeActivityIds.size) return block;
+  return normalizeBlockActivities(withUpdatedAt({ ...block, activities: activities.filter((activity) => !removeActivityIds.has(activity.id)) }));
+}
+
 export type BoundaryActivity = Extract<BlockActivity, { type: 'pullOut' | 'pullIn' }>;
 export interface BulkBoundaryRequest { blockingScenarioId: EntityId; serviceDayId: EntityId; sourceBlockId: EntityId; activity: BoundaryActivity; replaceExisting: boolean; sourceSignature: string; expectedEndpointSignature?: string; }
 export interface BulkBoundaryPreview { matchingBlockCount: number; sourceBlockIncluded: boolean; addCount: number; replaceCount: number; skippedExistingCount: number; skippedWithoutTripCount: number; sourceSignature: string; endpointSignature: string; }

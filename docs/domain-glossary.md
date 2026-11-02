@@ -168,6 +168,10 @@ The ordered work performed by one vehicle on one service day within one Blocking
 
 One named arrangement of an immutable source Trip Profile into Blocks across all service days. Several Blocking Scenarios may use the same Trip Profile. A Blocking Scenario cannot combine Trips from competing Trip Profiles. A Scenario may contain no Blocking Scenarios. Users may create an empty arrangement or duplicate an existing one.
 
+### Trip match
+
+A derived pairing of a Trip on one service day with a Trip on another, used to copy Blocks between days (Decision 0052). An exact match has the same Route, Pattern, and stop times. A first-departure match has the same Route, Pattern, and first time, but different later times. Matches are not stored.
+
 ### Block label
 
 A user-facing identifier such as `11`, `21`, or `A03`. It is not the database identifier.
