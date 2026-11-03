@@ -4,7 +4,10 @@ import { ModalDialog } from '../ModalDialog';
 import { formatHours, formatMoney, formatPercent, MISSING } from '../format';
 
 const money = (value: number | undefined) => value === undefined ? MISSING : formatMoney(value);
-const millions = (value: number) => `$${(value / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}M`;
+// A figure of $1 million or more reads in millions ($1.23M); a smaller one reads in thousands ($281K).
+const headline = (value: number) => Math.round(value / 1_000) >= 1_000
+  ? `$${(value / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}M`
+  : `$${Math.round(value / 1_000).toLocaleString('en-US')}K`;
 const daily = (value: number | undefined) => value === undefined ? MISSING : formatHours(value, 'daily');
 const annual = (value: number | undefined) => value === undefined ? MISSING : formatHours(value, 'annual');
 
@@ -30,17 +33,16 @@ export function CostSummaryView({ summary, onClose }: { summary: CostSummary; on
         <p className="cost-summary-meta">Scenario: {summary.scenarioName}<br />Prepared {preparedText(summary.preparedOn)}</p>
       </header>
       <dl className="cost-summary-figures">
-        <div><dt>{summary.firstYear} annual cost</dt><dd>{millions(summary.firstYearCostUsd)}</dd></div>
-        {summary.futureYearCount > 0 && <div><dt>Year {summary.futureYearCount} cost</dt><dd>{millions(summary.lastYearCostUsd)}</dd></div>}
+        <div><dt>{summary.firstYear} annual cost</dt><dd>{headline(summary.firstYearCostUsd)}</dd></div>
+        {summary.futureYearCount > 0 && <div><dt>Year {summary.futureYearCount} cost</dt><dd>{headline(summary.lastYearCostUsd)}</dd></div>}
         <div><dt>{summary.firstYear} revenue hours</dt><dd>{annual(summary.annualRevenueHours)}</dd></div>
-        <div><dt>{summary.firstYear} platform hours</dt><dd>{annual(summary.annualPlatformHours)}</dd></div>
       </dl>
       <section aria-labelledby="cost-summary-days">
         <h3 id="cost-summary-days" className="cost-summary-section">Service by day · {summary.firstYear}</h3>
         <table className="cost-summary-table">
-          <thead><tr><th scope="col">Service day</th><th scope="col">Days / year</th><th scope="col">Daily revenue hours</th><th scope="col">Daily platform hours</th><th scope="col">Annual revenue hours</th><th scope="col">{summary.firstYear} annual cost</th></tr></thead>
-          <tbody>{summary.days.map((day) => <tr key={day.serviceDayId}><th scope="row">{day.name}</th><td>{day.annualServiceDays}</td><td>{daily(day.revenueHoursPerDay)}</td><td>{daily(day.platformHoursPerDay)}</td><td>{annual(day.annualRevenueHours)}</td><td>{money(day.firstYearCostUsd)}</td></tr>)}</tbody>
-          <tfoot><tr><th scope="row">Total</th><td>{totalDays}</td><td></td><td></td><td>{annual(summary.annualRevenueHours)}</td><td>{money(summary.firstYearCostUsd)}</td></tr></tfoot>
+          <thead><tr><th scope="col">Service day</th><th scope="col">Days / year</th><th scope="col">Daily revenue hours</th><th scope="col">Annual revenue hours</th><th scope="col">{summary.firstYear} annual cost</th></tr></thead>
+          <tbody>{summary.days.map((day) => <tr key={day.serviceDayId}><th scope="row">{day.name}</th><td>{day.annualServiceDays}</td><td>{daily(day.revenueHoursPerDay)}</td><td>{annual(day.annualRevenueHours)}</td><td>{money(day.firstYearCostUsd)}</td></tr>)}</tbody>
+          <tfoot><tr><th scope="row">Total</th><td>{totalDays}</td><td></td><td>{annual(summary.annualRevenueHours)}</td><td>{money(summary.firstYearCostUsd)}</td></tr></tfoot>
         </table>
       </section>
       <section aria-labelledby="cost-summary-years">

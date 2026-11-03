@@ -18,7 +18,10 @@ test('opens the Operating Cost Estimate, warns about a partial estimate, and pri
 
   const sheet = page.getByRole('dialog', { name: 'Operating Cost Estimate' });
   await expect(sheet).toBeVisible();
-  await expect(sheet.locator('.cost-summary-figures dt')).toContainText([/annual cost$/, /^Year \d+ cost$/, /revenue hours$/, /platform hours$/]);
+  await expect(sheet.locator('.cost-summary-figures dt')).toContainText([/annual cost$/, /^Year \d+ cost$/, /revenue hours$/]);
+  await expect(sheet.locator('.cost-summary-figures dt')).toHaveCount(3);
+  await expect(sheet).not.toContainText(/platform/i);
+  await expect(sheet.locator('.cost-summary-figures dd').first()).toHaveText(/^\$[\d,.]+[KM]$/);
   await expect(sheet.getByRole('heading', { name: /^Service by day/ })).toBeVisible();
   await expect(sheet.getByRole('heading', { name: 'Cost by year' })).toBeVisible();
   await expect(sheet).toContainText(/Costs are based on annual revenue hours and [\d.]+% projected inflation\./);

@@ -14,8 +14,8 @@ Costing results needed to be shared with third parties who do not use the app. T
 2. **Menu.** The Costing scope bar's "Export costing CSV" button becomes an Actions menu ("Costing actions") with **View cost summary…** and **Export costing CSV**, matching the Route, Trips, and Blocking tabs. View cost summary… is disabled unless the estimate is complete or partial and has costs by year.
 3. **Contents, in order.**
    - Header: project name above the title "Operating Cost Estimate"; scenario name and date prepared on the right. The cost basis is not shown.
-   - Four figures: {first year} annual cost; Year {N} cost (the last projected year, where N is the number of future years; omitted when N is 0); {first year} revenue hours; {first year} platform hours.
-   - Service by day: days per year, daily revenue hours, daily platform hours, annual revenue hours, first-year annual cost, and a total row.
+   - Three figures: {first year} annual cost; Year {N} cost (the last projected year, where N is the number of future years; omitted when N is 0); {first year} revenue hours. A cost of $1 million or more reads in millions ($1.23M); a smaller cost reads in thousands ($281K). Platform hours are not shown on the page.
+   - Service by day: days per year, daily revenue hours, annual revenue hours, first-year annual cost, and a total row.
    - Cost by year: year, cost per revenue hour, annual cost, cumulative cost. No row is highlighted.
    - Footer: "Costs are based on annual revenue hours and {y}% projected inflation."
 4. **Data.** The pure `buildCostSummary` derives the figures from the calculated estimate of the selected cost basis and the draft assumptions. Nothing is stored or backed up.

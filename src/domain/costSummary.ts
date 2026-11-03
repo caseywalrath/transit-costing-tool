@@ -13,9 +13,8 @@ export interface CostSummary {
   annualEscalation: number;
   firstYearCostUsd: number;
   lastYearCostUsd: number;
-  /** Revenue and platform hours are the same in every service year. Platform hours are undefined when an estimate has no deadhead %. */
+  /** Revenue hours are the same in every service year. */
   annualRevenueHours: number;
-  annualPlatformHours?: number;
   days: CostSummaryDay[];
   years: CostSummaryYear[];
 }
@@ -25,7 +24,6 @@ export interface CostSummaryDay {
   name: string;
   annualServiceDays: number;
   revenueHoursPerDay?: number;
-  platformHoursPerDay?: number;
   annualRevenueHours?: number;
   firstYearCostUsd?: number;
 }
@@ -57,7 +55,6 @@ export function buildCostSummary(result: CostingCalculationResult | EstimatedCos
     name: row.serviceDayName,
     annualServiceDays: row.annualServiceDays,
     ...(row.revenueHoursPerDay === undefined ? {} : { revenueHoursPerDay: row.revenueHoursPerDay }),
-    ...(row.platformHoursPerDay === undefined ? {} : { platformHoursPerDay: row.platformHoursPerDay }),
     ...(row.annualRevenueHours === undefined ? {} : { annualRevenueHours: row.annualRevenueHours }),
     ...(row.yearCosts[0] && row.yearCosts[0].serviceYear === first.serviceYear ? { firstYearCostUsd: row.yearCosts[0].annualCostUsd } : {}),
   }));
@@ -69,7 +66,6 @@ export function buildCostSummary(result: CostingCalculationResult | EstimatedCos
     firstYearCostUsd: first.annualCostUsd,
     lastYearCostUsd: last.annualCostUsd,
     annualRevenueHours: first.annualRevenueHours,
-    ...(first.annualPlatformHours === undefined ? {} : { annualPlatformHours: first.annualPlatformHours }),
     days,
     years,
   };
