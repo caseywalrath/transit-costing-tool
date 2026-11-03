@@ -1,3 +1,4 @@
+import { remapAutoBlockingRecord } from './autoBlocking';
 import type {
   Node,
   PatternPoint,
@@ -243,7 +244,7 @@ export function duplicateScenario(source: ScenarioRecords, targetName: string, n
     ...metadata(now),
   }));
   const blockingScenarioIds = new Map((source.blockingScenarios ?? []).map((blockingScenario) => [blockingScenario.id, newId()]));
-  const blockingScenarios = (source.blockingScenarios ?? []).map((blockingScenario) => ({ ...blockingScenario, id: blockingScenarioIds.get(blockingScenario.id)!, scenarioId: scenario.id, tripProfileId: tripProfileIds.get(blockingScenario.tripProfileId) ?? defaultProfileId!, ...metadata(now) }));
+  const blockingScenarios = (source.blockingScenarios ?? []).map((blockingScenario) => ({ ...blockingScenario, id: blockingScenarioIds.get(blockingScenario.id)!, scenarioId: scenario.id, tripProfileId: tripProfileIds.get(blockingScenario.tripProfileId) ?? defaultProfileId!, ...metadata(now), ...(blockingScenario.autoBlocking ? { autoBlocking: remapAutoBlockingRecord(blockingScenario.autoBlocking, { patterns: patternIds, routes: routeIds, nodes: nodeIds, serviceDays: serviceDayIds, blockingScenarios: blockingScenarioIds }, now) } : {}) }));
   const normalizedBlocks = blocks.map((block) => ({ ...block, ...(block.blockingScenarioId ? { blockingScenarioId: blockingScenarioIds.get(block.blockingScenarioId) } : {}) }));
   const costingAssumptions = source.costingAssumptions
     ? {

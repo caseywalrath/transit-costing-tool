@@ -50,10 +50,10 @@ describe('3-001: Block ownership survives export and import', () => {
     const again = JSON.parse(exportProjectJson(importProjectJson(goldenJson())));
     expect(again.blocks).toEqual(original.blocks);
     for (const key of new Set([...Object.keys(original), ...Object.keys(again)])) {
-      // The golden file is a version 6 file; exporting writes the current version, 7, and nothing else changes (Decision 0051).
+      // The golden file is a version 6 file; exporting writes the current version, 8, and nothing else changes (Decision 0051).
       if (key !== 'exportedAt' && key !== 'exportSchemaVersion') expect(again[key], key).toEqual(original[key]);
     }
-    expect(again.exportSchemaVersion).toBe(7);
+    expect(again.exportSchemaVersion).toBe(8);
   });
 
   it('removes a Trip Profile that an older export stamped on a normalized Block when it matches the Blocking Scenario', () => {

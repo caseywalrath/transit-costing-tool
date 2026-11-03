@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
 import { duplicateScenario, projectSnapshotWithScenario, snapshotForScenario } from '../domain/project';
 import type { Block, BlockActivity, ProjectSnapshot } from '../domain/types';
-import { goldenJson } from '../testSupport/goldenBackup';
+import { goldenJson, goldenRaw } from '../testSupport/goldenBackup';
 import { exportProjectJson, importProjectJson, cloneProjectSnapshot, parseProjectBackupWithReport } from './backup';
 
 describe('backup', () => {
@@ -135,7 +135,7 @@ describe('backup', () => {
       generationSets: [], trips: [], blocks: [],
     };
     const exported = JSON.parse(exportProjectJson(source));
-    expect(exported.exportSchemaVersion).toBe(7);
+    expect(exported.exportSchemaVersion).toBe(8);
     expect(exported.costingAssumptions).toEqual(source.costingAssumptions);
     expect(importProjectJson(JSON.stringify(exported)).costingAssumptions).toEqual(source.costingAssumptions);
 
@@ -163,7 +163,7 @@ describe('backup', () => {
 
     it('round trips every factor in a version 7 file', () => {
       const payload = exportProjectJson(sourceWith(factors));
-      expect(JSON.parse(payload).exportSchemaVersion).toBe(7);
+      expect(JSON.parse(payload).exportSchemaVersion).toBe(8);
       expect(importProjectJson(payload).costingAssumptions?.[0].estimateFactors).toEqual(factors);
     });
 
@@ -300,5 +300,71 @@ describe('backup import repairs Scenario copies made before duplication remapped
     expect(report.recoveredNodeReferences).toBe(138);
     expect(report.recoveryFindings).toEqual([]);
     expect(snapshot.blocks).toEqual(copy.blocks);
+  });
+});
+
+describe('automatic blocking record in backups (schema 8, Decision 0055)', () => {
+  const fileWithRecord = (version: number, patch: (record: any) => void = () => undefined) => {
+    const file = goldenRaw();
+    file.exportSchemaVersion = version;
+    file.nodes[1].kind = 'garage';
+    const record: any = {
+      rules: {
+        serviceDayIds: [file.serviceDays[0].id],
+        patterns: [{ patternId: file.patterns[0].id, minimumLayover: { mode: 'minutes', value: 15 }, breakAllowed: true, canStart: true, canEnd: true }],
+        break: { lengthMinutes: 35, minimumBlockHours: 4, firstBreakAfterHours: 1 },
+        garages: [{ routeId: file.routes[0].id, nodeId: file.nodes[1].id }],
+        terminals: [{ nodeId: file.nodes[0].id, pullOutMinutes: 5, pullInMinutes: 5, miles: 1 }],
+        deadheads: [{ fromNodeId: file.nodes[0].id, toNodeId: file.nodes[2].id, minutes: 6, bothWays: true }],
+      },
+      builtAt: '2026-01-01T00:00:00.000Z', tripCount: 10, blockCount: 2,
+    };
+    patch(record);
+    file.blockingScenarios[0].autoBlocking = record;
+    return file;
+  };
+
+  it('round trips the record in a version 8 file', () => {
+    const file = fileWithRecord(8);
+    const exported = JSON.parse(exportProjectJson(importProjectJson(JSON.stringify(file))));
+    expect(exported.exportSchemaVersion).toBe(8);
+    expect(exported.blockingScenarios[0].autoBlocking).toEqual(file.blockingScenarios[0].autoBlocking);
+  });
+
+  it('remaps the record identifiers when the Project is imported as a copy', () => {
+    const file = fileWithRecord(8, (record) => { record.sourceBlockingScenarioId = undefined; });
+    const copy = cloneProjectSnapshot(importProjectJson(JSON.stringify(file)), '2026-06-01T00:00:00.000Z');
+    const stored = copy.blockingScenarios![0].autoBlocking!;
+    const original = file.blockingScenarios[0].autoBlocking;
+    expect(stored.builtAt).toBe('2026-06-01T00:00:00.000Z');
+    expect(stored.rules.serviceDayIds).toEqual([copy.serviceDays[0].id]);
+    expect(stored.rules.patterns[0].patternId).toBe(copy.patterns[0].id);
+    expect(stored.rules.patterns[0].patternId).not.toBe(original.rules.patterns[0].patternId);
+    expect(stored.rules.garages).toEqual([{ routeId: copy.routes[0].id, nodeId: copy.nodes[1].id }]);
+    expect(stored.rules.terminals[0].nodeId).toBe(copy.nodes[0].id);
+    expect(stored.rules.deadheads[0]).toMatchObject({ fromNodeId: copy.nodes[0].id, toNodeId: copy.nodes[2].id });
+  });
+
+  it('still imports a version 7 file and drops an autoBlocking field found there', () => {
+    const imported = importProjectJson(JSON.stringify(fileWithRecord(7)));
+    expect(imported.blockingScenarios).toHaveLength(1);
+    expect('autoBlocking' in imported.blockingScenarios![0]).toBe(false);
+  });
+
+  it('rejects a version 8 file with an invalid rule, with a readable message', () => {
+    const badRule = fileWithRecord(8, (record) => { record.rules.deadheads[0].minutes = 1.5; });
+    expect(() => importProjectJson(JSON.stringify(badRule))).toThrow('Invalid project backup: blockingScenarios[0].autoBlocking autoBlocking.deadheadMinutes at deadheads[0].minutes');
+    const badGarage = fileWithRecord(8, (record) => { record.rules.garages[0].nodeId = record.rules.terminals[0].nodeId; });
+    expect(() => importProjectJson(JSON.stringify(badGarage))).toThrow('autoBlocking.garageNodeKind');
+  });
+
+  it('rejects a version 8 file whose record has the wrong shape', () => {
+    expect(() => importProjectJson(JSON.stringify(fileWithRecord(8, (record) => { record.rules.patterns = 'x'; })))).toThrow('blockingScenarios[0].autoBlocking.rules.patterns must be an array');
+    expect(() => importProjectJson(JSON.stringify(fileWithRecord(8, (record) => { record.blockCount = -1; })))).toThrow('blockCount must be a non-negative integer');
+    expect(() => importProjectJson(JSON.stringify(fileWithRecord(8, (record) => { record.builtAt = 5; })))).toThrow('builtAt must be a string');
+  });
+
+  it('still imports version 1 to 6 files', () => {
+    expect(() => importProjectJson(goldenJson())).not.toThrow();
   });
 });

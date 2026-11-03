@@ -199,3 +199,45 @@ describe('scenario duplication of Blocks (P03: I-004, I-005)', () => {
     expect(copiedDefault.id).toBe(copy.tripProfiles![0].id);
   });
 });
+
+describe('scenario duplication of automatic blocking records (Decision 0055)', () => {
+  const sourceWithRecord = () => {
+    const snapshot = asSnapshot(goldenRaw());
+    const source = snapshotForScenario(snapshot, snapshot.scenarios[0].id)!;
+    const [first, second, third] = source.nodes;
+    const record = {
+      rules: {
+        serviceDayIds: [source.serviceDays[0].id, 'unknown-day'],
+        patterns: [{ patternId: source.patterns[0].id, breakAllowed: true, canStart: true, canEnd: true }, { patternId: 'unknown-pattern', breakAllowed: false, canStart: false, canEnd: false }],
+        garages: [{ routeId: source.routes[0].id, nodeId: second.id }],
+        terminals: [{ nodeId: first.id, pullOutMinutes: 5, pullInMinutes: 5 }, { nodeId: 'unknown-node', pullOutMinutes: 1, pullInMinutes: 1 }],
+        deadheads: [{ fromNodeId: first.id, toNodeId: third.id, minutes: 4, bothWays: true }],
+      },
+      builtAt: '2026-01-01T00:00:00.000Z', tripCount: 12, blockCount: 3, sourceBlockingScenarioId: source.blockingScenarios![0].id,
+    };
+    source.blockingScenarios = [{ ...source.blockingScenarios![0], autoBlocking: record }];
+    return { source, record };
+  };
+
+  it('remaps every reference, drops unknown rows, and sets builtAt to the copy time', () => {
+    const { source, record } = sourceWithRecord();
+    const copy = duplicateScenario(source, 'Copy', '2026-03-01T00:00:00.000Z');
+    const stored = copy.blockingScenarios![0].autoBlocking!;
+    const nodeFor = (id: string) => copy.nodes[source.nodes.findIndex((node) => node.id === id)].id;
+    expect(stored.builtAt).toBe('2026-03-01T00:00:00.000Z');
+    expect([stored.tripCount, stored.blockCount]).toEqual([12, 3]);
+    expect(stored.sourceBlockingScenarioId).toBe(copy.blockingScenarios![0].id);
+    expect(stored.rules.serviceDayIds).toEqual([copy.serviceDays[0].id]);
+    expect(stored.rules.patterns.map((row) => row.patternId)).toEqual([copy.patterns[0].id]);
+    expect(stored.rules.garages).toEqual([{ routeId: copy.routes[0].id, nodeId: nodeFor(record.rules.garages[0].nodeId) }]);
+    expect(stored.rules.terminals.map((row) => row.nodeId)).toEqual([nodeFor(record.rules.terminals[0].nodeId)]);
+    expect(stored.rules.deadheads[0]).toMatchObject({ fromNodeId: nodeFor(record.rules.deadheads[0].fromNodeId), toNodeId: nodeFor(record.rules.deadheads[0].toNodeId), minutes: 4 });
+    expect(JSON.stringify(source.blockingScenarios![0].autoBlocking)).toBe(JSON.stringify(record));
+  });
+
+  it('leaves Blocking Scenarios without a record unchanged', () => {
+    const snapshot = asSnapshot(goldenRaw());
+    const source = snapshotForScenario(snapshot, snapshot.scenarios[0].id)!;
+    expect(duplicateScenario(source, 'Copy').blockingScenarios!.every((scenario) => !('autoBlocking' in scenario))).toBe(true);
+  });
+});
