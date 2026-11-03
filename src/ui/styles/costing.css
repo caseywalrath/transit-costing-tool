@@ -52,3 +52,36 @@
 .costing-est-mark { display: block; font-weight: var(--font-weight-regular); color: var(--color-accent-strong); font-size: var(--font-size-caption); }
 .costing-row-note { display: block; font-weight: var(--font-weight-regular); color: var(--color-warn); font-size: var(--font-size-caption); }
 .costing-basis-notes { display: grid; gap: var(--space-2); }
+
+/* Decision 0054. Operating Cost Estimate: a US Letter sheet over the window; the print stylesheet prints the sheet alone. */
+.modal-backdrop:has(> .cost-summary-dialog) { place-items: start center; overflow-y: auto; }
+.cost-summary-dialog { display: grid; gap: var(--space-3); width: min(816px, 100%); outline: none; }
+.cost-summary-toolbar { display: flex; justify-content: flex-end; gap: var(--space-2); }
+.cost-summary-sheet { box-sizing: border-box; display: flex; flex-direction: column; gap: 26px; min-height: 1056px; padding: 56px 60px; background: #fff; color: #17212b; box-shadow: var(--shadow-popover); font-variant-numeric: tabular-nums; }
+.cost-summary-header { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--space-4); border-bottom: 2px solid #17212b; padding-bottom: var(--space-3); }
+.cost-summary-header h2 { margin: 2px 0 0; font-size: 26px; font-weight: var(--font-weight-semibold); }
+.cost-summary-eyebrow, .cost-summary-section, .cost-summary-figures dt { margin: 0; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: #536574; font-weight: var(--font-weight-bold); }
+.cost-summary-meta { margin: 0; text-align: right; font-size: 12px; line-height: 1.5; color: #536574; }
+.cost-summary-figures { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin: 0; border-block: 1px solid #d2dbe0; }
+.cost-summary-figures > div { padding: var(--space-3) 14px; border-left: 1px solid #d2dbe0; }
+.cost-summary-figures > div:first-child { border-left: 0; padding-left: 0; }
+.cost-summary-figures dd { margin: 2px 0 0; font-size: 24px; font-weight: var(--font-weight-bold); }
+.cost-summary-section { margin-bottom: var(--space-2); }
+.cost-summary-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cost-summary-table th, .cost-summary-table td { padding: 5px var(--space-2); text-align: right; border-bottom: 1px solid #e8edf0; font-weight: var(--font-weight-regular); background: none; color: #17212b; font-size: 13px; position: static; }
+.cost-summary-table th:first-child { text-align: left; }
+.cost-summary-table thead th { font-size: 11px; color: #536574; font-weight: var(--font-weight-semibold); border-bottom-color: #d2dbe0; vertical-align: bottom; }
+.cost-summary-table tbody tr:last-child > * { border-bottom: 1px solid #e8edf0; }
+/* The line above Total is the last body row's bottom border; a top border on the footer cells does not draw over the shared table rules. */
+.cost-summary-table:has(tfoot) tbody tr:last-child > * { border-bottom: 1.5px solid #17212b; }
+.cost-summary-table tfoot tr > * { font-weight: var(--font-weight-bold); border-bottom: 0; }
+.cost-summary-footer { margin-top: auto; border-top: 1px solid #d2dbe0; padding-top: 10px; font-size: 11px; color: #536574; }
+
+@media print {
+  @page { size: letter; margin: 0.5in; }
+  body:has(.cost-summary-dialog) > :not(.modal-backdrop:has(> .cost-summary-dialog)) { display: none !important; }
+  .modal-backdrop:has(> .cost-summary-dialog) { position: static; display: block; padding: 0; background: none; overflow: visible; }
+  .cost-summary-dialog { display: block; width: auto; }
+  .cost-summary-toolbar { display: none; }
+  .cost-summary-sheet { min-height: 0; padding: 0; box-shadow: none; }
+}

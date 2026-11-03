@@ -440,6 +440,14 @@ export function calculateBlockDeletionImpact(scenario: BlockingScenario, blocks:
   const block = blocks.find((candidate) => candidate.id === blockId && candidate.blockingScenarioId === scenario.id); if (!block) return undefined;
   return { blockId: block.id, label: block.label, serviceDayId: block.serviceDayId, activityCount: block.activities.length, tripCount: block.activities.filter((activity) => activity.type === 'revenueTrip').length, deadheadCount: block.activities.filter((activity) => activity.type === 'deadhead').length, sourceSignature: createBlockingScenarioSourceSignature(scenario, blocks) };
 }
+export interface BlocksDeletionImpact { blockIds: EntityId[]; labels: string[]; blockCount: number; activityCount: number; tripCount: number; deadheadCount: number; sourceSignature: string; }
+/** What deleting several Blocks at once removes (Decision 0053). Undefined when the list is empty or any Block is not one of the Blocking Scenario's. Duplicate ids count once. */
+export function calculateBlocksDeletionImpact(scenario: BlockingScenario, blocks: BlockingBlock[], blockIds: EntityId[]): BlocksDeletionImpact | undefined {
+  const ids = [...new Set(blockIds)]; if (!ids.length) return undefined;
+  const targets = ids.map((id) => blocks.find((candidate) => candidate.id === id && candidate.blockingScenarioId === scenario.id)); if (targets.some((block) => !block)) return undefined;
+  const owned = targets as BlockingBlock[]; const activities = owned.flatMap((block) => block.activities);
+  return { blockIds: owned.map((block) => block.id), labels: owned.map((block) => block.label), blockCount: owned.length, activityCount: activities.length, tripCount: activities.filter((activity) => activity.type === 'revenueTrip').length, deadheadCount: activities.filter((activity) => activity.type === 'deadhead').length, sourceSignature: createBlockingScenarioSourceSignature(scenario, blocks) };
+}
 export interface BlockingActivityEditRequest { blockingScenarioId: EntityId; blockId: EntityId; activity: BlockActivity; sourceSignature: string; }
 export interface BlockingScenarioCreateRequest extends BlockingScenarioInput { duplicateScenarioId?: EntityId; }
 

@@ -38,6 +38,8 @@
 .block-activities-table .blocking-node-column { width: 11%; overflow: hidden; text-overflow: ellipsis; }
 .blocking-blocks-table table { width: 100%; min-width: 1040px; table-layout: fixed; }
 .blocking-blocks-table .blocking-block-name-column { width: 9.5%; }
+.blocking-blocks-table .blocking-selection-column { width: 34px; min-width: 34px; padding: var(--space-1) 7px; text-align: center; }
+.blocking-blocks-table .blocking-selection-column input { width: 15px; min-height: 15px; vertical-align: middle; }
 .blocking-blocks-table .blocking-block-trips-column { width: 5.5%; }
 .blocking-blocks-table .blocking-block-time-column { width: 7.75%; }
 .blocking-blocks-table .blocking-block-hours-column { width: 9.5%; }
