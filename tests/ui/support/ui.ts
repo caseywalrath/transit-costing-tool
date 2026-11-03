@@ -98,7 +98,6 @@ type Command = {
 
 /** Commands that are a plain button, not a menu item. `within` is the panel that holds the button. */
 const buttonCommands = {
-  'costing.exportCsv': { name: 'Export costing CSV' },
   // UR-6c: Build trips and Add trip are header buttons; the commands that need a selection are buttons in the selection bar.
   'trips.build': { name: 'Build trips…', within: 'trips' },
   'trips.add': { name: 'Add trip', within: 'trips' },
@@ -123,6 +122,9 @@ const buttonCommands = {
 
 /** How each menu command is run today. Section 7, UR-0 of `docs/implementation/ui-revision-plan.md` lists the ids. */
 const commands = {
+  // Decision 0054: the Costing scope bar has an Actions menu.
+  'costing.exportCsv': { menu: 'Costing actions', item: 'Export costing CSV' },
+  'costing.viewSummary': { menu: 'Costing actions', item: 'View cost summary…' },
   // A separate item, listed only while the saved undo applies. Its name is "Undo last regeneration (N trips)".
   'trips.undoRegeneration': { menu: 'Trip actions', within: 'trips', item: 'Undo last regeneration' },
   'trips.copyDay': { menu: 'Trip actions', within: 'trips', item: 'Copy trips from another day…' },

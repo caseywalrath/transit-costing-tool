@@ -119,7 +119,8 @@ test('the estimated export carries the cost basis kind', async ({ page }) => {
   await page.getByLabel('Operating cost per revenue hour in USD').fill('152.40');
   await editGridCell(gridCell(factors(page), 'All days layover percent'), '18.2');
   const download = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export costing CSV', exact: true }).click();
+  await page.getByRole('button', { name: 'Costing actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Export costing CSV', exact: true }).click();
   const file = await download;
   expect(file.suggestedFilename()).toBe('Default-costing.zip');
   const text = new TextDecoder().decode(new Uint8Array(await (await import('node:fs/promises')).readFile(await file.path())));

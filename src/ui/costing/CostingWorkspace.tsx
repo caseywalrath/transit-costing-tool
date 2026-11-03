@@ -15,12 +15,17 @@ import { ContextField } from '../shared/ContextField';
 import { InlineNote, SupportPanel, WorkSurface } from '../shared/surfaces';
 import { SaveBar } from '../shared/bars';
 import { countAssumptionChanges, countEstimateFactorChanges } from '../../application/draftChangeCounts';
+import { MenuButton, type MenuGroup } from '../MenuButton';
+import { buildCostSummary, costSummaryPartialReasons, type CostSummary } from '../../domain/costSummary';
+import { CostSummaryView } from './CostSummaryView';
 
 type Props = {
   /** The element in the header's scope bar that receives the scope selectors (UR-5). */
   scopeSlot: HTMLElement | null;
   costingService: CostingCommands & CostingQueries;
   scenario: Scenario;
+  /** Shown above the title of the Operating Cost Estimate (Decision 0054). */
+  projectName: string;
   serviceDays: ServiceDayDefinition[];
   tripProfiles: TripProfile[];
   onError: (error: unknown, fallback?: string) => void;
@@ -121,7 +126,7 @@ function listText(names: string[]): string {
 }
 const percentOf = (fraction: number | undefined) => formatPercent(fraction === undefined ? undefined : fraction * 100);
 
-export function CostingWorkspace({ scopeSlot, costingService, scenario, serviceDays, tripProfiles, onError, onRegisterNavigationGuard }: Props) {
+export function CostingWorkspace({ scopeSlot, costingService, scenario, projectName, serviceDays, tripProfiles, onError, onRegisterNavigationGuard }: Props) {
   const [basisOptions, setBasisOptions] = useState<CostBasisOption[]>([]);
   const [basisValue, setBasisValue] = useState('');
   const [assumptions, setAssumptions] = useState<CostingAssumptionsInput>(() => initialAssumptions());
@@ -136,6 +141,8 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, serviceD
   const [calculating, setCalculating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [navigationDialog, setNavigationDialog] = useState<{ action: () => void }>();
+  const [summary, setSummary] = useState<CostSummary>();
+  const [partialSummary, setPartialSummary] = useState<{ summary: CostSummary; reasons: string[] }>();
   const estimateHeading = useRef<HTMLHeadingElement>(null);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
@@ -282,7 +289,24 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, serviceD
     finally { setSaving(false); }
   }
 
+  /** Opens the Operating Cost Estimate for the selected cost basis and the draft assumptions. A partial estimate asks first (Decision 0054). */
+  function openSummary() {
+    if (!result) return;
+    const today = new Date();
+    const preparedOn = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const built = buildCostSummary(result, { projectName, scenarioName: scenario.name, preparedOn });
+    if (!built) return;
+    const reasons = costSummaryPartialReasons(result);
+    if (reasons.length) setPartialSummary({ summary: built, reasons }); else setSummary(built);
+  }
+
   if (busy) return <section className="costing-workspace"><div className="prerequisite">Loading Costing…</div></section>;
+
+  const summaryAvailable = !!result && (result.state === 'complete' || result.state === 'partial') && result.yearRows.length > 0;
+  const costingActionsMenu: MenuGroup[] = [{ items: [
+    { id: 'summary', label: 'View cost summary…', restoreFocus: false, disabled: !summaryAvailable || calculating, title: summaryAvailable ? undefined : 'Enter a rate and correct any input problems to view the cost summary.', onSelect: openSummary },
+    { id: 'csv', label: 'Export costing CSV', disabled: saving || !result, onSelect: () => { void exportCsv(); } },
+  ] }];
 
   const annualDays = costingService.summarizeServiceDays(serviceDays);
   const blockedOptions = basisOptions.filter((option) => option.kind === 'blocked');
@@ -305,7 +329,7 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, serviceD
       </select></ContextField>
       <ContextField label="Trip profile"><span className="context-field__value">{tripProfileName ?? 'Unavailable'}</span></ContextField>
       <ContextField label="View year"><select aria-label="View year" value={selectedYear} onChange={(event) => setViewYear(Number(event.target.value))}>{years.map((year) => <option key={year}>{year}</option>)}</select></ContextField>
-      <span className="scope-bar__spacer" /><button type="button" disabled={saving || !result} onClick={() => { void exportCsv(); }}>Export costing CSV</button>
+      <span className="scope-bar__spacer" /><MenuButton label="Actions" triggerAriaLabel="Costing actions" menuLabel="Costing actions" groups={costingActionsMenu} />
     </>, scopeSlot)}
     <div className="costing-top-grid">
       <WorkSurface title="Costing assumptions" ariaLabel="Costing assumptions" subtitle={`Shared by every cost basis in ${scenario.name}`} footer={dirty && <SaveBar message={persisted ? `${plural(assumptionChanges, 'unsaved change')} · the estimate below already includes ${assumptionChanges === 1 ? 'it' : 'them'}` : 'Not saved yet · the estimate below already uses these values'} saveLabel={saving ? 'Saving…' : 'Save assumptions'} busy={saving} saveDisabled={validation.length > 0} onSave={() => void save()} onDiscard={discardAssumptions} />}>
@@ -346,6 +370,8 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, serviceD
         {result?.yearRows.length ? <div className="table-scroll data-grid costing-outlook-table"><table><thead><tr><th scope="col">Year</th><th scope="col">Applied $ per revenue hour</th><th scope="col">Annual cost</th></tr></thead><tbody>{result.yearRows.map((row) => <tr key={row.serviceYear} className={row.serviceYear === selectedYear ? 'selected-costing-year' : ''}><th scope="row"><button className="link-button" onClick={() => setViewYear(row.serviceYear)}>{row.serviceYear}</button></th><td>{rate(row.appliedRateUsdPerRevenueHour)}</td><td>{money(row.annualCostUsd)}</td></tr>)}</tbody></table></div> : <InlineNote>Appears after you enter an operating cost rate.</InlineNote>}
       </SupportPanel>
     </div>
+    {partialSummary && <ModalDialog role="alertdialog" labelledBy="cost-summary-partial-title" className="confirm-dialog" onClose={() => setPartialSummary(undefined)}><h2 id="cost-summary-partial-title">This estimate is partial</h2><p>The cost summary will not show that some service is left out:</p><ul>{partialSummary.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul><div className="dialog-actions"><button autoFocus onClick={() => setPartialSummary(undefined)}>Cancel</button><button className="primary" onClick={() => { setSummary(partialSummary.summary); setPartialSummary(undefined); }}>Open summary</button></div></ModalDialog>}
+    {summary && <CostSummaryView summary={summary} onClose={() => setSummary(undefined)} />}
     {navigationDialog && <CostingNavigationDraftDialog saving={saving} saveDisabled={validation.some((finding) => finding.severity === 'error') || factorCellInvalid} onCancel={() => setNavigationDialog(undefined)} onDiscard={() => { const action = navigationDialog.action; setAssumptions(loadedAssumptions ?? assumptions); setFactors(savedFactors); setNavigationDialog(undefined); action(); }} onSave={() => void saveAndNavigate()} />}
   </div>;
 }

@@ -31,7 +31,7 @@ for (const width of [1024, 1440]) {
       expect(overflow, `${tab} scope row overflow`).toBeLessThanOrEqual(0);
     }
     await expect(page.getByRole('button', { name: 'Costing', exact: true })).toHaveAttribute('aria-current', 'page');
-    await expect(page.getByRole('button', { name: 'Export costing CSV', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Costing actions', exact: true })).toBeVisible();
   });
 }
 
