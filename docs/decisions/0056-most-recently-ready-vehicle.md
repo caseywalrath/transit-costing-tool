@@ -1,6 +1,6 @@
 # Decision 0056: Most Recently Ready Vehicle, Peak Vehicles and a Vehicle Limit in Automatic Blocking
 
-- Status: Accepted (2026-11-04) by the user
+- Status: Accepted (user acceptance of 2026-11-04); implemented (packages MR1 to MR4)
 - Date: 2026-11-04
 - Amends: Decision 0055 (Automatic Blocking), item 4 (chaining rule), item 8 (Block limits), item 11 (reading the break from built blocks), item 12 (preview) and item 14 (stored record and backup schema)
 - Plan: `docs/implementation/most-recently-ready.md`
