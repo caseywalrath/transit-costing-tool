@@ -1,8 +1,11 @@
-import type { BlockingCommands, BlockingDayCopyReview, BlockingQueries, BlockingRepository } from './ports';
+import type { AutoBlockingPreview, AutoBlockingRequest, AutoBlockingSetup, AutoBlockingStatus, BlockingCommands, BlockingDayCopyReview, BlockingQueries, BlockingRepository } from './ports';
+import { autoBlockingEditedCount, buildAutoBlocks, checkAgainstBuiltBlocks, defaultAutoBlockingRules, measureBuiltBlocks, summarizeAutoBlockingRules, validateAutoBlockingRules, type AutoBlockingCheck, type AutoBlockingContext, type AutoBlockingMeasurement, type AutoBlockingRules } from '../domain/autoBlocking';
+import { patternTotalMiles } from '../domain/patterns';
+import { sortServiceDays } from '../domain/serviceDays';
 import { buildBlockingDayCopyPreview, type BlockingDayCopyPreview, type BlockingDayCopyRequest } from '../domain/blockingDayCopy';
-import type { BlockingBlock, BlockingScenario, BlockActivity, RouteDirection, RoutePattern, ServiceDayDefinition, Trip, TripProfile, ValidationFinding } from '../domain/types';
+import type { BlockingBlock, BlockingScenario, BlockActivity, Node, Route, RouteDirection, RoutePattern, Scenario, ServiceDayDefinition, Trip, TripProfile, ValidationFinding } from '../domain/types';
 import { removeSelectedTripsFromBlock, weightedEstimateFactors } from '../domain/blocking';
-import { applyDeadheadToMatchingConnections, applyTripAssignment, assertBlockingScenarioSourceUnchanged, BlockingValidationError, assertBlockLabelAvailable, calculateBlockDeletionImpact, calculateBlocksDeletionImpact, calculateBlockingScenarioDeletionImpact, classifyBlockingInsertion, createBlockingBlock, createBlockingScenario, createBlockingScenarioSourceSignature, duplicateBlockingScenario, insertBlockActivity, moveRevenueTripGroup, normalizeBlockActivities, parseActivityInput, parseMinimumLayoverRule, parseMinimumLayoverRules, planBulkBoundaryActivities, proposeBlockLabel, renameBlockingScenario, summarizeBlock, summarizeBlockingScenario, unassignedRouteTrips, validateBlockingAssignments, validateBlockingBlock, type BlockingScenarioGraph, type BulkBoundaryRequest, type BulkBoundaryPreview } from '../domain/blocking';
+import { assertStructurallyValidBlock, validateBlockingScenarioName, applyDeadheadToMatchingConnections, applyTripAssignment, assertBlockingScenarioSourceUnchanged, BlockingValidationError, assertBlockLabelAvailable, calculateBlockDeletionImpact, calculateBlocksDeletionImpact, calculateBlockingScenarioDeletionImpact, classifyBlockingInsertion, createBlockingBlock, createBlockingScenario, createBlockingScenarioSourceSignature, duplicateBlockingScenario, insertBlockActivity, moveRevenueTripGroup, normalizeBlockActivities, parseActivityInput, parseMinimumLayoverRule, parseMinimumLayoverRules, planBulkBoundaryActivities, proposeBlockLabel, renameBlockingScenario, summarizeBlock, summarizeBlockingScenario, unassignedRouteTrips, validateBlockingAssignments, validateBlockingBlock, type BlockingScenarioGraph, type BulkBoundaryRequest, type BulkBoundaryPreview } from '../domain/blocking';
 import type { ActivityTextInput, BlockDeletionImpact, BlocksDeletionImpact, BlockingActivityAddRequest, BlockingActivityEditRequest, BlockingAssignmentRequest, BulkDeadheadRequest, ParsedActivityInput, ParsedMinimumLayover, BlockingBulkAssignmentRequest, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingCompatibility, BlockSummary, BlockingSummary, BlockingTripsAssignmentRequest, MinimumLayoverRule, MinimumLayoverRowInput, MinimumLayoverRules, ParsedMinimumLayoverRules } from '../domain/blocking';
 import { patternDirectionGroups, type DirectionGroup } from '../domain/directions';
 import { newId, withUpdatedAt } from '../domain/ids';
@@ -18,6 +21,12 @@ export interface BlockingContextProvider {
   listDirections?(scenarioId: string): Promise<RouteDirection[]>;
   /** The Scenario's service days. Without it a Block day copy cannot be previewed. */
   listServiceDays?(scenarioId: string): Promise<ServiceDayDefinition[]>;
+  /** The Scenario's Nodes. Automatic blocking (Decision 0055) is refused without it. */
+  listNodes?(scenarioId: string): Promise<Node[]>;
+  /** The Scenario's Routes. Automatic blocking is refused without it. */
+  listRoutes?(scenarioId: string): Promise<Route[]>;
+  /** Every Scenario of the same Project, including this one. Without it only this Scenario's Blocking Scenarios are offered as rule sources. */
+  listProjectScenarios?(scenarioId: string): Promise<Scenario[]>;
 }
 
 export { removeSelectedTripsFromBlock };
@@ -265,6 +274,115 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
     if (errors.length) throw new BlockingValidationError(errors.map((item) => item.messageKey).join(', '), errors);
     await this.repository.replaceBlocksForDayAtomically(request.blockingScenarioId, request.targetServiceDayId, current.preview.blocks, review.blockingScenarioSignature);
     return current.preview;
+  }
+
+  // --- Automatic blocking (Decision 0055) ---
+
+  /** Reads everything the engine needs for one Scenario and Trip Profile. Refuses when the context cannot supply Nodes, Routes or service days. */
+  private async loadAutoContext(scenarioId: string, tripProfileId: string): Promise<AutoBlockingContext> {
+    const { listNodes, listRoutes, listServiceDays } = this.context;
+    if (!listNodes || !listRoutes || !listServiceDays) throw new Error('Automatic blocking is not available: Nodes, Routes or service days cannot be read.');
+    const profile = await this.context.getTripProfile(tripProfileId);
+    if (!profile || profile.scenarioId !== scenarioId) throw new Error('Trip Profile not found in this Scenario.');
+    const [trips, patterns, nodes, routes, serviceDays, directions] = await Promise.all([
+      this.context.listTrips(scenarioId, tripProfileId), this.context.listPatterns(scenarioId), listNodes(scenarioId), listRoutes(scenarioId),
+      listServiceDays(scenarioId), this.context.listDirections?.(scenarioId) ?? Promise.resolve([] as RouteDirection[]),
+    ]);
+    return { scenarioId, routes, patterns, nodes, directions, serviceDays, trips };
+  }
+
+  async getAutoBlockingSetup(scenarioId: string, tripProfileId: string, preference?: MinimumLayoverRules): Promise<AutoBlockingSetup> {
+    const context = await this.loadAutoContext(scenarioId, tripProfileId);
+    const trips = context.trips.filter((trip) => trip.scenarioId === scenarioId && trip.tripProfileId === tripProfileId);
+    const patternTripCounts: Record<string, number> = {};
+    trips.forEach((trip) => { patternTripCounts[trip.patternId] = (patternTripCounts[trip.patternId] ?? 0) + 1; });
+    const patterns = context.patterns.filter((pattern) => patternTripCounts[pattern.id] !== undefined);
+    const groups = patternDirectionGroups(context.patterns, context.directions);
+    const siblings = await this.repository.listBlockingScenarios(scenarioId);
+    const taken = new Set(siblings.map((sibling) => sibling.name.trim().toLowerCase()));
+    let defaultName = 'Automatic';
+    for (let counter = 2; taken.has(defaultName.toLowerCase()); counter += 1) defaultName = `Automatic ${counter}`;
+    const scenarios = (await this.context.listProjectScenarios?.(scenarioId)) ?? [];
+    const ordered = [...scenarios.filter((scenario) => scenario.id === scenarioId), ...scenarios.filter((scenario) => scenario.id !== scenarioId)];
+    const sources: AutoBlockingSetup['sources'] = [];
+    for (const scenario of ordered.length ? ordered : [{ id: scenarioId, name: '' }]) {
+      for (const blockingScenario of await this.repository.listBlockingScenarios(scenario.id)) {
+        const blockCount = (await this.repository.listBlockingBlocks(blockingScenario.id)).length;
+        if (blockCount > 0) sources.push({ blockingScenarioId: blockingScenario.id, scenarioName: scenario.name, name: blockingScenario.name, blockCount });
+      }
+    }
+    return {
+      routes: context.routes, patterns, nodes: context.nodes,
+      patternGroups: Object.fromEntries(patterns.map((pattern) => [pattern.id, groups.get(pattern.id)])),
+      patternTripCounts,
+      serviceDays: sortServiceDays(context.serviceDays).map((day) => ({ day, tripCount: trips.filter((trip) => trip.serviceDayId === day.id).length })),
+      milesIncompletePatternIds: patterns.filter((pattern) => patternTotalMiles(pattern) === undefined).map((pattern) => pattern.id),
+      defaultRules: defaultAutoBlockingRules(context, tripProfileId, preference),
+      defaultName, sources,
+    };
+  }
+
+  /** Validates rules and name, then builds in memory. Used by both the preview and the create command. */
+  private async buildAuto(request: AutoBlockingRequest, now: string) {
+    const context = await this.loadAutoContext(request.scenarioId, request.tripProfileId);
+    const siblings = await this.repository.listBlockingScenarios(request.scenarioId);
+    const ruleFindings = validateAutoBlockingRules(request.rules, { patterns: context.patterns, nodes: context.nodes, serviceDayIds: context.serviceDays.map((day) => day.id) });
+    const nameFindings = validateBlockingScenarioName(request.name, siblings);
+    const scenario = createBlockingScenario({ scenarioId: request.scenarioId, tripProfileId: request.tripProfileId, name: request.name.trim() || 'Automatic' }, now);
+    const result = buildAutoBlocks({ ...context, blockingScenario: scenario, rules: request.rules, now });
+    return { context, scenario, result, ruleFindings, nameFindings };
+  }
+
+  async previewAutoBlocking(request: AutoBlockingRequest): Promise<AutoBlockingPreview> {
+    const now = new Date().toISOString();
+    const { context, result, ruleFindings, nameFindings } = await this.buildAuto(request, now);
+    let check: AutoBlockingCheck | undefined;
+    if (request.sourceBlockingScenarioId) {
+      const source = await this.loadAutoSource(request.sourceBlockingScenarioId);
+      check = checkAgainstBuiltBlocks({ source, rules: request.rules, now, target: context });
+    }
+    return { result, ruleFindings, nameFindings, ...(check ? { check } : {}) };
+  }
+
+  /** A Blocking Scenario of the Project with its Scenario's data, for measuring or checking. */
+  private async loadAutoSource(blockingScenarioId: string) {
+    const blockingScenario = await this.repository.getBlockingScenario(blockingScenarioId);
+    if (!blockingScenario) throw new Error('Blocking Scenario not found.');
+    const [context, blocks] = await Promise.all([this.loadAutoContext(blockingScenario.scenarioId, blockingScenario.tripProfileId), this.repository.listBlockingBlocks(blockingScenarioId)]);
+    return { ...context, blockingScenario, blocks };
+  }
+
+  async measureAutoBlockingSource(scenarioId: string, tripProfileId: string, sourceBlockingScenarioId: string, draft: AutoBlockingRules): Promise<AutoBlockingMeasurement> {
+    const target = await this.loadAutoContext(scenarioId, tripProfileId);
+    const source = await this.loadAutoSource(sourceBlockingScenarioId);
+    if (!source.blocks.length) throw new Error('The chosen Blocking Scenario has no Blocks to read.');
+    return measureBuiltBlocks({ source, target, targetRules: draft });
+  }
+
+  async getAutoBlockingStatus(blockingScenarioId: string): Promise<AutoBlockingStatus | undefined> {
+    const scenario = await this.repository.getBlockingScenario(blockingScenarioId);
+    const record = scenario?.autoBlocking;
+    if (!scenario || !record) return undefined;
+    const [blocks, patterns, nodes, serviceDays] = await Promise.all([
+      this.repository.listBlockingBlocks(blockingScenarioId), this.context.listPatterns(scenario.scenarioId),
+      this.context.listNodes?.(scenario.scenarioId) ?? Promise.resolve([] as Node[]), this.context.listServiceDays?.(scenario.scenarioId) ?? Promise.resolve([] as ServiceDayDefinition[]),
+    ]);
+    return { record, ...autoBlockingEditedCount(record, blocks), summary: summarizeAutoBlockingRules(record.rules, patterns, nodes, serviceDays) };
+  }
+
+  async createAutoBlockingScenario(request: AutoBlockingRequest): Promise<BlockingScenario> {
+    const now = new Date().toISOString();
+    const { context, scenario, result, ruleFindings, nameFindings } = await this.buildAuto(request, now);
+    const refused = [...ruleFindings, ...nameFindings].filter((item) => item.severity === 'error');
+    if (refused.length) throw new BlockingValidationError(refused.map((item) => item.messageKey).join(', '), refused);
+    if (!result.blocks.length) throw new Error('The Trip Profile has no Trips on the chosen service days, so no Blocks can be built.');
+    const patterns = new Map(context.patterns.map((pattern) => [pattern.id, pattern]));
+    const trips = new Map(context.trips.map((trip) => [trip.id, trip]));
+    result.blocks.forEach((block) => assertStructurallyValidBlock(block, { scenario: { id: request.scenarioId }, blockingScenario: scenario, trips, patterns }));
+    const tripCount = result.days.reduce((sum, day) => sum + day.tripCount, 0);
+    const saved: BlockingScenario = { ...scenario, autoBlocking: { rules: request.rules, builtAt: now, tripCount, blockCount: result.blocks.length, ...(request.sourceBlockingScenarioId ? { sourceBlockingScenarioId: request.sourceBlockingScenarioId } : {}) } };
+    await this.repository.saveBlockingScenarioGraphAtomically(saved, result.blocks);
+    return saved;
   }
 
   async reorderActivities(blockingScenarioId: string, blockId: string, activityIds: string[], sourceSignature: string): Promise<BlockingBlock> {
