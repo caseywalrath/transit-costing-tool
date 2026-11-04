@@ -1,6 +1,6 @@
 # Decision 0055: Automatic Blocking
 
-- Status: Accepted (user decisions of 2026-11-03); not implemented
+- Status: Accepted (user decisions of 2026-11-03); implemented, awaiting user acceptance
 - Date: 2026-11-03
 - Extends: Decision 0019 (Blocking Scenarios), Decision 0050 (minimum layover by direction), Decision 0051 (estimated cost basis)
 - Plan: `docs/implementation/automatic-blocking.md`

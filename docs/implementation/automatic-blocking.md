@@ -1,5 +1,6 @@
 # Packages AB1 to AB5: Automatic blocking
 
+- Status: AB1 to AB5 implemented on 2026-11-04; awaiting user acceptance.
 - Requested by the user on 2026-11-03. Rules: Decision 0055 (`docs/decisions/0055-automatic-blocking.md`). Read it in full first; this plan does not repeat its reasoning.
 - Branch: `claude/admiring-sagan-4lfwzp`. Commit each package separately with a clear message. Never push to another branch. Do not open a pull request.
 - Implementer: a Sonnet-class model starting each package with fresh context. Every package below is self-contained: read the "Read first" list, then your package section, and touch only the files your package owns.
@@ -8,11 +9,11 @@
 | Package | Content | Class / model |
 |---|---|---|
 | AB0 | Decision 0055, this plan, design reference | Done (primary agent) |
-| AB1 | Types, rule validation, backup schema 8, copy and import remapping | Structural (Luna) / Sonnet |
-| AB2 | Pure engine: defaults, build, summary, findings, measurement, check | Structural (Luna) / Sonnet |
-| AB3 | Application service, context wiring, application tests | Structural (Luna) / Sonnet |
-| AB4 | UI: menu item, dialog, provenance note, styles | UI (Sol) / Sonnet, layout fixed by the mock-up |
-| AB5 | Browser test, documentation, closeout | Structural (Luna) / Sonnet |
+| AB1 | Types, rule validation, backup schema 8, copy and import remapping | Structural (Luna) / Sonnet; done 2026-11-04 |
+| AB2 | Pure engine: defaults, build, summary, findings, measurement, check | Structural (Luna) / Sonnet; done 2026-11-04 |
+| AB3 | Application service, context wiring, application tests | Structural (Luna) / Sonnet; done 2026-11-04 |
+| AB4 | UI: menu item, dialog, provenance note, styles | UI (Sol) / Sonnet, layout fixed by the mock-up; done 2026-11-04 |
+| AB5 | Browser test, documentation, closeout | Structural (Luna) / Sonnet; done 2026-11-04 |
 
 ## Read first (every package)
 

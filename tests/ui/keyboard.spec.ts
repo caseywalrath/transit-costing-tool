@@ -171,6 +171,15 @@ test('every dialog opened from the screens has an accessible name, and the axe d
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Scope' })).toBeVisible();
   expect(await axeViolations(page)).toEqual([]);
+  // Build blocks automatically (Decision 0055, AB5): the dialog with its preview table loaded.
+  await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Build blocks automatically…', exact: true }).click();
+  const autoBlocking = page.getByRole('dialog', { name: 'Build blocks automatically' });
+  await expect(autoBlocking.getByRole('table', { name: 'Automatic blocking preview' }).locator('tbody tr').first()).toBeVisible({ timeout: 30_000 });
+  await expect(autoBlocking.getByLabel('Blocking scenario name')).toBeFocused();
+  expect(await axeViolations(page)).toEqual([]);
+  await page.keyboard.press('Escape');
+  await expect(autoBlocking).toHaveCount(0);
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Costing Assumptions' })).toBeVisible();
   expect(await axeViolations(page)).toEqual([]);
