@@ -118,6 +118,20 @@ describe('Automatic blocking application service (Decision 0055)', () => {
     await expect(service.createAutoBlockingScenario({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'Plain', rules, replaceBlockingScenarioId: plain.id })).rejects.toThrow('Only an automatically built');
   });
 
+  it('a new automatic scenario fills the blank Default one instead of sitting beside it', async () => {
+    const { first, service } = setup();
+    const blank = await service.ensureDefaultBlockingScenario(first.scenarioId, first.profile.id);
+    const rules = (await service.getAutoBlockingSetup(first.scenarioId, first.profile.id)).defaultRules;
+    const created = await service.createAutoBlockingScenario({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'Auto 1', rules });
+    expect(created.id).toBe(blank.id);
+    expect((await service.listBlockingScenarios(first.scenarioId)).map((item) => item.name)).toEqual(['Auto 1']);
+    expect((await service.listBlockingBlocks(created.id)).length).toBeGreaterThan(0);
+    // With the Default filled, the next one is a new scenario.
+    const second = await service.createAutoBlockingScenario({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'Auto 2', rules });
+    expect(second.id).not.toBe(created.id);
+    expect((await service.listBlockingScenarios(first.scenarioId)).length).toBe(2);
+  });
+
   it('creates a Default Blocking Scenario only when the Trip Profile has none', async () => {
     const { first, service } = setup();
     const created = await service.ensureDefaultBlockingScenario(first.scenarioId, first.profile.id);

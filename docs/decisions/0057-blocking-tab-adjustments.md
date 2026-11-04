@@ -41,6 +41,9 @@ The user asked for these Blocking tab changes on 2026-11-04:
 
    A Scenario switch restores the remembered value when it still exists, and otherwise falls back to the first entry.
 
+8. **Blank Default is filled, not kept beside (user request of 2026-11-04).** When Auto-blocking creates a new scenario and the Trip Profile has a Blocking Scenario named "Default" (or "Default n") with no Blocks and no `autoBlocking` record, the result is written into that scenario: it keeps its id, takes the dialog's name, and receives the Blocks and the record in one `saveBlockingScenarioGraphAtomically` write. The write is refused if the Default gained Blocks since it was read. Otherwise a new Blocking Scenario is created.
+9. **Blocked Cost breakdown shows trips and running hours (user request of 2026-11-04).** `CostingDailyResult` gains optional `tripCount` (revenue Trips in the day's eligible Blocks) and `runningHoursPerDay` (their running hours). The Cost breakdown shows them on the blocked basis, and the Total row adds the trips. They are information only and do not enter the cost.
+
 ## Consequences
 
 - Opening the Blocking tab can write: it creates the Default Blocking Scenario when one is needed. This shows in the save status like any other write.

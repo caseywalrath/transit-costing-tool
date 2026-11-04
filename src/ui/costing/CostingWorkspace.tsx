@@ -376,13 +376,13 @@ function breakdownRows(result: CostingResult, selectedYear: number): { rows: Bre
       annualRevenue: row.annualRevenueHours, annualPlatform: row.annualPlatformHours, annualCost: cost?.annualCostUsd,
     }; })
     : result.dailyRows.map((row) => { const cost = row.yearCosts.find((item) => item.serviceYear === selectedYear); return {
-      key: row.serviceDayId, name: row.serviceDayName, days: row.annualServiceDays, blocks: row.eligibleBlockCount,
+      key: row.serviceDayId, name: row.serviceDayName, days: row.annualServiceDays, trips: row.tripCount, blocks: row.eligibleBlockCount, running: row.runningHoursPerDay,
       revenue: row.revenueHoursPerDay, platform: row.platformHoursPerDay, dailyCost: cost?.costPerDayUsd,
       annualRevenue: row.annualRevenueHours, annualPlatform: row.annualPlatformHours, annualCost: cost?.annualCostUsd,
     }; });
   const total: BreakdownRow = {
     key: 'total', name: 'Total', days: rows.reduce((total, row) => total + row.days, 0),
-    ...(result.basis === 'estimated' ? { trips: result.tripCount } : { blocks: result.eligibleBlockCount }),
+    ...(result.basis === 'estimated' ? { trips: result.tripCount } : { trips: rows.reduce((total, row) => total + (row.trips ?? 0), 0), blocks: result.eligibleBlockCount }),
     annualRevenue: year ? year.annualRevenueHours : sum(rows.map((row) => row.annualRevenue)),
     annualPlatform: year ? year.annualPlatformHours : sum(rows.map((row) => row.annualPlatform)),
     annualCost: year?.annualCostUsd,

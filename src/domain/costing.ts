@@ -103,6 +103,10 @@ export interface CostingDailyResult {
   eligibleBlockCount: number;
   excludedBlockCount: number;
   unassignedTripCount: number;
+  /** Revenue Trips in the day's eligible Blocks. Shown for information; not a costing input. */
+  tripCount?: number;
+  /** Running hours of the day's eligible Blocks. Shown for information; not a costing input. */
+  runningHoursPerDay?: number;
   revenueHoursPerDay: number;
   platformHoursPerDay: number;
   annualRevenueHours: number;
@@ -364,6 +368,8 @@ export function calculateCosting(input: CostingCalculationInput): CostingCalcula
       eligibleBlockCount: row.eligibleBlockCount,
       excludedBlockCount: row.excludedBlocks.length,
       unassignedTripCount: row.unassignedTripCount,
+      tripCount: row.tripCount,
+      runningHoursPerDay: row.runningSecondsPerDay / 3600,
       revenueHoursPerDay: row.revenueHoursPerDay,
       platformHoursPerDay: row.platformHoursPerDay,
       annualRevenueHours,
@@ -441,6 +447,8 @@ export function roundCostingDisplay(value: number, decimalPlaces: number): numbe
 
 interface DayCoverage {
   eligibleBlockCount: number;
+  tripCount: number;
+  runningSecondsPerDay: number;
   /** The day's totals are added in whole seconds and converted to hours once, so a half-hour tie is not lost to floating-point error. */
   revenueSecondsPerDay: number;
   platformSecondsPerDay: number;
@@ -461,6 +469,8 @@ interface Coverage {
 function buildCoverage(input: CostingCalculationInput, serviceDayIds: ReadonlySet<string>): Coverage {
   const days = new Map<string, DayCoverage>(input.serviceDays.map((day) => [day.id, {
     eligibleBlockCount: 0,
+    tripCount: 0,
+    runningSecondsPerDay: 0,
     revenueSecondsPerDay: 0,
     platformSecondsPerDay: 0,
     revenueHoursPerDay: 0,
@@ -484,6 +494,8 @@ function buildCoverage(input: CostingCalculationInput, serviceDayIds: ReadonlySe
     }
     const summary = matchingSummaries[0];
     day.eligibleBlockCount += 1;
+    day.tripCount += block.activities.filter((activity) => activity.type === 'revenueTrip').length;
+    day.runningSecondsPerDay += Math.round(summary.runningHours * 3600);
     // A summary from the Blocking rules carries its whole seconds; one without them (a hand-built summary) gives the seconds behind its hours.
     day.revenueSecondsPerDay += summary.revenueSeconds ?? Math.round(summary.revenueHours * 3600);
     day.platformSecondsPerDay += summary.platformSeconds ?? Math.round(summary.platformHours! * 3600);

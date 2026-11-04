@@ -140,6 +140,9 @@ describe('Phase 5A costing calculations', () => {
     expect(result.eligibleBlockCount).toBe(1);
     expect(result.dailyRows[0].revenueHoursPerDay).toBe(1);
     expect(result.dailyRows[0].platformHoursPerDay).toBe(3);
+    // Trips and running hours of the eligible Blocks are reported for information (Decision 0057).
+    expect(result.dailyRows[0].tripCount).toBe(1);
+    expect(result.dailyRows[0].runningHoursPerDay).toBe(1);
   });
 
   it('excludes a Block without a pull-in boundary and reports the reason', () => {

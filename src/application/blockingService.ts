@@ -340,10 +340,22 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
     const ruleFindings = validateAutoBlockingRules(request.rules, { patterns: context.patterns, nodes: context.nodes, serviceDayIds: context.serviceDays.map((day) => day.id) });
     const target = request.replaceBlockingScenarioId ? siblings.find((sibling) => sibling.id === request.replaceBlockingScenarioId) : undefined;
     if (request.replaceBlockingScenarioId && (!target || target.tripProfileId !== request.tripProfileId || !target.autoBlocking)) throw new Error('Only an automatically built Blocking Scenario of this Trip Profile can be rebuilt.');
-    const nameFindings = validateBlockingScenarioName(request.name, siblings, target?.id);
-    const scenario = target ? { ...target, name: request.name.trim() || target.name } : createBlockingScenario({ scenarioId: request.scenarioId, tripProfileId: request.tripProfileId, name: request.name.trim() || 'Auto' }, now);
+    // Decision 0057: a new automatic scenario takes the place of the Trip Profile's blank Default one instead of sitting beside it.
+    const blankDefault = target ? undefined : await this.blankDefaultScenario(siblings, request.tripProfileId);
+    const reused = target ?? blankDefault;
+    const nameFindings = validateBlockingScenarioName(request.name, siblings, reused?.id);
+    const scenario = reused ? { ...reused, name: request.name.trim() || reused.name } : createBlockingScenario({ scenarioId: request.scenarioId, tripProfileId: request.tripProfileId, name: request.name.trim() || 'Auto' }, now);
     const result = buildAutoBlocks({ ...context, blockingScenario: scenario, rules: request.rules, now });
-    return { context, scenario, result, ruleFindings, nameFindings };
+    return { context, scenario, result, ruleFindings, nameFindings, blankDefault };
+  }
+
+  /** The Trip Profile's "Default" (or "Default n") Blocking Scenario when it has no Blocks and was not built automatically. */
+  private async blankDefaultScenario(siblings: BlockingScenario[], tripProfileId: string): Promise<BlockingScenario | undefined> {
+    for (const sibling of siblings) {
+      if (sibling.tripProfileId !== tripProfileId || sibling.autoBlocking || !/^default( \d+)?$/i.test(sibling.name.trim())) continue;
+      if (!(await this.repository.listBlockingBlocks(sibling.id)).length) return sibling;
+    }
+    return undefined;
   }
 
   async previewAutoBlocking(request: AutoBlockingRequest): Promise<AutoBlockingPreview> {
@@ -385,7 +397,7 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
 
   async createAutoBlockingScenario(request: AutoBlockingRequest): Promise<BlockingScenario> {
     const now = new Date().toISOString();
-    const { context, scenario, result, ruleFindings, nameFindings } = await this.buildAuto(request, now);
+    const { context, scenario, result, ruleFindings, nameFindings, blankDefault } = await this.buildAuto(request, now);
     const refused = [...ruleFindings, ...nameFindings].filter((item) => item.severity === 'error');
     if (refused.length) throw new BlockingValidationError(refused.map((item) => item.messageKey).join(', '), refused);
     if (!result.blocks.length) throw new Error('The Trip Profile has no Trips on the chosen service days, so no Blocks can be built.');
@@ -408,8 +420,9 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
       await this.repository.saveBlockingScenario(saved);
       return saved;
     }
-    const saved: BlockingScenario = { ...scenario, autoBlocking: record };
-    await this.repository.saveBlockingScenarioGraphAtomically(saved, result.blocks);
+    const saved: BlockingScenario = { ...(blankDefault ? withUpdatedAt(scenario, now) : scenario), autoBlocking: record };
+    // Filling the blank Default is refused if it gained Blocks since it was read.
+    await this.repository.saveBlockingScenarioGraphAtomically(saved, result.blocks, blankDefault ? createBlockingScenarioSourceSignature(blankDefault, []) : undefined);
     return saved;
   }
 
