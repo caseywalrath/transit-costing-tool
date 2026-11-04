@@ -14,12 +14,12 @@ async function openEstimated(page: Page) {
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await expect(scopeField(page, 'Cost basis').locator('option:checked')).toHaveText('Blocked · Workbook Blocks');
   await scopeField(page, 'Cost basis').selectOption({ label: 'Estimated · Default' });
-  await expect(page.getByRole('region', { name: 'Estimate basis' })).toBeVisible();
+  await expect(page.locator('.costing-results-table tbody tr').first().locator('td').nth(1)).not.toHaveText('—');
 }
 
 const factors = (page: Page) => page.getByRole('grid', { name: 'Estimate factors' });
 const resultRow = (page: Page, day: string) => page.locator('.costing-results-table tbody tr').filter({ has: page.locator('th', { hasText: day }) });
-/** The number in the cell of the estimated table under `column` (1 is Days) in a day's row. */
+/** The number in the cell of the Cost breakdown under `column` (1 is Days, 2 Trips, 3 Blocks, 4 Daily running) in a day's row. */
 async function cellNumber(page: Page, day: string, column: number) {
   return Number((await resultRow(page, day).locator('td').nth(column - 1).innerText()).replaceAll(/[$,]/g, ''));
 }
@@ -31,22 +31,24 @@ test('the cost basis lists blocked and estimated choices, and Weekday factors fr
   await expect(select.locator('optgroup[label="Blocked hours"] option')).toHaveText(['Blocked · Workbook Blocks']);
   await expect(select.locator('optgroup[label="Estimated from running time"] option')).toHaveText(['Estimated · Default']);
   await expect(page.locator('.context-field__value')).toHaveText('Default');
-  await expect(page.locator('.costing-results-table thead th')).toHaveText(['Service day', 'Days', 'Trips', 'Daily running (h)', 'Daily revenue (h)estimated', 'Daily platform (h)estimated', 'Daily cost', 'Annual revenue (h)', 'Annual platform (h)', 'Annual cost']);
+  await expect(page.locator('.costing-results-table thead th')).toHaveText(['Service day', 'Days', 'Trips', 'Blocks', 'Daily running (h)', 'Daily revenue (h)', 'Daily platform (h)', 'Daily cost', 'Annual revenue (h)', 'Annual platform (h)', 'Annual cost']);
+  // The estimated basis has no blocks.
+  await expect(resultRow(page, 'Weekday').locator('td').nth(2)).toHaveText('—');
 
   // No factor yet: no estimate, running hours stay.
   await expect(page.getByText(/Enter a layover % for .* or for All days to estimate revenue hours\. Running hours are shown below\./)).toBeVisible();
-  expect(await cellNumber(page, 'Weekday', 3)).toBeCloseTo(256.28, 2);
+  expect(await cellNumber(page, 'Weekday', 4)).toBeCloseTo(256.28, 2);
 
   await editGridCell(gridCell(factors(page), 'Weekday layover percent'), '17.8');
   await editGridCell(gridCell(factors(page), 'Weekday deadhead percent'), '5.5');
   await editGridCell(gridCell(factors(page), 'All days layover percent'), '18.2');
-  await expect(resultRow(page, 'Weekday').locator('td').nth(3)).not.toHaveText('—');
-  expect(Math.abs(await cellNumber(page, 'Weekday', 4) - 311.59)).toBeLessThan(0.5);
+  await expect(resultRow(page, 'Weekday').locator('td').nth(4)).not.toHaveText('—');
+  expect(Math.abs(await cellNumber(page, 'Weekday', 5) - 311.59)).toBeLessThan(0.5);
   await expect(page.getByRole('button', { name: 'Save factors', exact: true })).toBeVisible();
   await expect(page.getByText('3 unsaved changes · the estimate below already includes them')).toBeVisible();
 });
 
-test('a blank day uses All days: the cell shows the value, the row says so, and the Estimate basis panel names the day', async ({ page }) => {
+test('a blank day uses All days: the factor cell shows the value, and the breakdown carries no basis captions or badge', async ({ page }) => {
   await openEstimated(page);
   await editGridCell(gridCell(factors(page), 'All days layover percent'), '18.2');
   await editGridCell(gridCell(factors(page), 'All days deadhead percent'), '5.6');
@@ -55,18 +57,17 @@ test('a blank day uses All days: the cell shows the value, the row says so, and 
     await editGridCell(gridCell(factors(page), `${day} deadhead percent`), '5');
   }
   await expect(gridCell(factors(page), 'Holiday layover percent').locator('.grid-cell__placeholder')).toHaveText('18.2');
-  await expect(resultRow(page, 'Holiday').locator('.costing-row-note')).toHaveText('All days factors');
-  await expect(resultRow(page, 'Weekday').locator('.costing-row-note')).toHaveCount(0);
-  await expect(page.getByRole('region', { name: 'Estimate basis' })).toContainText('Holiday uses All days: 18.2% layover, 5.6% deadhead.');
+  await expect(page.locator('.costing-results-table tbody th')).toHaveText(['Weekday', 'Saturday', 'Sunday', 'Holiday']);
+  await expect(page.getByRole('region', { name: 'Estimate basis' })).toHaveCount(0);
   await page.getByLabel('Operating cost per revenue hour in USD').fill('152.40');
-  await expect(page.locator('.costing-state.estimated')).toHaveText('Estimated');
-  await expect(page.getByText('Applied rate $152.40 per revenue hour · revenue and platform hours estimated from running time')).toBeVisible();
+  await expect(page.locator('.costing-state')).toHaveCount(0);
+  await expect(page.getByText('Applied rate $152.40 per revenue hour', { exact: true })).toBeVisible();
 
   // Clearing every layover value removes the estimate; the running hours stay.
   await editGridCell(gridCell(factors(page), 'All days layover percent'), '');
   for (const day of ['Weekday', 'Saturday', 'Sunday']) await editGridCell(gridCell(factors(page), `${day} layover percent`), '');
   await expect(page.getByText('Enter a layover % for Weekday, Saturday, Sunday, and Holiday or for All days to estimate revenue hours. Running hours are shown below.')).toBeVisible();
-  expect(await cellNumber(page, 'Weekday', 3)).toBeCloseTo(256.28, 2);
+  expect(await cellNumber(page, 'Weekday', 4)).toBeCloseTo(256.28, 2);
 });
 
 test('Save factors keeps them over a reload with the remembered basis; Discard restores the saved values', async ({ page }) => {
@@ -128,7 +129,7 @@ test('the estimated export carries the cost basis kind', async ({ page }) => {
   expect(text).toContain(',estimated,');
 });
 
-test('at 1024 and 1440 px the ten-column table shows Annual cost without scrolling and the page never scrolls sideways', async ({ page }) => {
+test('at 1024 and 1440 px the eleven-column table shows Annual cost without scrolling and the page never scrolls sideways', async ({ page }) => {
   await openEstimated(page);
   await page.getByLabel('Operating cost per revenue hour in USD').fill('150000');
   await editGridCell(gridCell(factors(page), 'All days layover percent'), '18.2');

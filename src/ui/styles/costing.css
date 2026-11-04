@@ -11,20 +11,26 @@
 .costing-alert { margin: 0 0 var(--space-2); border-left: 4px solid; padding: var(--space-2) 10px; line-height: 1.35; }
 .costing-alert.warning { border-color: var(--color-warn-border); background: var(--color-warn-soft); color: var(--color-warn); }
 .costing-alert.error { border-color: var(--color-danger); background: var(--color-danger-soft); color: var(--color-danger); }
-.costing-results-table table { min-width: 0; }
-/* Nine columns fit the 1024 px frame (AC7, issue I-033): headers wrap, cells keep their digits on one line. */
+/* Eleven columns, the same for both cost bases, fit the 1024 px frame (AC7, issue I-033): fixed widths by column kind, headers wrap,
+   cells keep their digits on one line. */
+.costing-results-table table { min-width: 0; width: 100%; table-layout: fixed; }
+.costing-results-table .costing-col-day { width: 11%; }
+.costing-results-table .costing-col-count { width: 5.5%; }
+.costing-results-table .costing-col-hours { width: 9.5%; }
+.costing-results-table .costing-col-money { width: 11%; }
+.costing-results-table .costing-col-total { width: 13.5%; }
+.costing-results-table thead th { vertical-align: bottom; }
 .costing-results-table thead th { white-space: normal; line-height: 1.2; }
 .costing-results-table th, .costing-results-table td { padding-left: 6px; padding-right: 6px; }
 .costing-alert p { margin: 0; }
 .costing-alert ul { margin: 6px 0 0; padding-left: 20px; }
 .costing-results-table th, .costing-results-table td, .costing-outlook-table th, .costing-outlook-table td { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .costing-results-table td:not(:first-child), .costing-results-table thead th:not(:first-child), .costing-results-table tfoot td { text-align: right; }
-.costing-results-table tbody th[scope='row'], .costing-results-table tfoot th[scope='row'] { text-align: right; vertical-align: middle; font-size: var(--font-size-note); }
+.costing-results-table tbody th[scope='row'], .costing-results-table tfoot th[scope='row'] { text-align: left; vertical-align: middle; font-size: var(--font-size-note); }
 .costing-results-table tfoot, .costing-outlook-table .selected-costing-year { background: var(--color-sunken); font-weight: var(--font-weight-bold); }
 .costing-results-table tfoot th { background: var(--color-sunken); }
-.costing-lower-grid { display: grid; grid-template-columns: minmax(540px, 1.35fr) minmax(360px, .65fr); gap: 14px; min-width: 0; }
+.costing-lower-grid { display: grid; grid-template-columns: minmax(0, 560px); gap: 14px; min-width: 0; }
 .costing-lower-grid > section { min-width: 0; }
-.costing-exclusions-table table { min-width: 620px; }
 .costing-outlook-table table { min-width: 420px; }
 .activity-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px var(--space-3); }
 .activity-form label { display: grid; gap: var(--space-1); color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
@@ -40,7 +46,6 @@
 .costing-lower-grid .table-scroll { background: var(--color-surface); }
 .costing-lower-grid .support-panel__header > .support-panel__aside { margin-left: 0; }
 /* Estimated cost basis (Decision 0051, package E4): the top row of assumptions and estimate factors, the factor grid, and the estimate marks. */
-.costing-state.estimated { border-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-accent-strong); }
 .costing-top-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--inset-panel); align-items: start; min-width: 0; }
 .costing-top-grid > section { min-width: 0; }
 .costing-top-grid .costing-assumptions-grid { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
@@ -49,9 +54,6 @@
 .costing-factor-grid tbody th[scope='row'] { text-align: left; }
 .costing-factor-grid .costing-factor-fallback { background: var(--color-surface-2); }
 .costing-factor-hint { margin-top: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-note); }
-.costing-est-mark { display: block; font-weight: var(--font-weight-regular); color: var(--color-accent-strong); font-size: var(--font-size-caption); }
-.costing-row-note { display: block; font-weight: var(--font-weight-regular); color: var(--color-warn); font-size: var(--font-size-caption); }
-.costing-basis-notes { display: grid; gap: var(--space-2); }
 
 /* Decision 0054. Operating Cost Estimate: a US Letter sheet over the window; the print stylesheet prints the sheet alone. */
 .modal-backdrop:has(> .cost-summary-dialog) { place-items: start center; overflow-y: auto; }
