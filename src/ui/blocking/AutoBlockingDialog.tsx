@@ -14,7 +14,8 @@ type Props = {
   tripProfileId: string;
   tripProfileName: string;
   minimumLayover?: MinimumLayoverRules;
-  initialRules?: AutoBlockingRules;
+  /** The selected Blocking Scenario when it was built automatically: the dialog can rebuild it in place instead of creating a new one. */
+  existing?: { scenario: BlockingScenario; rules: AutoBlockingRules; editedBlockCount: number; blockCountChanged: boolean };
   /** The workspace's pattern pill, so the dialog shows Patterns as the Blocking tables do. */
   renderPatternPill: (pattern: RoutePattern) => ReactNode;
   onCreated: (scenario: BlockingScenario) => Promise<void>;
@@ -29,6 +30,8 @@ type DeadheadRow = { key: number; from: string; to: string; minutes: string; mil
 type Form = {
   serviceDayIds: string[];
   patterns: PatternRow[];
+  /** Breaks are off unless this is ticked; the values stay in the draft while it is off. */
+  breakEnabled: boolean;
   breakLength: string; breakMinBlock: string; breakFirst: string; breakAnother: string;
   maxRunning: string; maxMiles: string; maxVehicles: string;
   garages: Record<string, string>;
@@ -54,6 +57,7 @@ function formFromRules(rules: AutoBlockingRules, setup: AutoBlockingSetup): Form
       const row = rows.get(pattern.id) ?? defaults.get(pattern.id) ?? { patternId: pattern.id, breakAllowed: false, canStart: false, canEnd: false };
       return { patternId: pattern.id, mode: row.minimumLayover?.mode ?? 'none', amount: text(row.minimumLayover?.value), breakAllowed: row.breakAllowed, canStart: row.canStart, canEnd: row.canEnd };
     }),
+    breakEnabled: rules.break !== undefined,
     breakLength: text(rules.break?.lengthMinutes), breakMinBlock: text(rules.break?.minimumBlockHours), breakFirst: text(rules.break?.firstBreakAfterHours), breakAnother: text(rules.break?.anotherBreakAfterHours),
     maxRunning: text(rules.maxRunningHours), maxMiles: text(rules.maxRevenueMiles), maxVehicles: text(rules.maxVehicles),
     garages: Object.fromEntries(rules.garages.filter((garage) => nodeIds.has(garage.nodeId)).map((garage) => [garage.routeId, garage.nodeId])),
@@ -75,7 +79,7 @@ function terminalNodes(form: Form, setup: AutoBlockingSetup): Node[] {
 }
 
 function rulesFromForm(form: Form, setup: AutoBlockingSetup): AutoBlockingRules {
-  const length = number(form.breakLength);
+  const length = form.breakEnabled ? number(form.breakLength) : undefined;
   const garages = Object.entries(form.garages).filter(([, nodeId]) => nodeId).map(([routeId, nodeId]) => ({ routeId, nodeId }));
   const another = number(form.breakAnother);
   return {
@@ -103,11 +107,14 @@ const FINDING_FIELD_TEXT: Record<string, string> = {
   'blockingScenario.nameUnique': 'A blocking scenario with this name already exists.',
 };
 
-/** Decision 0055: build a new Blocking Scenario from rules. */
-export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId, tripProfileName, minimumLayover, initialRules, renderPatternPill, onCreated, onClose }: Props) {
+/** Decision 0055: build a new Blocking Scenario from rules, or rebuild the selected automatically built one in place. */
+export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId, tripProfileName, minimumLayover, existing, renderPatternPill, onCreated, onClose }: Props) {
   const [setup, setSetup] = useState<AutoBlockingSetup>();
   const [form, setForm] = useState<Form>();
   const [name, setName] = useState('');
+  // New scenario is the default; ticked, the rules of `existing` are loaded and its Blocks are rebuilt.
+  const [replace, setReplace] = useState(false);
+  const replaceId = replace && existing ? existing.scenario.id : undefined;
   const [sourceId, setSourceId] = useState('');
   const [measurement, setMeasurement] = useState<AutoBlockingMeasurement>();
   const [preview, setPreview] = useState<AutoBlockingPreview>();
@@ -120,7 +127,7 @@ export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId,
     let live = true;
     void blockingService.getAutoBlockingSetup(scenarioId, tripProfileId, minimumLayover).then((value) => {
       if (!live) return;
-      setSetup(value); setName(value.defaultName); setForm(formFromRules(initialRules ?? value.defaultRules, value));
+      setSetup(value); setName(value.defaultName); setForm(formFromRules(value.defaultRules, value));
     }).catch((caught) => { if (live) setError(userFacingError(caught, 'Unable to open automatic blocking. Close this dialog and try again.')); });
     return () => { live = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -131,12 +138,12 @@ export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId,
     if (!rules) return;
     const request = ++requests.current; setPreviewPending(true);
     const timer = setTimeout(() => {
-      void blockingService.previewAutoBlocking({ scenarioId, tripProfileId, name, rules, ...(sourceId ? { sourceBlockingScenarioId: sourceId } : {}) })
+      void blockingService.previewAutoBlocking({ scenarioId, tripProfileId, name, rules, ...(sourceId ? { sourceBlockingScenarioId: sourceId } : {}), ...(replaceId ? { replaceBlockingScenarioId: replaceId } : {}) })
         .then((value) => { if (request === requests.current) { setPreview(value); setPreviewPending(false); } })
         .catch((caught) => { if (request === requests.current) { setPreviewPending(false); setError(userFacingError(caught, 'Unable to preview these rules.')); } });
     }, 300);
     return () => clearTimeout(timer);
-  }, [rulesKey, name, sourceId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rulesKey, name, sourceId, replaceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setMeasurement(undefined);
@@ -149,7 +156,7 @@ export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId,
 
   if (!setup || !form || !rules) {
     return <DialogShell onClose={onClose}>
-      <h2>Build blocks automatically</h2>
+      <h2>Auto-blocking</h2>
       {error ? <p className="field-error">{error}</p> : <p role="status">Loading…</p>}
       <div className="dialog-actions"><button type="button" onClick={onClose}>Cancel</button></div>
     </DialogShell>;
@@ -183,19 +190,25 @@ export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId,
   async function create() {
     if (!canCreate || !rules) return;
     setCreating(true); setError('');
-    try { const created = await blockingService.createAutoBlockingScenario({ scenarioId, tripProfileId, name, rules, ...(sourceId ? { sourceBlockingScenarioId: sourceId } : {}) }); await onCreated(created); }
+    try { const created = await blockingService.createAutoBlockingScenario({ scenarioId, tripProfileId, name, rules, ...(sourceId ? { sourceBlockingScenarioId: sourceId } : {}), ...(replaceId ? { replaceBlockingScenarioId: replaceId } : {}) }); await onCreated(created); }
     catch (caught) { setError(userFacingError(caught, 'Unable to create the blocking scenario. Review the rules and try again.')); }
     finally { setCreating(false); }
   }
 
   const groupTitles: Array<[string | undefined, string]> = [['outbound', 'Outbound'], ['inbound', 'Inbound'], [undefined, 'No direction']];
   return <DialogShell onClose={onClose} busy={creating} onSubmit={() => void create()}>
-    <h2>Build blocks automatically</h2>
-    <p className="auto-blocking-intro">Creates a new blocking scenario from the {tripCount} trips in trip profile {tripProfileName}. Each departure takes the vehicle that became ready most recently after its minimum layover, so spare vehicles finish early; if none is ready, a new block starts. The result is ordinary blocks that you can edit, rename or delete.</p>
+    <h2>Auto-blocking</h2>
+    <p className="auto-blocking-intro">{replaceId ? `Rebuilds the blocks of ${existing?.scenario.name} on the selected days` : 'Creates a new blocking scenario'} from the {tripCount} trips in trip profile {tripProfileName}. Each departure takes the vehicle that became ready most recently after its minimum layover, so spare vehicles finish early; if none is ready, a new block starts. The result is ordinary blocks that you can edit, rename or delete.</p>
     <section className="auto-blocking-body">
       <div className="auto-blocking-col">
         <div className="auto-blocking-name-row">
-          <label className="dialog-field">Blocking scenario name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} aria-invalid={nameErrors.length > 0} /></label>
+          <div className="auto-blocking-name-field">
+            <label className="dialog-field">Blocking scenario name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} aria-invalid={nameErrors.length > 0} /></label>
+            <label className="auto-blocking-check-line" title={existing ? undefined : 'The selected blocking scenario was not built automatically.'}><input type="checkbox" checked={replace} disabled={!existing || creating} onChange={(event) => {
+              const next = event.target.checked; setReplace(next);
+              if (next && existing) { setName(existing.scenario.name); setForm(formFromRules(existing.rules, setup)); } else setName(setup.defaultName);
+            }} />Edit rules of {existing ? existing.scenario.name : 'the selected scenario'}</label>
+          </div>
           <fieldset className="auto-blocking-days"><legend>Service days</legend>
             {setup.serviceDays.map(({ day, tripCount: count }) => <label key={day.id} className="auto-blocking-check-line"><input type="checkbox" disabled={count === 0} checked={form.serviceDayIds.includes(day.id)} onChange={(event) => update({ serviceDayIds: event.target.checked ? setup.serviceDays.filter((entry) => entry.day.id === day.id || form.serviceDayIds.includes(entry.day.id)).map((entry) => entry.day.id) : form.serviceDayIds.filter((id) => id !== day.id) })} />{day.name} <small>{count ? plural(count, 'trip') : 'no trips'}</small></label>)}
           </fieldset>
@@ -236,14 +249,14 @@ export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId,
 
         <details open className="auto-blocking-section"><summary><span className="auto-blocking-section-title">Breaks</span><span className="auto-blocking-section-sum">{breakSummary}</span></summary>
           <div className="auto-blocking-section-body">
+            <label className="auto-blocking-check-line auto-blocking-break-toggle"><input type="checkbox" checked={form.breakEnabled} onChange={(event) => update({ breakEnabled: event.target.checked })} />Add breaks</label>
             <div className="auto-blocking-quad">
-              <label>Break length (min)<input type="number" min={1} step={1} value={form.breakLength} onChange={(event) => update({ breakLength: event.target.value })} /></label>
+              <label>Break length (min)<input type="number" min={1} step={1} disabled={!form.breakEnabled} value={form.breakLength} onChange={(event) => update({ breakLength: event.target.value })} /></label>
               <label>Only for blocks longer than (h)<input type="number" min={0} step="any" disabled={!breakRule} value={form.breakMinBlock} onChange={(event) => update({ breakMinBlock: event.target.value })} /></label>
               <label>First break no earlier than (h after start)<input type="number" min={0} step="any" disabled={!breakRule} value={form.breakFirst} onChange={(event) => update({ breakFirst: event.target.value })} /></label>
               <label>Another break after (h without one)<input type="number" min={0} step="any" disabled={!breakRule} value={form.breakAnother} onChange={(event) => update({ breakAnother: event.target.value })} /></label>
             </div>
-            <p className="auto-blocking-worked">With these rules: a 4 h block gets {breakWord(breakCounts[0].breaks)} · an 8 h block gets {breakWord(breakCounts[1].breaks)} · a 16 h block gets {breakWord(breakCounts[2].breaks)}. Breaks are taken only after patterns marked Break here.</p>
-            <InlineNote>Meal and relief breaks are normally set in run cutting. This puts them in the blocks as long layovers so that block hours include them.</InlineNote>
+            {breakRule && <p className="auto-blocking-worked">With these rules: a 4 h block gets {breakWord(breakCounts[0].breaks)} · an 8 h block gets {breakWord(breakCounts[1].breaks)} · a 16 h block gets {breakWord(breakCounts[2].breaks)}. Breaks are taken only after patterns marked Break here.</p>}
           </div>
         </details>
 
@@ -329,14 +342,15 @@ export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId,
         </div>
       </div>
     </section>
+    {replaceId && existing && (existing.editedBlockCount > 0 || existing.blockCountChanged) && <InlineNote kind="warn">Blocks of {existing.scenario.name} were edited, added or deleted since the last build. Rebuilding replaces the blocks on the selected days, including those edits.</InlineNote>}
     {error && <p className="field-error">{error}</p>}
-    <div className="dialog-actions"><button type="button" onClick={onClose} disabled={creating}>Cancel</button><button type="submit" className="primary" disabled={!canCreate}>{creating ? 'Creating…' : 'Create blocking scenario'}</button></div>
+    <div className="dialog-actions"><button type="button" onClick={onClose} disabled={creating}>Cancel</button><button type="submit" className="primary" disabled={!canCreate}>{creating ? (replaceId ? 'Rebuilding…' : 'Creating…') : replaceId ? 'Rebuild blocks' : 'Create blocking scenario'}</button></div>
   </DialogShell>;
 }
 
 /** The one dialog frame, used while loading and once loaded. */
 function DialogShell({ children, onClose, busy = false, onSubmit }: { children: ReactNode; onClose: () => void; busy?: boolean; onSubmit?: () => void }) {
-  return <ModalDialog as="form" label="Build blocks automatically" className="confirm-dialog auto-blocking-dialog" onClose={onClose} busy={busy} onSubmit={(event) => { event.preventDefault(); onSubmit?.(); }}>{children}</ModalDialog>;
+  return <ModalDialog as="form" label="Auto-blocking" className="confirm-dialog auto-blocking-dialog" onClose={onClose} busy={busy} onSubmit={(event) => { event.preventDefault(); onSubmit?.(); }}>{children}</ModalDialog>;
 }
 
 /** One plain sentence per warning rule, with repeats counted. */

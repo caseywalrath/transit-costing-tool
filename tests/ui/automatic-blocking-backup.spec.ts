@@ -10,8 +10,8 @@ test('round trip', async ({ page }) => {
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Build blocks automatically…', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Build blocks automatically' });
+  await page.getByRole('menuitem', { name: 'Auto-blocking…', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Auto-blocking' });
   await expect(dialog).toBeVisible({ timeout: 30_000 });
   const name = 'Round trip auto';
   await dialog.getByLabel('Blocking scenario name').fill(name);
@@ -33,9 +33,27 @@ test('round trip', async ({ page }) => {
   await page.locator('input[type="file"][accept="application/json,.json"]').setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(text) });
   await expect(page.locator('.notice.success')).toContainText('as an independent project', { timeout: 30_000 });
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await scopeField(page, 'Blocking scenario').selectOption({ label: name });
-  await page.getByRole('button', { name: 'Build again…' }).click();
-  const again = page.getByRole('dialog', { name: 'Build blocks automatically' });
+  // The imported project may still be settling; choose the scenario until the choice holds.
+  await expect(async () => {
+    await scopeField(page, 'Blocking scenario').selectOption({ label: name });
+    await expect(scopeField(page, 'Blocking scenario').locator('option:checked')).toHaveText(name, { timeout: 1_000 });
+  }).toPass({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Auto-blocking…', exact: true }).click();
+  const again = page.getByRole('dialog', { name: 'Auto-blocking' });
+  // Ticking "Edit rules of" loads the selected scenario's stored rules and name and rebuilds it in place.
+  const edit = again.getByRole('checkbox', { name: `Edit rules of ${name}` });
+  await expect(edit).toBeEnabled({ timeout: 30_000 });
+  await edit.check();
+  await expect(again.getByLabel('Blocking scenario name')).toHaveValue(name);
   await again.getByText('Block limits', { exact: true }).click();
   await expect(again.getByLabel('Maximum vehicles per day')).toHaveValue('17', { timeout: 30_000 });
+  await again.getByLabel('Maximum vehicles per day').fill('18');
+  const rebuild = again.getByRole('button', { name: 'Rebuild blocks', exact: true });
+  await expect(rebuild).toBeEnabled({ timeout: 30_000 });
+  const count = await scopeField(page, 'Blocking scenario').locator('option').count();
+  await rebuild.click();
+  await expect(again).toHaveCount(0, { timeout: 30_000 });
+  await expect(scopeField(page, 'Blocking scenario').locator('option')).toHaveCount(count);
+  await expect(scopeField(page, 'Blocking scenario').locator('option:checked')).toHaveText(name);
 });

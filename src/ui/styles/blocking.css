@@ -132,6 +132,9 @@
 .auto-blocking-name-row .dialog-field { display: grid; margin: 0; }
 .auto-blocking-name-row .dialog-field input { width: 100%; }
 .auto-blocking-name-row .field-error { grid-column: 1 / -1; margin: 0; }
+.auto-blocking-name-field { display: grid; gap: 6px; min-width: 0; }
+.auto-blocking-name-field .auto-blocking-check-line:has(input:disabled) { color: var(--color-text-subtle); }
+.auto-blocking-break-toggle { margin-bottom: var(--space-2); }
 .auto-blocking-days { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; margin: 0; padding: 0 0 6px; border: 0; }
 .auto-blocking-days legend { width: 100%; padding: 0; font-size: var(--font-size-label); font-weight: 700; color: var(--color-text-muted); }
 .auto-blocking-check-line { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 400; color: var(--color-text); font-size: var(--font-size-body); }
@@ -188,6 +191,3 @@
 .auto-blocking-preview-table tbody th { background: transparent; }
 @media (max-width: 900px) { .auto-blocking-body { grid-template-columns: minmax(0, 1fr); } .auto-blocking-side-col { position: static; } .auto-blocking-quad { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* Decision 0055: provenance note above the Blocking surfaces. */
-.auto-blocking-note { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-3) 0 0; padding: 8px 12px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-panel); }
-.auto-blocking-note .inline-note { margin: 0; flex: 1; }
-.auto-blocking-note .link-button { white-space: nowrap; }

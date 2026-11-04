@@ -60,6 +60,16 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
     return scenario;
   }
 
+  async ensureDefaultBlockingScenario(scenarioId: string, tripProfileId: string): Promise<BlockingScenario> {
+    const siblings = await this.repository.listBlockingScenarios(scenarioId);
+    const existing = siblings.find((candidate) => candidate.tripProfileId === tripProfileId);
+    if (existing) return existing;
+    const taken = new Set(siblings.map((sibling) => sibling.name.trim().toLowerCase()));
+    let name = 'Default';
+    for (let counter = 2; taken.has(name.toLowerCase()); counter += 1) name = `Default ${counter}`;
+    return this.createBlockingScenario({ scenarioId, tripProfileId, name });
+  }
+
   async renameBlockingScenario(blockingScenarioId: string, name: string, sourceSignature: string): Promise<BlockingScenario> {
     const source = await this.repository.getBlockingScenario(blockingScenarioId); if (!source) throw new Error('Blocking Scenario not found.');
     const blocks = await this.repository.listBlockingBlocks(blockingScenarioId); assertBlockingScenarioSourceUnchanged(source, blocks, sourceSignature);
@@ -300,8 +310,9 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
     const groups = patternDirectionGroups(context.patterns, context.directions);
     const siblings = await this.repository.listBlockingScenarios(scenarioId);
     const taken = new Set(siblings.map((sibling) => sibling.name.trim().toLowerCase()));
-    let defaultName = 'Automatic';
-    for (let counter = 2; taken.has(defaultName.toLowerCase()); counter += 1) defaultName = `Automatic ${counter}`;
+    let counter = 1;
+    while (taken.has(`auto ${counter}`)) counter += 1;
+    const defaultName = `Auto ${counter}`;
     const scenarios = (await this.context.listProjectScenarios?.(scenarioId)) ?? [];
     const ordered = [...scenarios.filter((scenario) => scenario.id === scenarioId), ...scenarios.filter((scenario) => scenario.id !== scenarioId)];
     const sources: AutoBlockingSetup['sources'] = [];
@@ -327,8 +338,10 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
     const context = await this.loadAutoContext(request.scenarioId, request.tripProfileId);
     const siblings = await this.repository.listBlockingScenarios(request.scenarioId);
     const ruleFindings = validateAutoBlockingRules(request.rules, { patterns: context.patterns, nodes: context.nodes, serviceDayIds: context.serviceDays.map((day) => day.id) });
-    const nameFindings = validateBlockingScenarioName(request.name, siblings);
-    const scenario = createBlockingScenario({ scenarioId: request.scenarioId, tripProfileId: request.tripProfileId, name: request.name.trim() || 'Automatic' }, now);
+    const target = request.replaceBlockingScenarioId ? siblings.find((sibling) => sibling.id === request.replaceBlockingScenarioId) : undefined;
+    if (request.replaceBlockingScenarioId && (!target || target.tripProfileId !== request.tripProfileId || !target.autoBlocking)) throw new Error('Only an automatically built Blocking Scenario of this Trip Profile can be rebuilt.');
+    const nameFindings = validateBlockingScenarioName(request.name, siblings, target?.id);
+    const scenario = target ? { ...target, name: request.name.trim() || target.name } : createBlockingScenario({ scenarioId: request.scenarioId, tripProfileId: request.tripProfileId, name: request.name.trim() || 'Auto' }, now);
     const result = buildAutoBlocks({ ...context, blockingScenario: scenario, rules: request.rules, now });
     return { context, scenario, result, ruleFindings, nameFindings };
   }
@@ -380,7 +393,22 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
     const trips = new Map(context.trips.map((trip) => [trip.id, trip]));
     result.blocks.forEach((block) => assertStructurallyValidBlock(block, { scenario: { id: request.scenarioId }, blockingScenario: scenario, trips, patterns }));
     const tripCount = result.days.reduce((sum, day) => sum + day.tripCount, 0);
-    const saved: BlockingScenario = { ...scenario, autoBlocking: { rules: request.rules, builtAt: now, tripCount, blockCount: result.blocks.length, ...(request.sourceBlockingScenarioId ? { sourceBlockingScenarioId: request.sourceBlockingScenarioId } : {}) } };
+    const record = { rules: request.rules, builtAt: now, tripCount, blockCount: result.blocks.length, ...(request.sourceBlockingScenarioId ? { sourceBlockingScenarioId: request.sourceBlockingScenarioId } : {}) };
+    if (request.replaceBlockingScenarioId) {
+      // Rebuild in place: Blocks on the chosen days are replaced, Blocks on other days are kept. The Blocks are written first, then the
+      // Blocking Scenario with its new name and build record.
+      const existing = await this.repository.listBlockingBlocks(scenario.id);
+      const days = new Set(request.rules.serviceDayIds);
+      const kept = existing.filter((block) => !days.has(block.serviceDayId));
+      const blocks = [...kept, ...result.blocks];
+      const stored = await this.repository.getBlockingScenario(scenario.id);
+      if (!stored) throw new Error('Blocking Scenario not found.');
+      await this.repository.saveBlockingBlocksAtomically(blocks, createBlockingScenarioSourceSignature(stored, existing), scenario.id);
+      const saved: BlockingScenario = { ...withUpdatedAt(scenario, now), autoBlocking: { ...record, tripCount: kept.reduce((sum, block) => sum + block.activities.filter((activity) => activity.type === 'revenueTrip').length, tripCount), blockCount: blocks.length } };
+      await this.repository.saveBlockingScenario(saved);
+      return saved;
+    }
+    const saved: BlockingScenario = { ...scenario, autoBlocking: record };
     await this.repository.saveBlockingScenarioGraphAtomically(saved, result.blocks);
     return saved;
   }

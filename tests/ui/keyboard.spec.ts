@@ -173,8 +173,8 @@ test('every dialog opened from the screens has an accessible name, and the axe d
   expect(await axeViolations(page)).toEqual([]);
   // Build blocks automatically (Decision 0055, AB5): the dialog with its preview table loaded.
   await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Build blocks automatically…', exact: true }).click();
-  const autoBlocking = page.getByRole('dialog', { name: 'Build blocks automatically' });
+  await page.getByRole('menuitem', { name: 'Auto-blocking…', exact: true }).click();
+  const autoBlocking = page.getByRole('dialog', { name: 'Auto-blocking' });
   await expect(autoBlocking.getByRole('table', { name: 'Automatic blocking preview' }).locator('tbody tr').first()).toBeVisible({ timeout: 30_000 });
   await expect(autoBlocking.getByLabel('Blocking scenario name')).toBeFocused();
   expect(await axeViolations(page)).toEqual([]);

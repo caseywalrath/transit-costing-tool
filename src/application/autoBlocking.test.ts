@@ -85,7 +85,7 @@ describe('Automatic blocking application service (Decision 0055)', () => {
     expect(setupResult.patternGroups).toEqual({ [first.id('AB')]: 'outbound', [first.id('BA')]: 'inbound' });
     expect(setupResult.serviceDays.map((entry) => [entry.day.name, entry.tripCount])).toEqual([['Weekday', 58], ['Saturday', 0]]);
     expect(setupResult.milesIncompletePatternIds).toEqual([]);
-    expect(setupResult.defaultName).toBe('Automatic');
+    expect(setupResult.defaultName).toBe('Auto 1');
     expect(setupResult.defaultRules.serviceDayIds).toEqual([first.id('weekday')]);
     expect(setupResult.defaultRules.patterns.find((row) => row.patternId === first.id('BA'))?.minimumLayover).toEqual({ mode: 'minutes', value: 20 });
     // Only Blocking Scenarios that hold Blocks are sources; the empty hand-built one is left out.
@@ -95,9 +95,35 @@ describe('Automatic blocking application service (Decision 0055)', () => {
 
   it('proposes a unique default name among the Scenario\'s Blocking Scenarios', async () => {
     const { first, service } = setup();
-    await service.createBlockingScenario({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'Automatic' });
-    await service.createBlockingScenario({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'automatic 2' });
-    expect((await service.getAutoBlockingSetup(first.scenarioId, first.profile.id)).defaultName).toBe('Automatic 3');
+    await service.createBlockingScenario({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'Auto 1' });
+    await service.createBlockingScenario({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'auto 2' });
+    expect((await service.getAutoBlockingSetup(first.scenarioId, first.profile.id)).defaultName).toBe('Auto 3');
+  });
+
+  it('rebuilds an automatically built Blocking Scenario in place, keeping its id and the Blocks of days not rebuilt', async () => {
+    const { first, service } = setup();
+    const rules = (await service.getAutoBlockingSetup(first.scenarioId, first.profile.id)).defaultRules;
+    const built = await service.createAutoBlockingScenario({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'Auto 1', rules });
+    const saturdayBlock = await service.createBlock(built.id, first.id('saturday'), 'S1', createBlockingScenarioSourceSignature(built, await service.listBlockingBlocks(built.id)));
+    const before = await service.listBlockingBlocks(built.id, first.id('weekday'));
+    const rebuilt = await service.createAutoBlockingScenario({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'Auto 1 renamed', rules: { ...rules, maxRunningHours: 6 }, replaceBlockingScenarioId: built.id });
+    expect(rebuilt.id).toBe(built.id);
+    expect(rebuilt.name).toBe('Auto 1 renamed');
+    expect(rebuilt.autoBlocking?.rules.maxRunningHours).toBe(6);
+    const after = await service.listBlockingBlocks(built.id);
+    expect(after.some((block) => block.id === saturdayBlock.id)).toBe(true);
+    expect(after.filter((block) => block.serviceDayId === first.id('weekday')).some((block) => before.some((old) => old.id === block.id))).toBe(false);
+    expect((await service.listBlockingScenarios(first.scenarioId)).length).toBe(1);
+    const plain = await service.createBlockingScenario({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'Plain' });
+    await expect(service.createAutoBlockingScenario({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'Plain', rules, replaceBlockingScenarioId: plain.id })).rejects.toThrow('Only an automatically built');
+  });
+
+  it('creates a Default Blocking Scenario only when the Trip Profile has none', async () => {
+    const { first, service } = setup();
+    const created = await service.ensureDefaultBlockingScenario(first.scenarioId, first.profile.id);
+    expect(created.name).toBe('Default');
+    expect((await service.ensureDefaultBlockingScenario(first.scenarioId, first.profile.id)).id).toBe(created.id);
+    expect((await service.listBlockingScenarios(first.scenarioId)).length).toBe(1);
   });
 
   it('previews the reference numbers without writing', async () => {
