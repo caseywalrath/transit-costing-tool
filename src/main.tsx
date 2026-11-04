@@ -43,6 +43,12 @@ async function start() {
     listPatterns: listScenarioPatterns,
     listDirections: (scenarioId) => repository.db.directions.where('scenarioId').equals(scenarioId).toArray(),
     listServiceDays: (scenarioId) => repository.db.serviceDays.where('scenarioId').equals(scenarioId).toArray(),
+    listNodes: (scenarioId) => repository.db.nodes.where('scenarioId').equals(scenarioId).toArray(),
+    listRoutes: (scenarioId) => repository.db.routes.where('scenarioId').equals(scenarioId).toArray(),
+    listProjectScenarios: async (scenarioId) => {
+      const scenario = await repository.db.scenarios.get(scenarioId);
+      return scenario ? repository.db.scenarios.where('projectId').equals(scenario.projectId).toArray() : [];
+    },
   }, saveStatus);
 
   const costing = new CostingApplicationService(createCostingContextQueries({

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
 import type { BlockingBlock, BlockingScenario, RoutePattern, Trip } from './types';
-import { applyTripAssignment, assertStructurallyValidBlock, calculateBlockingScenarioDeletionImpact, classifyBlockingInsertion, createBlockingScenario, duplicateBlockingScenario, normalizeBlockActivities, suggestChronologicalInsertionIndex, summarizeBlock, summarizeBlockingScenario, validateBlockingAssignments, validateBlockingBlock } from './blocking';
+import { applyTripAssignment, assertStructurallyValidBlock, calculateBlockingScenarioDeletionImpact, classifyBlockingInsertion, createBlockingScenario, duplicateBlockingScenario, normalizeBlockActivities, requiredLayoverSeconds, suggestChronologicalInsertionIndex, summarizeBlock, summarizeBlockingScenario, validateBlockingAssignments, validateBlockingBlock } from './blocking';
 
 const scenario: BlockingScenario = { id: 'bs1', scenarioId: 'scenario', tripProfileId: 'profile', name: 'Weekday blocks', ...metadata() };
 const pattern: RoutePattern = { id: 'pattern', scenarioId: 'scenario', routeId: 'route', name: 'Full', points: [{ id: 'p1', nodeId: 'A', sequence: 0, cumulativeMiles: 0 }, { id: 'p2', nodeId: 'B', sequence: 1, cumulativeMiles: 10 }], ...metadata() };
@@ -198,5 +198,27 @@ describe('blocking domain contracts', () => {
     const blocks = Array.from({ length: 100 }, (_, index) => block(`block-${index}`, []));
     const summary = summarizeBlockingScenario(scenario, blocks, { trips, patterns: [pattern] });
     expect(summary.blockSummaries).toHaveLength(100); expect(summary.incompleteBlockCount).toBe(100);
+  });
+});
+
+describe('requiredLayoverSeconds and duplicating an automatic Blocking Scenario', () => {
+  it('computes the required layover for each rule shape', () => {
+    expect(requiredLayoverSeconds(undefined, 1800)).toBe(0);
+    expect(requiredLayoverSeconds(undefined, undefined)).toBe(0);
+    expect(requiredLayoverSeconds({ mode: 'minutes', value: 7 }, undefined)).toBe(420);
+    expect(requiredLayoverSeconds({ mode: 'percent', value: 10 }, 1801)).toBe(181);
+    expect(requiredLayoverSeconds({ mode: 'percent', value: 10 }, 1800)).toBe(180);
+    expect(requiredLayoverSeconds({ mode: 'percent', value: 10 }, undefined)).toBeUndefined();
+    expect(requiredLayoverSeconds({ mode: 'percent', value: 10 }, -1)).toBeUndefined();
+  });
+
+  it('keeps the autoBlocking record on duplicate with builtAt set to the duplicate time', () => {
+    const record = { rules: { serviceDayIds: ['d'], patterns: [], garages: [], terminals: [], deadheads: [] }, builtAt: '2026-01-01T00:00:00.000Z', tripCount: 4, blockCount: 2, sourceBlockingScenarioId: 'src' };
+    const source = { ...createBlockingScenario({ scenarioId: 'scenario', tripProfileId: 'profile', name: 'Auto' }), autoBlocking: record };
+    const copy = duplicateBlockingScenario({ scenario: source, blocks: [] }, 'Auto copy', '2026-05-05T00:00:00.000Z');
+    expect(copy.scenario.autoBlocking).toEqual({ ...record, builtAt: '2026-05-05T00:00:00.000Z' });
+    expect(source.autoBlocking.builtAt).toBe('2026-01-01T00:00:00.000Z');
+    const plain = duplicateBlockingScenario({ scenario: createBlockingScenario({ scenarioId: 'scenario', tripProfileId: 'profile', name: 'Plain' }), blocks: [] }, 'Plain copy');
+    expect('autoBlocking' in plain.scenario).toBe(false);
   });
 });

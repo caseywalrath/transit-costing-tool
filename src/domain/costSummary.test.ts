@@ -26,9 +26,10 @@ function blocked(overrides: Partial<CostingCalculationResult> = {}): CostingCalc
 describe('buildCostSummary (Decision 0054)', () => {
   it('reports first-year figures, the last projected year, and a running total', () => {
     const summary = buildCostSummary(blocked(), heading)!;
-    expect(summary).toMatchObject({ projectName: 'Federal BRT', firstYear: 2027, futureYearCount: 1, annualEscalation: 0.1, firstYearCostUsd: 281_000, lastYearCostUsd: 309_100, annualRevenueHours: 2810, annualPlatformHours: 3372 });
+    expect(summary).toMatchObject({ projectName: 'Federal BRT', firstYear: 2027, futureYearCount: 1, annualEscalation: 0.1, firstYearCostUsd: 281_000, lastYearCostUsd: 309_100, annualRevenueHours: 2810 });
+    expect(summary).not.toHaveProperty('annualPlatformHours');
     expect(summary.years.map((year) => year.cumulativeCostUsd)).toEqual([281_000, 590_100]);
-    expect(summary.days[0]).toEqual({ serviceDayId: 'weekday', name: 'Weekday', annualServiceDays: 255, revenueHoursPerDay: 10, platformHoursPerDay: 12, annualRevenueHours: 2550, firstYearCostUsd: 255_000 });
+    expect(summary.days[0]).toEqual({ serviceDayId: 'weekday', name: 'Weekday', annualServiceDays: 255, revenueHoursPerDay: 10, annualRevenueHours: 2550, firstYearCostUsd: 255_000 });
   });
 
   it('builds no summary for an invalid result or a result without costs', () => {
@@ -43,7 +44,7 @@ describe('buildCostSummary (Decision 0054)', () => {
     expect(costSummaryPartialReasons(blocked())).toEqual([]);
   });
 
-  it('leaves platform hours out of an estimate without a deadhead %', () => {
+  it('builds a summary for an estimate without a deadhead %', () => {
     const result: EstimatedCostingCalculationResult = {
       basis: 'estimated', tripProfileId: 'p', state: 'partial', sourceRate: 100, sourceRateYear: 2027, annualEscalation: 0, tripCount: 3, tripsWithoutRunTimeCount: 1, findings: [],
       dailyRows: [{ serviceDayId: 'weekday', serviceDayName: 'Weekday', serviceDayKind: 'weekday', annualServiceDays: 10, tripCount: 3, tripsWithoutRunTimeCount: 1, runningHoursPerDay: 8, annualRunningHours: 80,
@@ -51,8 +52,6 @@ describe('buildCostSummary (Decision 0054)', () => {
       yearRows: [{ serviceYear: 2027, appliedRateUsdPerRevenueHour: 100, annualRunningHours: 80, annualRevenueHours: 100, annualCostUsd: 10_000 }],
     };
     const summary = buildCostSummary(result, heading)!;
-    expect(summary.annualPlatformHours).toBeUndefined();
-    expect(summary.days[0]!.platformHoursPerDay).toBeUndefined();
     expect(summary.futureYearCount).toBe(0);
     expect(costSummaryPartialReasons(result)).toEqual(['1 trip without a run time is not counted.']);
   });

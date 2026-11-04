@@ -150,12 +150,37 @@ export interface BlockingRepository {
   replaceBlocksForDayAtomically(blockingScenarioId: string, serviceDayId: string, blocks: BlockingBlock[], expectedBlockingScenarioSignature: string): Promise<void>;
 }
 
+/** Decision 0055. What the "Build blocks automatically" dialog asks for. */
+export interface AutoBlockingRequest { scenarioId: string; tripProfileId: string; name: string; rules: import('../domain/autoBlocking').AutoBlockingRules; sourceBlockingScenarioId?: string }
+/** Decision 0055. Everything the dialog needs to open: the Trip Profile's Patterns, defaults, days and the Blocking Scenarios rules can be read from. */
+export interface AutoBlockingSetup {
+  routes: import('../domain/types').Route[]; patterns: RoutePattern[]; nodes: import('../domain/types').Node[];
+  patternGroups: Record<string, import('../domain/directions').DirectionGroup | undefined>;
+  patternTripCounts: Record<string, number>;
+  serviceDays: Array<{ day: ServiceDayDefinition; tripCount: number }>;
+  milesIncompletePatternIds: string[];
+  defaultRules: import('../domain/autoBlocking').AutoBlockingRules;
+  /** "Automatic", made unique among the Scenario's Blocking Scenarios by adding " 2", " 3", and so on. */
+  defaultName: string;
+  /** Every Blocking Scenario of the Project with at least one Block, those of the current Scenario first. */
+  sources: Array<{ blockingScenarioId: string; scenarioName: string; name: string; blockCount: number }>;
+}
+export interface AutoBlockingPreview {
+  result: import('../domain/autoBlocking').AutoBlockingResult;
+  ruleFindings: import('../domain/types').ValidationFinding[];
+  nameFindings: import('../domain/types').ValidationFinding[];
+  check?: import('../domain/autoBlocking').AutoBlockingCheck;
+}
+export interface AutoBlockingStatus { record: import('../domain/autoBlocking').AutoBlockingRecord; editedBlockCount: number; blockCountChanged: boolean; summary: string }
+
 /** A reviewed day copy: the preview and the Blocking Scenario token that `applyBlockingDayCopy` writes against. */
 export interface BlockingDayCopyReview { preview: import('../domain/blockingDayCopy').BlockingDayCopyPreview; blockingScenarioSignature: string }
 
 /** Behavior-oriented command contract consumed by the future Blocking workspace. */
 export interface BlockingCommands {
   createBlockingScenario(request: BlockingScenarioCreateRequest): Promise<BlockingScenario>;
+  /** Decision 0055. Builds the Blocks again on the server side, validates them, and saves a new Blocking Scenario with its `autoBlocking` record in one write. */
+  createAutoBlockingScenario(request: AutoBlockingRequest): Promise<BlockingScenario>;
   renameBlockingScenario(blockingScenarioId: string, name: string, sourceSignature: string): Promise<BlockingScenario>;
   duplicateBlockingScenario(blockingScenarioId: string, targetName: string, sourceSignature: string): Promise<BlockingScenario>;
   deleteBlockingScenario(blockingScenarioId: string, sourceSignature: string): Promise<BlockingScenarioDeletionImpact>;
@@ -186,6 +211,14 @@ export interface BlockingCommands {
 /** Query contract exposes derived results without prescribing layout or interaction design. */
 export interface BlockingQueries {
   listBlockingScenarios(scenarioId: string): Promise<BlockingScenario[]>;
+  /** Decision 0055. The data the automatic-blocking dialog opens with. `preference` is the Blocking tab's minimum layover. */
+  getAutoBlockingSetup(scenarioId: string, tripProfileId: string, preference?: import('../domain/blocking').MinimumLayoverRules): Promise<AutoBlockingSetup>;
+  /** Decision 0055. Builds in memory and writes nothing. With `sourceBlockingScenarioId` it also checks the rules against that Blocking Scenario's Blocks. */
+  previewAutoBlocking(request: AutoBlockingRequest): Promise<AutoBlockingPreview>;
+  /** Decision 0055. Reads rules from the Blocks of any Blocking Scenario of the Project, as a draft. Writes nothing. */
+  measureAutoBlockingSource(scenarioId: string, tripProfileId: string, sourceBlockingScenarioId: string, draft: import('../domain/autoBlocking').AutoBlockingRules): Promise<import('../domain/autoBlocking').AutoBlockingMeasurement>;
+  /** Decision 0055. The stored rules, how many Blocks were edited since the build, and a one-line rule summary. `undefined` when the Blocking Scenario was not built automatically. */
+  getAutoBlockingStatus(blockingScenarioId: string): Promise<AutoBlockingStatus | undefined>;
   listBlockingBlocks(blockingScenarioId: string, serviceDayId?: string): Promise<BlockingBlock[]>;
   getBlockSummary(blockingScenarioId: string, blockId: string): Promise<BlockSummary | undefined>;
   getScenarioSummary(blockingScenarioId: string, serviceDayId?: string): Promise<import('../domain/blocking').BlockingSummary | undefined>;
