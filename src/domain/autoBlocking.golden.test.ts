@@ -39,6 +39,7 @@ describe('buildAutoBlocks on the Golden backup (Decision 0056)', () => {
       expect(summary).toBeDefined();
       expect(summary!.blockCount).toBe(builtBlocks.filter((block: any) => block.serviceDayId === serviceDay.id).length);
       expect(summary!.revenueSeconds).toBe(builtRevenueSeconds(serviceDay.id));
+      expect(summary!.peakVehicles).toBe(summary!.blockCount);
     });
   }
 });

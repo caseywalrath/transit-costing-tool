@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoBlockingEditedCount, buildAutoBlocks, checkAgainstBuiltBlocks, defaultAutoBlockingRules, describeBreakRule, measureBuiltBlocks, remapAutoBlockingRecord, summarizeAutoBlockingRules, validateAutoBlockingRules, type AutoBlockingContext, type AutoBlockingRecord, type AutoBlockingRules } from './autoBlocking';
+import { autoBlockingEditedCount, peakVehicles, buildAutoBlocks, checkAgainstBuiltBlocks, defaultAutoBlockingRules, describeBreakRule, measureBuiltBlocks, remapAutoBlockingRecord, summarizeAutoBlockingRules, validateAutoBlockingRules, type AutoBlockingContext, type AutoBlockingRecord, type AutoBlockingRules } from './autoBlocking';
 import { metadata } from './ids';
 import type { BlockingBlock, BlockingScenario, Node, Route, RouteDirection, RoutePattern, ServiceDayDefinition, Trip } from './types';
 
@@ -400,6 +400,70 @@ describe('buildAutoBlocks: rules', () => {
     });
   });
 
+  describe('peak vehicles and the vehicle limit (Decision 0056 items 8 and 9)', () => {
+    /**
+     * outAndBack(33) thinned to 27 Trips, with a 35-minute break (blocks over 3 h, first break after 1 h) and a 20-minute layover after To A.
+     * Most recently ready: 7 blocks, 5 vehicles at peak, 88020 s. Ready longest: 7 blocks, 4 vehicles at peak, 86220 s.
+     */
+    const kept = 'ba-00,ba-02,ab-03,ba-04,ab-06,ba-07,ab-09,ba-10,ab-12,ba-12,ba-13,ab-17,ba-17,ab-19,ba-19,ab-20,ab-22,ba-22,ab-23,ba-23,ba-24,ab-25,ba-25,ba-26,ab-27,ba-27,ba-28'.split(',');
+    const thinned = () => { const base = outAndBack(33); return { ...base, trips: base.trips.filter((trip) => kept.includes(trip.id)) }; };
+    const limitRules = (patch: Partial<AutoBlockingRules> = {}) => baseRules({ break: { lengthMinutes: 35, minimumBlockHours: 3, firstBreakAfterHours: 1 }, ...patch });
+
+    it('peakVehicles counts the most intervals open at once, with [start, end) intervals', () => {
+      expect(peakVehicles([])).toBe(0);
+      expect(peakVehicles([{ start: 0, end: 10 }, { start: 10, end: 20 }])).toBe(1);
+      expect(peakVehicles([{ start: 0, end: 100 }, { start: 10, end: 20 }, { start: 30, end: 40 }])).toBe(2);
+      expect(peakVehicles([{ start: 0, end: 30 }, { start: 10, end: 40 }, { start: 20, end: 50 }])).toBe(3);
+    });
+
+    it('reports peak vehicles per day, counting pull-out and pull-in minutes', () => {
+      const context = outAndBack(35);
+      const plain = build(context, noBreak());
+      expect(plain.days[0].peakVehicles).toBe(plain.days[0].blockCount);
+      // 30 minutes before and after every Block: blocks that touched in time now overlap, so the peak cannot fall and the day has 6 blocks.
+      const padded = build(context, noBreak({ terminals: [{ nodeId: 'A', pullOutMinutes: 30, pullInMinutes: 30 }, { nodeId: 'B', pullOutMinutes: 30, pullInMinutes: 30 }] }));
+      expect(padded.days[0].peakVehicles).toBeGreaterThanOrEqual(plain.days[0].peakVehicles);
+      expect(padded.days[0].peakVehicles).toBeLessThanOrEqual(padded.days[0].blockCount);
+    });
+
+    it('without a limit the fixture peaks at 5 vehicles (most recently ready), with no limit findings', () => {
+      const result = build(thinned(), limitRules());
+      expect(result.days[0]).toMatchObject({ blockCount: 7, peakVehicles: 5, revenueSeconds: 88020 });
+      expect(result.findings.some((finding) => finding.ruleId.startsWith('autoBlocking.vehicleLimit'))).toBe(false);
+    });
+
+    it('a limit at or above the peak changes nothing', () => {
+      expect(build(thinned(), limitRules({ maxVehicles: 5 }))).toEqual(build(thinned(), limitRules()));
+    });
+
+    it('a limit of 4 rebuilds the day with ready longest: 4 vehicles, and an information finding with the revenue change', () => {
+      const result = build(thinned(), limitRules({ maxVehicles: 4 }));
+      expect(result.days[0]).toMatchObject({ blockCount: 7, peakVehicles: 4, revenueSeconds: 86220 });
+      const alternate = result.findings.filter((finding) => finding.ruleId === 'autoBlocking.vehicleLimitAlternateRule');
+      expect(alternate).toHaveLength(1);
+      expect(alternate[0].parameters).toMatchObject({ serviceDayId: 'wk', revenueDifferenceSeconds: -1800 });
+      expect(result.findings.some((finding) => finding.ruleId === 'autoBlocking.vehicleLimitExceeded')).toBe(false);
+      expect(result.blockFindings.filter((finding) => finding.severity === 'error')).toEqual([]);
+    });
+
+    it('a limit below both peaks keeps the lower-peak build and warns', () => {
+      const result = build(thinned(), limitRules({ maxVehicles: 2 }));
+      expect(result.days[0].peakVehicles).toBe(4);
+      expect(result.findings.find((finding) => finding.ruleId === 'autoBlocking.vehicleLimitExceeded')?.parameters).toMatchObject({ serviceDayId: 'wk', peakVehicles: 4, maxVehicles: 2 });
+      expect(result.findings.some((finding) => finding.ruleId === 'autoBlocking.vehicleLimitAlternateRule')).toBe(true);
+    });
+
+    it('validates maxVehicles as a whole number of at least 1', () => {
+      for (const bad of [0, 1.5, -1]) expect(fieldsOf({ ...validRules(), maxVehicles: bad })).toEqual(['autoBlocking.limitVehicles@maxVehicles']);
+      for (const good of [1, 12]) expect(fieldsOf({ ...validRules(), maxVehicles: good })).toEqual([]);
+    });
+
+    it('adds the limit to the rules summary', () => {
+      const context = outAndBack(35);
+      expect(summarizeAutoBlockingRules(baseRules({ break: undefined, maxVehicles: 12 }), context.patterns, context.nodes, [day('wk', 'weekday', 'Weekday', 0)])).toContain('max 12 vehicles');
+    });
+  });
+
   it('skips Trips without run times and reports a missing Pattern row', () => {
     const context = outAndBack(35);
     const broken: Trip = { ...context.trips[0], id: 'broken', stopTimes: [context.trips[0].stopTimes[0]] };
@@ -500,6 +564,11 @@ describe('measureBuiltBlocks and checkAgainstBuiltBlocks', () => {
     expect(check.days).toHaveLength(1);
     expect(check.days[0]).toMatchObject({ serviceDayId: 'wk', name: 'Weekday', builtBlocks: source.blocks.length, autoBlocks: source.blocks.length });
     expect(check.days[0].autoRevenueSeconds).toBe(check.days[0].builtRevenueSeconds);
+    expect(check.days[0].builtPeakVehicles).toBe(peakVehicles(source.blocks.map((block) => {
+      const trips = block.activities.flatMap((activity) => activity.type === 'revenueTrip' ? [context.trips.find((trip) => trip.id === activity.tripId)!] : []);
+      return { start: trips[0].stopTimes[0].time, end: trips.at(-1)!.stopTimes[1].time };
+    })));
+    expect(check.days[0].autoPeakVehicles).toBe(check.days[0].builtPeakVehicles);
     expect(check.differencePercent).toBe(0);
     const different = checkAgainstBuiltBlocks({ source, rules: baseRules({ break: undefined }), now: NOW });
     expect(different.differencePercent).toBeLessThan(0);

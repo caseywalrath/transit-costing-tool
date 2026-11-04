@@ -43,6 +43,7 @@ export interface AutoBlockingRules {
   break?: AutoBlockingBreakRule; // undefined = no breaks
   maxRunningHours?: number; // > 0 when present
   maxRevenueMiles?: number; // > 0 when present
+  maxVehicles?: number; // whole number >= 1 when present (Decision 0056 item 9)
   garages: AutoBlockingGarage[]; // at most one per Route
   terminals: AutoBlockingTerminalRule[];
   deadheads: AutoBlockingDeadheadRule[];
@@ -111,6 +112,8 @@ export function validateAutoBlockingRules(rules: AutoBlockingRules, context: Aut
 
   if (rules.maxRunningHours !== undefined && (!isFiniteNumber(rules.maxRunningHours) || rules.maxRunningHours <= 0)) findings.push(problem('limitRunningHours', 'maxRunningHours'));
   if (rules.maxRevenueMiles !== undefined && (!isFiniteNumber(rules.maxRevenueMiles) || rules.maxRevenueMiles <= 0)) findings.push(problem('limitRevenueMiles', 'maxRevenueMiles'));
+
+  if (rules.maxVehicles !== undefined && (!isWholeNumber(rules.maxVehicles) || rules.maxVehicles < 1)) findings.push(problem('limitVehicles', 'maxVehicles'));
 
   const garageRoutes = new Set<EntityId>();
   (rules.garages ?? []).forEach((garage, index) => {
@@ -197,7 +200,7 @@ export interface AutoBlockingBuildInput extends AutoBlockingContext {
   newId?: () => EntityId;
 }
 export interface AutoBlockingDaySummary {
-  serviceDayId: EntityId; tripCount: number; blockCount: number;
+  serviceDayId: EntityId; tripCount: number; blockCount: number; peakVehicles: number;
   revenueSeconds: number; runningSeconds: number; layoverSeconds: number; layoverPercent?: number;
   longestBlockSeconds: number;
   blocksWithOneBreak: number; blocksWithTwoOrMoreBreaks: number;
@@ -211,6 +214,14 @@ export interface AutoBlockingResult {
 }
 
 const MAX_BREAK_PASSES = 5;
+
+/** The largest number of intervals open at one time. Intervals are [start, end): one that ends at t does not overlap one that starts at t. */
+export function peakVehicles(intervals: Array<{ start: number; end: number }>): number {
+  const events = intervals.flatMap(({ start, end }) => [{ at: start, delta: 1 }, { at: end, delta: -1 }]).sort((left, right) => left.at - right.at || left.delta - right.delta);
+  let open = 0; let peak = 0;
+  for (const event of events) { open += event.delta; peak = Math.max(peak, open); }
+  return peak;
+}
 const isStartEndKind = (node: Node | undefined) => node?.kind === 'terminal' || node?.kind === 'garage';
 
 function autoFinding(ruleId: string, level: 'warning' | 'info', entityId: EntityId, parameters?: Record<string, string | number>): ValidationFinding {
@@ -397,34 +408,60 @@ export function buildAutoBlocks(input: AutoBlockingBuildInput): AutoBlockingResu
   const days: AutoBlockingDaySummary[] = []; const blocks: BlockingBlock[] = [];
   let passes = 1;
 
-  for (const day of sortServiceDays(input.serviceDays).filter((candidate) => dayIds.has(candidate.id))) {
+  /** The Vehicle's in-service interval: first departure minus pull-out minutes to last arrival plus pull-in minutes. */
+  const vehicleInterval = (vehicle: Vehicle) => ({
+    start: vehicle.firstDeparture - (terminalOf.get(vehicle.items[0].fact.origin)?.pullOutMinutes ?? 0) * 60,
+    end: vehicle.lastArrival + (terminalOf.get(vehicle.items.at(-1)!.fact.destination)?.pullInMinutes ?? 0) * 60,
+  });
+
+  /** Builds one service day (all Routes, with the break rebuilding passes) with one vehicle choice. Findings are returned, not recorded. */
+  const buildDay = (dayId: EntityId, choice: AutoBlockingChoice) => {
     const dayVehicles: Array<{ route: Route; vehicle: Vehicle }> = [];
+    const dayFindings: ValidationFinding[] = []; let dayPasses = 1;
     for (const route of routes) {
-      const routeFacts = facts.filter((fact) => fact.trip.serviceDayId === day.id && fact.routeId === route.id)
+      const routeFacts = facts.filter((fact) => fact.trip.serviceDayId === dayId && fact.routeId === route.id)
         .sort((left, right) => left.dep - right.dep || left.trip.id.localeCompare(right.trip.id));
       if (!routeFacts.length) continue;
       const suppressed = new Set<EntityId>();
-      let result = chainPass(routeFacts, env, suppressed, ownerId, 'mostRecentlyReady'); let used = 1;
+      let result = chainPass(routeFacts, env, suppressed, ownerId, choice); let used = 1;
       for (; used <= MAX_BREAK_PASSES; used += 1) {
         const minimum = (rules.break?.minimumBlockHours ?? 0) * 3600;
         const short = result.vehicles.filter((vehicle) => vehicle.breaks > 0 && vehicle.lastArrival - vehicle.firstDeparture <= minimum && !suppressed.has(vehicle.firstTripId));
         if (!short.length) break;
-        if (used === MAX_BREAK_PASSES) { findings.push(autoFinding('autoBlocking.breakPassesExhausted', 'info', ownerId, { serviceDayId: day.id, routeId: route.id })); break; }
+        if (used === MAX_BREAK_PASSES) { dayFindings.push(autoFinding('autoBlocking.breakPassesExhausted', 'info', ownerId, { serviceDayId: dayId, routeId: route.id })); break; }
         short.forEach((vehicle) => suppressed.add(vehicle.firstTripId));
-        result = chainPass(routeFacts, env, suppressed, ownerId, 'mostRecentlyReady');
+        result = chainPass(routeFacts, env, suppressed, ownerId, choice);
       }
-      passes = Math.max(passes, Math.min(used, MAX_BREAK_PASSES));
-      findings.push(...result.findings);
+      dayPasses = Math.max(dayPasses, Math.min(used, MAX_BREAK_PASSES));
+      dayFindings.push(...result.findings);
       // A Trip ending where no Trip of the Route departs and no connection leaves breaks the chain.
       const departureNodes = new Set(routeFacts.map((fact) => fact.origin));
       const endingAt = new Map<EntityId, number>();
       routeFacts.forEach((fact) => endingAt.set(fact.destination, (endingAt.get(fact.destination) ?? 0) + 1));
       for (const [nodeId, tripCount] of [...endingAt].sort((left, right) => left[0].localeCompare(right[0]))) {
         const leaves = departureNodes.has(nodeId) || rules.deadheads.some((row) => row.fromNodeId === nodeId || (row.bothWays && row.toNodeId === nodeId));
-        if (!leaves) findings.push(autoFinding('autoBlocking.deadEndNode', 'warning', ownerId, { nodeId, tripCount, serviceDayId: day.id }));
+        if (!leaves) dayFindings.push(autoFinding('autoBlocking.deadEndNode', 'warning', ownerId, { nodeId, tripCount, serviceDayId: dayId }));
       }
       result.vehicles.forEach((vehicle) => dayVehicles.push({ route, vehicle }));
     }
+    return { dayVehicles, dayFindings, dayPasses, peak: peakVehicles(dayVehicles.map(({ vehicle }) => vehicleInterval(vehicle))), revenueSeconds: dayVehicles.reduce((sum, { vehicle }) => sum + vehicle.lastArrival - vehicle.firstDeparture, 0) };
+  };
+
+  for (const day of sortServiceDays(input.serviceDays).filter((candidate) => dayIds.has(candidate.id))) {
+    let kept = buildDay(day.id, 'mostRecentlyReady');
+    const limit = rules.maxVehicles;
+    if (limit !== undefined && kept.peak > limit) {
+      const alternate = buildDay(day.id, 'readyLongest');
+      // Ready longest wins when it fits the limit; otherwise the lower peak wins and most recently ready keeps a tie.
+      if (alternate.peak <= limit || alternate.peak < kept.peak) {
+        alternate.dayFindings.push(autoFinding('autoBlocking.vehicleLimitAlternateRule', 'info', ownerId, { serviceDayId: day.id, revenueDifferenceSeconds: alternate.revenueSeconds - kept.revenueSeconds }));
+        kept = alternate;
+      }
+      if (kept.peak > limit) kept.dayFindings.push(autoFinding('autoBlocking.vehicleLimitExceeded', 'warning', ownerId, { serviceDayId: day.id, peakVehicles: kept.peak, maxVehicles: limit }));
+    }
+    passes = Math.max(passes, kept.dayPasses);
+    findings.push(...kept.dayFindings);
+    const { dayVehicles } = kept;
     const order = [...dayVehicles].sort((left, right) =>
       routes.indexOf(left.route) - routes.indexOf(right.route) || left.vehicle.firstDeparture - right.vehicle.firstDeparture || left.vehicle.index - right.vehicle.index);
     const dayBlocks: BlockingBlock[] = [];
@@ -453,6 +490,7 @@ export function buildAutoBlocks(input: AutoBlockingBuildInput): AutoBlockingResu
       serviceDayId: day.id,
       tripCount: order.reduce((sum, { vehicle }) => sum + vehicle.items.length, 0),
       blockCount: dayBlocks.length,
+      peakVehicles: kept.peak,
       revenueSeconds: seconds((block) => block.revenueSeconds, summary.revenueHours),
       runningSeconds: Math.round(summary.runningHours * 3600),
       layoverSeconds: Math.round(summary.layoverHours * 3600),
@@ -505,6 +543,7 @@ export function summarizeAutoBlockingRules(rules: AutoBlockingRules, patterns: R
   }
   if (rules.maxRunningHours !== undefined) parts.push(`max ${trimNumber(rules.maxRunningHours)} running h`);
   if (rules.maxRevenueMiles !== undefined) parts.push(`max ${trimNumber(rules.maxRevenueMiles)} revenue mi`);
+  if (rules.maxVehicles !== undefined) parts.push(`max ${rules.maxVehicles} vehicles`);
   if (rules.garages.length) parts.push(`garage ${rules.garages.map((garage) => nodeName.get(garage.nodeId) ?? garage.nodeId).join(', ')}`);
   if (rules.deadheads.length) parts.push(`${rules.deadheads.length} deadhead connection${rules.deadheads.length === 1 ? '' : 's'}`);
   const dayNames = rules.serviceDayIds.map((id) => serviceDays.find((day) => day.id === id)?.name).filter((name): name is string => Boolean(name));
@@ -637,7 +676,7 @@ export interface AutoBlockingCheckInput {
   target?: AutoBlockingContext;
 }
 export interface AutoBlockingCheck {
-  days: Array<{ serviceDayId: EntityId; name: string; builtBlocks: number; builtRevenueSeconds: number; autoBlocks: number; autoRevenueSeconds: number }>;
+  days: Array<{ serviceDayId: EntityId; name: string; builtBlocks: number; builtPeakVehicles: number; builtRevenueSeconds: number; autoBlocks: number; autoPeakVehicles: number; autoRevenueSeconds: number }>;
   differencePercent?: number;
 }
 
@@ -683,7 +722,18 @@ export function checkAgainstBuiltBlocks(input: AutoBlockingCheckInput): AutoBloc
     const summary = summarizeBlockingScenario(source.blockingScenario, dayBlocks, { trips: source.trips, patterns: source.patterns });
     const builtRevenueSeconds = summary.blockSummaries.every((block) => block.revenueSeconds !== undefined) ? summary.blockSummaries.reduce((sum, block) => sum + block.revenueSeconds!, 0) : Math.round(summary.revenueHours * 3600);
     const auto = built.days.find((entry) => entry.serviceDayId === day.id);
-    return { serviceDayId: day.id, name: day.name, builtBlocks: dayBlocks.length, builtRevenueSeconds, autoBlocks: auto?.blockCount ?? 0, autoRevenueSeconds: auto?.revenueSeconds ?? 0 };
+    const tripsById = new Map(source.trips.map((trip) => [trip.id, trip]));
+    const builtIntervals = dayBlocks.flatMap((block) => {
+      const times = block.activities.flatMap((activity) => activity.type === 'revenueTrip' ? [tripsById.get(activity.tripId)] : [])
+        .flatMap((trip) => trip && trip.stopTimes.length ? [[...trip.stopTimes].sort((left, right) => left.sequence - right.sequence)] : []);
+      if (!times.length) return [];
+      const pullOut = block.activities.find((activity) => activity.type === 'pullOut'); const pullIn = block.activities.find((activity) => activity.type === 'pullIn');
+      return [{
+        start: times[0][0].time - (pullOut?.type === 'pullOut' ? pullOut.minutesBeforeFirstTrip ?? 0 : 0) * 60,
+        end: times.at(-1)!.at(-1)!.time + (pullIn?.type === 'pullIn' ? pullIn.minutesAfterLastTrip ?? 0 : 0) * 60,
+      }];
+    });
+    return { serviceDayId: day.id, name: day.name, builtBlocks: dayBlocks.length, builtPeakVehicles: peakVehicles(builtIntervals), builtRevenueSeconds, autoBlocks: auto?.blockCount ?? 0, autoPeakVehicles: auto?.peakVehicles ?? 0, autoRevenueSeconds: auto?.revenueSeconds ?? 0 };
   });
   const builtTotal = rows.reduce((sum, row) => sum + row.builtRevenueSeconds, 0);
   const autoTotal = rows.reduce((sum, row) => sum + row.autoRevenueSeconds, 0);

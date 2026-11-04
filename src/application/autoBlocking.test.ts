@@ -113,6 +113,19 @@ describe('Automatic blocking application service (Decision 0055)', () => {
     expect(repository.blocks.size).toBe(0);
   });
 
+  it('previews peak vehicles and stores maxVehicles in the record', async () => {
+    const { first, repository, service } = setup();
+    const base = (await service.getAutoBlockingSetup(first.scenarioId, first.profile.id)).defaultRules;
+    const rules = { ...referenceRules(first, base), maxVehicles: 12 };
+    const preview = await service.previewAutoBlocking({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'Preview', rules });
+    expect(preview.ruleFindings).toEqual([]);
+    expect(preview.result.days[0].peakVehicles).toBeGreaterThanOrEqual(1);
+    expect(preview.result.days[0].peakVehicles).toBeLessThanOrEqual(12);
+    const created = await service.createAutoBlockingScenario({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'Limited', rules });
+    expect(repository.scenarios.get(created.id)!.autoBlocking!.rules.maxVehicles).toBe(12);
+    await expect(service.createAutoBlockingScenario({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'Bad limit', rules: { ...rules, maxVehicles: 0 } })).rejects.toThrow('autoBlocking.limitVehicles');
+  });
+
   it('creates one Blocking Scenario with its record and Blocks, leaving others untouched', async () => {
     const { first, repository, service } = setup();
     const other = await service.createBlockingScenario({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'Existing' });
