@@ -16,9 +16,13 @@ test('builds a blocking scenario automatically and offers it as a blocked cost b
   await expect(scopeField(page, 'Blocking scenario')).toHaveValue(/.+/);
 
   await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Build blocks automatically…', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Build blocks automatically' });
+  await page.getByRole('menuitem', { name: 'Auto-blocking…', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Auto-blocking' });
   await expect(dialog).toBeVisible({ timeout: 30_000 });
+  // A new scenario is the default, named in the Auto 1, Auto 2 sequence; meal and relief text is gone.
+  await expect(dialog.getByLabel('Blocking scenario name')).toHaveValue(/^Auto \d+$/, { timeout: 30_000 });
+  await expect(dialog.getByRole('checkbox', { name: /^Edit rules of/ })).not.toBeChecked();
+  await expect(dialog).not.toContainText('run cutting');
 
   // The preview has at least one day row with more than zero blocks (the Blocks column is the first data cell).
   const preview = dialog.getByRole('table', { name: 'Automatic blocking preview' });
@@ -43,7 +47,8 @@ test('builds a blocking scenario automatically and offers it as a blocked cost b
   await expect(summary).toContainText(/summary · [1-9]\d* blocks?/);
   await expect(page.getByRole('button', { name: 'Expand unassigned trips, 0', exact: true })).toBeVisible();
 
-  await expect(page.locator('.auto-blocking-note')).toContainText('Built automatically');
+  // No build note bar above the Blocking surfaces.
+  await expect(page.getByText('Built automatically')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Costing Assumptions' })).toBeVisible();
@@ -58,8 +63,8 @@ test('shows peak vehicles and validates the maximum vehicles limit', async ({ pa
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Build blocks automatically…', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Build blocks automatically' });
+  await page.getByRole('menuitem', { name: 'Auto-blocking…', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Auto-blocking' });
   await expect(dialog).toBeVisible({ timeout: 30_000 });
   await expect(dialog).toContainText('became ready most recently');
 

@@ -99,17 +99,26 @@ export function App({ service, tripService, blockingService, costingService, ses
   useEffect(() => session?.subscribeToSessionStatus(setSessionStatus), [session]);
   useEffect(() => service.subscribeToLocalDataProtection(setProtection), [service]);
   useEffect(() => { const preference = loadSelectionPreference(); void reload(preference.projectId, preference.scenarioId, preference.routeId).catch((error) => { setLoadFailed(true); showError(error, 'Unable to open your saved projects. Reload this page and try again.'); }); }, []);
+  // The Day and Trip Profile last viewed in each Scenario, and the direction last viewed on each Route, for this session. A Scenario switch
+  // restores them instead of falling back to the first entry.
+  const lastViewed = useRef<Record<string, string>>({});
   useEffect(() => {
     const days = sortServiceDays(records?.serviceDays ?? []);
-    if (!days.some((day) => day.id === workspaceServiceDayId)) setWorkspaceServiceDayId(days[0]?.id ?? '');
+    if (days.some((day) => day.id === workspaceServiceDayId)) { if (records) lastViewed.current[`day:${records.scenario.id}`] = workspaceServiceDayId; return; }
+    const remembered = records ? lastViewed.current[`day:${records.scenario.id}`] : undefined;
+    setWorkspaceServiceDayId(days.find((day) => day.id === remembered)?.id ?? days[0]?.id ?? '');
   }, [records?.serviceDays, workspaceServiceDayId]);
   useEffect(() => {
     const directions = orderDirections(aggregate?.directions ?? []);
-    if (!directions.some((direction) => direction.id === workspaceDirectionId)) setWorkspaceDirectionId(directions[0]?.id ?? '');
+    if (directions.some((direction) => direction.id === workspaceDirectionId)) { if (aggregate) lastViewed.current[`direction:${aggregate.route.id}`] = workspaceDirectionId; return; }
+    const remembered = aggregate ? lastViewed.current[`direction:${aggregate.route.id}`] : undefined;
+    setWorkspaceDirectionId(directions.find((direction) => direction.id === remembered)?.id ?? directions[0]?.id ?? '');
   }, [aggregate?.directions, workspaceDirectionId]);
   useEffect(() => {
     const profiles = records?.tripProfiles ?? [];
-    if (!profiles.some((profile) => profile.id === workspaceTripProfileId)) setWorkspaceTripProfileId(profiles[0]?.id ?? '');
+    if (profiles.some((profile) => profile.id === workspaceTripProfileId)) { if (records) lastViewed.current[`profile:${records.scenario.id}`] = workspaceTripProfileId; return; }
+    const remembered = records ? lastViewed.current[`profile:${records.scenario.id}`] : undefined;
+    setWorkspaceTripProfileId(profiles.find((profile) => profile.id === remembered)?.id ?? profiles[0]?.id ?? '');
   }, [records?.tripProfiles, workspaceTripProfileId]);
 
   function showError(error: unknown, fallback: string) {

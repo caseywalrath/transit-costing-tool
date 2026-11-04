@@ -151,7 +151,11 @@ export interface BlockingRepository {
 }
 
 /** Decision 0055. What the "Build blocks automatically" dialog asks for. */
-export interface AutoBlockingRequest { scenarioId: string; tripProfileId: string; name: string; rules: import('../domain/autoBlocking').AutoBlockingRules; sourceBlockingScenarioId?: string }
+export interface AutoBlockingRequest {
+  scenarioId: string; tripProfileId: string; name: string; rules: import('../domain/autoBlocking').AutoBlockingRules; sourceBlockingScenarioId?: string;
+  /** Set to rebuild this existing automatically built Blocking Scenario in place: its Blocks on the chosen days are replaced, Blocks on other days are kept, and it takes `name`. Omitted, a new Blocking Scenario is created. */
+  replaceBlockingScenarioId?: string;
+}
 /** Decision 0055. Everything the dialog needs to open: the Trip Profile's Patterns, defaults, days and the Blocking Scenarios rules can be read from. */
 export interface AutoBlockingSetup {
   routes: import('../domain/types').Route[]; patterns: RoutePattern[]; nodes: import('../domain/types').Node[];
@@ -179,6 +183,8 @@ export interface BlockingDayCopyReview { preview: import('../domain/blockingDayC
 /** Behavior-oriented command contract consumed by the future Blocking workspace. */
 export interface BlockingCommands {
   createBlockingScenario(request: BlockingScenarioCreateRequest): Promise<BlockingScenario>;
+  /** The Trip Profile's first Blocking Scenario. When it has none, creates an empty one named "Default" (or "Default 2", and so on, when the name is taken) and returns it. */
+  ensureDefaultBlockingScenario(scenarioId: string, tripProfileId: string): Promise<BlockingScenario>;
   /** Decision 0055. Builds the Blocks again on the server side, validates them, and saves a new Blocking Scenario with its `autoBlocking` record in one write. */
   createAutoBlockingScenario(request: AutoBlockingRequest): Promise<BlockingScenario>;
   renameBlockingScenario(blockingScenarioId: string, name: string, sourceSignature: string): Promise<BlockingScenario>;

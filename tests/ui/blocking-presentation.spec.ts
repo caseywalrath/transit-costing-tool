@@ -135,7 +135,9 @@ test('Delete Blocking Scenario shows its Blocks and activities, and is refused i
   await open();
   await confirm.getByRole('button', { name: 'Delete blocking scenario', exact: true }).click();
   await expect(confirm).toHaveCount(0);
-  await expect.poll(() => runInPage(page, 'return [await e.db.blockingScenarios.count(), await e.db.blocks.count()]')).toEqual([0, 0]);
+  // The deleted scenario and its Blocks are gone; the Trip Profile is left with an empty "Default" blocking scenario.
+  await expect.poll(() => runInPage(page, 'return [(await e.db.blockingScenarios.toArray()).map((item) => item.name), await e.db.blocks.count()]')).toEqual([['Default'], 0]);
+  await expect(scopeField(page, 'Blocking scenario').locator('option:checked')).toHaveText('Default');
 });
 
 test('the Pattern actions menu offers "Delete pattern…" and its confirmation reads "Delete Pattern"', async ({ page }) => {

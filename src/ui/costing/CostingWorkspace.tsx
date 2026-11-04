@@ -2,11 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CostBasis, CostBasisOption, CostingCommands, CostingQueries, CostingResult } from '../../application/ports';
 import { ModalDialog } from '../ModalDialog';
-import type { CostingAssumptionsInput, CostingBlockExclusionReason, CostingCalculationResult } from '../../domain/costing';
+import type { CostingAssumptionsInput } from '../../domain/costing';
 import { DEFAULT_COSTING_ESCALATION } from '../../domain/costing';
-import { formatHours, formatMoney, formatPercent, MISSING } from '../format';
+import { formatHours, formatMoney, MISSING } from '../format';
 import type { CostingAssumptions, CostingEstimateFactors, Scenario, ServiceDayDefinition, TripProfile, ValidationFinding } from '../../domain/types';
-import type { EstimatedCostingCalculationResult, EstimatedCostingDailyResult } from '../../domain/estimatedCosting';
 import { sortServiceDays } from '../../domain/serviceDays';
 import { readStoredRecord, storedText } from '../preferences';
 import { EstimateFactorsGrid } from './EstimateFactorsGrid';
@@ -30,21 +29,6 @@ type Props = {
   tripProfiles: TripProfile[];
   onError: (error: unknown, fallback?: string) => void;
   onRegisterNavigationGuard: (guard: ((action: () => void) => void) | undefined) => void;
-};
-
-const reasonLabels: Record<CostingBlockExclusionReason, string> = {
-  'block.noRevenueTrips': 'No revenue trips',
-  'block.summaryMissing': 'Block summary unavailable',
-  'block.summaryAmbiguous': 'Multiple block summaries',
-  'block.sourceMismatch': 'Source data mismatch',
-  'block.invalid': 'Invalid block',
-  'block.connectionIncomplete': 'Incomplete connection',
-  'block.connectionConflict': 'Connection conflict',
-  'block.connectionSummaryMissing': 'Connection summary unavailable',
-  'block.platformBoundariesMissing': 'Pull-out or pull-in missing',
-  'block.platformBoundariesInvalid': 'Invalid platform boundaries',
-  'block.revenueHoursInvalid': 'Invalid revenue hours',
-  'block.platformHoursInvalid': 'Invalid platform hours',
 };
 
 const BLOCKING_REVIEW = 'Open Blocking and review the blocking scenario.';
@@ -124,7 +108,6 @@ function rememberBasis(scenarioId: string, value: string) {
 function listText(names: string[]): string {
   return names.length <= 2 ? names.join(' and ') : `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`;
 }
-const percentOf = (fraction: number | undefined) => formatPercent(fraction === undefined ? undefined : fraction * 100);
 
 export function CostingWorkspace({ scopeSlot, costingService, scenario, projectName, serviceDays, tripProfiles, onError, onRegisterNavigationGuard }: Props) {
   const [basisOptions, setBasisOptions] = useState<CostBasisOption[]>([]);
@@ -313,12 +296,11 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
   const estimatedOptions = basisOptions.filter((option) => option.kind === 'estimated');
   const assumptionChanges = persisted ? countAssumptionChanges(toInput(persisted), assumptions) : 0;
   const badge = !result ? undefined
-    : result.state === 'complete' ? (result.basis === 'estimated' ? <span className="costing-state estimated">Estimated</span> : undefined)
+    : result.state === 'complete' ? undefined
       : <span className={`costing-state ${result.state}`}>{result.state === 'partial' ? 'Partial estimate' : result.state === 'invalid' ? 'Invalid inputs' : 'No estimate yet'}</span>;
   const appliedRate = selectedYearResult ? `Applied rate ${rate(selectedYearResult.appliedRateUsdPerRevenueHour)} per revenue hour` : undefined;
   const subtitle = !result && calculating ? undefined
-    : appliedRate ? (result?.basis === 'estimated' ? `${appliedRate} · revenue and platform hours estimated from running time` : appliedRate)
-      : 'Enter a rate to calculate costs.';
+    : appliedRate ?? 'Enter a rate to calculate costs.';
 
   return <div className="costing-workspace">
     <h1 className="visually-hidden">Cost estimate</h1>
@@ -352,20 +334,12 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
     <WorkSurface title={`Cost breakdown · ${selectedYear}`} titleRef={estimateHeading} ariaLabel="Cost breakdown" badge={badge} subtitle={subtitle}>
       {result?.state === 'noEstimate' && <InlineNote kind="warn" live>{noEstimateText(result, tripProfileName)}</InlineNote>}
       {result?.state === 'invalid' && <div className="costing-alert error" role="alert"><p>The estimate cannot be calculated until the listed input or source-data problems are corrected.</p><ul>{result.findings.filter((finding) => finding.severity === 'error').map((finding, index) => <li key={`${finding.messageKey}-${finding.entityId}-${index}`}>{costingFindingMessage(finding, (id) => serviceDays.find((day) => day.id === id)?.name)}</li>)}</ul></div>}
-      {result && result.dailyRows.length > 0 && (result.basis === 'estimated'
-        ? <EstimatedResultsTable result={result} selectedYear={selectedYear} totalDays={annualDays.total} />
-        : <BlockedResultsTable result={result} selectedYear={selectedYear} totalDays={annualDays.total} />)}
-      {result && result.dailyRows.length > 0 && <InlineNote>Totals are computed before rounding, so a total can differ by 1 from the sum of the rounded rows.</InlineNote>}
+      {result && result.dailyRows.length > 0 && <CostBreakdownTable result={result} selectedYear={selectedYear} totalDays={annualDays.total} />}
       {!result && calculating && <p className="table-empty" role="status">Calculating estimate…</p>}
       {!result && !calculating && !validation.length && <p className="table-empty">Select a cost basis to calculate an estimate.</p>}
     </WorkSurface>
 
     <div className="costing-lower-grid">
-      {result?.basis === 'estimated'
-        ? <EstimateBasisPanel result={result} tripProfileName={tripProfileName ?? 'Unavailable'} allDays={factors?.allDays} />
-        : <SupportPanel title="Exclusions" ariaLabel="Exclusions" aside={<span className="support-panel__aside">{result ? `${plural(result.excludedBlockCount, 'excluded block')} · ${plural(result.unassignedTripCount, 'unassigned trip')}` : 'Unavailable'}</span>}>
-          {result?.exclusions.some((day) => day.excludedBlockCount || day.unassignedTripCount) ? <div className="table-scroll data-grid costing-exclusions-table"><table><thead><tr><th scope="col">Service day</th><th scope="col">Block</th><th scope="col">Reason</th><th scope="col">Unassigned trips</th></tr></thead><tbody>{result.exclusions.flatMap((day) => day.blocks.length ? day.blocks.map((block, index) => <tr key={`${day.serviceDayId}-${block.blockId}`}><th scope="row">{index === 0 ? day.serviceDayName : ''}</th><td>{block.blockLabel}</td><td>{block.reasonCodes.map((reason) => reasonLabels[reason]).join('; ')}</td><td>{index === 0 ? day.unassignedTripCount : ''}</td></tr>) : day.unassignedTripCount ? [<tr key={day.serviceDayId}><th scope="row">{day.serviceDayName}</th><td>—</td><td>Unassigned trips</td><td>{day.unassignedTripCount}</td></tr>] : [])}</tbody></table></div> : <InlineNote kind="ok">No excluded blocks or unassigned trips.</InlineNote>}
-        </SupportPanel>}
       <SupportPanel title="Yearly outlook" ariaLabel="Yearly outlook">
         {result?.yearRows.length ? <div className="table-scroll data-grid costing-outlook-table"><table><thead><tr><th scope="col">Year</th><th scope="col">Applied $ per revenue hour</th><th scope="col">Annual cost</th></tr></thead><tbody>{result.yearRows.map((row) => <tr key={row.serviceYear} className={row.serviceYear === selectedYear ? 'selected-costing-year' : ''}><th scope="row"><button className="link-button" onClick={() => setViewYear(row.serviceYear)}>{row.serviceYear}</button></th><td>{rate(row.appliedRateUsdPerRevenueHour)}</td><td>{money(row.annualCostUsd)}</td></tr>)}</tbody></table></div> : <InlineNote>Appears after you enter an operating cost rate.</InlineNote>}
       </SupportPanel>
@@ -384,50 +358,52 @@ function noEstimateText(result: CostingResult, tripProfileName: string | undefin
   return `Enter a layover % for ${listText(missing)} or for All days to estimate revenue hours. Running hours are shown below.`;
 }
 
-function BlockedResultsTable({ result, selectedYear, totalDays }: { result: CostingCalculationResult; selectedYear: number; totalDays: number }) {
+/** One row of the Cost breakdown. A value the cost basis does not have is undefined and shows as a dash. */
+type BreakdownRow = {
+  key: string; name: string; days: number; trips?: number; blocks?: number;
+  running?: number; revenue?: number; platform?: number; dailyCost?: number;
+  annualRevenue?: number; annualPlatform?: number; annualCost?: number;
+};
+
+/** The rows of either cost basis in one shape, so the blocked and estimated tables have the same eleven columns. */
+function breakdownRows(result: CostingResult, selectedYear: number): { rows: BreakdownRow[]; total: BreakdownRow } {
   const year = result.yearRows.find((row) => row.serviceYear === selectedYear);
-  return <div className="table-scroll data-grid costing-results-table"><table><thead><tr><th scope="col">Service day</th><th scope="col">Days</th><th scope="col">Blocks</th><th scope="col">Daily revenue (h)</th><th scope="col">Daily platform (h)</th><th scope="col">Daily cost</th><th scope="col">Annual revenue (h)</th><th scope="col">Annual platform (h)</th><th scope="col">Annual cost</th></tr></thead><tbody>{result.dailyRows.map((row) => { const cost = row.yearCosts.find((item) => item.serviceYear === selectedYear); return <tr key={row.serviceDayId}><th scope="row">{row.serviceDayName}</th><td>{row.annualServiceDays}</td><td>{row.eligibleBlockCount}</td><td>{dailyHours(row.revenueHoursPerDay)}</td><td>{dailyHours(row.platformHoursPerDay)}</td><td>{cost ? money(cost.costPerDayUsd) : '—'}</td><td>{annualHours(row.annualRevenueHours)}</td><td>{annualHours(row.annualPlatformHours)}</td><td>{cost ? money(cost.annualCostUsd) : '—'}</td></tr>; })}</tbody><tfoot><tr><th scope="row">Total</th><td>{totalDays}</td><td>{result.eligibleBlockCount}</td><td></td><td></td><td></td><td>{year ? annualHours(year.annualRevenueHours) : annualHours(result.dailyRows.reduce((sum, row) => sum + row.annualRevenueHours, 0))}</td><td>{year ? annualHours(year.annualPlatformHours) : annualHours(result.dailyRows.reduce((sum, row) => sum + row.annualPlatformHours, 0))}</td><td>{year ? money(year.annualCostUsd) : '—'}</td></tr></tfoot></table></div>;
+  const sum = (values: Array<number | undefined>) => values.every((value) => value !== undefined) ? values.reduce<number>((total, value) => total + value!, 0) : undefined;
+  const rows: BreakdownRow[] = result.basis === 'estimated'
+    ? result.dailyRows.map((row) => { const cost = row.yearCosts.find((item) => item.serviceYear === selectedYear); return {
+      key: row.serviceDayId, name: row.serviceDayName, days: row.annualServiceDays, trips: row.tripCount, running: row.runningHoursPerDay,
+      revenue: row.revenueHoursPerDay, platform: row.platformHoursPerDay, dailyCost: cost?.costPerDayUsd,
+      annualRevenue: row.annualRevenueHours, annualPlatform: row.annualPlatformHours, annualCost: cost?.annualCostUsd,
+    }; })
+    : result.dailyRows.map((row) => { const cost = row.yearCosts.find((item) => item.serviceYear === selectedYear); return {
+      key: row.serviceDayId, name: row.serviceDayName, days: row.annualServiceDays, blocks: row.eligibleBlockCount,
+      revenue: row.revenueHoursPerDay, platform: row.platformHoursPerDay, dailyCost: cost?.costPerDayUsd,
+      annualRevenue: row.annualRevenueHours, annualPlatform: row.annualPlatformHours, annualCost: cost?.annualCostUsd,
+    }; });
+  const total: BreakdownRow = {
+    key: 'total', name: 'Total', days: rows.reduce((total, row) => total + row.days, 0),
+    ...(result.basis === 'estimated' ? { trips: result.tripCount } : { blocks: result.eligibleBlockCount }),
+    annualRevenue: year ? year.annualRevenueHours : sum(rows.map((row) => row.annualRevenue)),
+    annualPlatform: year ? year.annualPlatformHours : sum(rows.map((row) => row.annualPlatform)),
+    annualCost: year?.annualCostUsd,
+  };
+  return { rows, total };
 }
 
-/** The caption under a day name when a factor came from All days. */
-function fallbackCaption(row: EstimatedCostingDailyResult): string | undefined {
-  if (row.runningHoursPerDay <= 0) return undefined;
-  const layover = row.factors.layoverSource === 'allDays';
-  const deadhead = row.factors.deadheadSource === 'allDays';
-  return layover && deadhead ? 'All days factors' : layover ? 'All days layover %' : deadhead ? 'All days deadhead %' : undefined;
-}
+const BREAKDOWN_COLUMNS = ['Service day', 'Days', 'Trips', 'Blocks', 'Daily running (h)', 'Daily revenue (h)', 'Daily platform (h)', 'Daily cost', 'Annual revenue (h)', 'Annual platform (h)', 'Annual cost'];
 
-function EstimatedResultsTable({ result, selectedYear, totalDays }: { result: EstimatedCostingCalculationResult; selectedYear: number; totalDays: number }) {
-  const year = result.yearRows.find((row) => row.serviceYear === selectedYear);
+function CostBreakdownTable({ result, selectedYear, totalDays }: { result: CostingResult; selectedYear: number; totalDays: number }) {
+  const { rows, total } = breakdownRows(result, selectedYear);
+  const count = (value: number | undefined) => value === undefined ? MISSING : String(value);
   const daily = (value: number | undefined) => value === undefined ? MISSING : dailyHours(value);
   const annual = (value: number | undefined) => value === undefined ? MISSING : annualHours(value);
-  const sum = (values: Array<number | undefined>) => values.every((value) => value !== undefined) ? values.reduce<number>((total, value) => total + value!, 0) : undefined;
-  const totalRevenue = year ? year.annualRevenueHours : sum(result.dailyRows.map((row) => row.annualRevenueHours));
-  const totalPlatform = year ? year.annualPlatformHours : sum(result.dailyRows.map((row) => row.annualPlatformHours));
+  const cash = (value: number | undefined) => value === undefined ? MISSING : money(value);
   return <div className="table-scroll data-grid costing-results-table"><table>
-    <thead><tr><th scope="col">Service day</th><th scope="col">Days</th><th scope="col">Trips</th><th scope="col">Daily running (h)</th><th scope="col">Daily revenue (h)<span className="costing-est-mark">estimated</span></th><th scope="col">Daily platform (h)<span className="costing-est-mark">estimated</span></th><th scope="col">Daily cost</th><th scope="col">Annual revenue (h)</th><th scope="col">Annual platform (h)</th><th scope="col">Annual cost</th></tr></thead>
-    <tbody>{result.dailyRows.map((row) => {
-      const cost = row.yearCosts.find((item) => item.serviceYear === selectedYear);
-      const caption = fallbackCaption(row);
-      return <tr key={row.serviceDayId}><th scope="row">{row.serviceDayName}{caption && <span className="costing-row-note">{caption}</span>}</th><td>{row.annualServiceDays}</td><td>{row.tripCount}</td><td>{dailyHours(row.runningHoursPerDay)}</td><td>{daily(row.revenueHoursPerDay)}</td><td>{daily(row.platformHoursPerDay)}</td><td>{cost ? money(cost.costPerDayUsd) : MISSING}</td><td>{annual(row.annualRevenueHours)}</td><td>{annual(row.annualPlatformHours)}</td><td>{cost ? money(cost.annualCostUsd) : MISSING}</td></tr>;
-    })}</tbody>
-    <tfoot><tr><th scope="row">Total</th><td>{totalDays}</td><td>{result.tripCount}</td><td></td><td></td><td></td><td></td><td>{annual(totalRevenue)}</td><td>{annual(totalPlatform)}</td><td>{year ? money(year.annualCostUsd) : MISSING}</td></tr></tfoot>
+    <colgroup><col className="costing-col-day" /><col className="costing-col-count" /><col className="costing-col-count" /><col className="costing-col-count" />{Array.from({ length: 3 }, (_, index) => <col key={index} className="costing-col-hours" />)}<col className="costing-col-money" /><col className="costing-col-hours" /><col className="costing-col-hours" /><col className="costing-col-total" /></colgroup>
+    <thead><tr>{BREAKDOWN_COLUMNS.map((name) => <th key={name} scope="col">{name}</th>)}</tr></thead>
+    <tbody>{rows.map((row) => <tr key={row.key}><th scope="row">{row.name}</th><td>{row.days}</td><td>{count(row.trips)}</td><td>{count(row.blocks)}</td><td>{daily(row.running)}</td><td>{daily(row.revenue)}</td><td>{daily(row.platform)}</td><td>{cash(row.dailyCost)}</td><td>{annual(row.annualRevenue)}</td><td>{annual(row.annualPlatform)}</td><td>{cash(row.annualCost)}</td></tr>)}</tbody>
+    <tfoot><tr><th scope="row">Total</th><td>{totalDays}</td><td>{count(total.trips)}</td><td>{count(total.blocks)}</td><td></td><td></td><td></td><td></td><td>{annual(total.annualRevenue)}</td><td>{annual(total.annualPlatform)}</td><td>{cash(total.annualCost)}</td></tr></tfoot>
   </table></div>;
-}
-
-function EstimateBasisPanel({ result, tripProfileName, allDays }: { result: EstimatedCostingCalculationResult; tripProfileName: string; allDays?: CostingEstimateFactors['allDays'] }) {
-  const active = result.dailyRows.filter((row) => row.runningHoursPerDay > 0);
-  const fallbackDays = active.filter((row) => row.factors.layoverSource === 'allDays' || row.factors.deadheadSource === 'allDays').map((row) => row.serviceDayName);
-  const noDeadhead = active.filter((row) => row.factors.deadheadFraction === undefined).map((row) => row.serviceDayName);
-  return <SupportPanel title="Estimate basis" ariaLabel="Estimate basis" aside={<span className="support-panel__aside">{`Trip profile ${tripProfileName} · ${plural(result.tripCount, 'trip')} · no blocks used`}</span>}>
-    <div className="costing-basis-notes">
-      <InlineNote>{`Running hours add each trip's first-to-last time in trip profile ${tripProfileName}.`}</InlineNote>
-      <InlineNote>Revenue hours = running ÷ (1 − layover %). Platform hours = revenue ÷ (1 − deadhead %).</InlineNote>
-      {fallbackDays.length > 0 && <InlineNote kind="warn">{`${listText(fallbackDays)} ${fallbackDays.length === 1 ? 'uses' : 'use'} All days: ${percentOf(allDays?.layoverFraction)} layover, ${percentOf(allDays?.deadheadFraction)} deadhead.`}</InlineNote>}
-      {result.tripsWithoutRunTimeCount > 0 && <InlineNote kind="warn">{`${plural(result.tripsWithoutRunTimeCount, 'trip')} ${result.tripsWithoutRunTimeCount === 1 ? 'has' : 'have'} no run time and ${result.tripsWithoutRunTimeCount === 1 ? 'is' : 'are'} not counted.`}</InlineNote>}
-      {noDeadhead.length > 0 && <InlineNote kind="warn">{`No deadhead % for ${listText(noDeadhead)}: platform hours are not estimated.`}</InlineNote>}
-    </div>
-  </SupportPanel>;
 }
 
 function CostingNavigationDraftDialog({ saving, saveDisabled, onCancel, onDiscard, onSave }: { saving: boolean; saveDisabled: boolean; onCancel: () => void; onDiscard: () => void; onSave: () => void }) {

@@ -14,7 +14,8 @@ test('Costing workspace displays a partial estimate, supports year selection, an
   await expect(page.getByRole('button', { name: 'Save assumptions', exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Cost Breakdown' })).toBeVisible();
   await expect(page.getByText('Partial estimate')).toBeVisible();
-  await expect(page.getByText('0 excluded blocks · 1 unassigned trips')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Exclusions' })).toHaveCount(0);
+  await expect(page.locator('.costing-results-table thead th')).toHaveText(['Service day', 'Days', 'Trips', 'Blocks', 'Daily running (h)', 'Daily revenue (h)', 'Daily platform (h)', 'Daily cost', 'Annual revenue (h)', 'Annual platform (h)', 'Annual cost']);
   await expect(page.locator('.costing-results-table tfoot').getByRole('cell', { name: '$40,170' })).toBeVisible();
   await scopeField(page, 'View year').selectOption('2027');
   await expect(page.getByRole('heading', { name: 'Cost Breakdown' })).toBeVisible();
@@ -22,13 +23,12 @@ test('Costing workspace displays a partial estimate, supports year selection, an
   await expect(page.getByText('Service quantities remain constant; only the rate changes.')).toHaveCount(0);
   // F3, F6 (UR-3): annual hours and annual cost are whole numbers; daily hours have two decimals; the hourly rate shows cents.
   expect(await page.locator('.costing-results-table tfoot').allInnerTexts()).not.toEqual(expect.arrayContaining([expect.stringMatching(/\d+\.\d+/)]));
-  for (const text of await page.locator('.costing-results-table tbody tr td:nth-child(4)').allInnerTexts()) expect(text).toMatch(/^[\d,]+\.\d{2}$/);
+  for (const text of await page.locator('.costing-results-table tbody tr td:nth-child(7)').allInnerTexts()) expect(text).toMatch(/^[\d,]+\.\d{2}$/);
 
   await page.setViewportSize({ width: 1440, height: 900 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
   await page.setViewportSize({ width: 760, height: 900 });
-  await expect(page.getByRole('heading', { name: 'Exclusions' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Yearly outlook' })).toBeVisible();
   // Narrow widths: the page itself never scrolls sideways, and the results and outlook tables stay inside the viewport and keep
   // their content (they scroll inside their own regions). Showing the Annual cost column without any table scroll is package U06's.
@@ -137,22 +137,25 @@ test.describe('Costing estimate display (U06 criteria 2 to 5)', () => {
     await expect(page.getByText('Calculating estimate…')).toHaveCount(0);
   });
 
-  test('the Total row has no daily columns, a note says totals are computed before rounding, and the counts are singular', async ({ page }) => {
+  test('the Total row has no daily columns, the blocked basis shows no trips or running hours, and no rounding note shows', async ({ page }) => {
     await seedCostingFixture(page);
     await page.reload();
     await page.getByRole('button', { name: 'Costing', exact: true }).click();
     const total = page.locator('.costing-results-table tfoot tr');
     await expect(total.locator('th')).toHaveText('Total');
     const cells = total.locator('td');
-    // Days, Blocks, Daily Revenue Hours, Daily Platform Hours, Daily Cost, Annual Revenue Hours, Annual Platform Hours, Annual Cost.
-    await expect(cells).toHaveCount(8);
+    // Days, Trips, Blocks, four daily columns, Annual Revenue Hours, Annual Platform Hours, Annual Cost.
+    await expect(cells).toHaveCount(10);
     await expect(cells.nth(0)).toHaveText('364');
-    await expect(cells.nth(1)).toHaveText('1');
-    for (const index of [2, 3, 4]) await expect(cells.nth(index)).toHaveText('');
-    await expect(cells.nth(5)).toHaveText('260');
-    await expect(cells.nth(7)).toHaveText('$40,170');
-    await expect(page.getByText('Totals are computed before rounding, so a total can differ by 1 from the sum of the rounded rows.')).toBeVisible();
-    await expect(page.getByText('0 excluded blocks · 1 unassigned trip', { exact: true })).toBeVisible();
+    await expect(cells.nth(1)).toHaveText('—');
+    await expect(cells.nth(2)).toHaveText('1');
+    for (const index of [3, 4, 5, 6]) await expect(cells.nth(index)).toHaveText('');
+    await expect(cells.nth(7)).toHaveText('260');
+    await expect(cells.nth(9)).toHaveText('$40,170');
+    const row = page.locator('.costing-results-table tbody tr').first().locator('td');
+    await expect(row.nth(1)).toHaveText('—');
+    await expect(row.nth(3)).toHaveText('—');
+    await expect(page.getByText(/Totals are computed before rounding/)).toHaveCount(0);
   });
 
   test('View year appears once, in the toolbar', async ({ page }) => {
