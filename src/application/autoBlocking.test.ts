@@ -107,7 +107,7 @@ describe('Automatic blocking application service (Decision 0055)', () => {
     expect(preview.ruleFindings).toEqual([]);
     expect(preview.nameFindings).toEqual([]);
     expect(preview.result.blocks).toHaveLength(7);
-    expect(preview.result.days[0]).toMatchObject({ blockCount: 7, revenueSeconds: 168000, blocksWithOneBreak: 7 });
+    expect(preview.result.days[0]).toMatchObject({ blockCount: 7, revenueSeconds: 153600, blocksWithOneBreak: 6 });
     expect(preview.check).toBeUndefined();
     expect(repository.scenarios.size).toBe(0);
     expect(repository.blocks.size).toBe(0);

@@ -196,34 +196,37 @@ function spansOf(blocks: BlockingBlock[], context: AutoBlockingContext): number[
 }
 
 describe('buildAutoBlocks: reference results from synthetic-check.py', () => {
-  it('35-minute Trips with breaks: 7 blocks, 2800 minutes', () => {
+  it('35-minute Trips with breaks: 7 blocks, 2560 minutes, 6 with a break', () => {
     const context = outAndBack(35); const result = build(context, baseRules());
     expect(result.blocks).toHaveLength(7);
-    expect(spansOf(result.blocks, context)).toEqual([385, 385, 385, 385, 385, 400, 475]);
-    expect(spansOf(result.blocks, context).reduce((sum, value) => sum + value, 0)).toBe(2800);
-    expect(result.days[0]).toMatchObject({ blockCount: 7, tripCount: 58, revenueSeconds: 168000, blocksWithOneBreak: 7, blocksWithTwoOrMoreBreaks: 0 });
+    expect(spansOf(result.blocks, context)).toEqual([70, 355, 355, 445, 445, 445, 445]);
+    expect(spansOf(result.blocks, context).reduce((sum, value) => sum + value, 0)).toBe(2560);
+    expect(result.days[0]).toMatchObject({ blockCount: 7, tripCount: 58, revenueSeconds: 153600, blocksWithOneBreak: 6, blocksWithTwoOrMoreBreaks: 0 });
     expect(result.blockFindings.filter((finding) => finding.severity === 'error')).toEqual([]);
     expect(result.blocks.map((block) => block.label)).toEqual(['Block 1', 'Block 2', 'Block 3', 'Block 4', 'Block 5', 'Block 6', 'Block 7']);
   });
 
-  it('46-minute Trips with breaks: 9 blocks, 3528 minutes', () => {
+  it('46-minute Trips with breaks: 9 blocks, 3348 minutes, 8 with a break', () => {
     const context = outAndBack(46); const result = build(context, baseRules());
-    expect(spansOf(result.blocks, context)).toEqual([362, 362, 362, 362, 362, 362, 377, 482, 497]);
-    expect(result.days[0].blocksWithOneBreak).toBe(9);
+    expect(spansOf(result.blocks, context)).toEqual([92, 347, 347, 347, 347, 467, 467, 467, 467]);
+    expect(spansOf(result.blocks, context).reduce((sum, value) => sum + value, 0)).toBe(3348);
+    expect(result.days[0].blocksWithOneBreak).toBe(8);
     expect(result.blockFindings.filter((finding) => finding.severity === 'error')).toEqual([]);
   });
 
   it('35-minute Trips without a break rule: 6 blocks, 2490 minutes', () => {
     const context = outAndBack(35); const result = build(context, baseRules({ break: undefined }));
     expect(spansOf(result.blocks, context)).toEqual([340, 430, 430, 430, 430, 430]);
+    expect(spansOf(result.blocks, context).reduce((sum, value) => sum + value, 0)).toBe(2490);
     expect(result.days[0].blocksWithOneBreak).toBe(0);
     expect(result.passes).toBe(1);
   });
 
-  it('minimum block length of 7 h suppresses the break on a short block by rebuilding', () => {
+  it('minimum block length of 7 h suppresses the break on short blocks by rebuilding: 7 blocks, 2530 minutes, 4 with a break', () => {
     const context = outAndBack(35); const result = build(context, baseRules({ break: { lengthMinutes: 35, minimumBlockHours: 7, firstBreakAfterHours: 1 } }));
-    expect(spansOf(result.blocks, context)).toEqual([385, 385, 385, 385, 385, 385, 490]);
-    expect(result.days[0].blocksWithOneBreak).toBe(1);
+    expect(spansOf(result.blocks, context)).toEqual([70, 340, 340, 445, 445, 445, 445]);
+    expect(spansOf(result.blocks, context).reduce((sum, value) => sum + value, 0)).toBe(2530);
+    expect(result.days[0].blocksWithOneBreak).toBe(4);
     expect(result.passes).toBeGreaterThanOrEqual(2);
   });
 });
@@ -352,6 +355,51 @@ describe('buildAutoBlocks: rules', () => {
     expect(build(shuffled, baseRules())).toEqual(build(context, baseRules()));
   });
 
+  describe('vehicle choice (Decision 0056)', () => {
+    /** Trips on the deadhead fixture's nodes A, B and C; no layover, no break. */
+    const choiceRules = (patch: Partial<AutoBlockingRules> = {}) => noBreak({
+      patterns: [
+        { patternId: 'AB', breakAllowed: false, canStart: true, canEnd: true },
+        { patternId: 'BA', breakAllowed: false, canStart: true, canEnd: true },
+        { patternId: 'CA', breakAllowed: false, canStart: true, canEnd: true },
+      ], ...patch,
+    });
+    const at = (hours: number, minutes: number) => hours * 3600 + minutes * 60;
+    const trip = (id: string, patternId: 'AB' | 'BA', start: number, end: number): Trip => ({
+      id, scenarioId: 's', routeId: 'r', serviceDayId: 'wk', patternId, tripProfileId: 'tp',
+      stopTimes: [{ patternPointId: `${patternId}0`, sequence: 0, time: start }, { patternPointId: `${patternId}1`, sequence: 1, time: end }], provenance: 'manual' as never, ...meta,
+    });
+    const withTrips = (trips: Trip[]) => ({ ...deadheadFixture(), trips });
+    const tripsOf = (block: BlockingBlock) => block.activities.flatMap((activity) => activity.type === 'revenueTrip' ? [activity.tripId] : []);
+
+    it('gives the Trip to the vehicle that became ready most recently, so the other Block ends', () => {
+      const context = withTrips([trip('t1', 'BA', at(7, 0), at(7, 30)), trip('t2', 'BA', at(7, 10), at(7, 50)), trip('t3', 'AB', at(8, 0), at(8, 30))]);
+      const result = build(context, choiceRules());
+      expect(result.blocks.map(tripsOf)).toEqual([['t1'], ['t2', 't3']]);
+    });
+
+    it('gives the Trip to the earlier-created Block when two vehicles are ready at the same time', () => {
+      const context = withTrips([trip('t1', 'BA', at(7, 0), at(7, 30)), trip('t2', 'BA', at(7, 10), at(7, 30)), trip('t3', 'AB', at(8, 0), at(8, 30))]);
+      const result = build(context, choiceRules());
+      expect(result.blocks.map(tripsOf)).toEqual([['t1', 't3'], ['t2']]);
+    });
+
+    it('prefers a direct candidate to a deadhead candidate, even one that became ready later', () => {
+      // t1 leaves a vehicle at A ready 7:30. t2 leaves a vehicle at B ready 7:35, which reaches A at 7:45 by deadhead.
+      const context = withTrips([trip('t1', 'BA', at(7, 0), at(7, 30)), trip('t2', 'AB', at(7, 5), at(7, 35)), trip('t3', 'AB', at(8, 0), at(8, 30))]);
+      const result = build(context, choiceRules({ deadheads: [{ fromNodeId: 'B', toNodeId: 'A', minutes: 10, bothWays: false }] }));
+      expect(result.blocks.map(tripsOf)).toEqual([['t1', 't3'], ['t2']]);
+      expect(result.blocks.flatMap((block) => block.activities).some((activity) => activity.type === 'deadhead')).toBe(false);
+    });
+
+    it('uses a deadhead candidate when no direct candidate can take the Trip', () => {
+      const context = withTrips([trip('t2', 'AB', at(7, 5), at(7, 35)), trip('t3', 'AB', at(8, 0), at(8, 30))]);
+      const result = build(context, choiceRules({ deadheads: [{ fromNodeId: 'B', toNodeId: 'A', minutes: 10, bothWays: false }] }));
+      expect(result.blocks.map(tripsOf)).toEqual([['t2', 't3']]);
+      expect(result.blocks[0].activities.find((activity) => activity.type === 'deadhead')).toMatchObject({ fromNodeId: 'B', toNodeId: 'A', minutesAfterPreviousTrip: 10 });
+    });
+  });
+
   it('skips Trips without run times and reports a missing Pattern row', () => {
     const context = outAndBack(35);
     const broken: Trip = { ...context.trips[0], id: 'broken', stopTimes: [context.trips[0].stopTimes[0]] };
@@ -423,6 +471,21 @@ describe('measureBuiltBlocks and checkAgainstBuiltBlocks', () => {
     const unmatched = measureBuiltBlocks({ source, target: stranger, targetRules: baseRules() });
     expect(unmatched.lines.filter((line) => line.basis === 'notMatched')).toHaveLength(2);
     expect(unmatched.rules.patterns).toEqual(baseRules().patterns);
+  });
+
+  it('measures the break from Blocks with a long gap only, so a Block with only turn layovers does not hide it (Decision 0056 item 4)', () => {
+    const context = outAndBack(35); const source = sourceFrom(context, breakRules);
+    // The new vehicle choice leaves one short Block whose only gap is a turn layover at B.
+    const trips = new Map(context.trips.map((trip) => [trip.id, trip]));
+    const longestGapMinutes = (block: BlockingBlock) => {
+      const ids = block.activities.flatMap((activity) => activity.type === 'revenueTrip' ? [activity.tripId] : []);
+      return Math.max(0, ...ids.slice(1).map((id, index) => (trips.get(id)!.stopTimes[0].time - trips.get(ids[index])!.stopTimes[1].time) / 60));
+    };
+    const multiTrip = source.blocks.filter((block) => block.activities.filter((activity) => activity.type === 'revenueTrip').length >= 2);
+    expect(multiTrip.some((block) => longestGapMinutes(block) <= 25)).toBe(true);
+    expect(multiTrip.some((block) => longestGapMinutes(block) >= 50)).toBe(true);
+    const measured = measureBuiltBlocks({ source, target: context, targetRules: baseRules({ break: undefined }) });
+    expect(measured.rules.break?.lengthMinutes).toBe(50);
   });
 
   it('keeps the draft break when the built blocks hold none', () => {

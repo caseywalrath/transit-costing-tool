@@ -1,6 +1,6 @@
 # Packages MR1 to MR4: Most recently ready vehicle, peak vehicles and a vehicle limit
 
-- Status: Planned (2026-11-04); waiting for the user to accept Decision 0056 and say "Proceed with MR1".
+- Status: Decision 0056 accepted (2026-11-04). MR1 implemented on 2026-11-04; awaiting user review. MR2 to MR4 planned.
 - Rules: Decision 0056 (`docs/decisions/0056-most-recently-ready-vehicle.md`). Read it in full first. This plan does not repeat its reasoning.
 - Branch: `claude/admiring-sagan-4lfwzp`. Commit each package separately with a clear message. Never push to another branch. Do not open a pull request.
 - Implementer: a Sonnet-class model starting each package with fresh context. Each package is self-contained: read "Read first", then your package section, and touch only the files your package owns.
@@ -9,7 +9,7 @@
 | Package | Content | Class / model |
 |---|---|---|
 | MR0 | Decision 0056, this plan | Done (primary agent) |
-| MR1 | Engine choice rule, break measurement fix, reference script, unit tests, Golden regression test | Structural (Luna) / Sonnet |
+| MR1 | Engine choice rule, break measurement fix, reference script, unit tests, Golden regression test | Done 2026-11-04 (primary agent) |
 | MR2 | Peak vehicles and the maximum-vehicles limit in the domain; rule validation; backup schema 9 | Structural (Luna) / Sonnet |
 | MR3 | Dialog: intro sentence, Maximum vehicles field, Peak vehicles column, check note, finding and summary text | Structural (Luna) / Sonnet. Every text and placement is fixed below and reuses existing fields and columns, so no design judgment is needed. |
 | MR4 | Documentation, full verification, closeout | Structural (Luna) / Sonnet |

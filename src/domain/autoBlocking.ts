@@ -297,8 +297,16 @@ function findConnection(rules: AutoBlockingRules, from: EntityId, to: EntityId):
   return best;
 }
 
-/** One chaining pass over the Trips of one (service day, Route), already sorted by first departure then Trip id. */
-function chainPass(facts: TripFact[], env: BuildEnvironment, suppressed: ReadonlySet<EntityId>, ownerId: EntityId): { vehicles: Vehicle[]; findings: ValidationFinding[] } {
+/** How chainPass picks among open Blocks that can take a Trip (Decision 0056 items 1 and 2). */
+export type AutoBlockingChoice = 'mostRecentlyReady' | 'readyLongest';
+
+/**
+ * One chaining pass over the Trips of one (service day, Route), already sorted by first departure then Trip id.
+ * A direct candidate (already at the Trip's first node) always wins over a deadhead candidate. Among candidates of the
+ * same kind, 'mostRecentlyReady' takes the latest effective ready time (Decision 0056) and 'readyLongest' the earliest
+ * (Decision 0055 item 4). An equal ready time keeps the earlier-created Block.
+ */
+function chainPass(facts: TripFact[], env: BuildEnvironment, suppressed: ReadonlySet<EntityId>, ownerId: EntityId, choice: AutoBlockingChoice): { vehicles: Vehicle[]; findings: ValidationFinding[] } {
   const { rules } = env;
   const vehicles: Vehicle[] = []; const findings: ValidationFinding[] = [];
   const maxRunning = rules.maxRunningHours === undefined ? undefined : rules.maxRunningHours * 3600;
@@ -321,8 +329,8 @@ function chainPass(facts: TripFact[], env: BuildEnvironment, suppressed: Readonl
         if (connection && vehicle.readyAt + connection.minutes * 60 <= fact.dep) candidate = { effectiveReady: vehicle.readyAt + connection.minutes * 60, direct: false, deadhead: connection };
       }
       if (!candidate) continue;
-      if (!chosen || candidate.effectiveReady < chosen.effectiveReady
-        || (candidate.effectiveReady === chosen.effectiveReady && candidate.direct && !chosen.direct)) chosen = { vehicle, ...candidate };
+      const better = choice === 'mostRecentlyReady' ? candidate.effectiveReady > (chosen?.effectiveReady ?? 0) : candidate.effectiveReady < (chosen?.effectiveReady ?? 0);
+      if (!chosen || (candidate.direct && !chosen.direct) || (candidate.direct === chosen.direct && better)) chosen = { vehicle, ...candidate };
     }
     let vehicle: Vehicle; let deadhead: UsedDeadhead | undefined;
     if (chosen) { vehicle = chosen.vehicle; deadhead = chosen.deadhead; }
@@ -396,14 +404,14 @@ export function buildAutoBlocks(input: AutoBlockingBuildInput): AutoBlockingResu
         .sort((left, right) => left.dep - right.dep || left.trip.id.localeCompare(right.trip.id));
       if (!routeFacts.length) continue;
       const suppressed = new Set<EntityId>();
-      let result = chainPass(routeFacts, env, suppressed, ownerId); let used = 1;
+      let result = chainPass(routeFacts, env, suppressed, ownerId, 'mostRecentlyReady'); let used = 1;
       for (; used <= MAX_BREAK_PASSES; used += 1) {
         const minimum = (rules.break?.minimumBlockHours ?? 0) * 3600;
         const short = result.vehicles.filter((vehicle) => vehicle.breaks > 0 && vehicle.lastArrival - vehicle.firstDeparture <= minimum && !suppressed.has(vehicle.firstTripId));
         if (!short.length) break;
         if (used === MAX_BREAK_PASSES) { findings.push(autoFinding('autoBlocking.breakPassesExhausted', 'info', ownerId, { serviceDayId: day.id, routeId: route.id })); break; }
         short.forEach((vehicle) => suppressed.add(vehicle.firstTripId));
-        result = chainPass(routeFacts, env, suppressed, ownerId);
+        result = chainPass(routeFacts, env, suppressed, ownerId, 'mostRecentlyReady');
       }
       passes = Math.max(passes, Math.min(used, MAX_BREAK_PASSES));
       findings.push(...result.findings);
@@ -557,25 +565,25 @@ export function measureBuiltBlocks(input: AutoBlockingMeasureInput): AutoBlockin
   }
   const largestMinimumMinutes = Math.max(0, ...[...facts.values()].map((entry) => entry.minGapSeconds === undefined ? 0 : Math.floor(entry.minGapSeconds / 60)));
 
-  // Break: the longest gap of each Block with at least two Trips.
+  // Break: the longest gap of each Block with at least two Trips. Only gaps longer than the largest minimum layover
+  // plus 5 minutes count, so a Block with only turn layovers does not hide the break (Decision 0056 item 4).
   const longest = blocks.flatMap((block) => block.gaps.length ? [{ block, gap: block.gaps.reduce((best, gap) => gap.end - gap.start > best.end - best.start ? gap : best) }] : []);
+  const breakGaps = longest.filter(({ gap }) => Math.floor((gap.end - gap.start) / 60) > largestMinimumMinutes + 5);
   let breakRule: AutoBlockingBreakRule | undefined; const lines: AutoBlockingMeasurementLine[] = [];
-  if (longest.length) {
-    const lengthMinutes = floorTo(Math.min(...longest.map(({ gap }) => gap.end - gap.start)) / 60, 5);
-    if (lengthMinutes > largestMinimumMinutes + 5) {
-      const lengthSeconds = lengthMinutes * 60;
-      longest.forEach(({ gap }) => { factsOf(gap.afterPattern).breakHere = true; });
-      const first = Math.min(...longest.map(({ block, gap }) => gap.start - block.first.dep));
-      const withBreak = blocks.filter((block) => block.gaps.some((gap) => gap.end - gap.start >= lengthSeconds));
-      const shortestSpan = Math.min(...withBreak.map((block) => block.last.arr - block.first.dep));
-      const intervals = withBreak.flatMap((block) => { const long = block.gaps.filter((gap) => gap.end - gap.start >= lengthSeconds); return long.length >= 2 ? [long[1].start - long[0].end] : []; });
-      breakRule = {
-        lengthMinutes,
-        minimumBlockHours: Math.max(0, (Math.ceil(shortestSpan / 1800) - 1) / 2),
-        firstBreakAfterHours: floorTo(first / 3600, 0.5),
-        ...(intervals.length ? { anotherBreakAfterHours: Math.max(0.5, floorTo(Math.min(...intervals) / 3600, 0.5)) } : {}),
-      };
-    }
+  if (breakGaps.length) {
+    const lengthMinutes = floorTo(Math.min(...breakGaps.map(({ gap }) => gap.end - gap.start)) / 60, 5);
+    const lengthSeconds = lengthMinutes * 60;
+    breakGaps.forEach(({ gap }) => { factsOf(gap.afterPattern).breakHere = true; });
+    const first = Math.min(...breakGaps.map(({ block, gap }) => gap.start - block.first.dep));
+    const withBreak = blocks.filter((block) => block.gaps.some((gap) => gap.end - gap.start >= lengthSeconds));
+    const shortestSpan = Math.min(...withBreak.map((block) => block.last.arr - block.first.dep));
+    const intervals = withBreak.flatMap((block) => { const long = block.gaps.filter((gap) => gap.end - gap.start >= lengthSeconds); return long.length >= 2 ? [long[1].start - long[0].end] : []; });
+    breakRule = {
+      lengthMinutes,
+      minimumBlockHours: Math.max(0, (Math.ceil(shortestSpan / 1800) - 1) / 2),
+      firstBreakAfterHours: floorTo(first / 3600, 0.5),
+      ...(intervals.length ? { anotherBreakAfterHours: Math.max(0.5, floorTo(Math.min(...intervals) / 3600, 0.5)) } : {}),
+    };
   }
 
   const targetPatterns = new Map(target.patterns.map((pattern) => [pattern.id, pattern]));
