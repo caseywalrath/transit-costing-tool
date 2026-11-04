@@ -3,6 +3,7 @@
 - Status: Accepted (user decisions of 2026-11-03); implemented, awaiting user acceptance
 - Date: 2026-11-03
 - Extends: Decision 0019 (Blocking Scenarios), Decision 0050 (minimum layover by direction), Decision 0051 (estimated cost basis)
+- Amended by: Decision 0056 (vehicle choice in item 4; maximum vehicles in item 8; break measurement in item 11; peak vehicles in item 12; backup schema 9 in item 14)
 - Plan: `docs/implementation/automatic-blocking.md`
 - Design reference: `docs/implementation/automatic-blocking/` (mock-ups, screenshots, reference check script)
 
@@ -32,6 +33,7 @@ The user first reviewed this as a separate "chained" cost basis on the Costing t
    - **Deadhead:** a vehicle at another node can also take the Trip through a deadhead connection, if it arrives at the Trip's first node, after the deadhead and the required layover, in time. When two vehicles are ready at the same time, a direct connection wins over a deadhead, then the earlier-created Block wins.
    - **New block:** if no vehicle can take the Trip, a new Block starts.
    - **Determinism:** the rule is deterministic. It is a heuristic and is not guaranteed to use the fewest vehicles.
+   - *Amended by Decision 0056:* the vehicle is the open Block that became ready **most recently** (not the one ready longest), and a Block already at the Trip's first node always wins over one that needs a deadhead, not only on an equal ready time. Ties go to the earlier-created Block. The ready-longest choice remains only as the rebuild used to meet a maximum-vehicles limit (item 8).
 5. **Rules per Pattern,** grouped by Route and then by direction group (Outbound, Inbound). One row per Pattern used by the Trip Profile, with:
    - **Minimum layover after a Trip on this Pattern:** none, whole minutes, or a percentage of that Trip's running time. This is the same rule shape as Decision 0050, applied per Pattern instead of per direction.
    - **Break here:** whether a break layover may be taken after a Trip on this Pattern.
@@ -54,6 +56,7 @@ The user first reviewed this as a separate "chained" cost basis on the Costing t
 8. **Block limits.**
    - **Limits:** optional maximum running hours per Block and maximum revenue miles per Block. A vehicle cannot take a Trip that would put its Block over a limit.
    - **Revenue miles** is unavailable while any Pattern used by the Trip Profile has incomplete miles.
+   - *Amended by Decision 0056:* an optional **maximum vehicles per day** (whole number, at least 1; blank means no limit). A day whose peak vehicles is over the limit is rebuilt with the ready-longest choice, and the build that meets the limit, or else has the lower peak, is kept. It is never a hard constraint and gives findings, not refusals.
 9. **Pull-out and pull-in (user decision 3: per terminal).**
    - **Garage:** an optional garage node (kind `garage`) of the Route. With none, blocks start and end at their terminal.
    - **Terminal rows:** one row for each node where some Pattern can start or end a Block, with:
@@ -72,16 +75,18 @@ The user first reviewed this as a separate "chained" cost basis on the Costing t
       - Block lengths;
       - which Patterns start and end Blocks.
     - **Matching to this Scenario's Patterns:** first by the same Route name and Pattern name (case-insensitive, trimmed), otherwise by the same direction group. Every row it would fill is listed, and "Use these rules" fills the fields as an unsaved draft.
+    - *Amended by Decision 0056:* only Blocks whose longest gap is longer than the largest measured minimum layover plus 5 minutes count as Blocks with a break, so a short Block with only turn layovers no longer hides the break.
 12. **Preview and check.**
     - **Preview:** updates as the rules change. For each day it shows blocks, revenue hours, layover %, longest block, and the number of blocks with one break and with two or more, plus findings.
     - **Check:** when a source is chosen, the same rules are run on the source Blocking Scenario's Trips (with Patterns mapped back) and compared with its built Blocks.
+    - *Amended by Decision 0056:* the preview adds a "Peak vehicles" column (the most Blocks in service at once on that day, across Routes), and the check states the peak vehicles of both sides.
 13. **Findings.** Warnings in the preview; none block creation:
     - a Trip that had to start a Block on a Pattern that cannot start one;
     - a Block whose last Trip's Pattern cannot end one;
     - a Trip ending at a node where no later Trip of the Route departs and no deadhead connection leaves (a broken chain);
     - a limit tighter than a single Trip;
     - revenue miles unavailable.
-14. **Stored record.** The new Blocking Scenario stores `autoBlocking`: the rules used, the time they were applied (`builtAt`), the number of Trips and Blocks at build time, and the source Blocking Scenario ID if one was measured. Any operation that re-stamps the Blocks' `updatedAt` without changing them (duplicate, Scenario copy, backup import) sets `builtAt` to the same time. This is the only schema change. It is an optional field on `BlockingScenario`, so the IndexedDB stores and indexes do not change and there is no database version bump. The backup schema goes from 7 to 8 so that the field is validated on import.
+14. **Stored record.** The new Blocking Scenario stores `autoBlocking`: the rules used, the time they were applied (`builtAt`), the number of Trips and Blocks at build time, and the source Blocking Scenario ID if one was measured. Any operation that re-stamps the Blocks' `updatedAt` without changing them (duplicate, Scenario copy, backup import) sets `builtAt` to the same time. This is the only schema change. It is an optional field on `BlockingScenario`, so the IndexedDB stores and indexes do not change and there is no database version bump. The backup schema goes from 7 to 8 so that the field is validated on import. *Amended by Decision 0056:* the rules gain the optional `maxVehicles`, and the backup schema goes from 8 to 9 so that it is validated; versions 1 to 8 still import.
 15. **Provenance note and building again.**
     - **Note:** a Blocking Scenario with `autoBlocking` shows a note on the Blocking tab with the rules, the build date, and whether any Block was edited since. A Block counts as edited when its `updatedAt` is later than `builtAt`, or when the Block count differs from the count at build time.
     - **"Build again…":** opens the dialog with those rules and creates another new Blocking Scenario. Replacing the Blocks in place is not provided in this decision.

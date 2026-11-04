@@ -487,7 +487,7 @@ In `blockingActionsMenu`, insert directly after the `new` item:
 **Structure:**
 - `ModalDialog as="form" label="Build blocks automatically" className="confirm-dialog auto-blocking-dialog"`.
 - `h2` "Build blocks automatically".
-- Intro paragraph (exact text): "Creates a new blocking scenario from the {n} trips in trip profile {name}. Each departure takes the vehicle that has waited longest past its minimum layover; if none is ready, a new block starts. The result is ordinary blocks that you can edit, rename or delete."
+- Intro paragraph (exact text): "Creates a new blocking scenario from the {n} trips in trip profile {name}. Each departure takes the vehicle that became ready most recently after its minimum layover, so spare vehicles finish early; if none is ready, a new block starts. The result is ordinary blocks that you can edit, rename or delete." (changed by Decision 0056)
 - Body: a two-column grid (`minmax(0,1.85fr) minmax(0,1fr)`). The right column is sticky.
 
 **Left column, in order:**

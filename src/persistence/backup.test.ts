@@ -135,7 +135,7 @@ describe('backup', () => {
       generationSets: [], trips: [], blocks: [],
     };
     const exported = JSON.parse(exportProjectJson(source));
-    expect(exported.exportSchemaVersion).toBe(8);
+    expect(exported.exportSchemaVersion).toBe(9);
     expect(exported.costingAssumptions).toEqual(source.costingAssumptions);
     expect(importProjectJson(JSON.stringify(exported)).costingAssumptions).toEqual(source.costingAssumptions);
 
@@ -163,7 +163,7 @@ describe('backup', () => {
 
     it('round trips every factor in a version 7 file', () => {
       const payload = exportProjectJson(sourceWith(factors));
-      expect(JSON.parse(payload).exportSchemaVersion).toBe(8);
+      expect(JSON.parse(payload).exportSchemaVersion).toBe(9);
       expect(importProjectJson(payload).costingAssumptions?.[0].estimateFactors).toEqual(factors);
     });
 
@@ -303,7 +303,7 @@ describe('backup import repairs Scenario copies made before duplication remapped
   });
 });
 
-describe('automatic blocking record in backups (schema 8, Decision 0055)', () => {
+describe('automatic blocking record in backups (schema 8 and 9, Decisions 0055 and 0056)', () => {
   const fileWithRecord = (version: number, patch: (record: any) => void = () => undefined) => {
     const file = goldenRaw();
     file.exportSchemaVersion = version;
@@ -324,11 +324,28 @@ describe('automatic blocking record in backups (schema 8, Decision 0055)', () =>
     return file;
   };
 
-  it('round trips the record in a version 8 file', () => {
-    const file = fileWithRecord(8);
+  it('round trips the record, including maxVehicles, in a version 9 file (written as version 9)', () => {
+    const file = fileWithRecord(9, (record) => { record.rules.maxVehicles = 12; });
     const exported = JSON.parse(exportProjectJson(importProjectJson(JSON.stringify(file))));
-    expect(exported.exportSchemaVersion).toBe(8);
+    expect(exported.exportSchemaVersion).toBe(9);
     expect(exported.blockingScenarios[0].autoBlocking).toEqual(file.blockingScenarios[0].autoBlocking);
+    expect(exported.blockingScenarios[0].autoBlocking.rules.maxVehicles).toBe(12);
+  });
+
+  it('still imports a version 8 file with an autoBlocking record that has no maxVehicles', () => {
+    const imported = importProjectJson(JSON.stringify(fileWithRecord(8)));
+    expect(imported.blockingScenarios![0].autoBlocking?.rules.maxVehicles).toBeUndefined();
+    expect(imported.blockingScenarios![0].autoBlocking?.rules.garages).toHaveLength(1);
+  });
+
+  it('refuses a version 9 file with maxVehicles 0, naming the field', () => {
+    const bad = fileWithRecord(9, (record) => { record.rules.maxVehicles = 0; });
+    expect(() => importProjectJson(JSON.stringify(bad))).toThrow('autoBlocking.limitVehicles at maxVehicles');
+  });
+
+  it('keeps maxVehicles when the Project is imported as a copy', () => {
+    const copy = cloneProjectSnapshot(importProjectJson(JSON.stringify(fileWithRecord(9, (record) => { record.rules.maxVehicles = 7; record.sourceBlockingScenarioId = undefined; }))), '2026-06-01T00:00:00.000Z');
+    expect(copy.blockingScenarios![0].autoBlocking!.rules.maxVehicles).toBe(7);
   });
 
   it('remaps the record identifiers when the Project is imported as a copy', () => {

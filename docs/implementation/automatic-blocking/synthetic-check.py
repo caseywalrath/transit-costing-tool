@@ -1,4 +1,4 @@
-"""Reference check for the automatic blocking rule (Decision 0055).
+"""Reference check for the automatic blocking rule (Decision 0055, vehicle choice amended by Decision 0056).
 
 A plain re-statement of the chaining rule on a synthetic out-and-back timetable. It is not product code. The domain
 tests in `src/domain/autoBlocking.test.ts` must reproduce the numbers printed here (package AB2).
@@ -11,10 +11,10 @@ departure, only for blocks longer than `min_block` hours (enforced by rebuilding
 
 Run: python3 synthetic-check.py
 Expected output:
-  35-min trips, breaks:    (7, 2800, [385, 385, 385, 385, 385, 400, 475], 7)
-  46-min trips, breaks:    (9, 3528, [362, 362, 362, 362, 362, 362, 377, 482, 497], 9)
+  35-min trips, breaks:    (7, 2560, [70, 355, 355, 445, 445, 445, 445], 6)
+  46-min trips, breaks:    (9, 3348, [92, 347, 347, 347, 347, 467, 467, 467, 467], 8)
   35-min trips, no breaks: (6, 2490, [340, 430, 430, 430, 430, 430], 0)
-  35-min trips, min 7 h:   (7, 2800, [385, 385, 385, 385, 385, 385, 490], 1)
+  35-min trips, min 7 h:   (7, 2530, [70, 340, 340, 445, 445, 445, 445], 4)
 Tuple: (blocks, total block span in minutes, sorted spans in minutes, blocks with a break).
 Block span = last arrival - first departure; with no deadhead this equals the app's block revenue time.
 """
@@ -32,10 +32,10 @@ def run(run_min, home_layover=20, break_min=35, first_after_h=1.0, min_block_h=4
     def build(no_break_first_trips):
         blocks = []
         for start, end, origin, destination in trips:
-            # The open block that has been ready longest at the trip's first node; ties go to the earlier-created block.
+            # The most recently ready open block; ties go to the earlier-created block (Decision 0056).
             ready = [(b['ready'], i) for i, b in enumerate(blocks) if b['at'] == origin and b['ready'] <= start]
             if ready:
-                _, i = min(ready)
+                _, i = max(ready, key=lambda r: (r[0], -r[1]))
                 block = blocks[i]
             else:
                 blocks.append({'start': start, 'first': (start, origin), 'breaks': 0})

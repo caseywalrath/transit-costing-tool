@@ -49,3 +49,40 @@ test('builds a blocking scenario automatically and offers it as a blocked cost b
   await expect(page.getByRole('heading', { name: 'Costing Assumptions' })).toBeVisible();
   await expect(scopeField(page, 'Cost basis').locator('option', { hasText: `Blocked · ${name}` })).toHaveCount(1);
 });
+
+// Decision 0056, package MR3. The preview shows peak vehicles (equal to blocks on the golden Weekday), and the Maximum vehicles field in
+// Block limits refuses 0 the way other invalid limits do.
+test('shows peak vehicles and validates the maximum vehicles limit', async ({ page }) => {
+  await seedSnapshot(page, { ...goldenRaw(), generationSets: [] });
+  await page.goto('/');
+  await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Blocking', exact: true }).click();
+  await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Build blocks automatically…', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Build blocks automatically' });
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  await expect(dialog).toContainText('became ready most recently');
+
+  const preview = dialog.getByRole('table', { name: 'Automatic blocking preview' });
+  await expect(preview.getByRole('columnheader', { name: 'Peak vehicles' })).toBeVisible({ timeout: 30_000 });
+  await expect.poll(async () => {
+    const blocks = await preview.locator('tbody tr td:nth-of-type(1)').allTextContents();
+    const peaks = await preview.locator('tbody tr td:nth-of-type(2)').allTextContents();
+    return blocks.length > 0 && blocks.join() === peaks.join();
+  }, { timeout: 30_000 }).toBe(true);
+
+  await dialog.getByLabel('Blocking scenario name').fill(`Limits ${Date.now()}`);
+  const create = dialog.getByRole('button', { name: 'Create blocking scenario', exact: true });
+  await expect(create).toBeEnabled({ timeout: 30_000 });
+  await dialog.getByText('Block limits', { exact: true }).click();
+  const limit = dialog.getByLabel('Maximum vehicles per day');
+  await expect(limit).toBeVisible();
+  await expect(dialog.getByText('Leave blank for no limit.')).toBeVisible();
+  await limit.fill('0');
+  await expect(dialog.getByText('Enter a whole number of 1 or more, or leave it blank.')).toBeVisible({ timeout: 30_000 });
+  await expect(create).toBeDisabled();
+  await limit.fill('40');
+  await expect(dialog.getByText('Enter a whole number of 1 or more, or leave it blank.')).toHaveCount(0);
+  await expect(create).toBeEnabled({ timeout: 30_000 });
+  await expect(dialog.locator('.auto-blocking-section-sum', { hasText: 'max 40 vehicles' })).toBeVisible();
+});

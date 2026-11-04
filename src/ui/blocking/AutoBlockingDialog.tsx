@@ -30,7 +30,7 @@ type Form = {
   serviceDayIds: string[];
   patterns: PatternRow[];
   breakLength: string; breakMinBlock: string; breakFirst: string; breakAnother: string;
-  maxRunning: string; maxMiles: string;
+  maxRunning: string; maxMiles: string; maxVehicles: string;
   garages: Record<string, string>;
   terminals: Record<string, TerminalRow>;
   deadheads: DeadheadRow[];
@@ -55,7 +55,7 @@ function formFromRules(rules: AutoBlockingRules, setup: AutoBlockingSetup): Form
       return { patternId: pattern.id, mode: row.minimumLayover?.mode ?? 'none', amount: text(row.minimumLayover?.value), breakAllowed: row.breakAllowed, canStart: row.canStart, canEnd: row.canEnd };
     }),
     breakLength: text(rules.break?.lengthMinutes), breakMinBlock: text(rules.break?.minimumBlockHours), breakFirst: text(rules.break?.firstBreakAfterHours), breakAnother: text(rules.break?.anotherBreakAfterHours),
-    maxRunning: text(rules.maxRunningHours), maxMiles: text(rules.maxRevenueMiles),
+    maxRunning: text(rules.maxRunningHours), maxMiles: text(rules.maxRevenueMiles), maxVehicles: text(rules.maxVehicles),
     garages: Object.fromEntries(rules.garages.filter((garage) => nodeIds.has(garage.nodeId)).map((garage) => [garage.routeId, garage.nodeId])),
     terminals: Object.fromEntries(rules.terminals.filter((row) => nodeIds.has(row.nodeId)).map((row) => [row.nodeId, { pullOut: String(row.pullOutMinutes), pullIn: String(row.pullInMinutes), miles: text(row.miles) }])),
     deadheads: rules.deadheads.filter((row) => nodeIds.has(row.fromNodeId) && nodeIds.has(row.toNodeId)).map((row) => ({ key: deadheadKey++, from: row.fromNodeId, to: row.toNodeId, minutes: String(row.minutes), miles: text(row.miles), bothWays: row.bothWays })),
@@ -84,6 +84,7 @@ function rulesFromForm(form: Form, setup: AutoBlockingSetup): AutoBlockingRules 
     ...(length === undefined ? {} : { break: { lengthMinutes: length, minimumBlockHours: number(form.breakMinBlock) ?? 0, firstBreakAfterHours: number(form.breakFirst) ?? 0, ...(another === undefined ? {} : { anotherBreakAfterHours: another }) } }),
     ...(number(form.maxRunning) === undefined ? {} : { maxRunningHours: number(form.maxRunning) }),
     ...(number(form.maxMiles) === undefined || setup.milesIncompletePatternIds.length ? {} : { maxRevenueMiles: number(form.maxMiles) }),
+    ...(number(form.maxVehicles) === undefined ? {} : { maxVehicles: number(form.maxVehicles) }),
     garages,
     terminals: terminalNodes(form, setup).map((node) => {
       const row = form.terminals[node.id];
@@ -97,6 +98,7 @@ function rulesFromForm(form: Form, setup: AutoBlockingSetup): AutoBlockingRules 
 const errorsOf = (findings: ValidationFinding[]) => findings.filter((finding) => finding.severity === 'error');
 const FINDING_FIELD_TEXT: Record<string, string> = {
   'autoBlocking.serviceDaysRequired': 'Select at least one service day.',
+  'autoBlocking.limitVehicles': 'Enter a whole number of 1 or more, or leave it blank.',
   'blockingScenario.nameRequired': 'Enter a blocking scenario name.',
   'blockingScenario.nameUnique': 'A blocking scenario with this name already exists.',
 };
@@ -174,7 +176,7 @@ export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId,
   const breakSummary = breakRule
     ? `${breakRule.lengthMinutes} min after ${form.patterns.filter((row) => row.breakAllowed).map((row) => patterns.get(row.patternId)?.name).join(', ') || 'no pattern'}, from ${breakRule.firstBreakAfterHours} h${breakRule.minimumBlockHours > 0 ? `, blocks over ${breakRule.minimumBlockHours} h` : ''}${breakRule.anotherBreakAfterHours !== undefined ? `, again after ${breakRule.anotherBreakAfterHours} h` : ''}`
     : 'No breaks';
-  const limitsSummary = [rules.maxRunningHours !== undefined ? `Max ${rules.maxRunningHours} running h` : '', rules.maxRevenueMiles !== undefined ? `max ${rules.maxRevenueMiles} revenue mi` : ''].filter(Boolean).join(' · ') || 'No limits';
+  const limitsSummary = [rules.maxRunningHours !== undefined ? `Max ${rules.maxRunningHours} running h` : '', rules.maxRevenueMiles !== undefined ? `max ${rules.maxRevenueMiles} revenue mi` : '', rules.maxVehicles !== undefined ? `max ${rules.maxVehicles} vehicles` : ''].filter(Boolean).join(' · ') || 'No limits';
   const pullSummary = `${garageCount ? `${plural(garageCount, 'garage')}` : 'No garage · blocks start and end at a terminal'} · ${terminals.length ? `${Math.max(...rules.terminals.map((row) => row.pullOutMinutes), 0)} min` : '0 min'}`;
   const sourceLabel = setup.sources.find((source) => source.blockingScenarioId === sourceId);
 
@@ -189,7 +191,7 @@ export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId,
   const groupTitles: Array<[string | undefined, string]> = [['outbound', 'Outbound'], ['inbound', 'Inbound'], [undefined, 'No direction']];
   return <DialogShell onClose={onClose} busy={creating} onSubmit={() => void create()}>
     <h2>Build blocks automatically</h2>
-    <p className="auto-blocking-intro">Creates a new blocking scenario from the {tripCount} trips in trip profile {tripProfileName}. Each departure takes the vehicle that has waited longest past its minimum layover; if none is ready, a new block starts. The result is ordinary blocks that you can edit, rename or delete.</p>
+    <p className="auto-blocking-intro">Creates a new blocking scenario from the {tripCount} trips in trip profile {tripProfileName}. Each departure takes the vehicle that became ready most recently after its minimum layover, so spare vehicles finish early; if none is ready, a new block starts. The result is ordinary blocks that you can edit, rename or delete.</p>
     <section className="auto-blocking-body">
       <div className="auto-blocking-col">
         <div className="auto-blocking-name-row">
@@ -251,6 +253,11 @@ export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId,
               <label>Maximum running per block (h)<input type="number" min={0} step="any" value={form.maxRunning} onChange={(event) => update({ maxRunning: event.target.value })} /></label>
               <label>Maximum revenue miles per block<input type="number" min={0} step="any" disabled={setup.milesIncompletePatternIds.length > 0} value={form.maxMiles} onChange={(event) => update({ maxMiles: event.target.value })} /></label>
             </div>
+            <div className="auto-blocking-duo">
+              <label>Maximum vehicles per day<input type="number" min={1} step={1} value={form.maxVehicles} aria-invalid={ruleErrors.some((finding) => finding.ruleId === 'autoBlocking.limitVehicles')} aria-describedby="auto-blocking-max-vehicles-hint" onChange={(event) => update({ maxVehicles: event.target.value })} /></label>
+              <p id="auto-blocking-max-vehicles-hint" className="auto-blocking-worked">Leave blank for no limit.</p>
+            </div>
+            {ruleErrors.filter((finding) => finding.ruleId === 'autoBlocking.limitVehicles').map((finding) => <p key={finding.ruleId} className="field-error">{FINDING_FIELD_TEXT[finding.ruleId]}</p>)}
             {setup.milesIncompletePatternIds.length > 0 && <InlineNote kind="warn">Revenue miles are incomplete for {setup.milesIncompletePatternIds.map((id) => patterns.get(id)?.name ?? id).join(', ')}. Enter cumulative miles on the Route tab.</InlineNote>}
           </div>
         </details>
@@ -308,16 +315,16 @@ export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId,
         <div className="auto-blocking-aside">
           <p className="auto-blocking-side-title">Preview{previewPending ? ' · updating…' : ''}</p>
           <div className="auto-blocking-preview-table"><table aria-label="Automatic blocking preview">
-            <thead><tr><th scope="col">Day</th><th scope="col">Blocks</th><th scope="col">Revenue (h)</th><th scope="col">Layover %</th><th scope="col">Longest (h)</th><th scope="col">1 break</th><th scope="col">2+ breaks</th></tr></thead>
+            <thead><tr><th scope="col">Day</th><th scope="col">Blocks</th><th scope="col">Peak vehicles</th><th scope="col">Revenue (h)</th><th scope="col">Layover %</th><th scope="col">Longest (h)</th><th scope="col">1 break</th><th scope="col">2+ breaks</th></tr></thead>
             <tbody>{(preview?.result.days ?? []).map((day) => <tr key={day.serviceDayId}>
               <th scope="row">{setup.serviceDays.find((entry) => entry.day.id === day.serviceDayId)?.day.name}</th>
-              <td>{day.blockCount}</td><td>{hours(day.revenueSeconds)}</td><td>{day.layoverPercent === undefined ? '–' : day.layoverPercent.toFixed(1)}</td><td>{hours(day.longestBlockSeconds)}</td><td>{day.blocksWithOneBreak}</td><td>{day.blocksWithTwoOrMoreBreaks}</td>
+              <td>{day.blockCount}</td><td>{day.peakVehicles}</td><td>{hours(day.revenueSeconds)}</td><td>{day.layoverPercent === undefined ? '–' : day.layoverPercent.toFixed(1)}</td><td>{hours(day.longestBlockSeconds)}</td><td>{day.blocksWithOneBreak}</td><td>{day.blocksWithTwoOrMoreBreaks}</td>
             </tr>)}</tbody>
           </table></div>
-          {findingSentences(preview?.result.findings ?? [], patterns, nodes).map((sentence) => <InlineNote key={sentence} kind="warn">{sentence}</InlineNote>)}
+          {findingSentences(preview?.result.findings ?? [], patterns, nodes, new Map(setup.serviceDays.map((entry) => [entry.day.id, entry.day.name]))).map((sentence) => <InlineNote key={sentence} kind="warn">{sentence}</InlineNote>)}
           {preview?.check?.days.filter((day) => day.builtRevenueSeconds > 0 || day.autoRevenueSeconds > 0).map((day) => {
             const difference = day.builtRevenueSeconds > 0 ? (day.autoRevenueSeconds - day.builtRevenueSeconds) / day.builtRevenueSeconds * 100 : 0;
-            return <InlineNote key={day.serviceDayId} kind="ok">Same rules on {sourceLabel?.scenarioName || sourceLabel?.name} {day.name} trips: {plural(day.autoBlocks, 'block')}, {hours(day.autoRevenueSeconds)} h. Its built blocks: {plural(day.builtBlocks, 'block')}, {hours(day.builtRevenueSeconds)} h (automatic is {Math.abs(difference).toFixed(1)}% {difference >= 0 ? 'higher' : 'lower'}).</InlineNote>;
+            return <InlineNote key={day.serviceDayId} kind="ok">Same rules on {sourceLabel?.scenarioName || sourceLabel?.name} {day.name} trips: {plural(day.autoBlocks, 'block')}, {day.autoPeakVehicles} at peak, {hours(day.autoRevenueSeconds)} h. Its built blocks: {plural(day.builtBlocks, 'block')}, {day.builtPeakVehicles} at peak, {hours(day.builtRevenueSeconds)} h (automatic is {Math.abs(difference).toFixed(1)}% {difference >= 0 ? 'higher' : 'lower'}).</InlineNote>;
           })}
         </div>
       </div>
@@ -333,10 +340,10 @@ function DialogShell({ children, onClose, busy = false, onSubmit }: { children: 
 }
 
 /** One plain sentence per warning rule, with repeats counted. */
-function findingSentences(findings: ValidationFinding[], patterns: Map<string, RoutePattern>, nodes: Map<string, Node>): string[] {
+function findingSentences(findings: ValidationFinding[], patterns: Map<string, RoutePattern>, nodes: Map<string, Node>, dayNames: Map<string, string>): string[] {
   const groups = new Map<string, ValidationFinding[]>();
   findings.filter((finding) => finding.severity === 'warning').forEach((finding) => {
-    const key = `${finding.ruleId}|${finding.parameters?.patternId ?? finding.parameters?.nodeId ?? ''}`;
+    const key = `${finding.ruleId}|${finding.parameters?.patternId ?? finding.parameters?.nodeId ?? finding.parameters?.serviceDayId ?? ''}`;
     groups.set(key, [...(groups.get(key) ?? []), finding]);
   });
   return [...groups.values()].map((items) => {
@@ -351,6 +358,11 @@ function findingSentences(findings: ValidationFinding[], patterns: Map<string, R
       case 'autoBlocking.revenueMilesUnavailable': return 'Revenue miles are incomplete, so the revenue-mile limit is ignored.';
       case 'autoBlocking.patternRuleMissing': return `${pattern} had no rule row; its defaults were used.`;
       case 'autoBlocking.tripWithoutTimes': return `${plural(count, 'trip')} without run times ${count === 1 ? 'was' : 'were'} skipped.`;
+      case 'autoBlocking.vehicleLimitAlternateRule': {
+        const difference = Number(finding.parameters?.revenueDifferenceSeconds ?? 0);
+        return `${dayNames.get(String(finding.parameters?.serviceDayId ?? '')) ?? 'A day'}: built by giving each trip to the vehicle that has waited longest, to meet the vehicle limit. Revenue time is ${hours(Math.abs(difference))} h ${difference < 0 ? 'less' : 'more'} than without the limit.`;
+      }
+      case 'autoBlocking.vehicleLimitExceeded': return `${dayNames.get(String(finding.parameters?.serviceDayId ?? '')) ?? 'A day'} needs ${finding.parameters?.peakVehicles} vehicles at peak; the limit is ${finding.parameters?.maxVehicles}.`;
       case 'autoBlocking.breakPassesExhausted': return 'The minimum block length for breaks did not settle in 5 passes.';
       default: return `${finding.ruleId} (${count}).`;
     }

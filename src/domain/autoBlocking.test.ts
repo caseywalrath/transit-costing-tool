@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoBlockingEditedCount, buildAutoBlocks, checkAgainstBuiltBlocks, defaultAutoBlockingRules, describeBreakRule, measureBuiltBlocks, remapAutoBlockingRecord, summarizeAutoBlockingRules, validateAutoBlockingRules, type AutoBlockingContext, type AutoBlockingRecord, type AutoBlockingRules } from './autoBlocking';
+import { autoBlockingEditedCount, peakVehicles, buildAutoBlocks, checkAgainstBuiltBlocks, defaultAutoBlockingRules, describeBreakRule, measureBuiltBlocks, remapAutoBlockingRecord, summarizeAutoBlockingRules, validateAutoBlockingRules, type AutoBlockingContext, type AutoBlockingRecord, type AutoBlockingRules } from './autoBlocking';
 import { metadata } from './ids';
 import type { BlockingBlock, BlockingScenario, Node, Route, RouteDirection, RoutePattern, ServiceDayDefinition, Trip } from './types';
 
@@ -196,34 +196,37 @@ function spansOf(blocks: BlockingBlock[], context: AutoBlockingContext): number[
 }
 
 describe('buildAutoBlocks: reference results from synthetic-check.py', () => {
-  it('35-minute Trips with breaks: 7 blocks, 2800 minutes', () => {
+  it('35-minute Trips with breaks: 7 blocks, 2560 minutes, 6 with a break', () => {
     const context = outAndBack(35); const result = build(context, baseRules());
     expect(result.blocks).toHaveLength(7);
-    expect(spansOf(result.blocks, context)).toEqual([385, 385, 385, 385, 385, 400, 475]);
-    expect(spansOf(result.blocks, context).reduce((sum, value) => sum + value, 0)).toBe(2800);
-    expect(result.days[0]).toMatchObject({ blockCount: 7, tripCount: 58, revenueSeconds: 168000, blocksWithOneBreak: 7, blocksWithTwoOrMoreBreaks: 0 });
+    expect(spansOf(result.blocks, context)).toEqual([70, 355, 355, 445, 445, 445, 445]);
+    expect(spansOf(result.blocks, context).reduce((sum, value) => sum + value, 0)).toBe(2560);
+    expect(result.days[0]).toMatchObject({ blockCount: 7, tripCount: 58, revenueSeconds: 153600, blocksWithOneBreak: 6, blocksWithTwoOrMoreBreaks: 0 });
     expect(result.blockFindings.filter((finding) => finding.severity === 'error')).toEqual([]);
     expect(result.blocks.map((block) => block.label)).toEqual(['Block 1', 'Block 2', 'Block 3', 'Block 4', 'Block 5', 'Block 6', 'Block 7']);
   });
 
-  it('46-minute Trips with breaks: 9 blocks, 3528 minutes', () => {
+  it('46-minute Trips with breaks: 9 blocks, 3348 minutes, 8 with a break', () => {
     const context = outAndBack(46); const result = build(context, baseRules());
-    expect(spansOf(result.blocks, context)).toEqual([362, 362, 362, 362, 362, 362, 377, 482, 497]);
-    expect(result.days[0].blocksWithOneBreak).toBe(9);
+    expect(spansOf(result.blocks, context)).toEqual([92, 347, 347, 347, 347, 467, 467, 467, 467]);
+    expect(spansOf(result.blocks, context).reduce((sum, value) => sum + value, 0)).toBe(3348);
+    expect(result.days[0].blocksWithOneBreak).toBe(8);
     expect(result.blockFindings.filter((finding) => finding.severity === 'error')).toEqual([]);
   });
 
   it('35-minute Trips without a break rule: 6 blocks, 2490 minutes', () => {
     const context = outAndBack(35); const result = build(context, baseRules({ break: undefined }));
     expect(spansOf(result.blocks, context)).toEqual([340, 430, 430, 430, 430, 430]);
+    expect(spansOf(result.blocks, context).reduce((sum, value) => sum + value, 0)).toBe(2490);
     expect(result.days[0].blocksWithOneBreak).toBe(0);
     expect(result.passes).toBe(1);
   });
 
-  it('minimum block length of 7 h suppresses the break on a short block by rebuilding', () => {
+  it('minimum block length of 7 h suppresses the break on short blocks by rebuilding: 7 blocks, 2530 minutes, 4 with a break', () => {
     const context = outAndBack(35); const result = build(context, baseRules({ break: { lengthMinutes: 35, minimumBlockHours: 7, firstBreakAfterHours: 1 } }));
-    expect(spansOf(result.blocks, context)).toEqual([385, 385, 385, 385, 385, 385, 490]);
-    expect(result.days[0].blocksWithOneBreak).toBe(1);
+    expect(spansOf(result.blocks, context)).toEqual([70, 340, 340, 445, 445, 445, 445]);
+    expect(spansOf(result.blocks, context).reduce((sum, value) => sum + value, 0)).toBe(2530);
+    expect(result.days[0].blocksWithOneBreak).toBe(4);
     expect(result.passes).toBeGreaterThanOrEqual(2);
   });
 });
@@ -352,6 +355,115 @@ describe('buildAutoBlocks: rules', () => {
     expect(build(shuffled, baseRules())).toEqual(build(context, baseRules()));
   });
 
+  describe('vehicle choice (Decision 0056)', () => {
+    /** Trips on the deadhead fixture's nodes A, B and C; no layover, no break. */
+    const choiceRules = (patch: Partial<AutoBlockingRules> = {}) => noBreak({
+      patterns: [
+        { patternId: 'AB', breakAllowed: false, canStart: true, canEnd: true },
+        { patternId: 'BA', breakAllowed: false, canStart: true, canEnd: true },
+        { patternId: 'CA', breakAllowed: false, canStart: true, canEnd: true },
+      ], ...patch,
+    });
+    const at = (hours: number, minutes: number) => hours * 3600 + minutes * 60;
+    const trip = (id: string, patternId: 'AB' | 'BA', start: number, end: number): Trip => ({
+      id, scenarioId: 's', routeId: 'r', serviceDayId: 'wk', patternId, tripProfileId: 'tp',
+      stopTimes: [{ patternPointId: `${patternId}0`, sequence: 0, time: start }, { patternPointId: `${patternId}1`, sequence: 1, time: end }], provenance: 'manual' as never, ...meta,
+    });
+    const withTrips = (trips: Trip[]) => ({ ...deadheadFixture(), trips });
+    const tripsOf = (block: BlockingBlock) => block.activities.flatMap((activity) => activity.type === 'revenueTrip' ? [activity.tripId] : []);
+
+    it('gives the Trip to the vehicle that became ready most recently, so the other Block ends', () => {
+      const context = withTrips([trip('t1', 'BA', at(7, 0), at(7, 30)), trip('t2', 'BA', at(7, 10), at(7, 50)), trip('t3', 'AB', at(8, 0), at(8, 30))]);
+      const result = build(context, choiceRules());
+      expect(result.blocks.map(tripsOf)).toEqual([['t1'], ['t2', 't3']]);
+    });
+
+    it('gives the Trip to the earlier-created Block when two vehicles are ready at the same time', () => {
+      const context = withTrips([trip('t1', 'BA', at(7, 0), at(7, 30)), trip('t2', 'BA', at(7, 10), at(7, 30)), trip('t3', 'AB', at(8, 0), at(8, 30))]);
+      const result = build(context, choiceRules());
+      expect(result.blocks.map(tripsOf)).toEqual([['t1', 't3'], ['t2']]);
+    });
+
+    it('prefers a direct candidate to a deadhead candidate, even one that became ready later', () => {
+      // t1 leaves a vehicle at A ready 7:30. t2 leaves a vehicle at B ready 7:35, which reaches A at 7:45 by deadhead.
+      const context = withTrips([trip('t1', 'BA', at(7, 0), at(7, 30)), trip('t2', 'AB', at(7, 5), at(7, 35)), trip('t3', 'AB', at(8, 0), at(8, 30))]);
+      const result = build(context, choiceRules({ deadheads: [{ fromNodeId: 'B', toNodeId: 'A', minutes: 10, bothWays: false }] }));
+      expect(result.blocks.map(tripsOf)).toEqual([['t1', 't3'], ['t2']]);
+      expect(result.blocks.flatMap((block) => block.activities).some((activity) => activity.type === 'deadhead')).toBe(false);
+    });
+
+    it('uses a deadhead candidate when no direct candidate can take the Trip', () => {
+      const context = withTrips([trip('t2', 'AB', at(7, 5), at(7, 35)), trip('t3', 'AB', at(8, 0), at(8, 30))]);
+      const result = build(context, choiceRules({ deadheads: [{ fromNodeId: 'B', toNodeId: 'A', minutes: 10, bothWays: false }] }));
+      expect(result.blocks.map(tripsOf)).toEqual([['t2', 't3']]);
+      expect(result.blocks[0].activities.find((activity) => activity.type === 'deadhead')).toMatchObject({ fromNodeId: 'B', toNodeId: 'A', minutesAfterPreviousTrip: 10 });
+    });
+  });
+
+  describe('peak vehicles and the vehicle limit (Decision 0056 items 8 and 9)', () => {
+    /**
+     * outAndBack(33) thinned to 27 Trips, with a 35-minute break (blocks over 3 h, first break after 1 h) and a 20-minute layover after To A.
+     * Most recently ready: 7 blocks, 5 vehicles at peak, 88020 s. Ready longest: 7 blocks, 4 vehicles at peak, 86220 s.
+     */
+    const kept = 'ba-00,ba-02,ab-03,ba-04,ab-06,ba-07,ab-09,ba-10,ab-12,ba-12,ba-13,ab-17,ba-17,ab-19,ba-19,ab-20,ab-22,ba-22,ab-23,ba-23,ba-24,ab-25,ba-25,ba-26,ab-27,ba-27,ba-28'.split(',');
+    const thinned = () => { const base = outAndBack(33); return { ...base, trips: base.trips.filter((trip) => kept.includes(trip.id)) }; };
+    const limitRules = (patch: Partial<AutoBlockingRules> = {}) => baseRules({ break: { lengthMinutes: 35, minimumBlockHours: 3, firstBreakAfterHours: 1 }, ...patch });
+
+    it('peakVehicles counts the most intervals open at once, with [start, end) intervals', () => {
+      expect(peakVehicles([])).toBe(0);
+      expect(peakVehicles([{ start: 0, end: 10 }, { start: 10, end: 20 }])).toBe(1);
+      expect(peakVehicles([{ start: 0, end: 100 }, { start: 10, end: 20 }, { start: 30, end: 40 }])).toBe(2);
+      expect(peakVehicles([{ start: 0, end: 30 }, { start: 10, end: 40 }, { start: 20, end: 50 }])).toBe(3);
+    });
+
+    it('reports peak vehicles per day, counting pull-out and pull-in minutes', () => {
+      const context = outAndBack(35);
+      const plain = build(context, noBreak());
+      expect(plain.days[0].peakVehicles).toBe(plain.days[0].blockCount);
+      // 30 minutes before and after every Block: blocks that touched in time now overlap, so the peak cannot fall and the day has 6 blocks.
+      const padded = build(context, noBreak({ terminals: [{ nodeId: 'A', pullOutMinutes: 30, pullInMinutes: 30 }, { nodeId: 'B', pullOutMinutes: 30, pullInMinutes: 30 }] }));
+      expect(padded.days[0].peakVehicles).toBeGreaterThanOrEqual(plain.days[0].peakVehicles);
+      expect(padded.days[0].peakVehicles).toBeLessThanOrEqual(padded.days[0].blockCount);
+    });
+
+    it('without a limit the fixture peaks at 5 vehicles (most recently ready), with no limit findings', () => {
+      const result = build(thinned(), limitRules());
+      expect(result.days[0]).toMatchObject({ blockCount: 7, peakVehicles: 5, revenueSeconds: 88020 });
+      expect(result.findings.some((finding) => finding.ruleId.startsWith('autoBlocking.vehicleLimit'))).toBe(false);
+    });
+
+    it('a limit at or above the peak changes nothing', () => {
+      expect(build(thinned(), limitRules({ maxVehicles: 5 }))).toEqual(build(thinned(), limitRules()));
+    });
+
+    it('a limit of 4 rebuilds the day with ready longest: 4 vehicles, and an information finding with the revenue change', () => {
+      const result = build(thinned(), limitRules({ maxVehicles: 4 }));
+      expect(result.days[0]).toMatchObject({ blockCount: 7, peakVehicles: 4, revenueSeconds: 86220 });
+      const alternate = result.findings.filter((finding) => finding.ruleId === 'autoBlocking.vehicleLimitAlternateRule');
+      expect(alternate).toHaveLength(1);
+      expect(alternate[0].parameters).toMatchObject({ serviceDayId: 'wk', revenueDifferenceSeconds: -1800 });
+      expect(result.findings.some((finding) => finding.ruleId === 'autoBlocking.vehicleLimitExceeded')).toBe(false);
+      expect(result.blockFindings.filter((finding) => finding.severity === 'error')).toEqual([]);
+    });
+
+    it('a limit below both peaks keeps the lower-peak build and warns', () => {
+      const result = build(thinned(), limitRules({ maxVehicles: 2 }));
+      expect(result.days[0].peakVehicles).toBe(4);
+      expect(result.findings.find((finding) => finding.ruleId === 'autoBlocking.vehicleLimitExceeded')?.parameters).toMatchObject({ serviceDayId: 'wk', peakVehicles: 4, maxVehicles: 2 });
+      expect(result.findings.some((finding) => finding.ruleId === 'autoBlocking.vehicleLimitAlternateRule')).toBe(true);
+    });
+
+    it('validates maxVehicles as a whole number of at least 1', () => {
+      for (const bad of [0, 1.5, -1]) expect(fieldsOf({ ...validRules(), maxVehicles: bad })).toEqual(['autoBlocking.limitVehicles@maxVehicles']);
+      for (const good of [1, 12]) expect(fieldsOf({ ...validRules(), maxVehicles: good })).toEqual([]);
+    });
+
+    it('adds the limit to the rules summary', () => {
+      const context = outAndBack(35);
+      expect(summarizeAutoBlockingRules(baseRules({ break: undefined, maxVehicles: 12 }), context.patterns, context.nodes, [day('wk', 'weekday', 'Weekday', 0)])).toContain('max 12 vehicles');
+    });
+  });
+
   it('skips Trips without run times and reports a missing Pattern row', () => {
     const context = outAndBack(35);
     const broken: Trip = { ...context.trips[0], id: 'broken', stopTimes: [context.trips[0].stopTimes[0]] };
@@ -425,6 +537,21 @@ describe('measureBuiltBlocks and checkAgainstBuiltBlocks', () => {
     expect(unmatched.rules.patterns).toEqual(baseRules().patterns);
   });
 
+  it('measures the break from Blocks with a long gap only, so a Block with only turn layovers does not hide it (Decision 0056 item 4)', () => {
+    const context = outAndBack(35); const source = sourceFrom(context, breakRules);
+    // The new vehicle choice leaves one short Block whose only gap is a turn layover at B.
+    const trips = new Map(context.trips.map((trip) => [trip.id, trip]));
+    const longestGapMinutes = (block: BlockingBlock) => {
+      const ids = block.activities.flatMap((activity) => activity.type === 'revenueTrip' ? [activity.tripId] : []);
+      return Math.max(0, ...ids.slice(1).map((id, index) => (trips.get(id)!.stopTimes[0].time - trips.get(ids[index])!.stopTimes[1].time) / 60));
+    };
+    const multiTrip = source.blocks.filter((block) => block.activities.filter((activity) => activity.type === 'revenueTrip').length >= 2);
+    expect(multiTrip.some((block) => longestGapMinutes(block) <= 25)).toBe(true);
+    expect(multiTrip.some((block) => longestGapMinutes(block) >= 50)).toBe(true);
+    const measured = measureBuiltBlocks({ source, target: context, targetRules: baseRules({ break: undefined }) });
+    expect(measured.rules.break?.lengthMinutes).toBe(50);
+  });
+
   it('keeps the draft break when the built blocks hold none', () => {
     const context = outAndBack(35); const source = sourceFrom(context, baseRules({ break: undefined }));
     const draft = baseRules();
@@ -437,6 +564,11 @@ describe('measureBuiltBlocks and checkAgainstBuiltBlocks', () => {
     expect(check.days).toHaveLength(1);
     expect(check.days[0]).toMatchObject({ serviceDayId: 'wk', name: 'Weekday', builtBlocks: source.blocks.length, autoBlocks: source.blocks.length });
     expect(check.days[0].autoRevenueSeconds).toBe(check.days[0].builtRevenueSeconds);
+    expect(check.days[0].builtPeakVehicles).toBe(peakVehicles(source.blocks.map((block) => {
+      const trips = block.activities.flatMap((activity) => activity.type === 'revenueTrip' ? [context.trips.find((trip) => trip.id === activity.tripId)!] : []);
+      return { start: trips[0].stopTimes[0].time, end: trips.at(-1)!.stopTimes[1].time };
+    })));
+    expect(check.days[0].autoPeakVehicles).toBe(check.days[0].builtPeakVehicles);
     expect(check.differencePercent).toBe(0);
     const different = checkAgainstBuiltBlocks({ source, rules: baseRules({ break: undefined }), now: NOW });
     expect(different.differencePercent).toBeLessThan(0);
