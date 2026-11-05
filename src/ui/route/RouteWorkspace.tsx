@@ -16,6 +16,8 @@ import { Field, NumericCommit, ServiceDayNameInput } from '../shared/fields';
 import { SupportPanel, WorkSurface } from '../shared/surfaces';
 import { SaveBar } from '../shared/bars';
 import { NodesGrid, usePatternPointsGrid } from './RouteGrids';
+import { type PlannedFrequencyService } from '../../application/plannedFrequencyService';
+import { PlannedFrequenciesPanel, type PlannedFrequenciesHandle } from './PlannedFrequenciesPanel';
 import { generatedPatternShortName, patternNameWithoutDirection, patternShortName } from '../../application/shortNames';
 
 const plural = (count: number, singular: string) => `${count} ${singular}${count === 1 ? '' : 's'}`;
@@ -23,7 +25,7 @@ const plural = (count: number, singular: string) => `${count} ${singular}${count
 /** What a saved Pattern says, without the save time that every commit refreshes. */
 export function patternSignature(pattern: RoutePattern | undefined) { return JSON.stringify(pattern, (key, value) => key === 'updatedAt' ? undefined : value); }
 
-export function RouteWorkspace({ service, aggregate, serviceDays, findings, selectedPatternId, segmentMiles, onRoute, onServiceDay, onCommitted, onDeletePattern, onSelectPattern, onRegisterNavigationGuard, onError }: { service: RouteDefinitionApplication; aggregate: RouteDefinitionAggregate; serviceDays: ServiceDayDefinition[]; findings: ValidationFinding[]; selectedPatternId: string; segmentMiles: (pattern: RoutePattern, index: number) => number; onRoute: (patch: Partial<Route>) => Promise<void>; onServiceDay: (id: string, patch: Partial<ServiceDayDefinition>) => Promise<ValidationFinding[]>; onCommitted: (result: RouteEditCommitResult) => void; onDeletePattern: () => void; onSelectPattern: (id: string) => void; onRegisterNavigationGuard: (guard: RouteNavigationGuard | undefined) => void; onError: (error: unknown) => void }) {
+export function RouteWorkspace({ service, aggregate, serviceDays, findings, selectedPatternId, segmentMiles, onRoute, onServiceDay, onCommitted, onDeletePattern, onSelectPattern, onRegisterNavigationGuard, onError, plannedFrequencyService, tripProfileId, active }: { service: RouteDefinitionApplication; aggregate: RouteDefinitionAggregate; serviceDays: ServiceDayDefinition[]; findings: ValidationFinding[]; selectedPatternId: string; segmentMiles: (pattern: RoutePattern, index: number) => number; onRoute: (patch: Partial<Route>) => Promise<void>; onServiceDay: (id: string, patch: Partial<ServiceDayDefinition>) => Promise<ValidationFinding[]>; onCommitted: (result: RouteEditCommitResult) => void; onDeletePattern: () => void; onSelectPattern: (id: string) => void; onRegisterNavigationGuard: (guard: RouteNavigationGuard | undefined) => void; onError: (error: unknown) => void; plannedFrequencyService: PlannedFrequencyService; tripProfileId: string; active: boolean }) {
   const fieldError = (id: string, field?: string) => messages(findings, id, field);
   const [nodeDraft, setNodeDraft] = useState<Node[]>(aggregate.nodes);
   const [nodeSaving, setNodeSaving] = useState(false);
@@ -36,6 +38,8 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
   const [impactDialog, setImpactDialog] = useState<{ preview: NodeChangePreview | SafePatternChangePreview; mode: RouteEditMode; afterCommit?: () => void }>();
   const [discardDialog, setDiscardDialog] = useState<{ title: string; action: () => void; saveFirst: boolean }>();
   const [navigationDialog, setNavigationDialog] = useState<{ action: () => void }>();
+  const [plansDirty, setPlansDirty] = useState(false);
+  const plansRef = useRef<PlannedFrequenciesHandle>(null);
   const newNodeButton = useRef<HTMLButtonElement>(null);
   const addPatternButton = useRef<HTMLButtonElement>(null);
   const routeNameInput = useRef<HTMLInputElement>(null);
@@ -89,21 +93,21 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
 
   useEffect(() => {
     const protect = (event: BeforeUnloadEvent) => {
-      if (!nodeDirty && !patternDirty) return;
+      if (!nodeDirty && !patternDirty && !plansDirty) return;
       event.preventDefault();
       event.returnValue = '';
     };
     window.addEventListener('beforeunload', protect);
     return () => window.removeEventListener('beforeunload', protect);
-  }, [nodeDirty, patternDirty]);
+  }, [nodeDirty, patternDirty, plansDirty]);
 
   useEffect(() => {
     onRegisterNavigationGuard((action) => {
-      if (!nodeDirty && !patternDirty) { action(); return; }
+      if (!nodeDirty && !patternDirty && !plansDirty) { action(); return; }
       setNavigationDialog({ action });
     });
     return () => onRegisterNavigationGuard(undefined);
-  }, [nodeDirty, onRegisterNavigationGuard, patternDirty]);
+  }, [nodeDirty, onRegisterNavigationGuard, patternDirty, plansDirty]);
 
   function cloneSavedPattern(id: string) {
     const saved = aggregate.patterns.find((pattern) => pattern.id === id);
@@ -180,18 +184,21 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
   }
   function discardAllDrafts() {
     setNodeDraft(aggregate.nodes); setPendingNodeDeletes(new Set()); setNodeFindings([]);
+    plansRef.current?.discard();
     discardPattern();
   }
   function saveDraftsThenNavigate(action: () => void) {
+    // Planned frequencies save last; a refused plan keeps the planner on the Route tab with its messages.
+    const thenPlans = () => { if (plansDirty) void plansRef.current?.save().then((saved) => { if (saved) action(); }); else action(); };
     if (patternDirty) {
       void reviewPatternSave(() => {
-        if (nodeDirty) void reviewNodeSave(action);
-        else action();
+        if (nodeDirty) void reviewNodeSave(thenPlans);
+        else thenPlans();
       });
       return;
     }
-    if (nodeDirty) { void reviewNodeSave(action); return; }
-    action();
+    if (nodeDirty) { void reviewNodeSave(thenPlans); return; }
+    thenPlans();
   }
   /** Saves a Service day edit and returns the text of the finding that names `field`, if the edit was refused. */
   async function serviceDayRefusal(id: string, patch: Partial<ServiceDayDefinition>, field: 'name' | 'annualServiceDays'): Promise<string | undefined> {
@@ -223,12 +230,13 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
     <div className="route-top-grid">
       <SupportPanel title="Route details"><div className="field-grid route-details-fields"><Field label="Route name" required errors={fieldError(aggregate.route.id, 'name')}><input ref={routeNameInput} defaultValue={aggregate.route.name} onBlur={(event) => void onRoute({ name: event.target.value })} /></Field><Field label="Short name"><input defaultValue={aggregate.route.shortName ?? ''} onBlur={(event) => void onRoute({ shortName: event.target.value || undefined })} /></Field><Field label="Description"><input defaultValue={aggregate.route.description ?? ''} placeholder="Optional" onBlur={(event) => void onRoute({ description: event.target.value || undefined })} /></Field></div></SupportPanel>
       <SupportPanel title="Annual service days"><div className="table-scroll service-days-table"><table><thead><tr><th scope="col">Service day</th><th scope="col">Annual service days</th></tr></thead><tbody>{sortServiceDays(serviceDays).map((day) => <tr key={day.id}><td><ServiceDayNameInput name={day.name} onCommit={(value) => serviceDayRefusal(day.id, { name: value }, 'name')} /></td><td><NumericCommit label={`${day.name} annual service days`} value={day.annualServiceDays} integer blankAsZero onCommit={(value) => serviceDayRefusal(day.id, { annualServiceDays: value }, 'annualServiceDays')} /></td></tr>)}</tbody></table></div><p className={serviceDayTotal > MAX_ANNUAL_SERVICE_DAYS ? 'service-days-total value-invalid' : 'service-days-total'}>Total <b>{serviceDayTotal}</b> of {MAX_ANNUAL_SERVICE_DAYS}</p></SupportPanel>
+      <PlannedFrequenciesPanel ref={plansRef} service={plannedFrequencyService} scenarioId={aggregate.route.scenarioId} routeId={aggregate.route.id} serviceDays={serviceDays} directions={aggregate.directions ?? []} patterns={aggregate.patterns} nodes={aggregate.nodes} tripProfileId={tripProfileId} active={active} onDirtyChange={setPlansDirty} onError={onError} />
     </div>
     <div className="route-bottom-grid"><WorkSurface title="Nodes" count={nodeDraft.length} className="route-nodes" footer={nodeDirty && <SaveBar message={`${plural(Math.max(1, countNodeChanges(aggregate.nodes, nodeDraft, pendingNodeDeletes)), 'unsaved change')} in Nodes`} saveLabel="Save nodes" busy={nodeSaving} onSave={() => void reviewNodeSave()} onDiscard={discardNodes} />}><NodesGrid nodes={nodeDraft} savedNodes={aggregate.nodes} pendingDeletes={pendingNodeDeletes} saving={nodeSaving} errorsFor={(id) => messages(nodeFindings, id)} newNodeButton={newNodeButton} onAdd={addNode} onChange={(id, patch) => { setNodeDraft((current) => current.map((candidate) => candidate.id === id ? { ...candidate, ...patch } : candidate)); if ('name' in patch) setNodeFindings([]); }} onSetPendingDelete={(id, pending) => setPendingNodeDeletes((current) => { const next = new Set(current); if (pending) next.add(id); else next.delete(id); return next; })} /></WorkSurface>
       <WorkSurface title="Patterns" count={displayPatterns.length} className="route-patterns"><div className="pattern-layout"><aside className="pattern-list" aria-label="Patterns">{sortedDisplayPatterns.length ? sortedDisplayPatterns.map((pattern, index) => { const direction = patternDirectionName(pattern); const miles = patternTotalMiles(pattern); return <Fragment key={pattern.id}>{(index === 0 || patternDirectionName(sortedDisplayPatterns[index - 1]) !== direction) && <div className="pattern-list__group">{direction}</div>}<button className={patternDraft?.id === pattern.id ? 'selected' : ''} title={pattern.name || 'Untitled pattern'} onClick={() => requestPattern(pattern.id)}><strong>{patternNameWithoutDirection(pattern.name, direction) || 'Untitled pattern'} {isNewPattern && pattern.id === patternDraft?.id ? <em>Unsaved</em> : null}</strong><span className="pattern-list__meta"><span className="chip">{patternShortName(pattern, direction, nodeById)}</span>{plural(pattern.points.length, 'point')}{miles === undefined ? '' : ` · ${formatMiles(miles)} mi`}</span></button></Fragment>; }) : <p>No patterns. A pattern is an ordered list of 2 or more nodes.</p>}<button ref={addPatternButton} className={sortedDisplayPatterns.length ? 'pattern-list-add' : 'pattern-list-add pattern-list-add--first primary'} onClick={newPattern} disabled={nodeSaving || patternSaving}><span aria-hidden="true">+ </span>Add pattern</button></aside>{patternDraft && <PatternEditor pattern={patternDraft} savedPattern={savedPattern} directionName={patternDirectionName(patternDraft)} directions={aggregate.directions ?? []} nodes={aggregate.nodes} segmentMiles={segmentMiles} errors={patternErrors} conflict={conflict} isNew={isNewPattern} dirty={patternDirty} saving={patternSaving} canDuplicate={!isNewPattern} onPattern={updateDraft} onAddPoint={addPoint} onUpdatePoint={updatePoint} onMovePoint={movePoint} onRemovePoint={removePoint} onReverse={() => duplicatePattern(true)} onDuplicate={() => duplicatePattern(false)} onDelete={() => isNewPattern ? discardPattern() : onDeletePattern()} onSave={() => void reviewPatternSave()} onDiscard={discardPattern} />}</div></WorkSurface></div>
     {impactDialog && <RouteEditImpactDialog preview={impactDialog.preview} mode={impactDialog.mode} onClose={() => setImpactDialog(undefined)} onCommit={() => impactDialog.preview.kind === 'nodes' ? void commitNodes(impactDialog.preview, impactDialog.afterCommit) : void commitPattern(impactDialog.preview, impactDialog.mode, impactDialog.afterCommit)} />}
     {discardDialog && <DiscardRouteDraftDialog title={discardDialog.title} onDiscard={() => { discardDialog.action(); setDiscardDialog(undefined); }} onClose={() => setDiscardDialog(undefined)} {...(discardDialog.saveFirst ? { onSave: () => { const { action } = discardDialog; setDiscardDialog(undefined); void reviewPatternSave(action); } } : {})} />}
-    {navigationDialog && <RouteNavigationDraftDialog onCancel={() => setNavigationDialog(undefined)} onDiscard={() => { const action = navigationDialog.action; discardAllDrafts(); setNavigationDialog(undefined); action(); }} onSave={() => { const action = navigationDialog.action; setNavigationDialog(undefined); saveDraftsThenNavigate(action); }} />}
+    {navigationDialog && <RouteNavigationDraftDialog text={plansDirty && !nodeDirty && !patternDirty ? 'Planned frequencies have unsaved edits.' : undefined} onCancel={() => setNavigationDialog(undefined)} onDiscard={() => { const action = navigationDialog.action; discardAllDrafts(); setNavigationDialog(undefined); action(); }} onSave={() => { const action = navigationDialog.action; setNavigationDialog(undefined); saveDraftsThenNavigate(action); }} />}
   </div>;
 }
 

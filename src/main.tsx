@@ -9,6 +9,7 @@ import { TabGuard } from './persistence/tabGuard';
 import { ProjectBackupService } from './persistence/backupRepository';
 import { RouteDefinitionService } from './application/routeDefinitionService';
 import { TripGenerationService } from './application/tripGenerationService';
+import { PlannedFrequencyService } from './application/plannedFrequencyService';
 import { BlockingApplicationService } from './application/blockingService';
 import { DexieBlockingRepository } from './persistence/blockingRepository';
 import { CostingApplicationService } from './application/costingService';
@@ -62,7 +63,9 @@ async function start() {
     listBlockingBlocks: (id) => blocking.listBlockingBlocks(id),
   }), repository, undefined, saveStatus);
 
-  createRoot(document.getElementById('root')!).render(<React.StrictMode><App service={routeDefinition} tripService={tripGeneration} blockingService={blocking} costingService={costing} session={tabGuard} /></React.StrictMode>);
+  const plannedFrequencies = new PlannedFrequencyService(repository, undefined, saveStatus);
+
+  createRoot(document.getElementById('root')!).render(<React.StrictMode><App service={routeDefinition} tripService={tripGeneration} blockingService={blocking} costingService={costing} plannedFrequencyService={plannedFrequencies} session={tabGuard} /></React.StrictMode>);
 }
 
 void start();

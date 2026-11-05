@@ -51,3 +51,21 @@
 .icon-button--danger { color: var(--color-text-subtle); border-color: transparent; background: transparent; }
 .icon-button--danger:hover:not(:disabled) { color: var(--color-danger); border-color: var(--color-danger); background: var(--color-danger-soft); }
 .danger { background: var(--color-danger); border-color: var(--color-danger); color: var(--color-surface); }
+/* PF5: Planned frequencies (Decision 0058) is the third top panel. Its table scrolls inside the panel, never the page. */
+@media (min-width: 1101px) { .route-top-grid { grid-template-columns: minmax(0, .8fr) minmax(0, .8fr) minmax(0, 1.4fr); } }
+.planned-toolbar { display: flex; align-items: center; gap: var(--space-2); margin-left: auto; }
+.planned-table table { min-width: 0; }
+.planned-table input.time-input { width: 100%; min-width: 4.5em; }
+.planned-rate, .planned-built { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.planned-built { max-width: 9em; overflow: hidden; text-overflow: ellipsis; }
+.planned-built small { display: block; white-space: normal; }
+.planned-measure { display: grid; gap: var(--space-1); margin-top: var(--space-2); }
+.planned-measure__line { display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-note); }
+.planned-measure__line > span { min-width: 8em; color: var(--color-text-muted); }
+.planned-measure__note { color: var(--color-text-muted); }
+.planned-copy-dialog { max-width: 36rem; width: 100%; }
+.planned-copy-preview { display: grid; gap: var(--space-2); max-height: 50vh; overflow: auto; }
+.planned-copy-preview h3 { margin: 0; font-size: var(--font-size-label); }
+.planned-copy-tag { margin-left: var(--space-1); color: var(--color-text-muted); font-weight: var(--font-weight-regular); }
+.planned-copy-note { margin: 0; color: var(--color-text-muted); font-size: var(--font-size-note); }
+.route-top-grid .support-panel__body { min-width: 0; }

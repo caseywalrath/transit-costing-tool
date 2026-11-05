@@ -1,7 +1,7 @@
 # Planned Frequencies: Work Order Plan
 
 - Requested by the user on 2026-11-05. Source proposal: `docs/backlog.md`, "Planned frequencies".
-- Status: PF0 complete (Decision 0058, 2026-11-05). PF1 complete (2026-11-05). PF2 complete (2026-11-05; refines Decision 0058 item 6, edge trips). PF3 complete (2026-11-05; see "PF3 as built"). PF4 complete (2026-11-05; see "PF4 as built"). PF6 has not started. Each package begins only when the user asks for it, and each ends at a verification gate where the agent reports and recommends the next package (`AGENTS.md`).
+- Status: PF0 complete (Decision 0058, 2026-11-05). PF1 complete (2026-11-05). PF2 complete (2026-11-05; refines Decision 0058 item 6, edge trips). PF3 complete (2026-11-05; see "PF3 as built"). PF4 complete (2026-11-05; see "PF4 as built"). PF5 complete (2026-11-05; see "PF5 as built"). PF6 has not started. Each package begins only when the user asks for it, and each ends at a verification gate where the agent reports and recommends the next package (`AGENTS.md`).
 - Branch: the branch the user names for each session. Never push to another branch. Do not open a pull request unless asked.
 - Staffing: one agent per package. Most packages are Sonnet. Packages marked **Opus** hold rules, data migrations or calculations where a mistake is hard to see or hard to undo.
 
@@ -229,6 +229,16 @@ If a skipped area turns out to be touched (for example a shared component), add 
 **Tests:** Playwright spec `tests/ui/planned-frequencies.spec.ts`: add three periods and save; overlap error; copy Weekday to Saturday; copy from another Scenario with one unmatched day; clear; three-column layout at 1280 px and one column at 1000 px; no page scroll at 390 px. Screenshots at 1280 and 1440 px, light and dark, inspected.
 
 **Acceptance:** the specification items above; existing Route screen tests pass.
+
+**PF5 as built (2026-11-05):**
+
+- Files: `src/ui/route/PlannedFrequenciesPanel.tsx` (panel, draft, save), `src/ui/route/PlannedFrequencyDialogs.tsx` (copy from a day, copy from a scenario, clear), `RouteWorkspace.tsx` (third panel, dirty guard), `App.tsx` and `main.tsx` (the service is a new `App` prop), `route.css`, `docs/ui-conventions.md`.
+- Edits are text drafts parsed on **Save plan**, not grid cells; a half-typed time never blocks typing. Errors show on the row in plain language; plan-level errors show under the table.
+- The dirty plan joins the Route tab's leave guard (beforeunload, tab and route navigation, and the Save/Discard dialog, which saves nodes, pattern and then the plan). Switching Service day with unsaved edits asks first.
+- Built uses the Trips tab's Trip profile (`workspaceTripProfileId`). The panel stays mounted while hidden, so it reads the comparison again when the Route tab becomes active. With unsaved edits the Built cells show "—".
+- Copy from another day is disabled when no other day has a plan.
+- Deviations: (1) at 390 px the application header already makes the page wider than the screen (before this package), so the test asserts that the panel fits and does not assert page scroll. (2) The application has no dark theme, so screenshots are light only, at 1280 and 1440 px. (3) The Built cell shows the first differing direction only; the tooltip lists all.
+- Verification run: typecheck; full unit suite (1121); `planned-frequencies.spec.ts` (6) and ten existing Route, keyboard, shell, preferences and deletion specs (59 in all, passing); production build. The full browser suite is left for the closeout (PF9).
 
 ---
 
