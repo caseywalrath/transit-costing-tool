@@ -8,8 +8,8 @@ import { singleFlight } from '../singleFlight';
 import { type RouteDefinitionApplication, type ScenarioRecords } from '../../application/routeDefinitionService';
 import { TripShiftStalePreviewError, type TripGenerationApplication } from '../../application/tripGenerationService';
 import { TripShiftValidationError, type TripShiftPreview } from '../../domain/tripShift';
-import { TripGenerationError } from '../../domain/trips';
-import { createBlockingScenarioSourceSignature, formatNetShift, isUsablePattern, orderDirections, parseShiftSeconds, regenerationUndoApplies, reverseRuntimeCandidates, routeRuntimeCalculationMethod, sortServiceDays, summarizeTripTable, usableDirectionPatterns, type RuntimeCalculationMethod } from '../../application/tripsWorkspaceView';
+import { TripGenerationError, type RecalculationPreview } from '../../domain/trips';
+import { createBlockingScenarioSourceSignature, formatNetShift, formatShiftStep, isUsablePattern, orderDirections, parseShiftSeconds, regenerationUndoApplies, reverseRuntimeCandidates, routeRuntimeCalculationMethod, sortServiceDays, summarizeTripTable, usableDirectionPatterns, type RuntimeCalculationMethod } from '../../application/tripsWorkspaceView';
 import { formatServiceTime, parseServiceTime } from '../../domain/time';
 import { type BlockingBlock, type Route, type RouteDefinitionAggregate, type RuntimeAssignment, type RuntimeProfile, type ServiceDayDefinition, type Trip } from '../../domain/types';
 import { type BlockConnection } from '../../domain/blocking';
@@ -17,7 +17,9 @@ import { runtimeProfileCsv } from '../runtimeProfileCsv';
 import { tripTableCsv } from '../../application/tripTableCsv';
 import { type RouteNavigationGuard } from '../shared/types';
 import { type RuntimeEditorHandle, type RuntimeEditorState, RuntimeEditor2, RouteRuntimeMethodDialog } from './RuntimeEditor';
-import { type BuildTripsValues, EMPTY_BUILD_VALUES, type NewRuntimeDialog, TripBlockAssignmentDialog, TripBlockUnassignmentDialog, BuildTripsDrawer, RuntimeProfileDialog2, DeleteRuntimeProfileDialog, DeleteTripsDialog, RecalculationDialog, RuntimeDayCopyDialog, SegmentRuntimeDialog, TripDayCopyDialog, BatchPatternChangeDialog, TripPatternChangeDialog } from './dialogs';
+import { type PlannedFrequencyService, type PlanComparisonResult } from '../../application/plannedFrequencyService';
+import { PlanStatusChip } from './PlanStatusChip';
+import { type BuildTripsValues, EMPTY_BUILD_VALUES, type NewRuntimeDialog, TripBlockAssignmentDialog, TripBlockUnassignmentDialog, BuildTripsDrawer, RuntimeProfileDialog2, DeleteRuntimeProfileDialog, DeleteTripsDialog, RecalculationDialog, RuntimeDayCopyDialog, SegmentRuntimeDialog, TripDayCopyDialog, BatchPatternChangeDialog, TripPatternChangeDialog, StartTimeChangeDialog } from './dialogs';
 import { type TripBlockAssignmentDraft, type TripBlockOption, type TripSelectionRequest, ScheduleTable } from './ScheduleTable';
 import { combineSelection, invertSelection, tripIdsMatching } from '../../application/tripSelection';
 import { download } from '../shared/download';
@@ -56,7 +58,9 @@ export function dayNameList(names: string[]): string {
 }
 
 /** Step sizes offered as one-press choices in the Shift drawer; any other whole number of minutes can be typed (U10). */
-export const SHIFT_STEP_PRESETS = [1, 5, 10, 15] as const;
+const SHIFT_STEP_MESSAGE = 'Enter minutes above 0 in steps of 30 seconds, such as 0:30, 1 or 1.5.';
+/** Preset Shift steps in seconds, with the text each puts in the step box and its label. */
+export const SHIFT_STEP_PRESETS = [{ seconds: 30, text: '0:30', label: '0:30' }, { seconds: 60, text: '1', label: '1' }, { seconds: 300, text: '5', label: '5' }, { seconds: 600, text: '10', label: '10' }, { seconds: 900, text: '15', label: '15' }] as const;
 
 /** The text for a refused Shift. The domain's generic wording for an invalid request is replaced with a next step. */
 export function shiftErrorText(error: unknown, fallback: string) {
@@ -64,7 +68,7 @@ export function shiftErrorText(error: unknown, fallback: string) {
   return userFacingError(error, fallback);
 }
 
-export function TripsWorkspace({ service, tripService, blockingService, aggregate, records, serviceDayId, directionId, tripProfileId, tripProfileBusy, tripPatternSelections, onTripPatternChange, onTripProfileChange, onTripProfileRename, onTripProfileCopy, onTripProfileDelete, onRegisterNavigationGuard, runtimeVersion, onRuntimeChanged, onError }: { service: RouteDefinitionApplication; tripService: TripGenerationApplication; blockingService: BlockingCommands & BlockingQueries; aggregate: RouteDefinitionAggregate; records: ScenarioRecords; serviceDayId: string; directionId: string; tripProfileId: string; tripProfileBusy: boolean; tripPatternSelections: Record<string, string>; onTripPatternChange: (key: string, id: string) => void; onTripProfileChange: (id: string) => void; onTripProfileRename: () => void; onTripProfileCopy: () => void; onTripProfileDelete: () => void; onRegisterNavigationGuard: (guard: RouteNavigationGuard | undefined) => void; runtimeVersion: number; onRuntimeChanged: () => void; onError: (error: unknown, fallback?: string) => void }) {
+export function TripsWorkspace({ service, tripService, plannedFrequencyService, blockingService, aggregate, records, serviceDayId, directionId, tripProfileId, tripProfileBusy, tripPatternSelections, onTripPatternChange, onTripProfileChange, onTripProfileRename, onTripProfileCopy, onTripProfileDelete, onRegisterNavigationGuard, runtimeVersion, onRuntimeChanged, onError }: { service: RouteDefinitionApplication; tripService: TripGenerationApplication; plannedFrequencyService: Pick<PlannedFrequencyService, 'getPlan' | 'previewBuildFromPlan' | 'comparePlan'>; blockingService: BlockingCommands & BlockingQueries; aggregate: RouteDefinitionAggregate; records: ScenarioRecords; serviceDayId: string; directionId: string; tripProfileId: string; tripProfileBusy: boolean; tripPatternSelections: Record<string, string>; onTripPatternChange: (key: string, id: string) => void; onTripProfileChange: (id: string) => void; onTripProfileRename: () => void; onTripProfileCopy: () => void; onTripProfileDelete: () => void; onRegisterNavigationGuard: (guard: RouteNavigationGuard | undefined) => void; runtimeVersion: number; onRuntimeChanged: () => void; onError: (error: unknown, fallback?: string) => void }) {
   const days = sortServiceDays(records.serviceDays);
   const directions = orderDirections(aggregate.directions ?? []);
   const [profiles, setProfiles] = useState<RuntimeProfile[]>([]);
@@ -79,6 +83,25 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   const [trips, setTrips] = useState<Trip[]>([]);
   /** The saved Trips of the Route on the service day, both directions, for the day line under the Trips table (Decision 0051). */
   const [routeDayTrips, setRouteDayTrips] = useState<Trip[]>([]);
+  // The comparison with the plan is read again whenever the trips are loaded, so it follows every trip write (Decision 0058 item 6).
+  const [planResult, setPlanResult] = useState<PlanComparisonResult>();
+  useEffect(() => {
+    let current = true;
+    if (!serviceDayId || !tripProfileId) { setPlanResult(undefined); return; }
+    plannedFrequencyService.comparePlan({ routeId: aggregate.route.id, serviceDayId, tripProfileId }).then((next) => { if (current) setPlanResult(next); }).catch(() => { if (current) setPlanResult(undefined); });
+    return () => { current = false; };
+  }, [plannedFrequencyService, aggregate.route.id, serviceDayId, tripProfileId, routeDayTrips, runtimeVersion]);
+  // A gap outside the plan's tolerance, by the Trip it ends at, for the visible direction's measure-node column.
+  const planGaps = (() => {
+    const compared = planResult?.directions.find((item) => item.directionId === directionId);
+    if (!planResult?.plan || !compared || compared.comparison.measureNodeId === undefined) return undefined;
+    const byTripId = new Map<string, { plannedSeconds: number; gapSeconds: number }>();
+    for (const period of compared.comparison.periods) {
+      const planned = planResult.plan.periods.find((candidate) => candidate.id === period.periodId);
+      if (planned) for (const gap of period.gaps) if (!gap.withinTolerance) byTripId.set(gap.toTripId, { plannedSeconds: planned.headwaySeconds, gapSeconds: gap.seconds });
+    }
+    return { nodeId: compared.comparison.measureNodeId, byTripId };
+  })();
   const [lastRegenerationUndo, setLastRegenerationUndo] = useState<import('../../domain/types').TripRegenerationUndo>();
   const [tripsWithChangedRuntimes, setTripsWithChangedRuntimes] = useState<Trip[]>([]);
   const [staleReasons, setStaleReasons] = useState<StaleTripNotice>();
@@ -88,6 +111,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   const [buildOpen, setBuildOpen] = useState(false);
   const [draftTrip, setDraftTrip] = useState<{ patternId: string; firstTrip: string }>();
   const [shiftMinutes, setShiftMinutes] = useState('1');
+  const [startTimeReview, setStartTimeReview] = useState<{ preview: RecalculationPreview; patternName: string; fromSeconds: number; toSeconds: number }>();
   const [shiftDrawerOpen, setShiftDrawerOpen] = useState(false);
   const [shiftOperations, setShiftOperations] = useState<number[]>([]);
   const [redoShiftOperations, setRedoShiftOperations] = useState<number[]>([]);
@@ -503,6 +527,34 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   const selectedChangedRuntimeTripIds = selectedTripIds.filter((id) => changedRuntimeTripIds.has(id));
   // The selection bar goes away with the selection, so the focus moves to the Trip actions menu, which is always there.
   async function finishRecalculation() { setRecalculationTripIds([]); setSelectedTripIds([]); clearTripShiftHistory(); await loadTrips(); window.setTimeout(() => tripsActionsRef.current?.focus()); }
+  /**
+   * A planner edits a Trip's first time. The Trip is recalculated around the new time, as when adding a Trip, with Regenerate's review and undo.
+   * Resolves to a message when the time is refused, or nothing when the change was made or is waiting for the planner's review.
+   */
+  async function changeTripStartTime(trip: Trip, pointId: string, text: string): Promise<string | undefined> {
+    let toSeconds: number;
+    try { toSeconds = parseServiceTime(text); } catch { return 'Enter a time such as 8:35 or 8:35:30.'; }
+    const fromSeconds = trip.stopTimes.find((point) => point.patternPointId === pointId)?.time;
+    if (fromSeconds === undefined || fromSeconds === toSeconds) return undefined;
+    try {
+      const preview = await tripService.previewRecalculateTrips([trip.id], { [trip.id]: pointId }, {}, { [trip.id]: toSeconds });
+      if (preview.impact.blockIds.length > 0 || preview.findings.length > 0) {
+        setStartTimeReview({ preview, patternName: aggregate.patterns.find((item) => item.id === trip.patternId)?.name ?? 'Trip', fromSeconds, toSeconds });
+        return undefined;
+      }
+      await applyStartTimeChange(preview);
+      return undefined;
+    } catch (error) {
+      if (error instanceof TripGenerationError) return [...new Set(error.findings.map((finding) => userMessage(finding)))].join(' ') || 'That start time cannot be used.';
+      return error instanceof Error ? error.message : 'That start time cannot be used.';
+    }
+  }
+  async function applyStartTimeChange(preview: RecalculationPreview) {
+    setBusy(true);
+    try { await tripService.applyRecalculationPreview(preview, true); setStartTimeReview(undefined); clearTripShiftHistory(); await loadTrips(); }
+    catch (error) { setStartTimeReview(undefined); onError(error, 'Unable to change the start time.'); await loadTrips(); }
+    finally { setBusy(false); }
+  }
   async function undoRegeneration() {
     setBusy(true);
     try { await tripService.undoLastTripRegeneration(); setSelectedTripIds([]); clearTripShiftHistory(); await loadTrips(); }
@@ -588,11 +640,6 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
       ...(reverseCandidates.length ? [{ id: 'reverse-copy', label: 'Reverse-copy profile…', disabled: !selectedProfile || tripProfileBusy, onSelect: () => requestScopeChange(() => { if (selectedProfile) setRuntimeDialog({ mode: 'reverse', initialName: `${selectedProfile.name} Reverse` }); }) }] : []),
       { id: 'delete', label: 'Delete profile…', destructive: true, disabled: !selectedProfile || tripProfileBusy, onSelect: () => requestScopeChange(() => void requestProfileDeletion()) },
     ] },
-    { items: [
-      { id: 'copy-segments', label: 'Copy segments to other patterns…', disabled: segmentActionsUnavailable, onSelect: () => requestScopeChange(() => setSegmentRuntimeDialog('copy')) },
-      { id: 'fill-segments', label: 'Fill from other patterns…', disabled: segmentActionsUnavailable, onSelect: () => requestScopeChange(() => setSegmentRuntimeDialog('fill')) },
-      ...(segmentUndoApplies ? [{ id: 'undo-segments', label: 'Undo last segment copy', disabled: tripProfileBusy, onSelect: () => requestScopeChange(() => void undoSegmentRuntimes()) }] : []),
-    ] },
   ];
   const tripProfiles = records.tripProfiles ?? [];
   const selectedTripProfile = tripProfiles.find((profile) => profile.id === tripProfileId);
@@ -627,15 +674,15 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   const shiftTripCount = shiftPreview?.selectedTripIds.length ?? selectedTripIds.length;
   const renderShiftBar = (compact: boolean) => <div className={compact ? 'selection-bar selection-bar--compact shift-bar' : 'selection-bar shift-bar'} role="toolbar" aria-label="Shift selected trips" data-shift-bar onClickCapture={(event) => { const control = (event.target as HTMLElement).closest('button'); if (control) lastShiftControl.current = control; }}>
     <b className="selection-bar__count">Shift {shiftTripCount} {shiftTripCount === 1 ? 'trip' : 'trips'}</b>
-    <button type="button" disabled={!canShiftSelectedTrips || busy || tripProfileBusy} title={parsedShiftSeconds === undefined ? 'Enter a whole number of minutes above 0.' : undefined} onClick={() => void appendStagedShift(-(parsedShiftSeconds ?? 0))}><span aria-hidden="true">← </span>{shiftStepLabel} earlier</button>
-    <button type="button" disabled={!canShiftSelectedTrips || busy || tripProfileBusy} title={parsedShiftSeconds === undefined ? 'Enter a whole number of minutes above 0.' : undefined} onClick={() => void appendStagedShift(parsedShiftSeconds ?? 0)}>{shiftStepLabel} later<span aria-hidden="true"> →</span></button>
-    {!compact && <fieldset className="shift-step-size" disabled={tripProfileBusy || busy}><legend>Step</legend>{SHIFT_STEP_PRESETS.map((minutes) => <label key={minutes} className="shift-step-preset"><input type="radio" name="shift-step" value={minutes} checked={shiftMinutes.trim() === String(minutes)} onChange={() => setShiftMinutes(String(minutes))} />{minutes}</label>)}<label className="shift-step-other"><input aria-label="Step minutes" type="number" min="1" step="1" inputMode="numeric" value={shiftMinutes} aria-invalid={parsedShiftSeconds === undefined} aria-describedby={parsedShiftSeconds === undefined ? 'shift-step-error' : undefined} onChange={(event) => setShiftMinutes(event.target.value)} /> min</label></fieldset>}
+    <button type="button" disabled={!canShiftSelectedTrips || busy || tripProfileBusy} title={parsedShiftSeconds === undefined ? SHIFT_STEP_MESSAGE : undefined} onClick={() => void appendStagedShift(-(parsedShiftSeconds ?? 0))}><span aria-hidden="true">← </span>{shiftStepLabel} earlier</button>
+    <button type="button" disabled={!canShiftSelectedTrips || busy || tripProfileBusy} title={parsedShiftSeconds === undefined ? SHIFT_STEP_MESSAGE : undefined} onClick={() => void appendStagedShift(parsedShiftSeconds ?? 0)}>{shiftStepLabel} later<span aria-hidden="true"> →</span></button>
+    <fieldset className="shift-step-size" disabled={tripProfileBusy || busy}><legend>Step</legend>{SHIFT_STEP_PRESETS.map((preset) => <label key={preset.seconds} className="shift-step-preset"><input type="radio" name={compact ? 'shift-step-pinned' : 'shift-step'} value={preset.seconds} checked={parsedShiftSeconds === preset.seconds} onChange={() => setShiftMinutes(preset.text)} />{preset.label}</label>)}<label className="shift-step-other"><input aria-label={compact ? 'Step minutes (pinned bar)' : 'Step minutes'} type="text" inputMode="decimal" value={shiftMinutes} aria-invalid={parsedShiftSeconds === undefined} aria-describedby={parsedShiftSeconds === undefined ? (compact ? 'shift-step-error-pinned' : 'shift-step-error') : undefined} onChange={(event) => setShiftMinutes(event.target.value)} /> min</label></fieldset>
     <span className="shift-net" role="status"><strong>{netShiftLabel}</strong></span>
-    {!compact && <><button type="button" disabled={!shiftOperations.length || busy} onClick={() => void undoStagedShift()}>Undo</button><button type="button" disabled={!redoShiftOperations.length || busy} onClick={() => void redoStagedShift()}>Redo</button></>}
+    <button type="button" disabled={!shiftOperations.length || busy} onClick={() => void undoStagedShift()}>Undo</button><button type="button" disabled={!redoShiftOperations.length || busy} onClick={() => void redoStagedShift()}>Redo</button>
     <span className="grow" />
     <button type="button" onClick={() => discardStagedShift()} disabled={busy}>Discard</button>
     <button className="primary" type="button" onClick={() => void completeStagedShift()} disabled={busy || Boolean(shiftError)}>{busy ? 'Saving…' : 'Done'}</button>
-    {!compact && parsedShiftSeconds === undefined && <p id="shift-step-error" className="field-error shift-bar__message">Enter a whole number of minutes above 0.</p>}
+    {parsedShiftSeconds === undefined && <p id={compact ? 'shift-step-error-pinned' : 'shift-step-error'} className="field-error shift-bar__message">{SHIFT_STEP_MESSAGE}</p>}
     {shiftError && <p className="field-error shift-bar__message" role="alert">{shiftError}</p>}
   </div>;
   const renderSelectionBar = (compact: boolean) => shiftDrawerOpen ? renderShiftBar(compact) : selectedTripIds.length > 0 ? <SelectionBar compact={compact} count={selectedTripIds.length} noun="trip" ariaLabel="Selected trips" onClear={clearTripSelection}>
@@ -648,7 +695,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
   </SelectionBar> : null;
   const netShiftSeconds = shiftPreview?.netOffsetSeconds ?? 0;
   const netShiftLabel = formatNetShift(netShiftSeconds);
-  const shiftStepLabel = parsedShiftSeconds === undefined ? '—' : `${parsedShiftSeconds / 60} min`;
+  const shiftStepLabel = parsedShiftSeconds === undefined ? '—' : formatShiftStep(parsedShiftSeconds);
   if (!directions.length) return <section className="empty-state"><p>Add a direction on the Route tab before defining runtimes or trips.</p></section>;
   if (!patterns.length) return <section className="trips-workspace"><section className="prerequisite"><h1 className="box-heading">Add a pattern on Route</h1><p>Choose a direction, then add a pattern with at least two points before entering runtimes or trips.</p></section></section>;
   return <div className="trips-workspace">
@@ -677,6 +724,11 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
           { label: 'Service day', items: [
             { id: 'copy-day', label: 'Copy runtimes from another day…', disabled: loading || tripProfileBusy, onSelect: () => setRuntimeCopyOpen(true) },
           ] },
+          { label: 'Other patterns', items: [
+            { id: 'copy-segments', label: 'Copy segments to other patterns…', disabled: segmentActionsUnavailable, onSelect: () => requestScopeChange(() => setSegmentRuntimeDialog('copy')) },
+            { id: 'fill-segments', label: 'Fill from other patterns…', disabled: segmentActionsUnavailable, onSelect: () => requestScopeChange(() => setSegmentRuntimeDialog('fill')) },
+            ...(segmentUndoApplies ? [{ id: 'undo-segments', label: 'Undo last segment copy', disabled: tripProfileBusy, onSelect: () => requestScopeChange(() => void undoSegmentRuntimes()) }] : []),
+          ] },
         ]} disabled={loading || tripProfileBusy} triggerRef={runtimeCopyButtonRef} />
       </div>
       {selectedProfile && <p className="profile-usage">Used by {dayNameList(profileDays.length ? profileDays.map((day) => day.name) : [selectedDay?.name ?? 'this service day'])} for {selectedPattern?.name}.</p>}
@@ -688,6 +740,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
     <WorkSurface title="Trips" count={trips.length} ariaLabel="Trips section" className="trips-surface"
       context={<>
         <MenuButton fieldLabel="Trip profile" label={selectedTripProfile?.name ?? 'Select profile'} menuLabel="Trip profile" groups={tripProfileMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} menuAlign="start" />
+        <PlanStatusChip result={planResult} nodes={aggregate.nodes} />
         <MenuButton fieldLabel="Blocking scenario" label={selectedBlockingScenario?.name ?? 'No blocking scenario'} menuLabel="Blocking scenario" groups={tripBlockingScenarioMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} menuAlign="start" />
       </>}
       actions={<>
@@ -699,7 +752,7 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
       {tripsWithChangedRuntimes.length > 0 && <InlineNote kind="warn"><b>Run times have changed</b> for {tripsWithChangedRuntimes.length} {tripsWithChangedRuntimes.length === 1 ? 'trip' : 'trips'}. <button type="button" className="small" disabled={busy || tripProfileBusy} onClick={selectTripsWithChangedRuntimes}>Select these trips</button></InlineNote>}
       {staleReasons && <InlineNote kind="warn" live>{staleTripNoticeText(staleReasons)}</InlineNote>}
       {tripBlockAssignmentStatus && <InlineNote kind="ok" live>{tripBlockAssignmentStatus}</InlineNote>}
-      <ScheduleTable selectionBar={renderSelectionBar} trips={trips} previewTrips={shiftPreview?.shiftedTrips} stagedShiftSeconds={shiftPreview?.netOffsetSeconds} draft={draftTrip} patterns={patterns} direction={directions.find((direction) => directionId === direction.id)!} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} showRuntimeBands={showRuntimeBands} showHeadways={showHeadways} roundDisplayedTimes={roundDisplayedTimes} blockAssignments={tripBlockByTripId} tripConnections={tripConnections} totals={tableTotals} blockWarnings={tripBlockWarnings} blockOptions={tripBlockOptions} blockAssignmentDisabled={busy || tripProfileBusy || tripBlockingBlocksBusy || shiftOperations.length > 0 || shiftDrawerOpen || Boolean(tripBlockAssignment)} onAssignBlock={(trip, blockId, trigger) => openTripBlockAssignment([trip.id], blockId, 'pill', trigger)} onUnassignBlock={(trip, trigger) => openTripBlockAssignment([trip.id], '', 'pill', trigger, 'unassign')} selectedIds={selectedTripIds} changedRuntimeTripIds={changedRuntimeTripIds} onToggle={(id, index, shiftKey) => requestShiftScopeChange(() => {
+      <ScheduleTable selectionBar={renderSelectionBar} planGaps={planGaps} onStartTimeChange={tripProfileBusy || shiftDrawerOpen || shiftOperations.length > 0 ? undefined : changeTripStartTime} trips={trips} previewTrips={shiftPreview?.shiftedTrips} stagedShiftSeconds={shiftPreview?.netOffsetSeconds} draft={draftTrip} patterns={patterns} direction={directions.find((direction) => directionId === direction.id)!} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} showRuntimeBands={showRuntimeBands} showHeadways={showHeadways} roundDisplayedTimes={roundDisplayedTimes} blockAssignments={tripBlockByTripId} tripConnections={tripConnections} totals={tableTotals} blockWarnings={tripBlockWarnings} blockOptions={tripBlockOptions} blockAssignmentDisabled={busy || tripProfileBusy || tripBlockingBlocksBusy || shiftOperations.length > 0 || shiftDrawerOpen || Boolean(tripBlockAssignment)} onAssignBlock={(trip, blockId, trigger) => openTripBlockAssignment([trip.id], blockId, 'pill', trigger)} onUnassignBlock={(trip, trigger) => openTripBlockAssignment([trip.id], '', 'pill', trigger, 'unassign')} selectedIds={selectedTripIds} changedRuntimeTripIds={changedRuntimeTripIds} onToggle={(id, index, shiftKey) => requestShiftScopeChange(() => {
         setSelectedTripIds((current) => {
           const anchorIndex = selectionAnchorId.current ? trips.findIndex((trip) => trip.id === selectionAnchorId.current) : -1;
           if (shiftKey && anchorIndex >= 0) {
@@ -720,8 +773,9 @@ export function TripsWorkspace({ service, tripService, blockingService, aggregat
     {segmentRuntimeDialog && selectedProfile && <SegmentRuntimeDialog service={service} mode={segmentRuntimeDialog} profileId={selectedProfile.id} onDone={() => { setSegmentRuntimeDialog(undefined); onRuntimeChanged(); }} onClose={() => setSegmentRuntimeDialog(undefined)} />}
     {runtimeDialog && <RuntimeProfileDialog2 dialog={runtimeDialog} candidates={reverseCandidates} onSubmit={submitRuntimeDialog} onClose={() => setRuntimeDialog(undefined)} />}
     {deleteProfileOpen && selectedProfile && profileDeletionImpact && <DeleteRuntimeProfileDialog profile={selectedProfile} profiles={profiles} assignmentCount={profileDeletionImpact.assignmentCount} tripCount={profileDeletionImpact.tripCount} onDelete={deleteProfile} onClose={() => { setDeleteProfileOpen(false); setProfileDeletionImpact(undefined); }} />}
-    {buildOpen && <BuildTripsDrawer tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} serviceDayId={serviceDayId} tripProfileId={tripProfileId} patterns={patterns} profileName={selectedProfile?.name} initialValues={buildValues.current} onValuesChange={(values) => { buildValues.current = values; }} onDone={async () => { buildValues.current = EMPTY_BUILD_VALUES; closeBuildDrawer(); clearTripShiftHistory(); await loadTrips(); }} onClose={closeBuildDrawer} />}
+    {buildOpen && <BuildTripsDrawer tripService={tripService} plannedFrequencyService={plannedFrequencyService} scenarioId={records.scenario.id} routeId={aggregate.route.id} serviceDayId={serviceDayId} tripProfileId={tripProfileId} patterns={patterns} nodes={aggregate.nodes} profileName={selectedProfile?.name} initialValues={buildValues.current} onValuesChange={(values) => { buildValues.current = values; }} onDone={async () => { buildValues.current = EMPTY_BUILD_VALUES; closeBuildDrawer(); clearTripShiftHistory(); await loadTrips(); }} onClose={closeBuildDrawer} />}
     {tripDeletion && <DeleteTripsDialog tripCount={tripDeletion.tripIds.length} affectedBlockCount={tripDeletion.affectedBlockIds.length} onDelete={() => void deleteTrips()} onClose={() => setTripDeletion(undefined)} busy={busy} />}
+    {startTimeReview && <StartTimeChangeDialog patternName={startTimeReview.patternName} fromSeconds={startTimeReview.fromSeconds} toSeconds={startTimeReview.toSeconds} preview={startTimeReview.preview} busy={busy} onApply={() => void applyStartTimeChange(startTimeReview.preview)} onClose={() => setStartTimeReview(undefined)} />}
     {recalculationTripIds.length > 0 && <RecalculationDialog tripService={tripService} tripIds={recalculationTripIds} trips={trips} patterns={aggregate.patterns} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} onDone={finishRecalculation} onClose={() => setRecalculationTripIds([])} />}
     {runtimeCopyOpen && selectedDay && <RuntimeDayCopyDialog tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} routeName={aggregate.route.name || 'Untitled route'} targetDay={selectedDay} days={days} patterns={aggregate.patterns.filter(isUsablePattern)} onDone={completeRuntimeCopy} onClose={closeRuntimeCopy} onError={onError} />}
     {tripCopyOpen && selectedDay && <TripDayCopyDialog tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} tripProfileId={tripProfileId} routeName={aggregate.route.name || 'Untitled route'} tripProfileName={(records.tripProfiles ?? []).find((profile) => profile.id === tripProfileId)?.name || 'trip profile'} targetDay={selectedDay} days={days} patterns={aggregate.patterns} onDone={completeTripCopy} onClose={closeTripCopy} onError={onError} />}

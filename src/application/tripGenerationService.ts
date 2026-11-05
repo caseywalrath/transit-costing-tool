@@ -359,7 +359,7 @@ export class TripGenerationService {
     return sourced;
   }
 
-  async previewRecalculateTrips(tripIds: string[], anchorByTripId: Record<string, string> = {}, bandOverrideByTripId: Record<string, string> = {}): Promise<RecalculationPreview> {
+  async previewRecalculateTrips(tripIds: string[], anchorByTripId: Record<string, string> = {}, bandOverrideByTripId: Record<string, string> = {}, anchorTimeByTripId: Record<string, number> = {}): Promise<RecalculationPreview> {
     const trips = (await Promise.all(tripIds.map((id) => this.repository.getTrip(id)))).filter((trip): trip is Trip => Boolean(trip));
     if (trips.length !== tripIds.length) throw new Error('One or more selected trips are no longer available.');
     const blocksByDay = new Map<string, Block[]>();
@@ -378,7 +378,11 @@ export class TripGenerationService {
         if (!resolved.has(key)) resolved.set(key, this.resolveAuthoritativeProfile({ scenarioId: trip.scenarioId, serviceDayId: trip.serviceDayId, patternId: trip.patternId }));
         const { pattern, profile, assignment } = await resolved.get(key)!;
         sources.push([trip, pattern, profile, assignment]);
-        const result = recalculateTripWithAnchor(trip, pattern, profile, this.now(), anchorByTripId[trip.id], bandOverrideByTripId[trip.id]);
+        // A new anchor time replaces the Trip's time at the anchor point, and the other points are calculated around it, as when adding a Trip.
+        const newAnchorTime = anchorTimeByTripId[trip.id];
+        const anchorPointId = anchorByTripId[trip.id];
+        const seed = newAnchorTime === undefined || !anchorPointId ? trip : { ...trip, stopTimes: trip.stopTimes.map((point) => point.patternPointId === anchorPointId ? { ...point, time: newAnchorTime } : point) };
+        const result = recalculateTripWithAnchor(seed, pattern, profile, this.now(), anchorPointId, bandOverrideByTripId[trip.id]);
         recalculated.push(result.trip);
         if (result.bandSelection) bandSelections.push(result.bandSelection);
       } catch (error) {
@@ -395,12 +399,12 @@ export class TripGenerationService {
     const connectionPatternIds = [...new Set(connectionTrips.map((trip) => trip.patternId))];
     const connectionPatterns = (await Promise.all(connectionPatternIds.map((id) => this.repository.getPattern(id)))).filter((pattern): pattern is RoutePattern => Boolean(pattern));
     const connectionReview = calculateRecalculationConnections(trips, recalculated, connectionTrips, relevantBlocks, connectionPatterns);
-    return { trips: recalculated, impact: calculateRecalculationImpact(trips, blocks), connections: connectionReview.connections, findings: connectionReview.findings, bandSelections, anchorByTripId: { ...anchorByTripId }, bandOverrideByTripId: { ...bandOverrideByTripId }, sourceSignature: JSON.stringify([sources, blocks, connectedTrips, connectionPatterns]) };
+    return { trips: recalculated, impact: calculateRecalculationImpact(trips, blocks), connections: connectionReview.connections, findings: connectionReview.findings, bandSelections, anchorByTripId: { ...anchorByTripId }, bandOverrideByTripId: { ...bandOverrideByTripId }, anchorTimeByTripId: { ...anchorTimeByTripId }, sourceSignature: JSON.stringify([sources, blocks, connectedTrips, connectionPatterns]) };
   }
 
   async applyRecalculationPreview(preview: RecalculationPreview, confirm = false): Promise<RecalculationPreview> {
     if (!preview.sourceSignature || !preview.trips.length) throw new Error('Review the selected trips before regenerating.');
-    const current = await this.previewRecalculateTrips(preview.impact.tripIds, preview.anchorByTripId, preview.bandOverrideByTripId);
+    const current = await this.previewRecalculateTrips(preview.impact.tripIds, preview.anchorByTripId, preview.bandOverrideByTripId, preview.anchorTimeByTripId);
     if (current.sourceSignature !== preview.sourceSignature) throw new Error('Trips or runtimes changed. Review regeneration again.');
     if (current.findings.some((finding) => finding.severity === 'error')) throw new TripGenerationError(current.findings);
     if (current.impact.requiresConfirmation && !confirm) throw new TripRecalculationConfirmationError(current);

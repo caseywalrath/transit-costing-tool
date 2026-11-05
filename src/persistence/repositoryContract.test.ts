@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouteDefinitionService } from '../application/routeDefinitionService';
 import { duplicateScenario, projectSnapshotWithScenario, snapshotForScenario } from '../domain/project';
 import type { RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
-import type { CostingAssumptions, ProjectSnapshot, Trip, TripGenerationSet, TripRegenerationUndo } from '../domain/types';
+import type { CostingAssumptions, PlannedFrequency, ProjectSnapshot, Trip, TripGenerationSet, TripRegenerationUndo } from '../domain/types';
 import { asSnapshot, goldenWithAltBlocking } from '../testSupport/goldenBackup';
 import { ProjectBackupService } from './backupRepository';
 import { TransitDatabase } from './database';
@@ -18,7 +18,7 @@ import { InMemoryRouteDefinitionRepository } from './inMemoryRepository';
 // in-memory repository offers every one of them.
 type Repository = Omit<DexieRouteDefinitionRepository, 'db'>;
 
-const SCENARIO_OWNED = ['serviceDays', 'routes', 'nodes', 'patterns', 'directions', 'runtimeProfiles', 'runtimeAssignments', 'tripProfiles', 'blockingScenarios', 'costingAssumptions', 'generationSets', 'trips', 'blocks'] as const;
+const SCENARIO_OWNED = ['serviceDays', 'routes', 'nodes', 'patterns', 'directions', 'runtimeProfiles', 'runtimeAssignments', 'tripProfiles', 'blockingScenarios', 'costingAssumptions', 'generationSets', 'trips', 'blocks', 'plannedFrequencies'] as const;
 
 interface Harness {
   repository: Repository;
@@ -82,12 +82,21 @@ function fixture() {
     if ((perDay.get(key) ?? 0) < 5) { perDay.set(key, (perDay.get(key) ?? 0) + 1); tripIds.add(trip.id); }
   }
   const { format: _format, exportSchemaVersion: _version, exportedAt: _exportedAt, ...records } = backup;
-  const snapshot = asSnapshot({ ...records, trips: backup.trips.filter((trip: any) => tripIds.has(trip.id)), blocks });
+  const base = asSnapshot({ ...records, trips: backup.trips.filter((trip: any) => tripIds.has(trip.id)), blocks });
+  // One planned frequency (Decision 0058) on the first Route's Weekday, measured at a mid-route node of its first direction.
+  const planRoute = base.routes[0];
+  const planDirection = base.directions!.find((direction) => direction.routeId === planRoute.id)!;
+  const plan: PlannedFrequency = {
+    id: 'plan-weekday', scenarioId, routeId: planRoute.id, serviceDayId: weekday, createdAt: '2026-11-05T00:00:00.000Z', updatedAt: '2026-11-05T00:00:00.000Z',
+    periods: [{ id: 'plan-p1', startTime: 6 * 3600, endTime: 8 * 3600, headwaySeconds: 1800 }, { id: 'plan-p2', startTime: 8 * 3600, endTime: 19 * 3600, headwaySeconds: 900 }],
+    measureNodeIdByDirectionId: { [planDirection.id]: planDirection.columns[1].nodeId },
+  };
+  const snapshot: ProjectSnapshot = { ...base, plannedFrequencies: [plan] };
   const defaultProfile = snapshot.tripProfiles!.find((profile) => profile.name === 'Default')!;
   const altProfile = snapshot.tripProfiles!.find((profile) => profile.name === 'Alt')!;
   const trip = snapshot.trips.find((candidate) => candidate.tripProfileId === defaultProfile.id && candidate.serviceDayId === weekday)!;
   const assignment = snapshot.runtimeAssignments[0];
-  return { snapshot, scenarioId, weekday, defaultProfile, altProfile, trip, assignment };
+  return { snapshot, scenarioId, weekday, defaultProfile, altProfile, trip, assignment, plan, planDirection };
 }
 
 const undoFor = (scenarioId: string, before: Trip[], after: Trip[]): TripRegenerationUndo => ({ id: 'last', scenarioId, tripProfileId: before[0].tripProfileId!, createdAt: '2026-10-22T00:00:00.000Z', beforeTrips: before, afterTrips: after });
@@ -108,7 +117,11 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       expect((await repository.listScenarios(snapshot.project.id)).map((scenario) => scenario.id)).toEqual([scenarioId]);
       expect((await repository.listTripProfiles(scenarioId)).map((profile) => profile.name).sort()).toEqual(['Alt', 'Default']);
       const records = (await repository.getScenarioRecords(scenarioId))!;
-      expect(Object.keys(records).sort()).toEqual(['blockingScenarios', 'blocks', 'directions', 'generationSets', 'nodes', 'patterns', 'routes', 'runtimeAssignments', 'runtimeProfiles', 'scenario', 'serviceDays', 'tripProfiles', 'trips']);
+      expect(Object.keys(records).sort()).toEqual(['blockingScenarios', 'blocks', 'directions', 'generationSets', 'nodes', 'patterns', 'plannedFrequencies', 'routes', 'runtimeAssignments', 'runtimeProfiles', 'scenario', 'serviceDays', 'tripProfiles', 'trips']);
+      expect(records.plannedFrequencies).toEqual(snapshot.plannedFrequencies);
+      expect(await repository.listPlannedFrequencies(scenarioId)).toEqual(snapshot.plannedFrequencies);
+      expect(await repository.getPlannedFrequency(snapshot.plannedFrequencies![0].routeId, weekday)).toEqual(snapshot.plannedFrequencies![0]);
+      expect(await repository.getPlannedFrequency(snapshot.plannedFrequencies![0].routeId, 'no-such-day')).toBeUndefined();
       const dayTrips = snapshot.trips.filter((trip) => trip.serviceDayId === weekday);
       expect((await repository.listTrips(weekday)).length).toBe(dayTrips.length);
       expect((await repository.listTrips(weekday, altProfile.id)).length).toBe(dayTrips.filter((trip) => trip.tripProfileId === altProfile.id).length);
@@ -151,7 +164,7 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       await repository.saveProjectSnapshot(snapshot);
       const backup = new ProjectBackupService((id) => repository.getProjectSnapshot(id), (value) => repository.saveProjectSnapshot(value));
       const payload = await backup.exportProject(snapshot.project.id);
-      expect(JSON.parse(payload).exportSchemaVersion).toBe(9);
+      expect(JSON.parse(payload).exportSchemaVersion).toBe(10);
       const before = JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value);
       await backup.importProject(payload, 'replace');
       expect(JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value)).toBe(before);
@@ -285,6 +298,74 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       expect(await repository.getLastTripRegenerationUndo()).toBeDefined();
       await repository.deleteProject(snapshot.project.id);
       expect(await repository.getLastTripRegenerationUndo()).toBeUndefined();
+    });
+  });
+
+  describe('Planned frequencies (Decision 0058)', () => {
+    const stored = async (scenarioId: string) => (await repository.getScenarioRecords(scenarioId))!;
+
+    it('replaces, adds and removes plans through Scenario record writes', async () => {
+      const { snapshot, scenarioId, plan } = fixture();
+      await repository.saveProjectSnapshot(snapshot);
+      const saturday = snapshot.serviceDays.find((day) => day.kind === 'saturday')!;
+      const edited = { ...plan, periods: [plan.periods[0]] };
+      const added: PlannedFrequency = { ...plan, id: 'plan-saturday', serviceDayId: saturday.id, periods: [{ id: 'sat-p1', startTime: 7 * 3600, endTime: 22 * 3600, headwaySeconds: 1800 }] };
+      await repository.updateScenarioRecords(scenarioId, (current) => ({ ...current, plannedFrequencies: [edited, added] }));
+      expect((await repository.listPlannedFrequencies(scenarioId)).map((candidate) => [candidate.id, candidate.periods.length])).toEqual([['plan-saturday', 1], ['plan-weekday', 1]]);
+      await repository.updateScenarioRecords(scenarioId, (current) => ({ ...current, plannedFrequencies: [added] }));
+      expect(await repository.getPlannedFrequency(plan.routeId, plan.serviceDayId)).toBeUndefined();
+      expect((await harness.ownedCounts(scenarioId)).plannedFrequencies).toBe(1);
+    });
+
+    it('refuses a second plan for one Route and Service day, a plan with no periods, invalid periods, and a measure node of another Route, and writes nothing', async () => {
+      const { snapshot, scenarioId, plan, planDirection } = fixture();
+      await repository.saveProjectSnapshot(snapshot);
+      const before = await stored(scenarioId);
+      const otherRouteNode = snapshot.nodes.find((node) => node.routeId !== plan.routeId);
+      const attempts: Array<[PlannedFrequency[], RegExp]> = [
+        [[plan, { ...plan, id: 'plan-dup' }], /more than one planned frequency/],
+        [[{ ...plan, periods: [{ id: 'x', startTime: 6 * 3600, endTime: 8 * 3600, headwaySeconds: 30 }] }], /headwayTooShort/],
+        [[{ ...plan, periods: [{ id: 'x', startTime: 6 * 3600, endTime: 8 * 3600, headwaySeconds: 900 }, { id: 'y', startTime: 7 * 3600, endTime: 9 * 3600, headwaySeconds: 900 }] }], /periodsOverlap/],
+        [[{ ...plan, periods: [{ id: 'x', startTime: 6 * 3600, endTime: 6 * 3600, headwaySeconds: 900 }] }], /periodEndNotAfterStart/],
+        [[{ ...plan, periods: [{ id: 'x', startTime: 6 * 3600, endTime: 7 * 3600, headwaySeconds: 900 }, { id: 'x', startTime: 8 * 3600, endTime: 9 * 3600, headwaySeconds: 900 }] }], /duplicate period id/],
+      ];
+      if (otherRouteNode) attempts.push([[{ ...plan, measureNodeIdByDirectionId: { [planDirection.id]: otherRouteNode.id } }], /measure node that is not on its Route/]);
+      for (const [plans, message] of attempts) {
+        await expect(repository.saveScenarioRecords({ ...before, plannedFrequencies: plans, scenario: { ...before.scenario, name: 'Must not be written' } })).rejects.toThrow(message);
+      }
+      const after = await stored(scenarioId);
+      expect(after.scenario.name).toBe(before.scenario.name);
+      expect(after.plannedFrequencies).toEqual(before.plannedFrequencies);
+    });
+
+    it('a write that removes a node drops only that measure entry; one that removes the Route drops the plan', async () => {
+      const { snapshot, scenarioId, plan, planDirection } = fixture();
+      await repository.saveProjectSnapshot(snapshot);
+      const measureNode = plan.measureNodeIdByDirectionId[planDirection.id];
+      const records = await stored(scenarioId);
+      // Removing a node is simulated directly on the records: the direction column and pattern points that used it go too.
+      await repository.saveScenarioRecords({
+        ...records,
+        nodes: records.nodes.filter((node) => node.id !== measureNode),
+        directions: records.directions!.map((direction) => ({ ...direction, columns: direction.columns.filter((column) => column.nodeId !== measureNode) })),
+        patterns: records.patterns.map((pattern) => ({ ...pattern, points: pattern.points.filter((point) => point.nodeId !== measureNode) })),
+        runtimeProfiles: [], runtimeAssignments: [], trips: [], blocks: [],
+      });
+      const kept = (await repository.getPlannedFrequency(plan.routeId, plan.serviceDayId))!;
+      expect(kept.measureNodeIdByDirectionId).toEqual({});
+      expect(kept.periods).toEqual(plan.periods);
+      const again = await stored(scenarioId);
+      await repository.saveScenarioRecords({ ...again, routes: again.routes.filter((route) => route.id !== plan.routeId), nodes: again.nodes.filter((node) => node.routeId !== plan.routeId), patterns: again.patterns.filter((pattern) => pattern.routeId !== plan.routeId), directions: again.directions!.filter((direction) => direction.routeId !== plan.routeId) });
+      expect(await repository.listPlannedFrequencies(scenarioId)).toEqual([]);
+    });
+
+    it('keeps a stored measure node that still exists but is no longer served (Decision 0058 item 4)', async () => {
+      const { snapshot, scenarioId, plan, planDirection } = fixture();
+      await repository.saveProjectSnapshot(snapshot);
+      const measureNode = plan.measureNodeIdByDirectionId[planDirection.id];
+      const records = await stored(scenarioId);
+      await repository.saveScenarioRecords({ ...records, patterns: records.patterns.map((pattern) => ({ ...pattern, points: pattern.points.filter((point) => point.nodeId !== measureNode) })), runtimeProfiles: [], runtimeAssignments: [], trips: [], blocks: [] });
+      expect((await repository.getPlannedFrequency(plan.routeId, plan.serviceDayId))!.measureNodeIdByDirectionId).toEqual(plan.measureNodeIdByDirectionId);
     });
   });
 

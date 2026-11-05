@@ -53,7 +53,7 @@ describe('3-001: Block ownership survives export and import', () => {
       // The golden file is a version 6 file; exporting writes the current version, 8, and nothing else changes (Decision 0051).
       if (key !== 'exportedAt' && key !== 'exportSchemaVersion') expect(again[key], key).toEqual(original[key]);
     }
-    expect(again.exportSchemaVersion).toBe(9);
+    expect(again.exportSchemaVersion).toBe(10);
   });
 
   it('removes a Trip Profile that an older export stamped on a normalized Block when it matches the Blocking Scenario', () => {

@@ -1,0 +1,343 @@
+# Planned Frequencies: Work Order Plan
+
+- Requested by the user on 2026-11-05. Source proposal: `docs/backlog.md`, "Planned frequencies".
+- Status: PF0 complete (Decision 0058, 2026-11-05). PF1 complete (2026-11-05). PF2 complete (2026-11-05; refines Decision 0058 item 6, edge trips). PF3 complete (2026-11-05; see "PF3 as built"). PF4 complete (2026-11-05; see "PF4 as built"). PF5 complete (2026-11-05; see "PF5 as built"). PF6 complete (2026-11-05; see "PF6 as built"). PF7 complete (2026-11-05; see "PF7 as built"). PF8 complete (2026-11-05; see "PF8 as built"). PF9 complete (2026-11-05; see `planned-frequencies-closeout.md`). The plan is complete. Each package begins only when the user asks for it, and each ends at a verification gate where the agent reports and recommends the next package (`AGENTS.md`).
+- Branch: the branch the user names for each session. Never push to another branch. Do not open a pull request unless asked.
+- Staffing: one agent per package. Most packages are Sonnet. Packages marked **Opus** hold rules, data migrations or calculations where a mistake is hard to see or hard to undo.
+
+## Feature summary
+
+A Route can carry an optional **plan** of service frequencies per Service day: periods with a start, an end and a headway (for example 6:00–8:00 every 30, 8:00–19:00 every 15, 19:00–24:00 every 30). The plan:
+
+1. is edited in a new **Planned frequencies** panel on the Route screen, to the right of Annual service days;
+2. can be copied from another Service day of the same Route, or from a Route in another Scenario;
+3. can build trips from the Build trips drawer, as an alternative to the single-headway build;
+4. is compared with the built trips, quietly, on the Route and Trips screens.
+
+The plan is a target, never a constraint. Nothing is refused or blocked because trips differ from it.
+
+## Settled decisions (user, 2026-11-05)
+
+| # | Decision |
+| --- | --- |
+| D1 | The plan is owned by the Scenario. There are no links between Scenarios. Duplicating a Scenario or a Route copies the plan. |
+| D2 | One plan per Route × Service day. It is not per Trip Profile; every Trip Profile is compared with the same plan. |
+| D3 | Directions share the periods. Each direction has its own **measure node**, where the frequency is placed and measured. Periods that differ by direction are out of scope. |
+| D4 | One pattern per build. Alternating patterns within a period are out of scope. |
+| D5 | Tolerance: a period's first and last trips may fall within ± half the headway of the period edges; each gap matches within ± 1 minute or 10 % of the headway, whichever is larger; the period's trip count matches within ± 1. |
+| D6 | "Copy planned frequencies from another Scenario…" is included. It is a one-time copy and keeps no link. |
+| D7 | The plan is stored. The comparison is derived and never stored. |
+
+## Out of scope
+
+- Periods that differ by direction (later option).
+- Alternating patterns within one build (later option).
+- Auto-shift (separate backlog entry; it will use this plan as its periods).
+- Costing or vehicle estimates from the plan (backlog notes only).
+
+## Package overview
+
+| Package | Title | Model | Depends on | Owns |
+| --- | --- | --- | --- | --- |
+| PF0 | Decision record | **Opus** | none | `docs/decisions/0058-planned-frequencies.md` |
+| PF1 | Domain: types, validation, slots | Sonnet | PF0 | `src/domain/plannedFrequencies.ts` (+ test), `src/domain/types.ts` |
+| PF2 | Domain: planned vs built comparison | **Opus** | PF1 | `src/domain/plannedFrequencyComparison.ts` (+ test) |
+| PF3 | Persistence, backup, Scenario and Route copies | **Opus** | PF1 | `src/persistence/*`, `src/domain/project.ts`, `src/domain/scenarioCopyRecovery.ts` |
+| PF4 | Application service | Sonnet | PF2, PF3 | `src/application/plannedFrequencyService.ts` (+ test) |
+| PF5 | Route screen panel and copy dialogs | Sonnet | PF4 | `src/ui/route/PlannedFrequenciesPanel.tsx`, `src/ui/route/RouteWorkspace.tsx`, `src/ui/styles/route.css`, UI tests |
+| PF6 | Trip generation at a measure node | **Opus** | PF1 | `src/domain/trips.ts`, `src/application/tripGenerationService.ts` |
+| PF7 | Build trips: From planned frequencies | Sonnet | PF4, PF6 | `src/ui/trips/dialogs.tsx` (`BuildTripsDrawer`), Build trips UI tests |
+| PF8 | Planned vs built indicators | Sonnet | PF4, PF5 | `src/ui/trips/PlanStatusChip.tsx`, `src/ui/trips/ScheduleTable.tsx`, `src/ui/trips/TripsWorkspace.tsx`, `src/ui/styles/trips-workflow.css` |
+| PF9 | Documentation, closeout, full verification | Sonnet | all | `architecture_overview.md`, `docs/data-schema.md`, `docs/domain-glossary.md`, `docs/backlog.md`, closeout file |
+
+Order: PF0 → PF1 → (PF2, PF3, PF6 can run in any order) → PF4 → PF5 → PF7 → PF8 → PF9. PF6 depends only on PF1 and can be done early.
+
+## Instructions that apply to every package
+
+- Read first: `AGENTS.md`, `codex.md`, `architecture_overview.md`, `docs/data-schema.md`, `docs/ui-conventions.md`, Decision 0058 (after PF0), and this plan.
+- Keep domain code free of React and IndexedDB. Store inputs; derive everything else.
+- Edit files with the file-edit tool, not shell scripts.
+- Do not change files another package owns, except where this plan says so. If a package needs a change outside its files, stop and report it.
+- Verify each package as the table below says, no more and no less. Record the results in the commit message as `Verified:` lines, and name anything skipped and why.
+
+## Verification per package
+
+The unit suite takes about 10 seconds and is run in full once at the end of every code package. The browser suite is the slow part and runs in full only in PF9. While working, run only the test file being written. Show only summaries and failures; never paste a full log.
+
+| Package | Run | Skip | Do not cut |
+| --- | --- | --- | --- |
+| PF0 | Proofread, cross-check names | All tests | — |
+| PF1 | Typecheck, new test file, full unit suite | Browser tests, build | — |
+| PF2 | Typecheck, new test file, full unit suite | Browser tests, build | — |
+| PF3 | Typecheck, full unit suite; browser: `backup-import`, `database-migration`, `scenario-copy-recovery`, `scenario-write-safety`, `deletion-reviews`, `data-safety`, `automatic-blocking-backup` (asserts the backup version) | Other browser tests | Every persistence, migration and backup test; an exact backup round trip |
+| PF4 | Typecheck, new test file, full unit suite | Browser tests, build | — |
+| PF5 | Typecheck, full unit suite, new panel spec; browser: `route-editing`, `route-grid`, `annual-days-blank`, `keyboard`; one build; Route screen screenshots | Trips, Blocking, Costing browser tests | — |
+| PF6 | Typecheck, full unit suite; browser: `trip-bounds`, `add-trip-draft` | Other browser tests | Every existing generation and regenerate unit test, unchanged (proves builds without a measure node are unchanged) |
+| PF7 | Typecheck, full unit suite, Build trips specs (new and existing), `keyboard`; one build; drawer screenshots | Route, Blocking, Costing browser tests | — |
+| PF8 | Typecheck, full unit suite, new chip spec, `trip-headways`, `trips-table-display`, `trip-table-layout`, `keyboard`; one build; Trips screen screenshots | Route, Blocking, Costing browser tests | — |
+| PF9 | Everything: typecheck, full unit suite, full browser suite, build, screenshots, backup round trip | Nothing | The whole run |
+
+If a skipped area turns out to be touched (for example a shared component), add its tests and say so at the gate.
+- At the gate, report what changed, what was verified, and what the user should check, then recommend the next package. Do not start it.
+
+---
+
+## PF0: Decision record (Opus)
+
+**Why Opus:** it fixes the rules every later package follows, including data ownership, the tolerance definitions and the copy-matching rules.
+
+**Task:** write `docs/decisions/0058-planned-frequencies.md` (use the next free number if 0058 is taken) in the format of Decisions 0049 and 0051. It must state:
+
+1. **Record.** `PlannedFrequency { id, scenarioId, routeId, serviceDayId, periods: PlannedPeriod[], measureNodeIdByDirectionId: Record<EntityId, EntityId> }` with `PlannedPeriod { id, startTime, endTime, headwaySeconds }`, plus the standard metadata. At most one record per Route × Service day.
+2. **Periods.** Service seconds, 24-plus allowed. Start inclusive, end exclusive. `endTime > startTime`. Periods must not overlap; gaps are allowed and mean no planned service. Headway is whole seconds, at least 60, at most the period length. Periods are stored sorted by start.
+3. **Measure node.** Per direction. Must be a node served by at least one pattern of that direction. Default when absent: the node of the direction's first timepoint column. If the stored node is no longer served (pattern edited), fall back to the default and report it; never delete it silently.
+4. **Slots.** For each period, slots are `startTime + k × headway` for every k with the slot `< endTime`.
+5. **Comparison (D5).** Per Route, Service day, direction and Trip Profile, at the measure node, merging every trip of every pattern that serves the node. A trip belongs to the period that contains its time at the measure node. Results per period: `matches`, `differs` (reasons: `extraTrips`, `missingTrips`, `gapsOff`, `startEdge`, `endEdge`), or `noTrips`. Trips outside every period are counted as `outsidePlan`, not as a difference. Trips that do not serve the measure node are counted as `notMeasured`.
+6. **Copy from another Service day.** Replaces the target day's periods with the source day's. Measure nodes are copied (same Route).
+7. **Copy from another Scenario (D6).** The user picks the source Scenario and source Route; the target is the open Route. Service days are matched by `kind`, then by name; unmatched days are listed and skipped. Measure nodes are matched by node name (then short name) within the target Route's direction of the same group (`outbound`/`inbound`); unmatched ones fall back to the default and are listed. Preview first; replaces only the matched days; one write.
+8. **Duplication.** `duplicateScenario` and `duplicateRouteRecords` copy plans with remapped IDs. Route deletion deletes its plans and the deletion review lists them.
+9. **Formats.** Dexie version 10 (new table `plannedFrequencies`), JSON backup schema 10, versions 1 to 9 still readable (no plans). The Trips CSV does not change.
+10. **Rejected alternatives:** shared across Scenarios (D1), per Trip Profile (D2), per-direction periods and alternating patterns (deferred), storing comparison results.
+
+**Acceptance:** the record covers items 1–10 and is consistent with `docs/backlog.md`. Update the backlog entry to link to it and to this plan.
+
+**Verification:** documentation only; proofread and cross-check names against `src/domain/types.ts`.
+
+---
+
+## PF1: Domain types, validation and slots (Sonnet)
+
+**Read:** Decision 0058; `src/domain/types.ts`, `src/domain/runtime.ts` (band validation pattern), `src/domain/time.ts`, `src/domain/durations.ts`.
+
+**Tasks:**
+
+1. Add `PlannedFrequency` and `PlannedPeriod` to `src/domain/types.ts`.
+2. Create `src/domain/plannedFrequencies.ts` with pure functions:
+   - `validatePlannedFrequency(record, context)` → `ValidationFinding[]`. Findings: `periodEndNotAfterStart`, `periodsOverlap`, `headwayTooShort`, `headwayLongerThanPeriod`, `measureNodeNotServed`. Use the same finding shape as runtime band validation.
+   - `normalizePeriods(periods)`: sort by start, keep IDs.
+   - `plannedSlots(period)` → `ServiceSeconds[]` (Decision 0058 item 4).
+   - `defaultMeasureNodeId(direction, patterns)` and `resolveMeasureNodeId(record, direction, patterns)` → `{ nodeId, fellBack: boolean }`.
+   - `tripsPerHour(period)` for the panel's derived column.
+3. Unit tests in `src/domain/plannedFrequencies.test.ts`: every finding; 24-plus times; a 7:30 headway; a period whose length is not a multiple of the headway; the fallback of a measure node no longer served.
+
+**Acceptance:** no React or persistence imports; all tests pass; typecheck clean.
+
+---
+
+## PF2: Planned vs built comparison (Opus)
+
+**Why Opus:** the comparison merges patterns at a mid-route node, applies three tolerances and decides which trips belong to which period. Errors here show up only as quietly wrong status chips.
+
+**Read:** Decision 0058 items 3 and 5; `src/domain/trips.ts`; `src/application/tripsWorkspaceView.ts` (headway column logic and `trip-headway-changed`).
+
+**Tasks:**
+
+1. Create `src/domain/plannedFrequencyComparison.ts`:
+   - `compareWithPlan({ plan, direction, patterns, trips })` → `{ periods: PeriodComparison[], outsidePlan: number, notMeasured: number, measureNodeId, measureNodeFellBack }`.
+   - `PeriodComparison { periodId, status, reasons, plannedTrips, builtTrips, firstTime?, lastTime?, gaps: { fromTripId, toTripId, seconds, withinTolerance }[] }`.
+   - Time at the measure node: the trip's stop time at the pattern point whose node is the measure node. A pattern that visits the node twice uses the first visit and is noted as ambiguous in the result.
+   - Gaps are measured between consecutive trips in time order, both inside the same period. The gap that crosses a period boundary is not judged.
+   - Tolerances exactly as D5. Equality at a tolerance boundary counts as within.
+2. Unit tests, including:
+   - all trips on plan → `matches`;
+   - 15-minute service planned from 6:00, built from 5:55 → `matches` (start edge within half a headway);
+   - a trip at 5:50 on 15-minute service from 6:00 → `outsidePlan`; service that starts at 6:10 → `differs: startEdge` (as implemented: a 5:50, 6:05, … series sits 5 minutes off every slot and matches);
+   - one extra and one missing trip;
+   - a gap 61 seconds off on a 7:30 headway (outside) and one 59 seconds off (inside);
+   - the Federal case: two patterns, one starting at the measure node and one passing it mid-route, merged into one 15-minute series;
+   - trips outside every period; trips not serving the node;
+   - an empty period → `noTrips`.
+
+**Acceptance:** all listed cases are tests; the function is pure; typecheck clean.
+
+---
+
+## PF3: Persistence, backup, Scenario and Route copies (Opus)
+
+**Why Opus:** a database version bump and a backup schema bump are hard to undo once users have saved data; duplication and import-as-copy must remap every ID.
+
+**Read:** Decisions 0036, 0038, 0039, 0040, 0041, 0043, 0058; `src/persistence/database.ts`, `dexieRepository.ts`, `inMemoryRepository.ts`, `backup.ts`, `backupRepository.ts`, `repositoryContract.test.ts`; `src/domain/project.ts` (`ScenarioRecords`, `duplicateScenario`, `duplicateRouteRecords`); `src/domain/scenarioCopyRecovery.ts`.
+
+**Tasks:**
+
+1. Dexie version 10: table `plannedFrequencies: 'id,scenarioId,routeId,[routeId+serviceDayId]'`. No data upgrade needed.
+2. Repository port and both implementations: list by Scenario, get by Route × Service day, save, delete. Extend the repository contract tests.
+3. Add `plannedFrequencies` to `ScenarioRecords`; include it in Scenario load, save and delete.
+4. `duplicateScenario` and `duplicateRouteRecords`: copy plans with new IDs, remapping `routeId`, `serviceDayId`, period IDs, direction IDs and node IDs.
+5. Route deletion: delete plans; add their count to the Route deletion review.
+6. Scenario copy recovery: handle plans like the other route-owned records.
+7. Backup: schema 10 exports plans; import of versions 1–9 gives none; import-as-copy remaps IDs; import validation rejects a plan whose route, service day, direction or node is missing.
+8. Tests: Dexie upgrade from version 9 keeps all existing data; backup round trip of a Scenario with plans is identical after re-export; import-as-copy remaps; duplication of a Scenario and of a Route copies plans; Route deletion removes them.
+
+**Acceptance:** all existing persistence and backup tests still pass; the new tests pass; the backup round trip is exact.
+
+**PF3 as built (2026-11-05):**
+
+- Task 2 changed: the repository port `PlannedFrequencyRepository` has reads only (`listPlannedFrequencies`, `getPlannedFrequency`). Plans are written through `updateScenarioRecords` / `saveScenarioRecords` with the Scenario's other records. Reason: the save-status guard (`saveStatus.test.ts`) requires every repository write to be published by a service, and PF4's copy commands need one transaction with a stale check anyway. PF4 writes plans with `updateScenarioRecords`.
+- Both Scenario-records and project-snapshot writes prune plans with `prunePlannedFrequencies` (`src/domain/plannedFrequencies.ts`) and then refuse invalid ones with `assertPlannedFrequencies` (`src/persistence/plannedFrequencyPersistence.ts`). Decision 0058 item 10 records the rule.
+- Scenario deletion (`RouteDefinitionService.deleteScenario`) removes the Scenario's plans; its review fingerprint and the Route deletion fingerprint include plans. `RouteDeletionImpact.plannedFrequencyCount` is new, and the Route delete confirmation (`src/ui/App.tsx`) lists "planned frequencies for N service days".
+- Scenario copy recovery needed no change (Decision 0058 item 10).
+- Export omits `plannedFrequencies` when empty.
+- Left for PF9: `architecture_overview.md`, `docs/data-schema.md` and `codex.md` still describe Dexie 9 and backup 9.
+
+---
+
+## PF4: Application service (Sonnet)
+
+**Read:** Decision 0058; `src/application/routeDefinitionService.ts` (save and review-token patterns), `src/application/reviewToken.ts`, `src/application/ports.ts`.
+
+**Tasks:** create `src/application/plannedFrequencyService.ts` and wire it where the other services are built:
+
+1. `getPlan(routeId, serviceDayId)`, `savePlan(record)` (validates with PF1, refuses on findings, re-reads stored data inside the write as Decision 0036 requires).
+2. `clearPlan(routeId, serviceDayId)`.
+3. `previewCopyFromDay(routeId, sourceServiceDayId, targetServiceDayId)` / `applyCopyFromDay(preview)`: preview shows the periods to be written and whether the target has a plan that will be replaced; apply refuses a stale preview.
+4. `listScenarioRouteSources(currentScenarioId)`: other Scenarios of the Project with their Routes, for the copy dialog.
+5. `previewCopyFromScenario({ sourceScenarioId, sourceRouteId, targetRouteId })` / `applyCopyFromScenario(preview)`: matching rules of Decision 0058 item 7; the preview lists matched days (with replace/new), unmatched days and fallen-back measure nodes; one write; stale preview refused.
+6. `comparePlan({ routeId, serviceDayId, tripProfileId })`: loads plan, directions, patterns and trips, and returns the PF2 result for each direction. Read only.
+7. Tests for each method with the in-memory repository, including a copy from a Scenario whose service day names differ but kinds match, and a stale-preview refusal.
+
+**Acceptance:** tests pass; no UI changes; typecheck clean.
+
+**PF4 as built (2026-11-05):**
+
+- `PlannedFrequencyService` (`src/application/plannedFrequencyService.ts`) takes a repository that offers `RouteDefinitionRepository` and `PlannedFrequencyRepository`. Its only write is `updateScenarioRecords`, published through the shared save-status publisher (`PLANNED_FREQUENCY_WRITE_METHODS`).
+- `savePlan(draft)` takes a draft (`routeId`, `serviceDayId`, periods with optional ids, measure nodes), derives the Scenario from the Route, keeps the stored plan's id and `createdAt`, assigns missing period ids and refuses findings with `PlannedFrequencyValidationError`. An empty period list clears the plan and returns undefined; `clearPlan` calls it. A stored measure node that is no longer served stays while the draft leaves it unchanged (Decision 0058 item 4); a changed or new unserved node is refused.
+- Copy previews carry a `token` (a fingerprint of the periods, measure nodes and replaced plan). Apply recomputes the preview inside the write from the stored records and refuses a different token with `PlannedFrequencyPreviewStaleError`. Copy from another Scenario also re-reads the source Scenario before the write.
+- Copy from another Scenario skips source days that have no plan, never matches a target day twice, and leaves target days with no match untouched. Measure nodes match by name and then short name among the nodes the target direction serves; a source direction with no `group` matches by direction name.
+- `comparePlan` returns one `PlanComparison` per direction of the Route (empty when the day has no plan) for the chosen Trip Profile. It writes nothing.
+- Not wired into `src/main.tsx` or `App` yet: the Route screen (PF5) is the first consumer.
+
+---
+
+## PF5: Route screen panel and copy dialogs (Sonnet)
+
+**Read:** `docs/ui-conventions.md`; Decision 0047; `src/ui/route/RouteWorkspace.tsx` (the `route-top-grid`, the Annual service days panel); `src/ui/trips/RuntimeEditor.tsx` and the Runtimes toolbar in `TripsWorkspace.tsx` (the layout to copy); `src/ui/shared/` components (`SupportPanel`, `MenuButton`, `ModalDialog`, fields). Reuse these; do not invent new controls.
+
+**Specification:**
+
+1. **Placement.** `.route-top-grid` (`src/ui/styles/route.css`) becomes three columns at widths above 1100 px: Route details, Annual service days, Planned frequencies. At 1100 px and below it stays one column (`responsive.css`). Check 1280 and 1440 px: no horizontal page scroll; the Planned frequencies table may scroll inside its panel.
+2. **Panel header.** `SupportPanel` titled "Planned frequencies". Toolbar: a `MenuButton` with field label "Service day" listing the Scenario's service days (sorted with `sortServiceDays`), and an Actions `MenuButton` with: **Copy from another day…**, **Copy from another scenario…**, **Clear plan…** (disabled when there is no plan).
+3. **Table.** Columns: From | To | Headway | Trips/hr | Built | (delete). From and To use the existing service-time input; Headway accepts `15` or `7:30` (reuse the Build trips parser). Trips/hr is derived, one decimal. **+ Add period** adds a row starting at the previous row's end (or 6:00 when empty) with that row's headway.
+4. **Measure nodes.** Under the table, one line per direction: "Measured at" with a select of the nodes the direction serves. Shows "(default)" when none is stored.
+5. **Saving.** The same draft-and-save behaviour as the Runtimes editor (save bar, Discard, dirty guard when leaving). Validation messages appear inline on the row, in plain language.
+6. **Built column.** From `comparePlan` for the current Trip Profile (the device-local Trips profile choice; first profile if none). Shows ✓ when every direction matches; otherwise a short note, for example "14 of 16 trips" or "Gaps off"; "—" for `noTrips`. Tooltip lists each direction. Empty state: "No plan for Weekday. Add a period or copy one."
+7. **Copy from another day…** dialog: source day select, preview of the periods, warning when the target plan will be replaced, **Copy** button.
+8. **Copy from another scenario…** dialog: Scenario select, Route select, then the PF4 preview: matched days (new or replaces), unmatched days, fallen-back measure nodes. **Copy plans** button.
+9. **Clear plan…** confirm dialog.
+10. Keyboard and accessibility as the Runtimes editor: labelled inputs, Escape closes dialogs, focus returns to the menu button.
+
+**Tests:** Playwright spec `tests/ui/planned-frequencies.spec.ts`: add three periods and save; overlap error; copy Weekday to Saturday; copy from another Scenario with one unmatched day; clear; three-column layout at 1280 px and one column at 1000 px; no page scroll at 390 px. Screenshots at 1280 and 1440 px, light and dark, inspected.
+
+**Acceptance:** the specification items above; existing Route screen tests pass.
+
+**PF5 as built (2026-11-05):**
+
+- Files: `src/ui/route/PlannedFrequenciesPanel.tsx` (panel, draft, save), `src/ui/route/PlannedFrequencyDialogs.tsx` (copy from a day, copy from a scenario, clear), `RouteWorkspace.tsx` (third panel, dirty guard), `App.tsx` and `main.tsx` (the service is a new `App` prop), `route.css`, `docs/ui-conventions.md`.
+- Edits are text drafts parsed on **Save plan**, not grid cells; a half-typed time never blocks typing. Errors show on the row in plain language; plan-level errors show under the table.
+- The dirty plan joins the Route tab's leave guard (beforeunload, tab and route navigation, and the Save/Discard dialog, which saves nodes, pattern and then the plan). Switching Service day with unsaved edits asks first.
+- Built uses the Trips tab's Trip profile (`workspaceTripProfileId`). The panel stays mounted while hidden, so it reads the comparison again when the Route tab becomes active. With unsaved edits the Built cells show "—".
+- Copy from another day is disabled when no other day has a plan.
+- Deviations: (1) at 390 px the application header already makes the page wider than the screen (before this package), so the test asserts that the panel fits and does not assert page scroll. (2) The application has no dark theme, so screenshots are light only, at 1280 and 1440 px. (3) The Built cell shows the first differing direction only; the tooltip lists all.
+- Verification run: typecheck; full unit suite (1121); `planned-frequencies.spec.ts` (6) and ten existing Route, keyboard, shell, preferences and deletion specs (59 in all, passing); production build. The full browser suite is left for the closeout (PF9).
+
+---
+
+## PF6: Trip generation at a measure node (Opus)
+
+**Why Opus:** it changes trip generation, the core of the Trips workflow, and must give exactly today's results when no measure node is used. Back-calculating earlier stops uses runtime bands, where a trip near a band boundary can change band.
+
+**Read:** Decisions 0030, 0033, 0035, 0045, 0046; `src/domain/trips.ts` (generation and `recalculateTripWithAnchor`), `src/domain/runtime.ts`, `src/application/tripGenerationService.ts` (`previewGenerateTrips`, `generateTrips`, `GenerateTripsRequest`).
+
+**Tasks:**
+
+1. Add an optional `anchorNodeId` to `GenerateTripsRequest`. When absent, behaviour is unchanged (existing tests must pass untouched).
+2. When present, each slot time is the trip's time at the anchor node; earlier and later stops are calculated with the same anchor method Regenerate uses, so a generated trip and a regenerated trip with the same anchor give the same times.
+3. Add an optional `slots: ServiceSeconds[]` alternative to `firstTrip`/`headway`/`lastTrip`/`tripCount`, so a plan can pass its exact slot list. Exactly one of the two forms is allowed.
+4. Refuse with a finding when the pattern does not serve the anchor node.
+5. Tests: no-anchor results identical to today (golden comparison); anchor at the first stop equals no anchor; anchor mid-route matches `recalculateTripWithAnchor`; a slot near a band boundary under `segmentStart`; a pattern that does not serve the node.
+
+**Acceptance:** all existing trip tests pass unchanged; new tests pass.
+
+**PF6 as built (2026-11-05):**
+
+- `GenerateTripsRequest` gains `slots` and `anchorNodeId`; `firstTrip` and `headwaySeconds` become optional in the type because the slot form must leave them out. The headway-form validation is unchanged (a missing first trip or headway is still refused with the same findings). `AddTripRequest` and `createAuthoritativeTrip` keep `firstTrip` required.
+- With an anchor past the first stop, each time is put on the anchor point of a seed trip and `recalculateTripWithAnchor` (Regenerate's method) calculates the rest, so the two agree by construction rather than by a second implementation. An anchor at the first stop, or no anchor, takes the existing path untouched.
+- A slot whose anchor is ambiguous or unreachable is a finding for that slot (with `parameters.departure`); a build cannot ask the planner to choose a band, unlike Regenerate.
+- The historical `generateTrips` overload now tells a generation set apart by `firstDeparture`, because a slot-form request has no `firstTrip`.
+- New findings: `tripGeneration.anchorNodeNotServed`, `tripGeneration.slotsInvalid`, `tripGeneration.slotsExclusive` (texts in `src/ui/shared/messages.ts`).
+- Tests: `src/domain/tripAnchorGeneration.test.ts` (11). No existing test changed.
+
+---
+
+## PF7: Build trips "From planned frequencies" (Sonnet)
+
+**Read:** `BuildTripsDrawer` in `src/ui/trips/dialogs.tsx`; `BUILD_TRIPS_FORM_MESSAGES`; Decision 0058; PF4 and PF6 APIs.
+
+**Specification:**
+
+1. A two-option segmented control at the top of the drawer: **One headway** (default, today's form, unchanged) | **From planned frequencies**. The choice is remembered with the drawer's other values.
+2. When the Route and Service day have no plan, the second option is disabled with the hint "No planned frequencies for this day. Add them on the Route screen."
+3. From planned frequencies form: Pattern select; a checklist of the plan's periods ("6:00–8:00 · every 30 · 4 trips"), all checked; a read-only line "Times at: <measure node>" for the selected pattern's direction.
+4. Preview area before building: trips per period, total, and slots that duplicate an existing trip of the same pattern at the measure node (listed; they are skipped).
+5. **Build trips** sends one PF6 request with the slot list and the measure node. On success, the drawer closes as today.
+6. A pattern that does not serve the measure node shows the PF6 refusal in plain language.
+
+**Tests:** extend the Build trips Playwright tests: build from a three-period plan; duplicate slots skipped; mode disabled with no plan; a mid-route measure node gives first-stop times earlier than the slot.
+
+**Acceptance:** the One headway mode behaves exactly as before (existing tests unchanged).
+
+**PF7 as built (2026-11-05):**
+
+- `PlannedFrequencyService.previewBuildFromPlan({ routeId, serviceDayId, tripProfileId, patternId })` is the new read: the direction's measure node (with `measureNodeFellBack`), whether the Pattern serves it and visits it twice, and for each period its slots and the slots that already hold a trip of the same Pattern and Trip Profile at that node. It returns undefined when the day has no plan. Unit tests: 4 added to `plannedFrequencyService.test.ts`.
+- `BuildTripsDrawer` has a two-button group, **One headway** | **From planned frequencies**. The One headway form is the same JSX as before. The mode and the unchecked periods are part of `BuildTripsValues`, so they are remembered with the drawer's other values and cleared by a successful build. The drawer gets `plannedFrequencyService` and `nodes` as new props (`TripsWorkspace` and `App` pass them through).
+- **Duplicate slots are removed before the request is sent**, so the build is additive and never adds a trip the planner was told it would skip. The summary line lists them ("Skipped, already built: 6:00."). Existing trips of another Pattern or another Trip Profile are not duplicates.
+- Build sends one PF6 request with `slots` and `anchorNodeId`. A Pattern that does not stop at the measure node shows the PF6 text as soon as it is selected and Build stays disabled. A slot the runtimes cannot reach comes back as a finding and the drawer shows it with the slot's time.
+- Deviation: with no plan the second button is disabled and the hint is shown as text under the buttons (it is also the button's tooltip), because a tooltip alone is not reachable by keyboard.
+- Tests: `tests/ui/build-from-plan.spec.ts` (3: mode disabled with a hint; three-period plan with a skipped slot, an unchecked period remembered across closing the drawer; a mid-route measure node gives first-stop times 5:53 and 6:23 for slots at 6:00 and 6:30). The "Pattern does not serve the node" case is covered at unit level only, because the test Route has one Pattern.
+- Verification run: typecheck; full unit suite (1136); the new spec plus `trip-bounds`, `keyboard`, `trips-layout`, `unified-action-layer`, `workflow-section-layout`, `drafts-and-preferences`, `scenario-write-safety` and `single-tab` (74 tests; `unified-action-layer` "restores the page scroll position" failed once under parallel load and passed alone); production build; drawer screenshot at 1280 px inspected.
+
+---
+
+## PF8: Planned vs built indicators (Sonnet)
+
+**Read:** `src/ui/trips/TripsWorkspace.tsx` (Trips header), `src/ui/trips/ScheduleTable.tsx` (headway column, `trip-headway-changed`), `src/ui/shared/chips.tsx`; PF4 `comparePlan`.
+
+**Specification:**
+
+1. **Chip** in the Trips header, after the Trip Profile selector: "Plan: matches", "Plan: 2 periods differ", or hidden when the Route and day have no plan. Neutral styling for matches, the existing warning tone for differs. No banner and no validation finding.
+2. **Popover** from the chip: one table per direction: Period | Planned | Built | Status, with reasons in plain words ("1 extra trip", "starts 10 min late", "3 gaps off"), "Measured at <node>", and counts of trips outside the plan or not measured.
+3. **Headway markers:** when the headway column is shown and the visible direction has a plan, a gap outside tolerance gets a dotted underline and a tooltip ("Planned every 15; this gap is 22"). It must not change row height.
+4. The comparison refreshes after any trip write (build, shift, regenerate, delete, import).
+
+**Tests:** Playwright: chip states; the 5:55 case shows matches; a shifted trip turns the chip to differs and back on undo; markers do not change row height. Screenshots inspected.
+
+**Acceptance:** specification items; Trips table tests pass.
+
+**PF8 as built (2026-11-05):**
+
+- New `src/ui/trips/PlanStatusChip.tsx`: the chip, the popover (a dialog that closes on Escape or an outside click and returns focus to the chip) and `describePeriod` (the plain-language reasons). The chip sits between the Trip profile and Blocking scenario selectors.
+- `TripsWorkspace` reads `plannedFrequencyService.comparePlan` again whenever the route-day trips are reloaded (`routeDayTrips` changes after every build, shift, regenerate, delete, copy and import), so the chip follows every trip write without a reload.
+- Chip text: "Plan: matches", "Plan: N period(s) differ(s)", or "Plan: no trips yet" when no direction has trips. A direction with no trips is shown as "No trips built in this direction" and is not counted as a difference; inside a direction that has trips, a period with no trips counts as differing.
+- Reasons use the comparison's tolerances, so a period that is only one trip short can show "ends 30 min early" and no "missing" text (the count tolerance is ± 1). The popover also shows trips outside the plan and trips not measured.
+- Headway markers: with Show headways on, a gap outside tolerance gets a dotted underline and the tooltip "Planned every 30; this gap is 45" in the visible direction's measure-node column only. The marker is a text decoration, so row height does not change (tested).
+- Tests: `tests/ui/plan-status-chip.spec.ts` (4): hidden without a plan; differs with reasons, then matches after a build from the plan with no reload; a timetable 5 minutes early matches, one late trip differs, and moving it back matches again; markers, tooltip and equal row heights. The Shift-then-undo path was tested by writing the departures directly, not through the Shift drawer.
+- Verification run: typecheck; full unit suite (1136); the new spec, `trip-headways`, `trips-table-display`, `trip-table-layout`, `keyboard` and `build-from-plan` (33 tests); production build; popover screenshot at 1280 px inspected.
+
+---
+
+## PF9: Documentation, closeout, full verification (Sonnet)
+
+**Tasks:**
+
+1. Update `architecture_overview.md` (new record, service and data flow), `docs/data-schema.md` (record, Dexie 10, backup 10), `docs/domain-glossary.md` (Planned frequency, Period, Measure node), `docs/ui-conventions.md` if a convention was added.
+2. Mark the backlog entry as implemented and link the closeout.
+3. Write `docs/implementation/planned-frequencies-closeout.md`: what shipped, verification results, known limits (per-direction periods and alternating patterns deferred), and user checks.
+4. Run the full verification: typecheck, all unit tests, all Playwright tests, production build, backup round trip.
+
+**User acceptance checks (for the closeout):**
+
+1. Enter the Federal Weekday plan (6:00–8:00 / 30, 8:00–19:00 / 15, 19:00–24:00 / 30) and copy it to Saturday.
+2. Copy the plan into an alternative Scenario.
+3. Build trips from the plan for FRCC to Evans; the chip shows matches.
+4. Shift all trips 5 minutes earlier; the chip still shows matches.
+5. Delete one mid-day trip; the chip shows the period that differs and why.

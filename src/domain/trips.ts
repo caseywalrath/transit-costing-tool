@@ -32,8 +32,18 @@ export function validateGenerateTripsRequest(request: GenerateTripsRequest): Val
   if (!request.routeId.trim()) findings.push(requestFinding(request, 'tripGeneration.routeRequired', 'tripGeneration.routeRequired', 'routeId'));
   if (!request.serviceDayId.trim()) findings.push(requestFinding(request, 'tripGeneration.serviceDayRequired', 'tripGeneration.serviceDayRequired', 'serviceDayId'));
   if (!request.patternId.trim()) findings.push(requestFinding(request, 'tripGeneration.patternRequired', 'tripGeneration.patternRequired', 'patternId'));
-  if (!Number.isInteger(request.firstTrip) || request.firstTrip < 0) findings.push(requestFinding(request, 'tripGeneration.firstTripInvalid', 'tripGeneration.firstTripInvalid', 'firstTrip'));
-  if (!Number.isInteger(request.headwaySeconds) || request.headwaySeconds <= 0) findings.push(requestFinding(request, 'tripGeneration.headwayInvalid', 'tripGeneration.headwayInvalid', 'headwaySeconds'));
+  if (request.slots !== undefined) {
+    // Slot form: the headway form's fields must be absent, so a request never means two schedules at once.
+    if (request.firstTrip !== undefined || request.headwaySeconds !== undefined || request.lastTrip !== undefined || request.tripCount !== undefined) findings.push(requestFinding(request, 'tripGeneration.slotsExclusive', 'tripGeneration.slotsExclusive', 'slots'));
+    const slots = request.slots;
+    if (!Array.isArray(slots) || slots.length === 0 || slots.some((slot, index) => !Number.isInteger(slot) || slot < 0 || (index > 0 && slot <= slots[index - 1]))) findings.push(requestFinding(request, 'tripGeneration.slotsInvalid', 'tripGeneration.slotsInvalid', 'slots'));
+    else if (slots.length > MAX_TRIPS_PER_GENERATION) findings.push(requestFinding(request, 'tripGeneration.tripCountTooLarge', 'tripGeneration.tripCountTooLarge', 'slots', { maximum: MAX_TRIPS_PER_GENERATION }));
+    return findings;
+  }
+  // Each use below is guarded by `Number.isInteger`, which an absent value fails.
+  const { firstTrip, headwaySeconds } = request as Required<Pick<GenerateTripsRequest, 'firstTrip' | 'headwaySeconds'>>;
+  if (!Number.isInteger(firstTrip) || firstTrip < 0) findings.push(requestFinding(request, 'tripGeneration.firstTripInvalid', 'tripGeneration.firstTripInvalid', 'firstTrip'));
+  if (!Number.isInteger(headwaySeconds) || headwaySeconds <= 0) findings.push(requestFinding(request, 'tripGeneration.headwayInvalid', 'tripGeneration.headwayInvalid', 'headwaySeconds'));
   const lastTrip = request.lastTrip;
   const tripCount = request.tripCount;
   const hasLastTrip = lastTrip !== undefined;
@@ -42,24 +52,38 @@ export function validateGenerateTripsRequest(request: GenerateTripsRequest): Val
   if (lastTrip !== undefined && (!Number.isInteger(lastTrip) || lastTrip < 0)) findings.push(requestFinding(request, 'tripGeneration.lastTripInvalid', 'tripGeneration.lastTripInvalid', 'lastTrip'));
   if (tripCount !== undefined && (!Number.isInteger(tripCount) || tripCount < 1)) findings.push(requestFinding(request, 'tripGeneration.tripCountInvalid', 'tripGeneration.tripCountInvalid', 'tripCount'));
   if (tripCount !== undefined && Number.isInteger(tripCount) && tripCount > MAX_TRIPS_PER_GENERATION) findings.push(requestFinding(request, 'tripGeneration.tripCountTooLarge', 'tripGeneration.tripCountTooLarge', 'tripCount', { maximum: MAX_TRIPS_PER_GENERATION }));
-  if (Number.isInteger(request.firstTrip) && Number.isInteger(lastTrip) && lastTrip !== undefined && lastTrip < request.firstTrip) findings.push(requestFinding(request, 'tripGeneration.lastBeforeFirst', 'tripGeneration.lastBeforeFirst', 'lastTrip'));
+  if (Number.isInteger(firstTrip) && Number.isInteger(lastTrip) && lastTrip !== undefined && lastTrip < firstTrip) findings.push(requestFinding(request, 'tripGeneration.lastBeforeFirst', 'tripGeneration.lastBeforeFirst', 'lastTrip'));
   // The same 500-Trip limit applies to Last Trip: count the departures from First Trip to Last Trip, Last Trip included when it is on the headway sequence.
-  if (lastTrip !== undefined && Number.isInteger(lastTrip) && Number.isInteger(request.firstTrip) && request.firstTrip >= 0 && lastTrip >= request.firstTrip && Number.isInteger(request.headwaySeconds) && request.headwaySeconds > 0
-    && Math.floor((lastTrip - request.firstTrip) / request.headwaySeconds) + 1 > MAX_TRIPS_PER_GENERATION) findings.push(requestFinding(request, 'tripGeneration.tripCountTooLarge', 'tripGeneration.tripCountTooLarge', 'lastTrip', { maximum: MAX_TRIPS_PER_GENERATION }));
+  if (lastTrip !== undefined && Number.isInteger(lastTrip) && Number.isInteger(firstTrip) && firstTrip >= 0 && lastTrip >= firstTrip && Number.isInteger(headwaySeconds) && headwaySeconds > 0
+    && Math.floor((lastTrip - firstTrip) / headwaySeconds) + 1 > MAX_TRIPS_PER_GENERATION) findings.push(requestFinding(request, 'tripGeneration.tripCountTooLarge', 'tripGeneration.tripCountTooLarge', 'lastTrip', { maximum: MAX_TRIPS_PER_GENERATION }));
   return findings;
 }
 
 export function generateRequestDepartures(request: GenerateTripsRequest): ServiceSeconds[] {
   const findings = validateGenerateTripsRequest(request);
   if (findings.length) throw new TripGenerationError(findings);
+  if (request.slots !== undefined) return [...request.slots];
   const departures: ServiceSeconds[] = [];
+  const firstTrip = request.firstTrip!;
+  const headway = request.headwaySeconds!;
   if (request.tripCount !== undefined) {
-    for (let sequence = 0; sequence < request.tripCount; sequence += 1) departures.push(request.firstTrip + (sequence * request.headwaySeconds));
+    for (let sequence = 0; sequence < request.tripCount; sequence += 1) departures.push(firstTrip + (sequence * headway));
   } else {
     // A departure exactly at Last Trip is included.
-    for (let departure = request.firstTrip; departure <= request.lastTrip!; departure += request.headwaySeconds) departures.push(departure);
+    for (let departure = firstTrip; departure <= request.lastTrip!; departure += headway) departures.push(departure);
   }
   return departures;
+}
+
+/**
+ * The index of the Pattern point whose time a request's departures give: the first visit of `anchorNodeId`, or the first point when the
+ * request names no anchor. Refuses a Pattern that does not serve the anchor node.
+ */
+export function generationAnchorIndex(request: GenerateTripsRequest, pattern: RoutePattern): number {
+  if (request.anchorNodeId === undefined) return 0;
+  const index = pattern.points.findIndex((point) => point.nodeId === request.anchorNodeId);
+  if (index < 0) throw new TripGenerationError([requestFinding(request, 'tripGeneration.anchorNodeNotServed', 'tripGeneration.anchorNodeNotServed', 'anchorNodeId', { nodeId: request.anchorNodeId })]);
+  return index;
 }
 
 function authoritativeTrip(request: GenerateTripsRequest, pattern: RoutePattern, profile: RuntimeProfile, stopTimes: ScheduledPoint[], creationMethod: 'generated' | 'manual', id = newId(), now = new Date().toISOString(), sequence?: number): Trip {
@@ -88,9 +112,25 @@ function authoritativeTrip(request: GenerateTripsRequest, pattern: RoutePattern,
 /** Generate an additive group of authoritative trips. No records are written here. */
 export function generateAuthoritativeTrips(request: GenerateTripsRequest, pattern: RoutePattern, profile: RuntimeProfile, now = new Date().toISOString()): Trip[] {
   const departures = generateRequestDepartures(request);
+  const anchorIndex = generationAnchorIndex(request, pattern);
   const findings: ValidationFinding[] = [];
   const trips: Trip[] = [];
   departures.forEach((departure, sequence) => {
+    if (anchorIndex > 0) {
+      // The time belongs to the anchor point. A seed trip carries it there and Regenerate's anchor method (`recalculateTripWithAnchor`)
+      // calculates every other point, so a built trip and a regenerated trip with the same anchor have the same times (Decision 0058 item 7).
+      const seed = authoritativeTrip(request, pattern, profile, pattern.points.map((point, index) => ({ patternPointId: point.id, sequence: index, time: departure })), 'generated', newId(), now, sequence);
+      try {
+        const { trip } = recalculateTripWithAnchor(seed, pattern, profile, now, pattern.points[anchorIndex].id);
+        const { manualTimeShiftSeconds: _unused, ...provenance } = trip.provenance;
+        trips.push({ ...trip, provenance });
+      } catch (error) {
+        if (!(error instanceof TripGenerationError)) throw error;
+        // A build cannot ask which band to use, so an ambiguous or unreachable anchor is a finding for that slot.
+        for (const finding of error.findings) findings.push({ ...finding, entityType: 'generateTrips', entityId: `${request.serviceDayId}:${request.patternId}`, field: 'anchorNodeId', parameters: { ...(finding.parameters ?? {}), departure } });
+      }
+      return;
+    }
     const propagated = propagatePatternTimes(pattern, departure, profile);
     if ('finding' in propagated) {
       findings.push({ ...propagated.finding, entityType: 'generateTrips', entityId: `${request.serviceDayId}:${request.patternId}`, field: 'firstTrip', parameters: { departure } });
@@ -167,12 +207,13 @@ export function findExactTripDuplicates(proposed: Trip[], existing: Trip[]): Val
 }
 
 /** Create one authoritative trip using the same propagation rules as generation. */
-export function createAuthoritativeTrip(request: Omit<GenerateTripsRequest, 'headwaySeconds' | 'lastTrip' | 'tripCount'>, pattern: RoutePattern, profile: RuntimeProfile, now = new Date().toISOString()): Trip {
-  const findings = validateGenerateTripsRequest({ ...request, headwaySeconds: 1, lastTrip: request.firstTrip });
+export function createAuthoritativeTrip(request: Omit<GenerateTripsRequest, 'headwaySeconds' | 'lastTrip' | 'tripCount' | 'slots' | 'anchorNodeId' | 'firstTrip'> & { firstTrip: ServiceSeconds },pattern: RoutePattern, profile: RuntimeProfile, now = new Date().toISOString()): Trip {
+  const { firstTrip } = request;
+  const findings = validateGenerateTripsRequest({ ...request, headwaySeconds: 1, lastTrip: firstTrip });
   if (findings.length) throw new TripGenerationError(findings);
-  const propagated = propagatePatternTimes(pattern, request.firstTrip, profile);
+  const propagated = propagatePatternTimes(pattern, firstTrip, profile);
   if ('finding' in propagated) throw new TripGenerationError([{ ...propagated.finding, entityType: 'trip', entityId: `${request.serviceDayId}:${request.patternId}`, field: 'firstTrip' }]);
-  return authoritativeTrip({ ...request, headwaySeconds: 1, lastTrip: request.firstTrip }, pattern, profile, propagated.stopTimes, 'manual', newId(), now);
+  return authoritativeTrip({ ...request, headwaySeconds: 1, lastTrip: firstTrip }, pattern, profile, propagated.stopTimes, 'manual', newId(), now);
 }
 
 export interface RecalculationImpact {
@@ -191,6 +232,8 @@ export interface RecalculationPreview {
   bandSelections?: RecalculationBandSelection[];
   anchorByTripId?: Record<string, string>;
   bandOverrideByTripId?: Record<string, string>;
+  /** A new time at a Trip's anchor point, set when a planner edits a Trip's first time. The Trip is recalculated around it. */
+  anchorTimeByTripId?: Record<string, ServiceSeconds>;
   sourceSignature?: string;
 }
 
@@ -413,7 +456,8 @@ export function generateTrips(request: GenerateTripsRequest, pattern: RoutePatte
 /** @deprecated Historical generation-set overload. */
 export function generateTrips(set: TripGenerationSet, pattern: RoutePattern, profile: RuntimeProfile, now?: string): Trip[];
 export function generateTrips(input: GenerateTripsRequest | TripGenerationSet, pattern: RoutePattern, profile: RuntimeProfile, now = new Date().toISOString()): Trip[] {
-  if ('firstTrip' in input) return generateAuthoritativeTrips(input, pattern, profile, now);
+  // A historical generation set has `firstDeparture`; a request in the slot form has no `firstTrip`, so it cannot be told apart by that.
+  if (!('firstDeparture' in input)) return generateAuthoritativeTrips(input, pattern, profile, now);
   const set = input;
   const departures = generationDepartures(set);
   const findings: ValidationFinding[] = [];

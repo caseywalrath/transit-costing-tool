@@ -135,7 +135,7 @@ describe('backup', () => {
       generationSets: [], trips: [], blocks: [],
     };
     const exported = JSON.parse(exportProjectJson(source));
-    expect(exported.exportSchemaVersion).toBe(9);
+    expect(exported.exportSchemaVersion).toBe(10);
     expect(exported.costingAssumptions).toEqual(source.costingAssumptions);
     expect(importProjectJson(JSON.stringify(exported)).costingAssumptions).toEqual(source.costingAssumptions);
 
@@ -163,7 +163,7 @@ describe('backup', () => {
 
     it('round trips every factor in a version 7 file', () => {
       const payload = exportProjectJson(sourceWith(factors));
-      expect(JSON.parse(payload).exportSchemaVersion).toBe(9);
+      expect(JSON.parse(payload).exportSchemaVersion).toBe(10);
       expect(importProjectJson(payload).costingAssumptions?.[0].estimateFactors).toEqual(factors);
     });
 
@@ -327,7 +327,7 @@ describe('automatic blocking record in backups (schema 8 and 9, Decisions 0055 a
   it('round trips the record, including maxVehicles, in a version 9 file (written as version 9)', () => {
     const file = fileWithRecord(9, (record) => { record.rules.maxVehicles = 12; });
     const exported = JSON.parse(exportProjectJson(importProjectJson(JSON.stringify(file))));
-    expect(exported.exportSchemaVersion).toBe(9);
+    expect(exported.exportSchemaVersion).toBe(10);
     expect(exported.blockingScenarios[0].autoBlocking).toEqual(file.blockingScenarios[0].autoBlocking);
     expect(exported.blockingScenarios[0].autoBlocking.rules.maxVehicles).toBe(12);
   });

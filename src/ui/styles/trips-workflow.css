@@ -61,6 +61,22 @@
 .build-trips-drawer .dialog-field input,
 .build-trips-drawer .dialog-field select { width: 100%; }
 .build-trips-drawer input:disabled { background: var(--color-sunken); color: var(--color-text-subtle); cursor: not-allowed; }
+.schedule-table td.trip-plan-gap-off { text-decoration: underline dotted; text-decoration-color: var(--color-warn-border); text-underline-offset: 3px; text-decoration-thickness: 2px; }
+.plan-chip { position: relative; display: inline-flex; }
+.plan-chip__button--differs { border-color: var(--color-warn-border); background: var(--color-warn-soft); }
+.plan-chip__panel { position: absolute; z-index: 8; top: calc(100% + 3px); left: 0; display: grid; gap: var(--space-3); width: max-content; min-width: 280px; max-width: min(560px, calc(100vw - 24px)); max-height: 60vh; overflow: auto; border: 1px solid var(--color-border); background: var(--color-surface); box-shadow: var(--shadow-popover); padding: var(--space-3); font-size: var(--font-size-label); }
+.plan-chip__direction h3 { margin: 0; font-size: var(--font-size-label); }
+.plan-chip__direction p { margin: var(--space-1) 0 0; color: var(--color-text-muted); }
+.plan-chip__direction table { width: 100%; margin-top: var(--space-1); border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.plan-chip__direction th, .plan-chip__direction td { padding: 2px var(--space-2) 2px 0; text-align: left; vertical-align: top; }
+.plan-chip__differs { color: var(--color-warn-text, var(--color-text)); font-weight: var(--font-weight-bold); }
+.build-trips-mode { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.build-trips-hint { margin: 0; color: var(--color-text-muted); font-size: var(--font-size-label); }
+.build-trips-periods { display: grid; gap: var(--space-1); margin: 0; border: 1px solid var(--color-border); padding: var(--space-2); min-width: 0; }
+.build-trips-periods legend { padding: 0 var(--space-1); color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
+.build-trips-period { display: flex; align-items: center; gap: var(--space-2); font-variant-numeric: tabular-nums; }
+.build-trips-period input { flex: none; width: auto; min-width: 0; height: auto; }
+.build-trips-summary { margin: 0; font-size: var(--font-size-label); overflow-wrap: anywhere; }
 .build-trips-profile { margin: var(--space-1) 0 0; color: var(--color-text-muted); font-size: var(--font-size-label); }
 .profile-usage { margin: var(--space-2) 0 0; color: var(--color-text-muted); font-size: var(--font-size-label); }
 .subtle-danger { color: var(--color-danger); border-color: var(--color-border); background: var(--color-surface); }
@@ -89,7 +105,7 @@
 .schedule-table .trip-pattern-column { position: sticky; left: 56px; z-index: 1; min-width: 188px; width: 188px; max-width: 188px; padding-left: 0; padding-right: var(--space-2); background: var(--color-surface); }
 .schedule-table th.trip-pattern-column { z-index: 3; background: var(--color-surface-2); }
 .schedule-table .trip-pattern-column .chip { display: flex; max-width: 100%; }
-.schedule-table .trip-pattern-column .trip-pattern-select { display: block; min-width: 0; width: 148px; max-width: 148px; overflow: hidden; text-overflow: ellipsis; font-size: var(--font-size-label); }
+.schedule-table .trip-pattern-column .trip-pattern-select { display: block; box-sizing: border-box; min-width: 0; width: 100%; max-width: none; overflow: hidden; text-overflow: ellipsis; font-size: var(--font-size-label); }
 .schedule-table .trip-timepoint-column { min-width: 76px; width: 76px; text-align: center; }
 .schedule-table td.trip-headway-first { color: var(--color-accent); font-weight: var(--font-weight-bold); box-shadow: inset 3px 0 var(--color-accent); }
 /* UR-8 (HW-X): the row where a column's headway changes. */
@@ -135,11 +151,20 @@
 .trip-row-staged-shift td { background: var(--color-accent-soft); }
 .trip-row-staged-shift td:first-child { background: var(--color-accent-soft); }
 .trip-row-selected.trip-row-staged-shift td, .trip-row-selected.trip-row-staged-shift td:first-child { background: var(--color-selection); }
-.draft-trip-row td { background: var(--color-surface-2); }
-.draft-trip-row td:first-child { background: var(--color-surface-2); }
+/* Staged shifts are marked without adding text, so rows keep their height while a shift is staged or cleared. The edge bar is a shadow, not a border, so it takes no space and survives the selection background. */
+.trip-row-staged-shift td:first-child { box-shadow: inset 3px 0 0 var(--color-accent); }
+.trip-time-staged { color: var(--color-accent); font-style: italic; }
+/* The new-trip row is marked by a thin accent edge, not a filled band, so it stays quiet beside the saved rows. */
+.draft-trip-row td { background: var(--color-surface); }
+.draft-trip-row td:first-child { background: var(--color-surface); box-shadow: inset 3px 0 0 var(--color-accent); }
+/* A Trip's first time is edited in place: plain text at rest, a faint dotted underline when it is the target. */
+.schedule-table .trip-start-edit { display: inline; min-height: 0; border: 0; padding: 0; background: none; color: inherit; font: inherit; font-variant-numeric: inherit; cursor: text; text-decoration: none; }
+.schedule-table .trip-start-edit:hover:not(:disabled), .schedule-table .trip-start-edit:focus-visible { text-decoration: underline dotted; text-underline-offset: 3px; }
+.schedule-table .trip-start-edit:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.schedule-table .trip-start-edit:disabled { cursor: default; }
+.schedule-table input.trip-start-input { width: 74px; min-width: 74px; }
 .draft-status { display: block; margin-top: var(--space-1); color: var(--color-text-muted); font-size: var(--font-size-caption); line-height: 1.25; white-space: normal; }
 .runtime-changed-note { display: block; margin-top: 3px; color: var(--color-warn); font-size: var(--font-size-caption); font-weight: var(--font-weight-bold); white-space: normal; }
-.staged-shift-note { display: block; margin-top: 3px; color: var(--color-text-muted); font-size: var(--font-size-caption); font-weight: var(--font-weight-bold); white-space: normal; }
 .duplicate-note { display: block; margin-top: 3px; color: var(--color-warn); font-size: var(--font-size-caption); white-space: normal; }
 .schedule-table input.time-input { width: 74px; min-width: 74px; }
 .prerequisite { border-left: 4px solid var(--color-accent); }
@@ -175,6 +200,8 @@
 .route-nodes .grid-table td.grid-cell > span { overflow: hidden; text-overflow: ellipsis; }
 .route-nodes td select { min-width: 0; }
 .grid-table td.grid-cell:focus { outline: none; }
+.grid-table td.grid-cell--zero, .grid-table td.grid-cell--missing { background: var(--color-warn-soft); }
+.grid-table td.grid-cell--missing { box-shadow: inset 0 0 0 1px var(--color-warn-border); }
 .grid-table td.grid-cell--edited::after { content: ""; position: absolute; top: 0; right: 0; border-style: solid; border-width: 0 7px 7px 0; border-color: transparent var(--color-warn-border) transparent transparent; pointer-events: none; }
 .grid-table td.grid-cell .grid-cell__input { position: absolute; inset: 0; width: 100%; min-width: 0; height: 100%; border: 0; border-radius: 0; padding: 0 var(--space-2); background: var(--color-surface); box-shadow: inset 0 0 0 2px var(--color-focus); outline: none; font: inherit; font-variant-numeric: tabular-nums; }
 .grid-table td.grid-cell[data-invalid] { background: var(--color-danger-soft); }

@@ -22,7 +22,7 @@ test('step sizes are chosen with one press or typed, the buttons name the step, 
   const step = drawer.getByLabel('Step minutes');
   await step.fill('0');
   await expect(step).toHaveAttribute('aria-invalid', 'true');
-  await expect(drawer.getByText('Enter a whole number of minutes above 0.')).toBeVisible();
+  await expect(drawer.getByText('Enter minutes above 0 in steps of 30 seconds, such as 0:30, 1 or 1.5.')).toBeVisible();
   await expect(drawer.getByRole('button', { name: /earlier/ })).toBeDisabled();
   await expect(drawer.getByRole('button', { name: /later/ })).toBeDisabled();
 
@@ -54,5 +54,43 @@ test('the step sizes are a keyboard radio group', async ({ page }) => {
   await expect(drawer.getByRole('radio', { name: '5', exact: true })).toBeChecked();
   await expect(drawer.getByRole('button', { name: '5 min later' })).toBeEnabled();
   await page.keyboard.press('Escape');
+  await expect(drawer).toHaveCount(0);
+});
+
+// A staged shift is marked by an edge bar, accent times and a tooltip, never by an added line, so the row keeps its height.
+test('staging a shift does not change the row height and marks the row without visible text', async ({ page }) => {
+  await createShiftReadySchedule(page, '06:20');
+  const row = page.locator('.schedule-table tbody tr').first();
+  await row.locator('input[type="checkbox"]').check();
+  await runCommand(page, 'trips.shift');
+  const before = (await row.boundingBox())!.height;
+  await shiftBar(page).getByRole('button', { name: /min later/ }).first().click();
+  await expect(row).toHaveAttribute('title', /Staged \d+ minutes? later/);
+  await expect(row.locator('.trip-time-staged').first()).toBeVisible();
+  await expect(row.locator('td').first()).toHaveCSS('box-shadow', /inset/);
+  expect((await row.boundingBox())!.height).toBe(before);
+});
+
+test('a 30-second step is a preset, can be typed as 1.5 or 0:30, and names itself in seconds', async ({ page }) => {
+  await createShiftReadySchedule(page, '06:20');
+  const row = page.locator('.schedule-table tbody tr').first();
+  await row.locator('input[type="checkbox"]').check();
+  await runCommand(page, 'trips.shift');
+  const drawer = shiftBar(page);
+  const status = drawer.getByRole('status');
+  await drawer.getByRole('radio', { name: '0:30', exact: true }).check();
+  await drawer.getByRole('button', { name: '30 s later' }).click();
+  await expect(status).toHaveText('30 seconds later');
+  await expect(row).toHaveAttribute('title', /Staged 30 seconds later/);
+  const step = drawer.getByLabel('Step minutes');
+  await step.fill('1.5');
+  await expect(drawer.getByRole('button', { name: '1 min 30 s earlier' })).toBeEnabled();
+  await drawer.getByRole('button', { name: '1 min 30 s earlier' }).click();
+  await expect(status).toHaveText('1 minute earlier');
+  await step.fill('0.3');
+  await expect(step).toHaveAttribute('aria-invalid', 'true');
+  await step.fill('0:30');
+  await expect(drawer.getByRole('radio', { name: '0:30', exact: true })).toBeChecked();
+  await drawer.getByRole('button', { name: 'Done', exact: true }).click();
   await expect(drawer).toHaveCount(0);
 });

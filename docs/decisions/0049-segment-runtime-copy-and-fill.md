@@ -10,13 +10,13 @@ Decision 0003 kept Runtime profiles pattern-specific and deferred shared segment
 
 ## Decision
 
-Two actions in the Runtime profile menu share values between the profiles of one Route. Runtime storage does not change.
+Two actions in the Runtime actions menu (Other patterns group) share values between the profiles of one Route. Runtime storage does not change.
 
 1. **Scope.** Matching is limited to the profiles of one Route in one Scenario.
 2. **Segment identity.** A segment is the ordered node pair `(points[i].nodeId, points[i+1].nodeId)`. Direction matters.
 3. **Ambiguous segments.** A node pair that occurs more than once in either Pattern is skipped and reported as `ambiguous`.
 4. **Profile matching.** A profile qualifies only if it shares at least one Service day assignment with the open profile. A profile with no assignments matches nothing and is reported as `unassigned`. Profiles on the open profile's own Pattern are never sources or targets.
-5. **Band matching.** A value moves only between bands with the same start and end time. Other bands are reported as `bandMismatch`. Band labels are ignored.
+5. **Band matching.** A value moves only between bands with the same start and end time. Bands that do match are still copied or filled when other bands of either profile have no counterpart; those unmatched bands are reported as `bandMismatch`. Band labels are ignored.
 6. **Zero means "not entered" for Fill only.** Cells are stored as numbers and new profiles start at `0`. **Fill from other patterns…** writes only into `0` cells. **Copy segments to other patterns…** overwrites any value, including `0`.
 7. **Disagreeing sources (Fill).** Qualifying sources with different non-zero values for one segment and band produce a `conflict`; the cell is not filled. Agreeing sources fill it.
 8. **Identical values** are not changes.

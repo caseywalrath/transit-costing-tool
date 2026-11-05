@@ -1,4 +1,4 @@
-import type { Block, BlockingBlock, BlockingScenario, CostingAssumptions, CostingEstimateFactors, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, Trip, TripGenerationSet, TripProfile, ValidationFinding } from '../domain/types';
+import type { Block, BlockingBlock, BlockingScenario, CostingAssumptions, CostingEstimateFactors, PlannedFrequency, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, Trip, TripGenerationSet, TripProfile, ValidationFinding } from '../domain/types';
 import type { RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
 import type { ScenarioRecords } from '../domain/project';
 import type { ActivityTextInput, BlockDeletionImpact, BlocksDeletionImpact, BlockSummary, BlockingActivityAddRequest, BlockingAssignmentRequest, BlockingCompatibility, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingActivityEditRequest, BlockingTripsAssignmentRequest, BulkDeadheadRequest, MinimumLayoverRule, ParsedActivityInput, ParsedMinimumLayover } from '../domain/blocking';
@@ -284,6 +284,17 @@ export interface CostingCalculationContextQueries {
 export type CostBasis = { kind: 'blocked'; blockingScenarioId: string } | { kind: 'estimated'; tripProfileId: string };
 export interface CostBasisOption { kind: CostBasis['kind']; id: string; name: string; tripProfileId: string; tripProfileName: string }
 export type CostingResult = CostingCalculationResult | EstimatedCostingCalculationResult;
+
+/**
+ * Read boundary for planned frequencies (Decision 0058): at most one record per Route × Service day.
+ * Plans are written only as part of the Scenario's records (`updateScenarioRecords` / `saveScenarioRecords`), so every write is one
+ * transaction that can refuse a stale preview and is shown in the save status. Those writes refuse a plan that breaks the persistence rules
+ * (`assertPlannedFrequencies`) and drop plans and measure-node entries whose Route, Service day, direction or node the same write removes.
+ */
+export interface PlannedFrequencyRepository {
+  listPlannedFrequencies(scenarioId: string): Promise<PlannedFrequency[]>;
+  getPlannedFrequency(routeId: string, serviceDayId: string): Promise<PlannedFrequency | undefined>;
+}
 
 /** Persistence boundary for one editable assumption set owned by a Scenario. */
 export interface CostingAssumptionsRepository {

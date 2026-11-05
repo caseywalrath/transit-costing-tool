@@ -7,13 +7,13 @@ import { parseRuntimeDuration, RuntimeDurationError } from '../domain/durations'
 import { patternTotalMiles } from '../domain/patterns';
 import { addRuntimeBand, describeTripBandShading, duplicateRuntimeBand, removeRuntimeBand, reverseRuntimeCandidates, routeRuntimeCalculationMethod, runtimeBandTotalSeconds, updateRuntimeBand, type BlendedSegment, type RuntimeCalculationMethod } from '../domain/runtime';
 import { formatServiceTime, parseServiceTime } from '../domain/time';
-import { formatNetShift, formatStagedShift, parseShiftSeconds } from '../domain/tripShift';
+import { formatNetShift, formatShiftStep, formatStagedShift, parseShiftSeconds } from '../domain/tripShift';
 import { MAX_TRIPS_PER_GENERATION, calculateTimepointHeadways, duplicateDepartureKeys, roundServiceTimeToMinute, tripRunTimeSeconds, validateGenerateTripsRequest } from '../domain/trips';
 import type { BlockingBlock, GenerateTripsRequest, RoutePattern, RuntimeBand, RuntimeProfile, ServiceSeconds, Trip, TripRegenerationUndo } from '../domain/types';
 import { removeSelectedTripsFromBlock } from './blockingService';
 
 export {
-  addRuntimeBand, createBlockingScenarioSourceSignature, duplicateRuntimeBand, formatNetShift, formatStagedShift, isUsablePattern, MAX_TRIPS_PER_GENERATION, orderDirections, parseShiftSeconds,
+  addRuntimeBand, createBlockingScenarioSourceSignature, duplicateRuntimeBand, formatNetShift, formatShiftStep, formatStagedShift, isUsablePattern, MAX_TRIPS_PER_GENERATION, orderDirections, parseShiftSeconds,
   patternTotalMiles, removeRuntimeBand, reverseRuntimeCandidates, roundServiceTimeToMinute, routeRuntimeCalculationMethod, runtimeBandTotalSeconds, sortServiceDays, tripRunTimeSeconds, updateRuntimeBand, usableDirectionPatterns,
 };
 export type { BlendedSegment, RuntimeCalculationMethod };

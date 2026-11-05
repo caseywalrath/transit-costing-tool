@@ -80,4 +80,8 @@ Scale verification to the change:
 - UI behavior: run typechecking, relevant UI tests, a production build, and visual inspection.
 - Data migration or export: test a round trip and validate schema versions.
 
+Do not run the full browser suite for every package. Run it at the closeout of a phased plan, and in any package that changes shared components, app startup, or persistence across areas. Run the full unit suite once at the end of every package that changes code; it is fast. While working, run only the test file being written, and report only summaries and failures. In the commit's `Verified:` lines, name what was skipped and why.
+
+Never cut: typechecking; existing tests for persistence, migrations and backups when those change; existing tests that prove unchanged behavior stays unchanged; the closeout's full run.
+
 Use repository scripts once they exist. Do not assume commands from another project apply here.

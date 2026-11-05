@@ -17,8 +17,11 @@ import type {
   BlockingScenario,
   BlockingBlock,
   CostingAssumptions,
+  PlannedFrequency,
   ValidationFinding,
 } from '../domain/types';
+import { assertPlannedFrequencies, type PlannedFrequencyOwners } from './plannedFrequencyPersistence';
+import { remapMeasureNodes } from '../domain/plannedFrequencies';
 import { metadata, newId } from '../domain/ids';
 import { remapAutoBlockingRecord, validateAutoBlockingRules, type AutoBlockingRules } from '../domain/autoBlocking';
 import { validatePattern } from '../domain/patterns';
@@ -31,7 +34,8 @@ import { recoverScenarioCopyNodeReferences } from '../domain/scenarioCopyRecover
 import { unifyRouteRuntimeCalculationMethods } from '../domain/runtime';
 
 export const PROJECT_BACKUP_FORMAT = 'transit-costing-tool.project' as const;
-export const PROJECT_BACKUP_SCHEMA_VERSION = 9 as const;
+/** Version 10 adds `plannedFrequencies` (Decision 0058); versions 1 to 9 import with no plans. */
+export const PROJECT_BACKUP_SCHEMA_VERSION = 10 as const;
 export const LEGACY_PROJECT_BACKUP_SCHEMA_VERSION = 1 as const;
 
 /** Decision 0055: shape and rule checks for a stored `autoBlocking` record (backup version 8 and later; `maxVehicles` from version 9, Decision 0056). */
@@ -104,6 +108,34 @@ function validateEstimateFactors(value: unknown, path: string, scenarioId: strin
     checkFraction(row.layoverFraction, `serviceDays[${rowIndex}].layoverFraction`);
     checkFraction(row.deadheadFraction, `serviceDays[${rowIndex}].deadheadFraction`);
   });
+}
+
+/** Decision 0058 item 11: plans whose Route, Service day, direction or node is missing, or whose periods break item 3, reject the file. */
+function validatePlannedFrequencies(values: unknown[], owners: PlannedFrequencyOwners): PlannedFrequency[] {
+  const plans = values.map((value, index): PlannedFrequency => {
+    const path = `plannedFrequencies[${index}]`;
+    if (!isRecord(value)) throw new Error(`Invalid project backup: ${path} must be an object`);
+    for (const key of ['id', 'scenarioId', 'routeId', 'serviceDayId']) requiredString(value[key], `${path}.${key}`);
+    assertMetadata(value, path);
+    const periods = requiredArray(value.periods, `${path}.periods`).map((period, periodIndex) => {
+      const periodPath = `${path}.periods[${periodIndex}]`;
+      if (!isRecord(period)) throw new Error(`Invalid project backup: ${periodPath} must be an object`);
+      requiredString(period.id, `${periodPath}.id`);
+      for (const key of ['startTime', 'endTime', 'headwaySeconds']) {
+        if (typeof period[key] !== 'number' || !Number.isFinite(period[key])) throw new Error(`Invalid project backup: ${periodPath}.${key} must be a number`);
+      }
+      return period;
+    });
+    if (!isRecord(value.measureNodeIdByDirectionId)) throw new Error(`Invalid project backup: ${path}.measureNodeIdByDirectionId must be an object`);
+    for (const [directionId, nodeId] of Object.entries(value.measureNodeIdByDirectionId)) requiredString(nodeId, `${path}.measureNodeIdByDirectionId.${directionId}`);
+    return { ...value, periods } as unknown as PlannedFrequency;
+  });
+  try {
+    assertPlannedFrequencies(plans, owners);
+  } catch (error) {
+    throw new Error(`Invalid project backup: ${(error as Error).message}`, { cause: error });
+  }
+  return plans;
 }
 
 function validateCostingAssumptions(values: unknown[], scenarioIds: Set<string>, serviceDays: ServiceDayDefinition[]): CostingAssumptions[] {
@@ -580,7 +612,7 @@ function parseValidatedBackup(payload: string): { snapshot: ProjectSnapshot; rep
     throw new Error('Invalid project backup: malformed JSON');
   }
   if (!isRecord(parsed)) throw new Error('Invalid project backup: root must be an object');
-  if (parsed.format !== PROJECT_BACKUP_FORMAT || ![1, 2, 3, 4, 5, 6, 7, 8, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)) {
+  if (parsed.format !== PROJECT_BACKUP_FORMAT || ![1, 2, 3, 4, 5, 6, 7, 8, 9, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)) {
     throw new Error('Unsupported project backup format or schema version');
   }
   requiredString(parsed.exportedAt, 'exportedAt');
@@ -610,20 +642,23 @@ function parseValidatedBackup(payload: string): { snapshot: ProjectSnapshot; rep
   assertRuntimeGraph(runtimeProfiles, runtimeAssignments, patterns, serviceDays);
   // Current authoritative backups omit generationSets. A non-empty collection is
   // still accepted so historical Phase 2 files can be inspected and copied.
-  const suppliedTripProfiles = [4, 5, 6, 7, 8, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTripProfiles(requiredArray(parsed.tripProfiles ?? [], 'tripProfiles'), scenarioIds) : [];
-  const generationSets = [3, 4, 5, 6, 7, 8, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+  const suppliedTripProfiles = [4, 5, 6, 7, 8, 9, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTripProfiles(requiredArray(parsed.tripProfiles ?? [], 'tripProfiles'), scenarioIds) : [];
+  const generationSets = [3, 4, 5, 6, 7, 8, 9, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
     ? (parsed.generationSets === undefined ? [] : validateGenerationSets(requiredArray(parsed.generationSets, 'generationSets'), scenarioIds, routeById, patterns, serviceDays))
     : [];
-  const trips = [3, 4, 5, 6, 7, 8, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTrips(requiredArray(parsed.trips, 'trips'), scenarioIds, routeById, patterns, serviceDays, generationSets, runtimeProfiles) : [];
+  const trips = [3, 4, 5, 6, 7, 8, 9, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTrips(requiredArray(parsed.trips, 'trips'), scenarioIds, routeById, patterns, serviceDays, generationSets, runtimeProfiles) : [];
   const provisionalTripProfiles = suppliedTripProfiles.length ? suppliedTripProfiles : scenarios.map((scenario) => ({ id: newId(), scenarioId: scenario.id, name: 'Default', ...metadata() }));
-  const blockingScenarios = [5, 6, 7, 8, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
-    ? validateBlockingScenarios(requiredArray(parsed.blockingScenarios ?? [], 'blockingScenarios'), scenarioIds, provisionalTripProfiles, [8, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ?{ patterns, nodes, serviceDays } : undefined)
+  const blockingScenarios = [5, 6, 7, 8, 9, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+    ? validateBlockingScenarios(requiredArray(parsed.blockingScenarios ?? [], 'blockingScenarios'), scenarioIds, provisionalTripProfiles, [8, 9, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ?{ patterns, nodes, serviceDays } : undefined)
     : [];
-  const costingAssumptions = [6, 7, 8, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+  const costingAssumptions = [6, 7, 8, 9, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
     ? validateCostingAssumptions(requiredArray(parsed.costingAssumptions, 'costingAssumptions'), scenarioIds, serviceDays)
     : [];
+  const plannedFrequencies = parsed.exportSchemaVersion === PROJECT_BACKUP_SCHEMA_VERSION
+    ? validatePlannedFrequencies(requiredArray(parsed.plannedFrequencies ?? [], 'plannedFrequencies'), { scenarioIds, routes, serviceDays, directions: directions ?? [], nodes })
+    : [];
   // Blocks without a Blocking Scenario are pre-Phase-4 placeholders (version 3 and 4 files hold only those). They are discarded and counted.
-  const blockValues = [3, 4, 5, 6, 7, 8, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? requiredArray(parsed.blocks, 'blocks') : [];
+  const blockValues = [3, 4, 5, 6, 7, 8, 9, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? requiredArray(parsed.blocks, 'blocks') : [];
   const keptBlockEntries = blockValues.map((value, index) => ({ value, index })).filter((entry) => !isPlaceholderBlock(entry.value));
   const validatedBlocks = validateBlocks(keptBlockEntries, scenarioIds, serviceDays, trips, blockingScenarios);
   // Files exported after a Scenario was duplicated by the older code name the source Scenario's Nodes in the copy's Blocks (Decision 0038).
@@ -651,7 +686,7 @@ function parseValidatedBackup(payload: string): { snapshot: ProjectSnapshot; rep
   // A normalized Block stores no Trip Profile of its own; it follows from its Blocking Scenario (Decision 0019 item 9).
   const normalizedBlocks = blocks.map(({ tripProfileId: _derivedFromBlockingScenario, ...block }) => block);
   return {
-    snapshot: { project, scenarios, serviceDays, routes, nodes, patterns, ...(directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions.length ? { costingAssumptions } : {}), generationSets, trips: normalizedTrips, blocks: normalizedBlocks },
+    snapshot: { project, scenarios, serviceDays, routes, nodes, patterns, ...(directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions.length ? { costingAssumptions } : {}), ...(plannedFrequencies.length ? { plannedFrequencies } : {}), generationSets, trips: normalizedTrips, blocks: normalizedBlocks },
     report: { recoveredNodeReferences: recovery.recoveredReferences, recoveryFindings: recovery.findings, discardedPlaceholderBlocks: blockValues.length - keptBlockEntries.length, unifiedRuntimeProfiles: unifiedRuntime.changedProfileIds.length },
   };
 }
@@ -674,6 +709,7 @@ export function exportProjectJson(snapshot: ProjectSnapshot, applicationVersion?
     ...(snapshot.tripProfiles?.length ? { tripProfiles: snapshot.tripProfiles } : {}),
     ...(snapshot.blockingScenarios?.length ? { blockingScenarios: snapshot.blockingScenarios } : {}),
     costingAssumptions: snapshot.costingAssumptions ?? [],
+    ...(snapshot.plannedFrequencies?.length ? { plannedFrequencies: snapshot.plannedFrequencies } : {}),
     ...(snapshot.generationSets.length ? { generationSets: snapshot.generationSets } : {}),
     trips: snapshot.trips,
     blocks: snapshot.blocks,
@@ -765,5 +801,15 @@ export function cloneProjectSnapshot(source: ProjectSnapshot, now = new Date().t
     const remapped = activity.type === 'revenueTrip' ? { ...activity, tripId: tripIds.get(activity.tripId) ?? activity.tripId } : { ...activity };
     return { ...remapped, id: newId(), ...(('fromNodeId' in remapped && remapped.fromNodeId) ? { fromNodeId: nodeIds.get(remapped.fromNodeId) ?? remapped.fromNodeId } : {}), ...(('toNodeId' in remapped && remapped.toNodeId) ? { toNodeId: nodeIds.get(remapped.toNodeId) ?? remapped.toNodeId } : {}) };
   }), ...metadata(now) }));
-  return { project, scenarios, serviceDays, routes, nodes, patterns, ...(source.directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), costingAssumptions, generationSets, trips, blocks };
+  const plannedFrequencies = (source.plannedFrequencies ?? []).map((plan) => ({
+    ...plan,
+    id: newId(),
+    scenarioId: scenarioIds.get(plan.scenarioId)!,
+    routeId: routeIds.get(plan.routeId)!,
+    serviceDayId: serviceDayIds.get(plan.serviceDayId)!,
+    periods: plan.periods.map((period) => ({ ...period, id: newId() })),
+    measureNodeIdByDirectionId: remapMeasureNodes(plan.measureNodeIdByDirectionId, directionIds, nodeIds),
+    ...metadata(now),
+  }));
+  return { project, scenarios, serviceDays, routes, nodes, patterns, ...(source.directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), costingAssumptions, ...(plannedFrequencies.length ? { plannedFrequencies } : {}), generationSets, trips, blocks };
 }

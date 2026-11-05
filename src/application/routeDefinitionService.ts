@@ -67,6 +67,8 @@ export interface RouteDeletionImpact {
   affectedBlockCount: number;
   removedBlockActivityCount: number;
   removedNonRevenueActivityCount: number;
+  /** Planned frequency records (one per Service day) deleted with the Route (Decision 0058 item 10). */
+  plannedFrequencyCount: number;
 }
 
 export interface NodeDeletionImpact {
@@ -171,7 +173,7 @@ function scenarioDeletionToken(records: ScenarioRecords): string {
     scenario: records.scenario, serviceDays: records.serviceDays, routes: records.routes, nodes: records.nodes, directions: records.directions,
     patterns: records.patterns, runtimeProfiles: records.runtimeProfiles, runtimeAssignments: records.runtimeAssignments, tripProfiles: records.tripProfiles,
     blockingScenarios: records.blockingScenarios, costingAssumptions: records.costingAssumptions ? [records.costingAssumptions] : [],
-    generationSets: records.generationSets, trips: records.trips, blocks: records.blocks,
+    generationSets: records.generationSets, trips: records.trips, blocks: records.blocks, plannedFrequencies: records.plannedFrequencies ?? [],
   });
 }
 
@@ -481,6 +483,7 @@ export class RouteDefinitionService {
       tripProfiles: (snapshot.tripProfiles ?? []).filter((profile) => profile.scenarioId !== scenarioId),
       blockingScenarios: (snapshot.blockingScenarios ?? []).filter((blockingScenario) => blockingScenario.scenarioId !== scenarioId),
       costingAssumptions: (snapshot.costingAssumptions ?? []).filter((assumptions) => assumptions.scenarioId !== scenarioId),
+      ...(snapshot.plannedFrequencies ? { plannedFrequencies: snapshot.plannedFrequencies.filter((plan) => plan.scenarioId !== scenarioId) } : {}),
       generationSets: snapshot.generationSets.filter((set) => set.scenarioId !== scenarioId),
       trips: snapshot.trips.filter((trip) => trip.scenarioId !== scenarioId),
       blocks: snapshot.blocks.filter((block) => block.scenarioId !== scenarioId),
@@ -988,6 +991,7 @@ export class RouteDefinitionService {
       generationSets: records.generationSets.filter((set) => set.routeId === routeId),
       trips: removedTrips,
       changedBlocks: records.blocks.filter((block) => changedBlockIds.has(block.id)),
+      plannedFrequencies: (records.plannedFrequencies ?? []).filter((plan) => plan.routeId === routeId),
     };
     const impact: RouteDeletionImpact = {
       routeId,
@@ -1002,9 +1006,11 @@ export class RouteDefinitionService {
       affectedBlockCount: changedBlockIds.size,
       removedBlockActivityCount: revenueAdjusted.adjustments.reduce((count, adjustment) => count + adjustment.removedTripIds.length, 0),
       removedNonRevenueActivityCount: removedConnectionActivityCount + nonRevenueAdjusted.removedActivityCount,
+      plannedFrequencyCount: removed.plannedFrequencies.length,
     };
     const next: ScenarioRecords = {
       ...records,
+      ...(records.plannedFrequencies ? { plannedFrequencies: records.plannedFrequencies.filter((plan) => plan.routeId !== routeId) } : {}),
       routes: records.routes.filter((route) => route.id !== routeId),
       nodes: records.nodes.filter((node) => node.routeId !== routeId),
       patterns: records.patterns.filter((pattern) => pattern.routeId !== routeId),

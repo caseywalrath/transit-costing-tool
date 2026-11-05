@@ -35,21 +35,46 @@ export interface RouteDefinitionAggregate { route: Route; nodes: Node[]; pattern
 export interface RuntimeBand { id: EntityId; label: string; sequence: number; startTime: ServiceSeconds; endTime: ServiceSeconds; segmentRuntimeSeconds: DurationSeconds[]; }
 export interface RuntimeProfile extends EntityMetadata { id: EntityId; scenarioId: EntityId; routeId: EntityId; patternId: EntityId; name: string; bands: RuntimeBand[]; calculationMethod?: 'singleBand' | 'blendSegments' | 'segmentStart'; calculationRevision?: number; }
 export interface RuntimeAssignment extends EntityMetadata { id: EntityId; scenarioId: EntityId; patternId: EntityId; serviceDayId: EntityId; runtimeProfileId: EntityId; }
+/** One span of a planned-frequency plan: start inclusive, end exclusive (Decision 0058). */
+export interface PlannedPeriod { id: EntityId; startTime: ServiceSeconds; endTime: ServiceSeconds; headwaySeconds: DurationSeconds; }
+/** A Scenario-owned service plan for one Route and Service day. At most one per pair; a record with no periods is not stored. */
+export interface PlannedFrequency extends EntityMetadata {
+  id: EntityId;
+  scenarioId: EntityId;
+  routeId: EntityId;
+  serviceDayId: EntityId;
+  periods: PlannedPeriod[];
+  /** Direction ID → node ID. A missing entry means the default measure node. */
+  measureNodeIdByDirectionId: Record<EntityId, EntityId>;
+}
 /** A transient additive request. It is never persisted as a scheduling record. */
 export interface GenerateTripsRequest {
   scenarioId: EntityId;
   routeId: EntityId;
   serviceDayId: EntityId;
   patternId: EntityId;
-  firstTrip: ServiceSeconds;
-  headwaySeconds: DurationSeconds;
+  /** Headway form: required unless `slots` is given. */
+  firstTrip?: ServiceSeconds;
+  /** Headway form: required unless `slots` is given. */
+  headwaySeconds?: DurationSeconds;
   /** Inclusive final departure when building by time. Exactly one generation limit is required. */
   lastTrip?: ServiceSeconds;
   /** Requested generated-trip count when building by count. Exactly one generation limit is required. */
   tripCount?: number;
+  /**
+   * Slot form (Decision 0058 item 7): the exact times to build, in increasing order. When given, `firstTrip`, `headwaySeconds`, `lastTrip`
+   * and `tripCount` must all be absent.
+   */
+  slots?: ServiceSeconds[];
+  /**
+   * Node whose time each departure or slot gives (the Pattern's first visit of it). Earlier and later stops are calculated with the anchor
+   * method of Regenerate (Decision 0046). Absent: the time is the first stop's, exactly as before Decision 0058.
+   */
+  anchorNodeId?: EntityId;
   tripProfileId?: EntityId;
 }
-export interface AddTripRequest extends Omit<GenerateTripsRequest, 'headwaySeconds' | 'lastTrip' | 'tripCount'> {
+export interface AddTripRequest extends Omit<GenerateTripsRequest, 'headwaySeconds' | 'lastTrip' | 'tripCount' | 'slots' | 'anchorNodeId' | 'firstTrip'> {
+  firstTrip: ServiceSeconds;
   directionId: EntityId;
 }
 export type GenerationLimit = { mode: 'endTime'; endTime: ServiceSeconds } | { mode: 'tripCount'; tripCount: number };
@@ -135,10 +160,12 @@ export interface ProjectSnapshot {
   blockingScenarios?: BlockingScenario[];
   /** Scenario-owned costing inputs. Legacy snapshots and lazy-created scenarios may omit this collection. */
   costingAssumptions?: CostingAssumptions[];
+  /** Scenario-owned planned frequencies (Decision 0058). Snapshots before backup schema 10 omit this collection. */
+  plannedFrequencies?: PlannedFrequency[];
   /** @deprecated Historical Phase 2 collection; authoritative snapshots leave this empty. */
   generationSets: TripGenerationSet[];
   trips: Trip[];
   blocks: Block[];
 }
 
-export interface DatabaseRecordMap { projects: Project; scenarios: Scenario; serviceDays: ServiceDayDefinition; routes: Route; nodes: Node; patterns: RoutePattern; directions: RouteDirection; runtimeProfiles: RuntimeProfile; runtimeAssignments: RuntimeAssignment; generationSets: TripGenerationSet; tripProfiles: TripProfile; blockingScenarios: BlockingScenario; trips: Trip; tripRegenerationUndo: TripRegenerationUndo; blocks: Block; costingAssumptions: CostingAssumptions; appMetadata: AppMetadata; }
+export interface DatabaseRecordMap { projects: Project; scenarios: Scenario; serviceDays: ServiceDayDefinition; routes: Route; nodes: Node; patterns: RoutePattern; directions: RouteDirection; runtimeProfiles: RuntimeProfile; runtimeAssignments: RuntimeAssignment; generationSets: TripGenerationSet; tripProfiles: TripProfile; blockingScenarios: BlockingScenario; trips: Trip; tripRegenerationUndo: TripRegenerationUndo; blocks: Block; costingAssumptions: CostingAssumptions; plannedFrequencies: PlannedFrequency; appMetadata: AppMetadata; }

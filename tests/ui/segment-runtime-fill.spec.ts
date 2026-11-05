@@ -1,4 +1,4 @@
-// Decision 0049: "Copy segments to other patterns…", "Fill from other patterns…", and "Undo last segment copy" in the Runtime profile menu.
+// Decision 0049: "Copy segments to other patterns…", "Fill from other patterns…", and "Undo last segment copy" in the Runtime actions menu.
 // The golden Weekday profiles of the Southbound patterns overlap: Wagon Road to Evans and Westminster Station to Englewood share five segments,
 // and Wagon Road to Englewood has one all-day band, so its bands never match the others.
 import { expect, test, type Page } from '@playwright/test';
@@ -42,8 +42,8 @@ async function openPattern(page: Page, patternName: string) {
 }
 
 async function openAction(page: Page, item: string) {
-  await runtimes(page).getByRole('button', { name: /Weekday workbook runtimes/ }).first().click();
-  await page.getByRole('menu', { name: 'Runtime profile' }).getByRole('menuitem', { name: item }).click();
+  await runtimes(page).getByRole('button', { name: 'Runtime actions', exact: true }).click();
+  await page.getByRole('menu', { name: 'Runtime actions' }).getByRole('menuitem', { name: item }).click();
 }
 
 test('copy shows an include box for each target, disables the confirm button when nothing would change, and undo restores the values', async ({ page }) => {
@@ -73,7 +73,7 @@ test('copy shows an include box for each target, disables the confirm button whe
   await openAction(page, 'Undo last segment copy');
   await expect.poll(() => sharedCells(page, WESTMINSTER_TO_ENGLEWOOD)).toEqual([999, 999, 999, 999, 999]);
   await runtimes(page).getByRole('button', { name: /Weekday workbook runtimes/ }).first().click();
-  await expect(page.getByRole('menu', { name: 'Runtime profile' }).getByRole('menuitem', { name: 'Undo last segment copy' })).toHaveCount(0);
+  await expect(page.getByRole('menu', { name: 'Runtime actions' }).getByRole('menuitem', { name: 'Undo last segment copy' })).toHaveCount(0);
 });
 
 test('fill writes only the cells that are :00 and leaves the segments the other pattern does not share', async ({ page }) => {

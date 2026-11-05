@@ -171,6 +171,21 @@ describe('authoritative trip workflow', () => {
     await expect(service.applyRecalculationPreview(reviewed)).rejects.toThrow('Review regeneration again');
   });
 
+  it('moves a Trip to a new time at its anchor point and calculates the other points around it', async () => {
+    const p = pattern('p1', 'Southbound 1', 0); const repository = new AuthoritativeFake([p], [profile('rp1', 'p1', 10000, 1)]);
+    repository.assignments.push({ ...metadata(), id: 'a1', scenarioId: 'scenario', patternId: 'p1', serviceDayId: 'weekday', runtimeProfileId: 'rp1' });
+    const service = new TripGenerationService(repository);
+    const added = await service.addTrip({ scenarioId: 'scenario', routeId: 'route', serviceDayId: 'weekday', patternId: 'p1', directionId: 'southbound', firstTrip: 1200 });
+    const id = added.trip.id;
+    const reviewed = await service.previewRecalculateTrips([id], { [id]: p.points[0].id }, {}, { [id]: 1500 });
+    const times = reviewed.trips[0].stopTimes.map((point) => point.time);
+    expect(times[0]).toBe(1500);
+    expect(times.map((time, index) => time - (added.trip.stopTimes[index].time))).toEqual(times.map(() => 300));
+    await service.applyRecalculationPreview(reviewed);
+    expect((await repository.getTrip(id))!.stopTimes[0].time).toBe(1500);
+    await expect(service.previewRecalculateTrips([id], { [id]: p.points[0].id }, {}, { [id]: -60 })).rejects.toThrow();
+  });
+
   it('reads the Pattern, assignment, and profile once per Pattern and service day when many Trips are reviewed (U08, I-096)', async () => {
     const p = pattern('p1', 'Southbound 1', 0); const repository = new AuthoritativeFake([p], [profile('rp1', 'p1', 100000, 1)]);
     repository.assignments.push({ ...metadata(), id: 'a1', scenarioId: 'scenario', patternId: 'p1', serviceDayId: 'weekday', runtimeProfileId: 'rp1' });
