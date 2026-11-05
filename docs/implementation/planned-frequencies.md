@@ -1,7 +1,7 @@
 # Planned Frequencies: Work Order Plan
 
 - Requested by the user on 2026-11-05. Source proposal: `docs/backlog.md`, "Planned frequencies".
-- Status: PF0 complete (Decision 0058, 2026-11-05). PF1 complete (2026-11-05). PF2 complete (2026-11-05; refines Decision 0058 item 6, edge trips). PF3 complete (2026-11-05; see "PF3 as built"). PF4 complete (2026-11-05; see "PF4 as built"). PF5 complete (2026-11-05; see "PF5 as built"). PF6 complete (2026-11-05; see "PF6 as built"). PF7 complete (2026-11-05; see "PF7 as built"). PF8 complete (2026-11-05; see "PF8 as built"). PF9 has not started. Each package begins only when the user asks for it, and each ends at a verification gate where the agent reports and recommends the next package (`AGENTS.md`).
+- Status: PF0 complete (Decision 0058, 2026-11-05). PF1 complete (2026-11-05). PF2 complete (2026-11-05; refines Decision 0058 item 6, edge trips). PF3 complete (2026-11-05; see "PF3 as built"). PF4 complete (2026-11-05; see "PF4 as built"). PF5 complete (2026-11-05; see "PF5 as built"). PF6 complete (2026-11-05; see "PF6 as built"). PF7 complete (2026-11-05; see "PF7 as built"). PF8 complete (2026-11-05; see "PF8 as built"). PF9 complete (2026-11-05; see `planned-frequencies-closeout.md`). The plan is complete. Each package begins only when the user asks for it, and each ends at a verification gate where the agent reports and recommends the next package (`AGENTS.md`).
 - Branch: the branch the user names for each session. Never push to another branch. Do not open a pull request unless asked.
 - Staffing: one agent per package. Most packages are Sonnet. Packages marked **Opus** hold rules, data migrations or calculations where a mistake is hard to see or hard to undo.
 

@@ -84,6 +84,18 @@ An integer number of seconds between two events. A duration is not a time of day
 
 The interval between the first and last scheduled service events for a route, pattern, or service day. Operating spans are derived from the authoritative Trips; the application does not store them.
 
+### Planned frequency
+
+The planner's intended service plan for one Route and Service day: a list of periods, each with a headway, and a measure node for each direction. It belongs to one Scenario, is optional, and is a target rather than a rule. The code name is `PlannedFrequency`. See Decision 0058.
+
+### Planned period
+
+One time range of a planned frequency with one headway, for example 6:00–8:00 every 30 minutes. Start is inclusive and end is exclusive; periods of one plan do not overlap. The planned times of a period (slots) are the start plus whole multiples of the headway, before the end. The code name is `PlannedPeriod`.
+
+### Measure node
+
+The Node where a direction's planned times are placed and built trips are measured. The default is the node of the direction's first timepoint column. A stored node that no Pattern of the direction serves is kept, and the default is used instead.
+
 ### Headway
 
 The scheduled time between consecutive trip departures at a common reference point. Frequency may be displayed as trips per hour but headway is the authoritative generation input.

@@ -1,6 +1,6 @@
 # Decision 0058: Planned Frequencies per Route and Service Day
 
-- Status: Accepted; not yet implemented
+- Status: Accepted; implemented 2026-11-05 (packages PF1 to PF8; closeout `docs/implementation/planned-frequencies-closeout.md`)
 - Date: 2026-11-05 (user design review; plan `docs/implementation/planned-frequencies.md`, package PF0)
 - Related: Decisions 0036 (writes re-read stored data), 0038 and 0039 (Scenario copy and backup import), 0041 (deletion reviews), 0046 (regenerate and anchors), 0051 (no links between Scenarios)
 
