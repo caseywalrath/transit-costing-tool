@@ -1,7 +1,7 @@
 # Planned Frequencies: Work Order Plan
 
 - Requested by the user on 2026-11-05. Source proposal: `docs/backlog.md`, "Planned frequencies".
-- Status: PF0 complete (Decision 0058, 2026-11-05). PF1 complete (2026-11-05). PF2 complete (2026-11-05; refines Decision 0058 item 6, edge trips). PF3 complete (2026-11-05; see "PF3 as built"). PF4 and PF6 have not started. Each package begins only when the user asks for it, and each ends at a verification gate where the agent reports and recommends the next package (`AGENTS.md`).
+- Status: PF0 complete (Decision 0058, 2026-11-05). PF1 complete (2026-11-05). PF2 complete (2026-11-05; refines Decision 0058 item 6, edge trips). PF3 complete (2026-11-05; see "PF3 as built"). PF4 complete (2026-11-05; see "PF4 as built"). PF6 has not started. Each package begins only when the user asks for it, and each ends at a verification gate where the agent reports and recommends the next package (`AGENTS.md`).
 - Branch: the branch the user names for each session. Never push to another branch. Do not open a pull request unless asked.
 - Staffing: one agent per package. Most packages are Sonnet. Packages marked **Opus** hold rules, data migrations or calculations where a mistake is hard to see or hard to undo.
 
@@ -197,6 +197,15 @@ If a skipped area turns out to be touched (for example a shared component), add 
 7. Tests for each method with the in-memory repository, including a copy from a Scenario whose service day names differ but kinds match, and a stale-preview refusal.
 
 **Acceptance:** tests pass; no UI changes; typecheck clean.
+
+**PF4 as built (2026-11-05):**
+
+- `PlannedFrequencyService` (`src/application/plannedFrequencyService.ts`) takes a repository that offers `RouteDefinitionRepository` and `PlannedFrequencyRepository`. Its only write is `updateScenarioRecords`, published through the shared save-status publisher (`PLANNED_FREQUENCY_WRITE_METHODS`).
+- `savePlan(draft)` takes a draft (`routeId`, `serviceDayId`, periods with optional ids, measure nodes), derives the Scenario from the Route, keeps the stored plan's id and `createdAt`, assigns missing period ids and refuses findings with `PlannedFrequencyValidationError`. An empty period list clears the plan and returns undefined; `clearPlan` calls it. A stored measure node that is no longer served stays while the draft leaves it unchanged (Decision 0058 item 4); a changed or new unserved node is refused.
+- Copy previews carry a `token` (a fingerprint of the periods, measure nodes and replaced plan). Apply recomputes the preview inside the write from the stored records and refuses a different token with `PlannedFrequencyPreviewStaleError`. Copy from another Scenario also re-reads the source Scenario before the write.
+- Copy from another Scenario skips source days that have no plan, never matches a target day twice, and leaves target days with no match untouched. Measure nodes match by name and then short name among the nodes the target direction serves; a source direction with no `group` matches by direction name.
+- `comparePlan` returns one `PlanComparison` per direction of the Route (empty when the day has no plan) for the chosen Trip Profile. It writes nothing.
+- Not wired into `src/main.tsx` or `App` yet: the Route screen (PF5) is the first consumer.
 
 ---
 
