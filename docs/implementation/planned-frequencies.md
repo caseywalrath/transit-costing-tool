@@ -58,7 +58,26 @@ Order: PF0 → PF1 → (PF2, PF3, PF6 can run in any order) → PF4 → PF5 → 
 - Keep domain code free of React and IndexedDB. Store inputs; derive everything else.
 - Edit files with the file-edit tool, not shell scripts.
 - Do not change files another package owns, except where this plan says so. If a package needs a change outside its files, stop and report it.
-- Every package ends with: typecheck, the unit tests (`vitest`), the Playwright tests named in the package, and for UI packages a production build and screenshots that the agent inspects. Record the results in the commit message as `Verified:` lines.
+- Verify each package as the table below says, no more and no less. Record the results in the commit message as `Verified:` lines, and name anything skipped and why.
+
+## Verification per package
+
+The unit suite takes about 10 seconds and is run in full once at the end of every code package. The browser suite is the slow part and runs in full only in PF9. While working, run only the test file being written. Show only summaries and failures; never paste a full log.
+
+| Package | Run | Skip | Do not cut |
+| --- | --- | --- | --- |
+| PF0 | Proofread, cross-check names | All tests | — |
+| PF1 | Typecheck, new test file, full unit suite | Browser tests, build | — |
+| PF2 | Typecheck, new test file, full unit suite | Browser tests, build | — |
+| PF3 | Typecheck, full unit suite; browser: `backup-import`, `database-migration`, `scenario-copy-recovery`, `scenario-write-safety`, `deletion-reviews`, `data-safety` | Other browser tests | Every persistence, migration and backup test; an exact backup round trip |
+| PF4 | Typecheck, new test file, full unit suite | Browser tests, build | — |
+| PF5 | Typecheck, full unit suite, new panel spec; browser: `route-editing`, `route-grid`, `annual-days-blank`, `keyboard`; one build; Route screen screenshots | Trips, Blocking, Costing browser tests | — |
+| PF6 | Typecheck, full unit suite; browser: `trip-bounds`, `add-trip-draft` | Other browser tests | Every existing generation and regenerate unit test, unchanged (proves builds without a measure node are unchanged) |
+| PF7 | Typecheck, full unit suite, Build trips specs (new and existing), `keyboard`; one build; drawer screenshots | Route, Blocking, Costing browser tests | — |
+| PF8 | Typecheck, full unit suite, new chip spec, `trip-headways`, `trips-table-display`, `trip-table-layout`, `keyboard`; one build; Trips screen screenshots | Route, Blocking, Costing browser tests | — |
+| PF9 | Everything: typecheck, full unit suite, full browser suite, build, screenshots, backup round trip | Nothing | The whole run |
+
+If a skipped area turns out to be touched (for example a shared component), add its tests and say so at the gate.
 - At the gate, report what changed, what was verified, and what the user should check, then recommend the next package. Do not start it.
 
 ---
