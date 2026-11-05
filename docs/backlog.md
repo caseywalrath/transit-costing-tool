@@ -6,7 +6,7 @@ Each entry lists the problem, the proposed approach, open choices, and the edge 
 
 | Entry | Area | Status |
 | --- | --- | --- |
-| [Planned frequencies](#planned-frequencies) | Route, Trips, Costing | Planned: `docs/implementation/planned-frequencies.md` |
+| [Planned frequencies](#planned-frequencies) | Route, Trips, Costing | Planned: Decision 0058, `docs/implementation/planned-frequencies.md` |
 | [Auto-shift to a consistent frequency](#auto-shift-to-a-consistent-frequency) | Trips | Proposed; would use Planned frequencies as its periods |
 
 ---
@@ -15,6 +15,7 @@ Each entry lists the problem, the proposed approach, open choices, and the edge 
 
 - Proposed: 2026-11-05
 - Area: Route (new table), Trips (Build trips, comparison), Costing (later)
+- Rules: `docs/decisions/0058-planned-frequencies.md` (governs where this entry differs). Plan: `docs/implementation/planned-frequencies.md`.
 
 ### Problem
 
