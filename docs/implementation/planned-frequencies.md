@@ -1,7 +1,7 @@
 # Planned Frequencies: Work Order Plan
 
 - Requested by the user on 2026-11-05. Source proposal: `docs/backlog.md`, "Planned frequencies".
-- Status: PF0 complete (Decision 0058, 2026-11-05). PF1 complete (2026-11-05). PF2 has not started. Each package begins only when the user asks for it, and each ends at a verification gate where the agent reports and recommends the next package (`AGENTS.md`).
+- Status: PF0 complete (Decision 0058, 2026-11-05). PF1 complete (2026-11-05). PF2 complete (2026-11-05; refines Decision 0058 item 6, edge trips). PF3 and PF6 have not started. Each package begins only when the user asks for it, and each ends at a verification gate where the agent reports and recommends the next package (`AGENTS.md`).
 - Branch: the branch the user names for each session. Never push to another branch. Do not open a pull request unless asked.
 - Staffing: one agent per package. Most packages are Sonnet. Packages marked **Opus** hold rules, data migrations or calculations where a mistake is hard to see or hard to undo.
 
@@ -141,7 +141,7 @@ If a skipped area turns out to be touched (for example a shared component), add 
 2. Unit tests, including:
    - all trips on plan → `matches`;
    - 15-minute service planned from 6:00, built from 5:55 → `matches` (start edge within half a headway);
-   - built from 5:50 on 15-minute service → `differs: startEdge`;
+   - a trip at 5:50 on 15-minute service from 6:00 → `outsidePlan`; service that starts at 6:10 → `differs: startEdge` (as implemented: a 5:50, 6:05, … series sits 5 minutes off every slot and matches);
    - one extra and one missing trip;
    - a gap 61 seconds off on a 7:30 headway (outside) and one 59 seconds off (inside);
    - the Federal case: two patterns, one starting at the measure node and one passing it mid-route, merged into one 15-minute series;

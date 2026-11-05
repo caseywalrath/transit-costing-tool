@@ -47,7 +47,7 @@ On the Federal Boulevard test Route, one Pattern's first stop is another Pattern
 
 6. **Comparison.** Derived on request and never stored. It is computed per Route, Service day, direction and Trip Profile.
    - **Which trips:** every trip of the direction, from every Pattern that serves the measure node, merged in order of their time at the node. Trips whose Pattern does not serve the node are counted as `notMeasured`.
-   - **Which period:** a trip belongs to the period that contains its time at the measure node. Trips in no period are counted as `outsidePlan`. They are not a difference.
+   - **Which period:** a trip's candidate periods are the periods that contain its time at the measure node and the periods whose edge tolerance reaches it (up to half a headway before the first slot or after the last slot). The candidate with the nearest planned slot wins; a tie goes to the containing period, then the earlier period. So a trip at 5:55 belongs to a 6:00 period, and when a whole timetable moves 5 minutes earlier, the 7:55 trip still belongs to the period that starts at 8:00. Trips with no candidate are counted as `outsidePlan`. They are not a difference. (Refined in PF2, 2026-11-05: strict containment would have put a shifted timetable's first trip of each period into the period before it.)
    - **Tolerances** (equality at a limit counts as within):
      - *Edges:* the period's first trip must be within half a headway of `startTime`, and its last trip within half a headway of the last slot.
      - *Gaps:* each gap between consecutive trips of the same period must be within ± max(60 seconds, 10 % of the headway) of the headway. The gap that crosses a period boundary is not judged.
