@@ -6,7 +6,7 @@ Each entry lists the problem, the proposed approach, open choices, and the edge 
 
 | Entry | Area | Status |
 | --- | --- | --- |
-| [Planned frequencies](#planned-frequencies) | Route, Trips, Costing | Proposed |
+| [Planned frequencies](#planned-frequencies) | Route, Trips, Costing | Planned: `docs/implementation/planned-frequencies.md` |
 | [Auto-shift to a consistent frequency](#auto-shift-to-a-consistent-frequency) | Trips | Proposed; would use Planned frequencies as its periods |
 
 ---
