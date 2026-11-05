@@ -5,7 +5,7 @@ import { recoverScenarioCopyNodeReferences } from '../domain/scenarioCopyRecover
 import { unifyRouteRuntimeCalculationMethods } from '../domain/runtime';
 import type { WriteGuard } from './tabGuard';
 export class TransitDatabase extends Dexie {
-  projects!: Table<DatabaseRecordMap['projects'], string>; scenarios!: Table<DatabaseRecordMap['scenarios'], string>; serviceDays!: Table<DatabaseRecordMap['serviceDays'], string>; routes!: Table<DatabaseRecordMap['routes'], string>; nodes!: Table<DatabaseRecordMap['nodes'], string>; patterns!: Table<DatabaseRecordMap['patterns'], string>; directions!: Table<DatabaseRecordMap['directions'], string>; runtimeProfiles!: Table<DatabaseRecordMap['runtimeProfiles'], string>; runtimeAssignments!: Table<DatabaseRecordMap['runtimeAssignments'], string>; generationSets!: Table<DatabaseRecordMap['generationSets'], string>; tripProfiles!: Table<DatabaseRecordMap['tripProfiles'], string>; blockingScenarios!: Table<DatabaseRecordMap['blockingScenarios'], string>; trips!: Table<DatabaseRecordMap['trips'], string>; tripRegenerationUndo!: Table<DatabaseRecordMap['tripRegenerationUndo'], string>; blocks!: Table<DatabaseRecordMap['blocks'], string>; costingAssumptions!: Table<DatabaseRecordMap['costingAssumptions'], string>; /** @deprecated Kept untyped and unused so the upgrade does not discard any data in the preliminary table. */ costPlans!: Table<Record<string, unknown>, string>; appMetadata!: Table<DatabaseRecordMap['appMetadata'], string>;
+  projects!: Table<DatabaseRecordMap['projects'], string>; scenarios!: Table<DatabaseRecordMap['scenarios'], string>; serviceDays!: Table<DatabaseRecordMap['serviceDays'], string>; routes!: Table<DatabaseRecordMap['routes'], string>; nodes!: Table<DatabaseRecordMap['nodes'], string>; patterns!: Table<DatabaseRecordMap['patterns'], string>; directions!: Table<DatabaseRecordMap['directions'], string>; runtimeProfiles!: Table<DatabaseRecordMap['runtimeProfiles'], string>; runtimeAssignments!: Table<DatabaseRecordMap['runtimeAssignments'], string>; generationSets!: Table<DatabaseRecordMap['generationSets'], string>; tripProfiles!: Table<DatabaseRecordMap['tripProfiles'], string>; blockingScenarios!: Table<DatabaseRecordMap['blockingScenarios'], string>; trips!: Table<DatabaseRecordMap['trips'], string>; tripRegenerationUndo!: Table<DatabaseRecordMap['tripRegenerationUndo'], string>; blocks!: Table<DatabaseRecordMap['blocks'], string>; costingAssumptions!: Table<DatabaseRecordMap['costingAssumptions'], string>; plannedFrequencies!: Table<DatabaseRecordMap['plannedFrequencies'], string>; /** @deprecated Kept untyped and unused so the upgrade does not discard any data in the preliminary table. */ costPlans!: Table<Record<string, unknown>, string>; appMetadata!: Table<DatabaseRecordMap['appMetadata'], string>;
   /**
    * With a `guard`, every write to every table is checked against it, and a database upgrade in another tab closes this
    * connection and leaves the tab read-only (Decision 0037). Without one, the database behaves as before.
@@ -98,6 +98,8 @@ export class TransitDatabase extends Dexie {
         console.warn('Runtime calculation method unification was skipped.', error);
       }
     });
+    // Version 10 adds the Scenario-owned `plannedFrequencies` table (Decision 0058). It starts empty; no existing data is read or written.
+    this.version(10).stores({ plannedFrequencies: 'id,scenarioId,routeId,[routeId+serviceDayId]' });
   }
 
   private installWriteGuard(guard: WriteGuard): void {

@@ -89,6 +89,47 @@ export function resolveMeasureNodeId(record: Pick<PlannedFrequency, 'measureNode
   return { nodeId: defaultMeasureNodeId(direction, patterns), fellBack: true };
 }
 
+export interface PlannedFrequencyOwnerRecords {
+  routes: Array<{ id: EntityId }>;
+  serviceDays: Array<{ id: EntityId }>;
+  directions?: Array<{ id: EntityId; routeId: EntityId }>;
+  nodes: Array<{ id: EntityId; routeId: EntityId }>;
+}
+
+/**
+ * Keep plans consistent with the records they name: drop plans whose Route or Service day is gone or that have no periods,
+ * and drop measure-node entries whose direction or node is gone from the plan's Route (the default then applies).
+ * A node that still exists but is no longer served is kept (Decision 0058 item 4). Returns the input array when nothing changes.
+ */
+export function prunePlannedFrequencies(plans: PlannedFrequency[], owners: PlannedFrequencyOwnerRecords): PlannedFrequency[] {
+  const routeIds = new Set(owners.routes.map((route) => route.id));
+  const dayIds = new Set(owners.serviceDays.map((day) => day.id));
+  const directionRoute = new Map((owners.directions ?? []).map((direction) => [direction.id, direction.routeId]));
+  const nodeRoute = new Map(owners.nodes.map((node) => [node.id, node.routeId]));
+  let changed = false;
+  const next: PlannedFrequency[] = [];
+  for (const plan of plans) {
+    if (!routeIds.has(plan.routeId) || !dayIds.has(plan.serviceDayId) || plan.periods.length === 0) { changed = true; continue; }
+    const entries = Object.entries(plan.measureNodeIdByDirectionId);
+    const kept = entries.filter(([directionId, nodeId]) => directionRoute.get(directionId) === plan.routeId && nodeRoute.get(nodeId) === plan.routeId);
+    if (kept.length === entries.length) { next.push(plan); continue; }
+    changed = true;
+    next.push({ ...plan, measureNodeIdByDirectionId: Object.fromEntries(kept) });
+  }
+  return changed ? next : plans;
+}
+
+/** Copy a plan's measure-node map through ID maps. Entries whose direction or node has no mapping are dropped. */
+export function remapMeasureNodes(map: Record<EntityId, EntityId>, directionIds: ReadonlyMap<EntityId, EntityId>, nodeIds: ReadonlyMap<EntityId, EntityId>): Record<EntityId, EntityId> {
+  const out: Record<EntityId, EntityId> = {};
+  for (const [directionId, nodeId] of Object.entries(map)) {
+    const direction = directionIds.get(directionId);
+    const node = nodeIds.get(nodeId);
+    if (direction && node) out[direction] = node;
+  }
+  return out;
+}
+
 /**
  * Check a plan against Decision 0058 item 3 and 4. Period findings carry the period id in `parameters.periodId`.
  * `measureNodeNotServed` reports a stored node that no pattern of its direction serves (the plan still resolves to the default).

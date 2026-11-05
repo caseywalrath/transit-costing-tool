@@ -1,7 +1,7 @@
 # Planned Frequencies: Work Order Plan
 
 - Requested by the user on 2026-11-05. Source proposal: `docs/backlog.md`, "Planned frequencies".
-- Status: PF0 complete (Decision 0058, 2026-11-05). PF1 complete (2026-11-05). PF2 complete (2026-11-05; refines Decision 0058 item 6, edge trips). PF3 and PF6 have not started. Each package begins only when the user asks for it, and each ends at a verification gate where the agent reports and recommends the next package (`AGENTS.md`).
+- Status: PF0 complete (Decision 0058, 2026-11-05). PF1 complete (2026-11-05). PF2 complete (2026-11-05; refines Decision 0058 item 6, edge trips). PF3 complete (2026-11-05; see "PF3 as built"). PF4 and PF6 have not started. Each package begins only when the user asks for it, and each ends at a verification gate where the agent reports and recommends the next package (`AGENTS.md`).
 - Branch: the branch the user names for each session. Never push to another branch. Do not open a pull request unless asked.
 - Staffing: one agent per package. Most packages are Sonnet. Packages marked **Opus** hold rules, data migrations or calculations where a mistake is hard to see or hard to undo.
 
@@ -69,7 +69,7 @@ The unit suite takes about 10 seconds and is run in full once at the end of ever
 | PF0 | Proofread, cross-check names | All tests | — |
 | PF1 | Typecheck, new test file, full unit suite | Browser tests, build | — |
 | PF2 | Typecheck, new test file, full unit suite | Browser tests, build | — |
-| PF3 | Typecheck, full unit suite; browser: `backup-import`, `database-migration`, `scenario-copy-recovery`, `scenario-write-safety`, `deletion-reviews`, `data-safety` | Other browser tests | Every persistence, migration and backup test; an exact backup round trip |
+| PF3 | Typecheck, full unit suite; browser: `backup-import`, `database-migration`, `scenario-copy-recovery`, `scenario-write-safety`, `deletion-reviews`, `data-safety`, `automatic-blocking-backup` (asserts the backup version) | Other browser tests | Every persistence, migration and backup test; an exact backup round trip |
 | PF4 | Typecheck, new test file, full unit suite | Browser tests, build | — |
 | PF5 | Typecheck, full unit suite, new panel spec; browser: `route-editing`, `route-grid`, `annual-days-blank`, `keyboard`; one build; Route screen screenshots | Trips, Blocking, Costing browser tests | — |
 | PF6 | Typecheck, full unit suite; browser: `trip-bounds`, `add-trip-draft` | Other browser tests | Every existing generation and regenerate unit test, unchanged (proves builds without a measure node are unchanged) |
@@ -170,6 +170,15 @@ If a skipped area turns out to be touched (for example a shared component), add 
 8. Tests: Dexie upgrade from version 9 keeps all existing data; backup round trip of a Scenario with plans is identical after re-export; import-as-copy remaps; duplication of a Scenario and of a Route copies plans; Route deletion removes them.
 
 **Acceptance:** all existing persistence and backup tests still pass; the new tests pass; the backup round trip is exact.
+
+**PF3 as built (2026-11-05):**
+
+- Task 2 changed: the repository port `PlannedFrequencyRepository` has reads only (`listPlannedFrequencies`, `getPlannedFrequency`). Plans are written through `updateScenarioRecords` / `saveScenarioRecords` with the Scenario's other records. Reason: the save-status guard (`saveStatus.test.ts`) requires every repository write to be published by a service, and PF4's copy commands need one transaction with a stale check anyway. PF4 writes plans with `updateScenarioRecords`.
+- Both Scenario-records and project-snapshot writes prune plans with `prunePlannedFrequencies` (`src/domain/plannedFrequencies.ts`) and then refuse invalid ones with `assertPlannedFrequencies` (`src/persistence/plannedFrequencyPersistence.ts`). Decision 0058 item 10 records the rule.
+- Scenario deletion (`RouteDefinitionService.deleteScenario`) removes the Scenario's plans; its review fingerprint and the Route deletion fingerprint include plans. `RouteDeletionImpact.plannedFrequencyCount` is new, and the Route delete confirmation (`src/ui/App.tsx`) lists "planned frequencies for N service days".
+- Scenario copy recovery needed no change (Decision 0058 item 10).
+- Export omits `plannedFrequencies` when empty.
+- Left for PF9: `architecture_overview.md`, `docs/data-schema.md` and `codex.md` still describe Dexie 9 and backup 9.
 
 ---
 

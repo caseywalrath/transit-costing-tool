@@ -17,7 +17,9 @@ import type {
   ServiceDayDefinition,
   BlockingScenario,
   CostingAssumptions,
+  PlannedFrequency,
 } from './types';
+import { remapMeasureNodes } from './plannedFrequencies';
 import { createBlockingScenario } from './blocking';
 import { metadata, newId, withUpdatedAt } from './ids';
 import { createStandardServiceDays } from './serviceDays';
@@ -54,6 +56,8 @@ export interface ScenarioRecords {
   blocks: Block[];
   blockingScenarios?: BlockingScenario[];
   costingAssumptions?: CostingAssumptions;
+  /** Planned frequencies of the Scenario's Routes (Decision 0058). Omitted or empty when none exist. */
+  plannedFrequencies?: PlannedFrequency[];
 }
 
 export function createScenarioRecords(projectId: string, name: string, now = new Date().toISOString()): ScenarioRecords {
@@ -127,10 +131,21 @@ export function duplicateRouteRecords(source: ScenarioRecords, routeId: string, 
     ...metadata(now),
   }));
 
+  // Same Scenario, so Service day IDs stay; Route, direction, node and period IDs are new.
+  const plannedFrequencies: PlannedFrequency[] = (source.plannedFrequencies ?? []).filter((plan) => plan.routeId === routeId).map((plan) => ({
+    ...plan,
+    id: newId(),
+    routeId: route.id,
+    periods: plan.periods.map((period) => ({ ...period, id: newId() })),
+    measureNodeIdByDirectionId: remapMeasureNodes(plan.measureNodeIdByDirectionId, directionIds, nodeIds),
+    ...metadata(now),
+  }));
+
   return {
     route,
     records: {
       ...source,
+      ...(source.plannedFrequencies || plannedFrequencies.length ? { plannedFrequencies: [...(source.plannedFrequencies ?? []), ...plannedFrequencies] } : {}),
       routes: [...source.routes, route],
       nodes: [...source.nodes, ...nodes],
       patterns: [...source.patterns, ...patterns],
@@ -256,8 +271,18 @@ export function duplicateScenario(source: ScenarioRecords, targetName: string, n
       ...metadata(now),
     }
     : undefined;
+  const plannedFrequencies: PlannedFrequency[] = (source.plannedFrequencies ?? []).map((plan) => ({
+    ...plan,
+    id: newId(),
+    scenarioId: scenario.id,
+    routeId: routeIds.get(plan.routeId) ?? plan.routeId,
+    serviceDayId: serviceDayIds.get(plan.serviceDayId) ?? plan.serviceDayId,
+    periods: plan.periods.map((period) => ({ ...period, id: newId() })),
+    measureNodeIdByDirectionId: remapMeasureNodes(plan.measureNodeIdByDirectionId, directionIds, nodeIds),
+    ...metadata(now),
+  }));
 
-  return { scenario, serviceDays, routes, nodes, patterns: copiedPatterns, ...(source.directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions ? { costingAssumptions } : {}), generationSets, trips, blocks: normalizedBlocks };
+  return { scenario, serviceDays, routes, nodes, patterns: copiedPatterns, ...(source.directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions ? { costingAssumptions } : {}), ...(plannedFrequencies.length ? { plannedFrequencies } : {}), generationSets, trips, blocks: normalizedBlocks };
 }
 
 export function snapshotForScenario(snapshot: ProjectSnapshot, scenarioId: string): ScenarioRecords | undefined {
@@ -276,6 +301,7 @@ export function snapshotForScenario(snapshot: ProjectSnapshot, scenarioId: strin
     tripProfiles: (snapshot.tripProfiles ?? []).filter((profile) => profile.scenarioId === scenarioId),
     blockingScenarios: (snapshot.blockingScenarios ?? []).filter((blockingScenario) => blockingScenario.scenarioId === scenarioId),
     costingAssumptions: snapshot.costingAssumptions?.find((assumptions) => assumptions.scenarioId === scenarioId),
+    ...((() => { const plans = (snapshot.plannedFrequencies ?? []).filter((plan) => plan.scenarioId === scenarioId); return plans.length ? { plannedFrequencies: plans } : {}; })()),
     generationSets: snapshot.generationSets.filter((set) => set.scenarioId === scenarioId),
     trips: snapshot.trips.filter((trip) => trip.scenarioId === scenarioId),
     blocks: snapshot.blocks.filter((block) => block.scenarioId === scenarioId),
@@ -298,6 +324,7 @@ export function projectSnapshotWithScenario(snapshot: ProjectSnapshot, records: 
     tripProfiles: [...(snapshot.tripProfiles ?? []).filter((profile) => otherScenarioIds.has(profile.scenarioId)), ...(records.tripProfiles ?? [])],
     blockingScenarios: [...(snapshot.blockingScenarios ?? []).filter((blockingScenario) => otherScenarioIds.has(blockingScenario.scenarioId)), ...(records.blockingScenarios ?? [])],
     costingAssumptions: [...(snapshot.costingAssumptions ?? []).filter((assumptions) => otherScenarioIds.has(assumptions.scenarioId)), ...(records.costingAssumptions ? [records.costingAssumptions] : [])],
+    ...(snapshot.plannedFrequencies || records.plannedFrequencies ? { plannedFrequencies: [...(snapshot.plannedFrequencies ?? []).filter((plan) => otherScenarioIds.has(plan.scenarioId)), ...(records.plannedFrequencies ?? [])] } : {}),
     generationSets: [...snapshot.generationSets.filter((set) => otherScenarioIds.has(set.scenarioId)), ...records.generationSets],
     trips: [...snapshot.trips.filter((trip) => otherScenarioIds.has(trip.scenarioId)), ...records.trips],
     blocks: [...snapshot.blocks.filter((block) => otherScenarioIds.has(block.scenarioId)), ...records.blocks],

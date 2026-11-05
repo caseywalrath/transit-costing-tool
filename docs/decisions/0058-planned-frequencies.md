@@ -69,11 +69,13 @@ On the Federal Boulevard test Route, one Pattern's first stop is another Pattern
     - Duplicating a Scenario (`duplicateScenario`) or a Route (`duplicateRouteRecords`) copies its plans with new IDs, remapping Route, Service day, period, direction and node IDs.
     - Deleting a Route deletes its plans, and the Route deletion review (Decision 0041) shows their count.
     - Service days cannot be deleted today. If deletion is added, it must delete that day's plans and list them in its review.
-    - Scenario copy recovery (Decision 0038) treats plans like the other Route-owned records.
+    - Scenario copy recovery (Decision 0038) needs no change: it repairs copies made before Node references were remapped, and no such copy can hold a plan, because plans did not exist then and every copy path remaps measure nodes.
+    - Every write of Scenario records or of a project snapshot keeps plans consistent with what it writes: a plan whose Route or Service day the write removes is deleted, and a measure-node entry whose direction or node the write removes is dropped (that direction then uses its default). A node that still exists but is no longer served is kept (item 4). The write still refuses a plan that breaks item 1 or 3. (Settled in PF3, 2026-11-05.)
+    - Plans are written only as part of the Scenario's records, so each write is one transaction, can refuse a stale preview, and shows in the save status. The repository offers reads only (`listPlannedFrequencies`, `getPlannedFrequency`). (Settled in PF3.)
 
 11. **Formats.**
     - Dexie version 10 adds the table `plannedFrequencies` with indexes `id, scenarioId, routeId, [routeId+serviceDayId]`. No data upgrade.
-    - The JSON backup schema becomes version 10 and exports plans. Versions 1 to 9 stay readable and import with no plans. Import-as-copy remaps IDs. Import validation rejects a plan whose Route, Service day, direction or node is missing, or whose periods break item 3.
+    - The JSON backup schema becomes version 10 and exports plans (the `plannedFrequencies` key is omitted when a project has none, so such a file differs from version 9 only by its version number). Versions 1 to 9 stay readable and import with no plans. Import-as-copy remaps IDs. Import validation rejects a plan whose Route, Service day, direction or node is missing, or whose periods break item 3.
     - The Trips CSV and the Costing outputs do not change.
 
 ## Consequences

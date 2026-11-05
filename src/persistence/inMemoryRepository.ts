@@ -1,6 +1,8 @@
-import type { Block, BlockingScenario, CostingAssumptions, Node, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, Trip, TripGenerationSet, TripProfile, TripRegenerationUndo } from '../domain/types';
+import type { Block, BlockingScenario, CostingAssumptions, Node, PlannedFrequency, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, Trip, TripGenerationSet, TripProfile, TripRegenerationUndo } from '../domain/types';
 import type { ScenarioRecords } from '../domain/project';
-import type { CostingAssumptionsRepository, RouteDefinitionRepository } from '../application/ports';
+import type { CostingAssumptionsRepository, PlannedFrequencyRepository, RouteDefinitionRepository } from '../application/ports';
+import { assertPlannedFrequencies } from './plannedFrequencyPersistence';
+import { prunePlannedFrequencies } from '../domain/plannedFrequencies';
 import type { RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
 import { assertRuntimeGraph } from './runtimePersistence';
 import { assertTripProfileReferences } from '../domain/trips';
@@ -17,7 +19,7 @@ function inKeyOrder<T extends { id: string }>(values: Iterable<T>): T[] {
   return [...values].sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
 }
 
-export class InMemoryRouteDefinitionRepository implements RouteDefinitionRepository, CostingAssumptionsRepository {
+export class InMemoryRouteDefinitionRepository implements RouteDefinitionRepository, CostingAssumptionsRepository, PlannedFrequencyRepository {
   projects = new Map<string, Project>();
   scenarios = new Map<string, Scenario>();
   serviceDays = new Map<string, ServiceDayDefinition>();
@@ -34,6 +36,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
   tripRegenerationUndo?: TripRegenerationUndo;
   blocks = new Map<string, Block>();
   costingAssumptions = new Map<string, CostingAssumptions>();
+  plannedFrequencies = new Map<string, PlannedFrequency>();
 
   async listProjects(): Promise<Project[]> { return inKeyOrder(this.projects.values()); }
   async getProject(id: string): Promise<Project | undefined> { return this.projects.get(id); }
@@ -43,7 +46,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     const scenarioIds = new Set(inKeyOrder(this.scenarios.values()).filter((scenario) => scenario.projectId === projectId).map((scenario) => scenario.id));
     if (this.tripRegenerationUndo && scenarioIds.has(this.tripRegenerationUndo.scenarioId)) this.tripRegenerationUndo = undefined;
     const removeScenarioOwned = <T extends { scenarioId: string }>(collection: Map<string, T>) => { for (const [id, value] of collection) if (scenarioIds.has(value.scenarioId)) collection.delete(id); };
-    removeScenarioOwned(this.serviceDays); removeScenarioOwned(this.routes); removeScenarioOwned(this.nodes); removeScenarioOwned(this.patterns); removeScenarioOwned(this.directions); removeScenarioOwned(this.runtimeProfiles); removeScenarioOwned(this.runtimeAssignments); removeScenarioOwned(this.tripProfiles); removeScenarioOwned(this.blockingScenarios); removeScenarioOwned(this.generationSets); removeScenarioOwned(this.trips); removeScenarioOwned(this.blocks); removeScenarioOwned(this.costingAssumptions);
+    removeScenarioOwned(this.serviceDays); removeScenarioOwned(this.routes); removeScenarioOwned(this.nodes); removeScenarioOwned(this.patterns); removeScenarioOwned(this.directions); removeScenarioOwned(this.runtimeProfiles); removeScenarioOwned(this.runtimeAssignments); removeScenarioOwned(this.tripProfiles); removeScenarioOwned(this.blockingScenarios); removeScenarioOwned(this.generationSets); removeScenarioOwned(this.trips); removeScenarioOwned(this.blocks); removeScenarioOwned(this.costingAssumptions); removeScenarioOwned(this.plannedFrequencies);
     for (const [id, scenario] of this.scenarios) if (scenarioIds.has(scenario.id)) this.scenarios.delete(id);
     this.projects.delete(projectId);
   }
@@ -66,6 +69,13 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     this.costingAssumptions.set(value.id, value);
   }
 
+  async listPlannedFrequencies(scenarioId: string): Promise<PlannedFrequency[]> { return inKeyOrder(this.plannedFrequencies.values()).filter((plan) => plan.scenarioId === scenarioId); }
+  async getPlannedFrequency(routeId: string, serviceDayId: string): Promise<PlannedFrequency | undefined> {
+    const plans = inKeyOrder(this.plannedFrequencies.values()).filter((plan) => plan.routeId === routeId && plan.serviceDayId === serviceDayId);
+    if (plans.length > 1) throw new Error(`Route ${routeId} has more than one planned frequency for Service day ${serviceDayId}.`);
+    return plans[0];
+  }
+
   async getScenarioRecords(scenarioId: string): Promise<ScenarioRecords | undefined> { return this.readScenarioRecords(scenarioId); }
 
   private readScenarioRecords(scenarioId: string): ScenarioRecords | undefined {
@@ -86,6 +96,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
       ...((() => { const profiles = inKeyOrder(this.tripProfiles.values()).filter((profile) => profile.scenarioId === scenarioId); return profiles.length ? { tripProfiles: profiles } : {}; })()),
       ...((() => { const scenarios = inKeyOrder(this.blockingScenarios.values()).filter((blockingScenario) => blockingScenario.scenarioId === scenarioId); return scenarios.length ? { blockingScenarios: scenarios } : {}; })()),
       ...((() => { const assumptions = inKeyOrder(this.costingAssumptions.values()).filter((value) => value.scenarioId === scenarioId); if (assumptions.length > 1) throw new Error(`Scenario ${scenarioId} has more than one costing assumptions record.`); return assumptions.length ? { costingAssumptions: assumptions[0] } : {}; })()),
+      ...((() => { const plans = inKeyOrder(this.plannedFrequencies.values()).filter((plan) => plan.scenarioId === scenarioId); return plans.length ? { plannedFrequencies: plans } : {}; })()),
       generationSets: inKeyOrder(this.generationSets.values()).filter((set) => set.scenarioId === scenarioId),
       trips: inKeyOrder(this.trips.values()).filter((trip) => trip.scenarioId === scenarioId),
       blocks: inKeyOrder(this.blocks.values()).filter((block) => block.scenarioId === scenarioId),
@@ -113,6 +124,9 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
       const sameId = this.costingAssumptions.get(records.costingAssumptions.id);
       if (sameId && sameId.scenarioId !== records.scenario.id) throw new Error('Costing assumption ownership cannot be moved to another Scenario.');
     }
+    // A Route, Service day, direction or node removed by this write takes its plan or measure-node entry with it (Decision 0058 item 10).
+    const plannedFrequencies = prunePlannedFrequencies(records.plannedFrequencies ?? [], records);
+    assertPlannedFrequencies(plannedFrequencies, { scenarioIds: new Set([records.scenario.id]), routes: records.routes, serviceDays: records.serviceDays, directions: records.directions ?? [], nodes: records.nodes });
     // Only after every check that can reject the write: a rejected write must not discard the undo.
     this.invalidateUndoWhenScenarioTripsChange(records.scenario.id, records.trips);
     for (const [id, node] of this.nodes) if (oldRouteIds.has(node.routeId) && !nodeIds.has(id)) this.nodes.delete(id);
@@ -127,6 +141,8 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     for (const [id, set] of this.generationSets) if (set.scenarioId === records.scenario.id && !records.generationSets.some((candidate) => candidate.id === id)) this.generationSets.delete(id);
     for (const [id, trip] of this.trips) if (trip.scenarioId === records.scenario.id && !records.trips.some((candidate) => candidate.id === id)) this.trips.delete(id);
     for (const [id, block] of this.blocks) if (block.scenarioId === records.scenario.id && !records.blocks.some((candidate) => candidate.id === id)) this.blocks.delete(id);
+    for (const [id, plan] of this.plannedFrequencies) if (plan.scenarioId === records.scenario.id && !plannedFrequencies.some((candidate) => candidate.id === id)) this.plannedFrequencies.delete(id);
+    for (const plan of plannedFrequencies) this.plannedFrequencies.set(plan.id, plan);
     this.scenarios.set(records.scenario.id, records.scenario);
     for (const day of records.serviceDays) this.serviceDays.set(day.id, day);
     for (const route of records.routes) this.routes.set(route.id, route);
@@ -200,6 +216,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
       ...((() => { const profiles = inKeyOrder(this.tripProfiles.values()).filter((profile) => scenarioIds.has(profile.scenarioId)); return profiles.length ? { tripProfiles: profiles } : {}; })()),
       ...((() => { const blockingScenarios = inKeyOrder(this.blockingScenarios.values()).filter((blockingScenario) => scenarioIds.has(blockingScenario.scenarioId)); return blockingScenarios.length ? { blockingScenarios } : {}; })()),
       ...((() => { const costingAssumptions = inKeyOrder(this.costingAssumptions.values()).filter((assumptions) => scenarioIds.has(assumptions.scenarioId)); return costingAssumptions.length ? { costingAssumptions } : {}; })()),
+      ...((() => { const plannedFrequencies = inKeyOrder(this.plannedFrequencies.values()).filter((plan) => scenarioIds.has(plan.scenarioId)); return plannedFrequencies.length ? { plannedFrequencies } : {}; })()),
       generationSets: inKeyOrder(this.generationSets.values()).filter((set) => scenarioIds.has(set.scenarioId)),
       trips: inKeyOrder(this.trips.values()).filter((trip) => scenarioIds.has(trip.scenarioId)),
       blocks: inKeyOrder(this.blocks.values()).filter((block) => scenarioIds.has(block.scenarioId)),
@@ -216,6 +233,8 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
       const sameId = this.costingAssumptions.get(assumptions.id);
       if (sameId && sameId.scenarioId !== assumptions.scenarioId) throw new Error('Costing assumption ownership cannot be moved to another Scenario.');
     }
+    const plannedFrequencies = prunePlannedFrequencies(snapshot.plannedFrequencies ?? [], snapshot);
+    assertPlannedFrequencies(plannedFrequencies, { scenarioIds: new Set(snapshot.scenarios.map((scenario) => scenario.id)), routes: snapshot.routes, serviceDays: snapshot.serviceDays, directions: snapshot.directions ?? [], nodes: snapshot.nodes });
     if (this.tripRegenerationUndo && (ownedScenarioIds.has(this.tripRegenerationUndo.scenarioId) || snapshot.scenarios.some((scenario) => scenario.id === this.tripRegenerationUndo!.scenarioId))) {
       if (!snapshot.scenarios.some((scenario) => scenario.id === this.tripRegenerationUndo!.scenarioId)) this.tripRegenerationUndo = undefined;
       else this.invalidateUndoWhenScenarioTripsChange(this.tripRegenerationUndo.scenarioId, snapshot.trips);
@@ -236,6 +255,8 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     for (const [id, set] of this.generationSets) if (ownedScenarioIds.has(set.scenarioId) && !snapshot.generationSets.some((candidate) => candidate.id === id)) this.generationSets.delete(id);
     for (const [id, trip] of this.trips) if (ownedScenarioIds.has(trip.scenarioId) && !snapshot.trips.some((candidate) => candidate.id === id)) this.trips.delete(id);
     for (const [id, block] of this.blocks) if (ownedScenarioIds.has(block.scenarioId) && !snapshot.blocks.some((candidate) => candidate.id === id)) this.blocks.delete(id);
+    for (const [id, plan] of this.plannedFrequencies) if (ownedScenarioIds.has(plan.scenarioId) && !plannedFrequencies.some((candidate) => candidate.id === id)) this.plannedFrequencies.delete(id);
+    for (const plan of plannedFrequencies) this.plannedFrequencies.set(plan.id, plan);
     this.projects.set(snapshot.project.id, snapshot.project);
     for (const scenario of snapshot.scenarios) this.scenarios.set(scenario.id, scenario);
     for (const day of snapshot.serviceDays) this.serviceDays.set(day.id, day);

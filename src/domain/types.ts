@@ -147,10 +147,12 @@ export interface ProjectSnapshot {
   blockingScenarios?: BlockingScenario[];
   /** Scenario-owned costing inputs. Legacy snapshots and lazy-created scenarios may omit this collection. */
   costingAssumptions?: CostingAssumptions[];
+  /** Scenario-owned planned frequencies (Decision 0058). Snapshots before backup schema 10 omit this collection. */
+  plannedFrequencies?: PlannedFrequency[];
   /** @deprecated Historical Phase 2 collection; authoritative snapshots leave this empty. */
   generationSets: TripGenerationSet[];
   trips: Trip[];
   blocks: Block[];
 }
 
-export interface DatabaseRecordMap { projects: Project; scenarios: Scenario; serviceDays: ServiceDayDefinition; routes: Route; nodes: Node; patterns: RoutePattern; directions: RouteDirection; runtimeProfiles: RuntimeProfile; runtimeAssignments: RuntimeAssignment; generationSets: TripGenerationSet; tripProfiles: TripProfile; blockingScenarios: BlockingScenario; trips: Trip; tripRegenerationUndo: TripRegenerationUndo; blocks: Block; costingAssumptions: CostingAssumptions; appMetadata: AppMetadata; }
+export interface DatabaseRecordMap { projects: Project; scenarios: Scenario; serviceDays: ServiceDayDefinition; routes: Route; nodes: Node; patterns: RoutePattern; directions: RouteDirection; runtimeProfiles: RuntimeProfile; runtimeAssignments: RuntimeAssignment; generationSets: TripGenerationSet; tripProfiles: TripProfile; blockingScenarios: BlockingScenario; trips: Trip; tripRegenerationUndo: TripRegenerationUndo; blocks: Block; costingAssumptions: CostingAssumptions; plannedFrequencies: PlannedFrequency; appMetadata: AppMetadata; }

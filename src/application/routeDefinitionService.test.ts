@@ -176,6 +176,29 @@ describe('RouteDefinitionService', () => {
     expect(repository.blocks.get(block.id)?.activities).toEqual([]);
   });
 
+  it('counts a Route\'s planned frequencies in its deletion review, deletes them with it, and refuses a review made before a plan changed', async () => {
+    const repository = new InMemoryRouteDefinitionRepository();
+    const { service } = createService(repository);
+    const created = await service.createProject('Route deletion with plans');
+    const kept = await service.addRoute(created.records);
+    const doomed = await service.addRoute(kept.records);
+    const scenarioId = created.records.scenario.id;
+    const [weekday, saturday] = created.records.serviceDays;
+    const plan = (id: string, routeId: string, serviceDayId: string) => ({ id, scenarioId, routeId, serviceDayId, periods: [{ id: `${id}-p`, startTime: 6 * 3600, endTime: 9 * 3600, headwaySeconds: 900 }], measureNodeIdByDirectionId: {}, ...metadata() });
+    await repository.updateScenarioRecords(scenarioId, (current) => ({ ...current, plannedFrequencies: [plan('keep', kept.route.id, weekday.id), plan('wd', doomed.route.id, weekday.id), plan('sa', doomed.route.id, saturday.id)] }));
+
+    const review = await service.getRouteDeletionImpact(doomed.route.id);
+    expect(review.plannedFrequencyCount).toBe(2);
+    // A plan edited after the review makes the review stale.
+    await repository.updateScenarioRecords(scenarioId, (current) => ({ ...current, plannedFrequencies: current.plannedFrequencies!.map((candidate) => candidate.id === 'sa' ? { ...candidate, periods: [{ ...candidate.periods[0], headwaySeconds: 1200 }] } : candidate) }));
+    await expect(service.deleteRoute(doomed.route.id, review.reviewToken)).rejects.toThrow();
+    expect((await repository.listPlannedFrequencies(scenarioId)).map((candidate) => candidate.id).sort()).toEqual(['keep', 'sa', 'wd']);
+
+    await service.deleteRoute(doomed.route.id, (await service.getRouteDeletionImpact(doomed.route.id)).reviewToken);
+    expect((await repository.listPlannedFrequencies(scenarioId)).map((candidate) => candidate.id)).toEqual(['keep']);
+    expect((await service.getRouteDeletionImpact(kept.route.id)).plannedFrequencyCount).toBe(1);
+  });
+
   it('deletes a Scenario only when another Scenario remains in the project', async () => {
     const repository = new InMemoryRouteDefinitionRepository();
     const { service } = createService(repository);
