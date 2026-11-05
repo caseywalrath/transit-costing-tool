@@ -113,7 +113,6 @@ const buttonCommands = {
   'block.new': { name: 'New block', within: 'currentBlock' },
   'block.addPullOut': { name: '+ Add pull-out', within: 'currentBlock' },
   'block.addPullIn': { name: '+ Add pull-in', within: 'currentBlock' },
-  'unassigned.compatibleOnly': { name: 'Compatible only', within: 'unassignedTrips' },
   'unassigned.clearFilters': { name: 'Clear filters', within: 'unassignedTrips' },
   'block.removeTrips': { name: 'Remove from block…', within: 'blockSelectionBar' },
   'block.reassignTrips': { name: 'Move to block…', within: 'blockSelectionBar' },

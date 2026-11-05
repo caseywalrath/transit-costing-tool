@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
 import type { BlockingBlock, BlockingScenario, RoutePattern, Trip } from './types';
-import { applyTripAssignment, assertStructurallyValidBlock, calculateBlockingScenarioDeletionImpact, classifyBlockingInsertion, createBlockingScenario, duplicateBlockingScenario, normalizeBlockActivities, requiredLayoverSeconds, suggestChronologicalInsertionIndex, summarizeBlock, summarizeBlockingScenario, validateBlockingAssignments, validateBlockingBlock } from './blocking';
+import { applyTripAssignment, assertStructurallyValidBlock, calculateBlockingScenarioDeletionImpact, classifyBlockingInsertion, createBlockingScenario, duplicateBlockingScenario, matchesBlockingFitFilter, normalizeBlockActivities, requiredLayoverSeconds, suggestChronologicalInsertionIndex, summarizeBlock, summarizeBlockingScenario, validateBlockingAssignments, validateBlockingBlock } from './blocking';
 
 const scenario: BlockingScenario = { id: 'bs1', scenarioId: 'scenario', tripProfileId: 'profile', name: 'Weekday blocks', ...metadata() };
 const pattern: RoutePattern = { id: 'pattern', scenarioId: 'scenario', routeId: 'route', name: 'Full', points: [{ id: 'p1', nodeId: 'A', sequence: 0, cumulativeMiles: 0 }, { id: 'p2', nodeId: 'B', sequence: 1, cumulativeMiles: 10 }], ...metadata() };
@@ -107,6 +107,35 @@ describe('blocking domain contracts', () => {
     const both = (rule: { mode: 'minutes' | 'percent'; value: number }) => ({ outbound: rule, inbound: rule });
     expect(classifyBlockingInsertion({ block: value, insertAt: 1, trip: candidate, trips: [first, candidate], patterns: [pattern, onward], minimumLayover: both({ mode: 'minutes', value: 2 }) }).status).toBe('insufficientLayover');
     expect(classifyBlockingInsertion({ block: value, insertAt: 1, trip: candidate, trips: [first, candidate], patterns: [pattern, onward], minimumLayover: both({ mode: 'percent', value: 10 }) }).status).toBe('compatible');
+  });
+
+  it('reports the layover gap and each issue separately, including a short layover on a Trip that needs a deadhead', () => {
+    const first = trip('first', 600, 1200);
+    const value = block('gaps', [{ id: 'r1', type: 'revenueTrip', sequence: 0, tripId: first.id }]);
+    const two = { outbound: { mode: 'minutes', value: 2 }, inbound: { mode: 'minutes', value: 2 } } as const;
+    // Same pattern again: it starts at A but the first Trip ends at B, so a deadhead is needed, and 60 seconds is short.
+    const again = trip('again', 1260, 1800);
+    const both = classifyBlockingInsertion({ block: value, insertAt: 1, trip: again, trips: [first, again], patterns: [pattern], minimumLayover: two });
+    expect(both.status).toBe('deadheadRequired');
+    expect(both.issues).toEqual({ conflict: false, incomplete: false, needsDeadhead: true, shortLayover: true });
+    expect(both).toMatchObject({ layoverSeconds: 60, layoverToNext: false });
+    expect(both.findings.map((item) => item.ruleId)).toEqual(['block.deadheadRequired']);
+    const overlap = classifyBlockingInsertion({ block: value, insertAt: 1, trip: trip('overlap', 1100, 1500), trips: [first], patterns: [pattern] });
+    expect(overlap).toMatchObject({ status: 'conflict', layoverSeconds: -100, issues: { conflict: true } });
+    const opener = classifyBlockingInsertion({ block: value, trip: trip('early', 0, 300), trips: [first], patterns: [pattern] });
+    expect(opener).toMatchObject({ layoverSeconds: 300, layoverToNext: true });
+  });
+
+  it('applies the Show filter options in order of strictness', () => {
+    const fit = (issues: Partial<{ conflict: boolean; incomplete: boolean; needsDeadhead: boolean; shortLayover: boolean }>) => ({ status: 'compatible' as const, findings: [], issues: { conflict: false, incomplete: false, needsDeadhead: false, shortLayover: false, ...issues } });
+    const cases = { clean: fit({}), short: fit({ shortLayover: true }), deadhead: fit({ needsDeadhead: true }), conflict: fit({ conflict: true }), review: fit({ incomplete: true }) };
+    const shown = (filter: Parameters<typeof matchesBlockingFitFilter>[0]) => Object.entries(cases).filter(([, value]) => matchesBlockingFitFilter(filter, value)).map(([key]) => key);
+    expect(shown('all')).toEqual(['clean', 'short', 'deadhead', 'conflict', 'review']);
+    expect(shown('possible')).toEqual(['clean', 'short', 'deadhead']);
+    expect(shown('noDeadheadWithLayover')).toEqual(['clean', 'short']);
+    expect(shown('noDeadhead')).toEqual(['clean']);
+    expect(shown('compatible')).toEqual(['clean']);
+    expect(matchesBlockingFitFilter('possible', undefined)).toBe(false);
   });
 
   describe('minimum layover by direction (Decision 0050)', () => {

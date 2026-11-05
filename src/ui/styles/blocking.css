@@ -3,7 +3,7 @@
 .blocking-workspace h1 { margin: 0; font-size: var(--font-size-title); }
 /* BL-A. Side mode gives the Unassigned trips panel 34% of the width (at least 420px); rail mode narrows it to a 46px button. The first track is
    `max(420px, 34%)`, not `minmax(…)`, because a track list animates only between lengths, and the column change takes 200ms. */
-.blocking-top { display: grid; grid-template-columns: max(420px, 34%) minmax(0, 1fr); gap: var(--space-4); align-items: start; min-width: 0; transition: grid-template-columns 200ms ease; }
+.blocking-top { display: grid; grid-template-columns: max(480px, 38%) minmax(0, 1fr); gap: var(--space-4); align-items: start; min-width: 0; transition: grid-template-columns 200ms ease; }
 .blocking-top--rail { grid-template-columns: 46px minmax(0, 1fr); }
 .blocking-top > * { min-width: 0; }
 @media (prefers-reduced-motion: reduce) { .blocking-top { transition: none; } }
@@ -59,10 +59,16 @@
 .blocking-blocks-table tfoot th { background: var(--color-sunken); font-size: var(--font-size-body); text-align: left; }
 .blocking-workspace .data-grid th, .blocking-workspace .data-grid td { font-variant-numeric: tabular-nums; }
 .blocking-trips-table th, .blocking-trips-table td, .block-activities-table th, .block-activities-table td, .blocking-blocks-table th, .blocking-blocks-table td { white-space: nowrap; }
-.blocking-trips-table .blocking-pattern-column { width: 19%; }
-.blocking-trips-table .blocking-node-column { width: 13%; overflow: hidden; text-overflow: ellipsis; }
-.blocking-trips-table .blocking-time-column { width: 14%; text-align: center; }
+.blocking-trips-table .blocking-pattern-column { width: 16%; }
+.blocking-trips-table .blocking-node-column { width: 12%; overflow: hidden; text-overflow: ellipsis; }
+.blocking-trips-table .blocking-time-column { width: 12%; text-align: center; }
+.blocking-trips-table .blocking-fit-layover-column { width: 11%; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .blocking-trips-table .blocking-assign-column { width: 16%; text-align: right; }
+/* Colour only, matching the Assign button: yellow for a short layover, red for an overlap or other conflict. */
+.blocking-trips-table td.fit-layover--warn { color: var(--color-warn); font-weight: var(--font-weight-bold); }
+.blocking-trips-table td.fit-layover--danger { color: var(--color-danger); font-weight: var(--font-weight-bold); }
+.blocking-fit-filter { display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; }
+.blocking-fit-filter select { max-width: 16em; }
 .blocking-trips-table .assign-button { width: 100%; max-width: 78px; min-width: 0; padding: 3px var(--space-1); font-size: var(--font-size-caption); white-space: nowrap; }
 .blocking-trips-table .sortable-filter-header { padding: 0; vertical-align: bottom; }
 /* The filter button sits in the heading's top-right corner and the label uses the full width below it, so narrow columns do not cut the label. */

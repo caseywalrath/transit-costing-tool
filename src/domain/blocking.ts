@@ -369,7 +369,11 @@ export function proposeBlockLabel(blocks: BlockingBlock[]): string {
 }
 
 export interface BlockingInsertionContext { block: BlockingBlock; insertAt?: number; trip: Trip; trips: Trip[] | Map<EntityId, Trip>; patterns?: RoutePattern[] | Map<EntityId, RoutePattern>; minimumLayover?: MinimumLayoverRules; /** The direction group of each Pattern, by Pattern id. A Pattern missing here has an unknown direction. */ patternDirections?: Map<EntityId, DirectionGroup>; }
-export interface BlockingCompatibility { status: CompatibilityStatus; predecessorTripId?: EntityId; successorTripId?: EntityId; findings: ValidationFinding[]; }
+export interface BlockingCompatibilityIssues { conflict: boolean; incomplete: boolean; needsDeadhead: boolean; shortLayover: boolean; }
+/** `status` is the single worst result; `issues` lists each problem separately, because a Trip can need a deadhead and also have a
+ * short layover. `layoverSeconds` is the usable gap (after any deadhead) from the preceding Trip, or to the next Trip when
+ * `layoverToNext`; negative means the Trips overlap. */
+export interface BlockingCompatibility { status: CompatibilityStatus; issues?: BlockingCompatibilityIssues; layoverSeconds?: number; layoverToNext?: boolean; predecessorTripId?: EntityId; successorTripId?: EntityId; findings: ValidationFinding[]; }
 export function classifyBlockingInsertion(input: BlockingInsertionContext): BlockingCompatibility {
   const activities = sortedActivities(input.block.activities);
   const revenue = activities.filter((activity): activity is Extract<BlockActivity, { type: 'revenueTrip' }> => activity.type === 'revenueTrip');
@@ -385,13 +389,17 @@ export function classifyBlockingInsertion(input: BlockingInsertionContext): Bloc
   const precedingDeadhead = predecessor
     ? activities.slice(predecessorIndex + 1, successorIndex >= 0 ? successorIndex : pullInIndex >= 0 ? pullInIndex : activities.length).find((activity): activity is DeadheadActivity => activity.type === 'deadhead')
     : undefined;
-  const check = (left: Trip | undefined, right: Trip | undefined, deadhead?: DeadheadActivity): CompatibilityStatus => {
+  const issues: BlockingCompatibilityIssues = { conflict: false, incomplete: false, needsDeadhead: false, shortLayover: false };
+  // The layover shown beside Assign: from the preceding Trip, or to the following one when the Trip would open the block.
+  let layover: { seconds: number; toNext: boolean } | undefined;
+  const check = (left: Trip | undefined, right: Trip | undefined, side: 'before' | 'after', deadhead?: DeadheadActivity): CompatibilityStatus => {
     if (!left || !right) return 'compatible';
     const leftStart = tripStart(left);
     const leftEnd = tripEnd(left);
     const rightStart = tripStart(right);
     const gap = (rightStart ?? Number.NaN) - (leftEnd ?? Number.NaN);
     if (!Number.isFinite(gap)) return 'incomplete';
+    if (side === 'before' || !layover) layover = { seconds: gap, toNext: side === 'after' };
     if (gap < 0) { findings.push(finding('block', input.block.id, 'block.connectionOverlap', 'block.connectionOverlap', 'operational')); return 'conflict'; }
     const fromNode = patternEndNode(left, patterns);
     const toNode = patternStartNode(right, patterns);
@@ -411,30 +419,51 @@ export function classifyBlockingInsertion(input: BlockingInsertionContext): Bloc
         return 'conflict';
       }
       usableGap -= duration;
-    } else if (fromNode !== toNode) {
-      findings.push(finding('block', input.block.id, 'block.deadheadRequired', 'block.deadheadRequired', 'operational'));
-      return 'deadheadRequired';
     }
+    if (layover && layover.toNext === (side === 'after')) layover = { ...layover, seconds: usableGap };
     // The layover is taken at the end of the preceding Trip, so that Trip's direction picks the rule (Decision 0050). With an
     // unknown direction the larger of the two requirements applies, so a requirement is never waived by missing data.
     const direction = input.patternDirections?.get(left.patternId);
     const rules = direction ? [input.minimumLayover?.[direction]] : MANAGED_DIRECTION_GROUPS.map((group) => input.minimumLayover?.[group]);
     const runtime = leftStart === undefined || leftEnd === undefined ? undefined : leftEnd - leftStart;
     const requirements = rules.flatMap((rule) => rule && Number.isFinite(rule.value) && rule.value >= 0 ? [requiredLayoverSeconds(rule, runtime)] : []);
+    const required = requirements.length && !requirements.includes(undefined) ? Math.max(...(requirements as number[])) : undefined;
+    const short = required !== undefined && usableGap < required;
+    if (short) issues.shortLayover = true;
+    // A needed deadhead keeps its own status, as before; the short layover is still reported as an issue so filters can see both.
+    if (!deadhead && fromNode !== toNode) {
+      issues.needsDeadhead = true;
+      findings.push(finding('block', input.block.id, 'block.deadheadRequired', 'block.deadheadRequired', 'operational'));
+      return 'deadheadRequired';
+    }
     if (requirements.length) {
-      if (requirements.includes(undefined)) return 'incomplete';
-      const required = Math.max(...(requirements as number[]));
-      if (usableGap < required) { findings.push(finding('block', input.block.id, 'block.minimumLayoverShort', 'block.minimumLayoverShort', 'operational', 'warning', undefined, { availableSeconds: usableGap, requiredSeconds: required, ...(direction ? { direction } : {}) })); return 'insufficientLayover'; }
+      if (required === undefined) return 'incomplete';
+      if (short) { findings.push(finding('block', input.block.id, 'block.minimumLayoverShort', 'block.minimumLayoverShort', 'operational', 'warning', undefined, { availableSeconds: usableGap, requiredSeconds: required, ...(direction ? { direction } : {}) })); return 'insufficientLayover'; }
     }
     return 'compatible';
   };
   const predecessorTrip = predecessor ? trips.get(predecessor.tripId) : undefined;
   const successorTrip = successor ? trips.get(successor.tripId) : undefined;
-  const left = check(predecessorTrip, input.trip, precedingDeadhead);
-  const right = check(input.trip, successorTrip);
+  const left = check(predecessorTrip, input.trip, 'before', precedingDeadhead);
+  const right = check(input.trip, successorTrip, 'after');
   const statuses = [left, right];
   const status = statuses.includes('conflict') ? 'conflict' : statuses.includes('insufficientLayover') ? 'insufficientLayover' : statuses.includes('incomplete') ? 'incomplete' : statuses.includes('deadheadRequired') ? 'deadheadRequired' : 'compatible';
-  return { status, predecessorTripId: predecessor?.tripId, successorTripId: successor?.tripId, findings };
+  issues.conflict = statuses.includes('conflict');
+  issues.incomplete = statuses.includes('incomplete');
+  return { status, issues, ...(layover ? { layoverSeconds: layover.seconds, layoverToNext: layover.toNext } : {}), predecessorTripId: predecessor?.tripId, successorTripId: successor?.tripId, findings };
+}
+export type BlockingFitFilter = 'all' | 'possible' | 'noDeadhead' | 'noDeadheadWithLayover' | 'compatible';
+/** The Unassigned trips "Show" filter (manual blocking). "Possible" drops conflicts and Trips that need review; the next two also
+ * drop Trips that need a deadhead, the first of them also short layovers; "Compatible" keeps only clean fits. */
+export function matchesBlockingFitFilter(filter: BlockingFitFilter, fit: BlockingCompatibility | undefined): boolean {
+  if (filter === 'all') return true;
+  if (!fit) return false;
+  const issues = fit.issues ?? { conflict: fit.status === 'conflict', incomplete: fit.status === 'incomplete', needsDeadhead: fit.status === 'deadheadRequired', shortLayover: fit.status === 'insufficientLayover' };
+  if (issues.conflict || issues.incomplete) return false;
+  if (filter === 'possible') return true;
+  if (issues.needsDeadhead) return false;
+  if (filter === 'noDeadheadWithLayover') return true;
+  return !issues.shortLayover;
 }
 export interface BlockingAssignmentRequest { blockingScenarioId: EntityId; serviceDayId: EntityId; tripId: EntityId; destinationBlockId: EntityId; destinationIndex?: number; sourceBlockId?: EntityId; sourceSignature: string; }
 export interface BlockingBulkAssignmentRequest { blockingScenarioId: EntityId; serviceDayId: EntityId; tripIds: EntityId[]; destinationBlockId: EntityId; sourceBlockId: EntityId; sourceSignature: string; }
