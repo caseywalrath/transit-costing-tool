@@ -8,7 +8,7 @@ import { singleFlight } from '../singleFlight';
 import { type RouteDefinitionApplication, type ScenarioRecords } from '../../application/routeDefinitionService';
 import { TripShiftStalePreviewError, type TripGenerationApplication } from '../../application/tripGenerationService';
 import { TripShiftValidationError, type TripShiftPreview } from '../../domain/tripShift';
-import { TripGenerationError } from '../../domain/trips';
+import { TripGenerationError, type RecalculationPreview } from '../../domain/trips';
 import { createBlockingScenarioSourceSignature, formatNetShift, formatShiftStep, isUsablePattern, orderDirections, parseShiftSeconds, regenerationUndoApplies, reverseRuntimeCandidates, routeRuntimeCalculationMethod, sortServiceDays, summarizeTripTable, usableDirectionPatterns, type RuntimeCalculationMethod } from '../../application/tripsWorkspaceView';
 import { formatServiceTime, parseServiceTime } from '../../domain/time';
 import { type BlockingBlock, type Route, type RouteDefinitionAggregate, type RuntimeAssignment, type RuntimeProfile, type ServiceDayDefinition, type Trip } from '../../domain/types';
@@ -19,7 +19,7 @@ import { type RouteNavigationGuard } from '../shared/types';
 import { type RuntimeEditorHandle, type RuntimeEditorState, RuntimeEditor2, RouteRuntimeMethodDialog } from './RuntimeEditor';
 import { type PlannedFrequencyService, type PlanComparisonResult } from '../../application/plannedFrequencyService';
 import { PlanStatusChip } from './PlanStatusChip';
-import { type BuildTripsValues, EMPTY_BUILD_VALUES, type NewRuntimeDialog, TripBlockAssignmentDialog, TripBlockUnassignmentDialog, BuildTripsDrawer, RuntimeProfileDialog2, DeleteRuntimeProfileDialog, DeleteTripsDialog, RecalculationDialog, RuntimeDayCopyDialog, SegmentRuntimeDialog, TripDayCopyDialog, BatchPatternChangeDialog, TripPatternChangeDialog } from './dialogs';
+import { type BuildTripsValues, EMPTY_BUILD_VALUES, type NewRuntimeDialog, TripBlockAssignmentDialog, TripBlockUnassignmentDialog, BuildTripsDrawer, RuntimeProfileDialog2, DeleteRuntimeProfileDialog, DeleteTripsDialog, RecalculationDialog, RuntimeDayCopyDialog, SegmentRuntimeDialog, TripDayCopyDialog, BatchPatternChangeDialog, TripPatternChangeDialog, StartTimeChangeDialog } from './dialogs';
 import { type TripBlockAssignmentDraft, type TripBlockOption, type TripSelectionRequest, ScheduleTable } from './ScheduleTable';
 import { combineSelection, invertSelection, tripIdsMatching } from '../../application/tripSelection';
 import { download } from '../shared/download';
@@ -111,6 +111,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   const [buildOpen, setBuildOpen] = useState(false);
   const [draftTrip, setDraftTrip] = useState<{ patternId: string; firstTrip: string }>();
   const [shiftMinutes, setShiftMinutes] = useState('1');
+  const [startTimeReview, setStartTimeReview] = useState<{ preview: RecalculationPreview; patternName: string; fromSeconds: number; toSeconds: number }>();
   const [shiftDrawerOpen, setShiftDrawerOpen] = useState(false);
   const [shiftOperations, setShiftOperations] = useState<number[]>([]);
   const [redoShiftOperations, setRedoShiftOperations] = useState<number[]>([]);
@@ -526,6 +527,34 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   const selectedChangedRuntimeTripIds = selectedTripIds.filter((id) => changedRuntimeTripIds.has(id));
   // The selection bar goes away with the selection, so the focus moves to the Trip actions menu, which is always there.
   async function finishRecalculation() { setRecalculationTripIds([]); setSelectedTripIds([]); clearTripShiftHistory(); await loadTrips(); window.setTimeout(() => tripsActionsRef.current?.focus()); }
+  /**
+   * A planner edits a Trip's first time. The Trip is recalculated around the new time, as when adding a Trip, with Regenerate's review and undo.
+   * Resolves to a message when the time is refused, or nothing when the change was made or is waiting for the planner's review.
+   */
+  async function changeTripStartTime(trip: Trip, pointId: string, text: string): Promise<string | undefined> {
+    let toSeconds: number;
+    try { toSeconds = parseServiceTime(text); } catch { return 'Enter a time such as 8:35 or 8:35:30.'; }
+    const fromSeconds = trip.stopTimes.find((point) => point.patternPointId === pointId)?.time;
+    if (fromSeconds === undefined || fromSeconds === toSeconds) return undefined;
+    try {
+      const preview = await tripService.previewRecalculateTrips([trip.id], { [trip.id]: pointId }, {}, { [trip.id]: toSeconds });
+      if (preview.impact.blockIds.length > 0 || preview.findings.length > 0) {
+        setStartTimeReview({ preview, patternName: aggregate.patterns.find((item) => item.id === trip.patternId)?.name ?? 'Trip', fromSeconds, toSeconds });
+        return undefined;
+      }
+      await applyStartTimeChange(preview);
+      return undefined;
+    } catch (error) {
+      if (error instanceof TripGenerationError) return [...new Set(error.findings.map((finding) => userMessage(finding)))].join(' ') || 'That start time cannot be used.';
+      return error instanceof Error ? error.message : 'That start time cannot be used.';
+    }
+  }
+  async function applyStartTimeChange(preview: RecalculationPreview) {
+    setBusy(true);
+    try { await tripService.applyRecalculationPreview(preview, true); setStartTimeReview(undefined); clearTripShiftHistory(); await loadTrips(); }
+    catch (error) { setStartTimeReview(undefined); onError(error, 'Unable to change the start time.'); await loadTrips(); }
+    finally { setBusy(false); }
+  }
   async function undoRegeneration() {
     setBusy(true);
     try { await tripService.undoLastTripRegeneration(); setSelectedTripIds([]); clearTripShiftHistory(); await loadTrips(); }
@@ -723,7 +752,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
       {tripsWithChangedRuntimes.length > 0 && <InlineNote kind="warn"><b>Run times have changed</b> for {tripsWithChangedRuntimes.length} {tripsWithChangedRuntimes.length === 1 ? 'trip' : 'trips'}. <button type="button" className="small" disabled={busy || tripProfileBusy} onClick={selectTripsWithChangedRuntimes}>Select these trips</button></InlineNote>}
       {staleReasons && <InlineNote kind="warn" live>{staleTripNoticeText(staleReasons)}</InlineNote>}
       {tripBlockAssignmentStatus && <InlineNote kind="ok" live>{tripBlockAssignmentStatus}</InlineNote>}
-      <ScheduleTable selectionBar={renderSelectionBar} planGaps={planGaps} trips={trips} previewTrips={shiftPreview?.shiftedTrips} stagedShiftSeconds={shiftPreview?.netOffsetSeconds} draft={draftTrip} patterns={patterns} direction={directions.find((direction) => directionId === direction.id)!} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} showRuntimeBands={showRuntimeBands} showHeadways={showHeadways} roundDisplayedTimes={roundDisplayedTimes} blockAssignments={tripBlockByTripId} tripConnections={tripConnections} totals={tableTotals} blockWarnings={tripBlockWarnings} blockOptions={tripBlockOptions} blockAssignmentDisabled={busy || tripProfileBusy || tripBlockingBlocksBusy || shiftOperations.length > 0 || shiftDrawerOpen || Boolean(tripBlockAssignment)} onAssignBlock={(trip, blockId, trigger) => openTripBlockAssignment([trip.id], blockId, 'pill', trigger)} onUnassignBlock={(trip, trigger) => openTripBlockAssignment([trip.id], '', 'pill', trigger, 'unassign')} selectedIds={selectedTripIds} changedRuntimeTripIds={changedRuntimeTripIds} onToggle={(id, index, shiftKey) => requestShiftScopeChange(() => {
+      <ScheduleTable selectionBar={renderSelectionBar} planGaps={planGaps} onStartTimeChange={tripProfileBusy || shiftDrawerOpen || shiftOperations.length > 0 ? undefined : changeTripStartTime} trips={trips} previewTrips={shiftPreview?.shiftedTrips} stagedShiftSeconds={shiftPreview?.netOffsetSeconds} draft={draftTrip} patterns={patterns} direction={directions.find((direction) => directionId === direction.id)!} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} showRuntimeBands={showRuntimeBands} showHeadways={showHeadways} roundDisplayedTimes={roundDisplayedTimes} blockAssignments={tripBlockByTripId} tripConnections={tripConnections} totals={tableTotals} blockWarnings={tripBlockWarnings} blockOptions={tripBlockOptions} blockAssignmentDisabled={busy || tripProfileBusy || tripBlockingBlocksBusy || shiftOperations.length > 0 || shiftDrawerOpen || Boolean(tripBlockAssignment)} onAssignBlock={(trip, blockId, trigger) => openTripBlockAssignment([trip.id], blockId, 'pill', trigger)} onUnassignBlock={(trip, trigger) => openTripBlockAssignment([trip.id], '', 'pill', trigger, 'unassign')} selectedIds={selectedTripIds} changedRuntimeTripIds={changedRuntimeTripIds} onToggle={(id, index, shiftKey) => requestShiftScopeChange(() => {
         setSelectedTripIds((current) => {
           const anchorIndex = selectionAnchorId.current ? trips.findIndex((trip) => trip.id === selectionAnchorId.current) : -1;
           if (shiftKey && anchorIndex >= 0) {
@@ -746,6 +775,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     {deleteProfileOpen && selectedProfile && profileDeletionImpact && <DeleteRuntimeProfileDialog profile={selectedProfile} profiles={profiles} assignmentCount={profileDeletionImpact.assignmentCount} tripCount={profileDeletionImpact.tripCount} onDelete={deleteProfile} onClose={() => { setDeleteProfileOpen(false); setProfileDeletionImpact(undefined); }} />}
     {buildOpen && <BuildTripsDrawer tripService={tripService} plannedFrequencyService={plannedFrequencyService} scenarioId={records.scenario.id} routeId={aggregate.route.id} serviceDayId={serviceDayId} tripProfileId={tripProfileId} patterns={patterns} nodes={aggregate.nodes} profileName={selectedProfile?.name} initialValues={buildValues.current} onValuesChange={(values) => { buildValues.current = values; }} onDone={async () => { buildValues.current = EMPTY_BUILD_VALUES; closeBuildDrawer(); clearTripShiftHistory(); await loadTrips(); }} onClose={closeBuildDrawer} />}
     {tripDeletion && <DeleteTripsDialog tripCount={tripDeletion.tripIds.length} affectedBlockCount={tripDeletion.affectedBlockIds.length} onDelete={() => void deleteTrips()} onClose={() => setTripDeletion(undefined)} busy={busy} />}
+    {startTimeReview && <StartTimeChangeDialog patternName={startTimeReview.patternName} fromSeconds={startTimeReview.fromSeconds} toSeconds={startTimeReview.toSeconds} preview={startTimeReview.preview} busy={busy} onApply={() => void applyStartTimeChange(startTimeReview.preview)} onClose={() => setStartTimeReview(undefined)} />}
     {recalculationTripIds.length > 0 && <RecalculationDialog tripService={tripService} tripIds={recalculationTripIds} trips={trips} patterns={aggregate.patterns} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} onDone={finishRecalculation} onClose={() => setRecalculationTripIds([])} />}
     {runtimeCopyOpen && selectedDay && <RuntimeDayCopyDialog tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} routeName={aggregate.route.name || 'Untitled route'} targetDay={selectedDay} days={days} patterns={aggregate.patterns.filter(isUsablePattern)} onDone={completeRuntimeCopy} onClose={closeRuntimeCopy} onError={onError} />}
     {tripCopyOpen && selectedDay && <TripDayCopyDialog tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} tripProfileId={tripProfileId} routeName={aggregate.route.name || 'Untitled route'} tripProfileName={(records.tripProfiles ?? []).find((profile) => profile.id === tripProfileId)?.name || 'trip profile'} targetDay={selectedDay} days={days} patterns={aggregate.patterns} onDone={completeTripCopy} onClose={closeTripCopy} onError={onError} />}

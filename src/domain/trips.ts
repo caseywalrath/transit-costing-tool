@@ -232,6 +232,8 @@ export interface RecalculationPreview {
   bandSelections?: RecalculationBandSelection[];
   anchorByTripId?: Record<string, string>;
   bandOverrideByTripId?: Record<string, string>;
+  /** A new time at a Trip's anchor point, set when a planner edits a Trip's first time. The Trip is recalculated around it. */
+  anchorTimeByTripId?: Record<string, ServiceSeconds>;
   sourceSignature?: string;
 }
 

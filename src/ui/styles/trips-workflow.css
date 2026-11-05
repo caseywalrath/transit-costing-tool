@@ -105,7 +105,7 @@
 .schedule-table .trip-pattern-column { position: sticky; left: 56px; z-index: 1; min-width: 188px; width: 188px; max-width: 188px; padding-left: 0; padding-right: var(--space-2); background: var(--color-surface); }
 .schedule-table th.trip-pattern-column { z-index: 3; background: var(--color-surface-2); }
 .schedule-table .trip-pattern-column .chip { display: flex; max-width: 100%; }
-.schedule-table .trip-pattern-column .trip-pattern-select { display: block; min-width: 0; width: 148px; max-width: 148px; overflow: hidden; text-overflow: ellipsis; font-size: var(--font-size-label); }
+.schedule-table .trip-pattern-column .trip-pattern-select { display: block; box-sizing: border-box; min-width: 0; width: 100%; max-width: none; overflow: hidden; text-overflow: ellipsis; font-size: var(--font-size-label); }
 .schedule-table .trip-timepoint-column { min-width: 76px; width: 76px; text-align: center; }
 .schedule-table td.trip-headway-first { color: var(--color-accent); font-weight: var(--font-weight-bold); box-shadow: inset 3px 0 var(--color-accent); }
 /* UR-8 (HW-X): the row where a column's headway changes. */
@@ -154,8 +154,15 @@
 /* Staged shifts are marked without adding text, so rows keep their height while a shift is staged or cleared. The edge bar is a shadow, not a border, so it takes no space and survives the selection background. */
 .trip-row-staged-shift td:first-child { box-shadow: inset 3px 0 0 var(--color-accent); }
 .trip-time-staged { color: var(--color-accent); font-style: italic; }
-.draft-trip-row td { background: var(--color-surface-2); }
-.draft-trip-row td:first-child { background: var(--color-surface-2); }
+/* The new-trip row is marked by a thin accent edge, not a filled band, so it stays quiet beside the saved rows. */
+.draft-trip-row td { background: var(--color-surface); }
+.draft-trip-row td:first-child { background: var(--color-surface); box-shadow: inset 3px 0 0 var(--color-accent); }
+/* A Trip's first time is edited in place: plain text at rest, a faint dotted underline when it is the target. */
+.schedule-table .trip-start-edit { display: inline; min-height: 0; border: 0; padding: 0; background: none; color: inherit; font: inherit; font-variant-numeric: inherit; cursor: text; text-decoration: none; }
+.schedule-table .trip-start-edit:hover:not(:disabled), .schedule-table .trip-start-edit:focus-visible { text-decoration: underline dotted; text-underline-offset: 3px; }
+.schedule-table .trip-start-edit:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.schedule-table .trip-start-edit:disabled { cursor: default; }
+.schedule-table input.trip-start-input { width: 74px; min-width: 74px; }
 .draft-status { display: block; margin-top: var(--space-1); color: var(--color-text-muted); font-size: var(--font-size-caption); line-height: 1.25; white-space: normal; }
 .runtime-changed-note { display: block; margin-top: 3px; color: var(--color-warn); font-size: var(--font-size-caption); font-weight: var(--font-weight-bold); white-space: normal; }
 .duplicate-note { display: block; margin-top: 3px; color: var(--color-warn); font-size: var(--font-size-caption); white-space: normal; }
