@@ -111,20 +111,47 @@ test('a collapsed panel stays collapsed when Trips become unassigned, and the ba
   await expect(unassignedPanel(page)).toBeVisible();
 });
 
-test('the Unassigned trips header shows Compatible only as a toggle and Clear filters only while a filter is set', async ({ page }) => {
+test('the Unassigned trips header shows the Show filter and Clear filters only while a filter is set', async ({ page }) => {
   await openBlockingWithTrips(page, 3);
   const panel = unassignedPanel(page);
-  const compatibleOnly = panel.getByRole('button', { name: 'Compatible only', exact: true });
-  await expect(compatibleOnly).toHaveAttribute('aria-pressed', 'false');
-  await compatibleOnly.click();
-  await expect(compatibleOnly).toHaveAttribute('aria-pressed', 'true');
-  await compatibleOnly.click();
-  await expect(compatibleOnly).toHaveAttribute('aria-pressed', 'false');
+  const show = panel.getByRole('combobox', { name: 'Show trips', exact: true });
+  await expect(show).toHaveValue('all');
+  await expect(show.locator('option')).toHaveText(['All trips', 'Possible', 'Possible, no deadhead', 'Possible, no deadhead, layover conflicts', 'Compatible only']);
   await expect(panel.getByRole('button', { name: 'Clear filters', exact: true })).toHaveCount(0);
   await panel.getByRole('button', { name: 'Filter From time' }).click();
   await page.getByRole('dialog', { name: 'Filter From time' }).getByLabel('On or after').fill('6:10');
   await expect(panel.getByRole('button', { name: 'Clear filters', exact: true })).toBeVisible();
   await expect(panel.getByRole('button', { name: 'Unassigned trip actions', exact: true })).toBeVisible();
+});
+
+test('the Layover column shows the gap to the block, and the Show filter hides deadhead trips without sideways scroll', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openBlockingWithTrips(page, 3);
+  const panel = unassignedPanel(page);
+  const rows = panel.locator('tbody tr');
+  await expect(panel.getByRole('columnheader', { name: 'Layover' })).toBeVisible();
+  // An empty block has nothing to lay over against.
+  const firstLayover = rows.first().locator('td.blocking-fit-layover-column');
+  await expect(firstLayover).not.toHaveText(/\d/);
+  await rows.first().getByRole('button', { name: /^Assign/ }).click();
+  await expect(rows).toHaveCount(2);
+  // Every Trip runs the same direction, so each remaining Trip needs a deadhead back to the start, with its layover beside it.
+  await expect(rows.first().getByRole('button', { name: /^Needs deadhead/ })).toBeVisible();
+  await expect(firstLayover).toHaveText(/^−?[\d:]+$/);
+  const show = panel.getByRole('combobox', { name: 'Show trips', exact: true });
+  await show.selectOption('possible');
+  await expect(rows.getByRole('button', { name: /^Needs deadhead/ })).toHaveCount(2);
+  await show.selectOption('noDeadhead');
+  await expect(panel.getByText('No unassigned trips match the Show filter')).toBeVisible();
+  await show.selectOption('all');
+  await expect(rows.getByRole('button', { name: /^Needs deadhead/ })).toHaveCount(2);
+  for (const width of [1280, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const table of ['.blocking-trips-table', '.block-activities-table']) {
+      expect(await page.locator(table).evaluate((element) => element.scrollWidth - element.clientWidth), `${table} at ${width}px`).toBeLessThanOrEqual(1);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `page at ${width}px`).toBeLessThanOrEqual(1);
+  }
 });
 
 test('selected unassigned Trips are assigned from the selection bar to the current Block', async ({ page }) => {
