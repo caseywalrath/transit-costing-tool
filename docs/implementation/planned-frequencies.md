@@ -1,7 +1,7 @@
 # Planned Frequencies: Work Order Plan
 
 - Requested by the user on 2026-11-05. Source proposal: `docs/backlog.md`, "Planned frequencies".
-- Status: PF0 complete (Decision 0058, 2026-11-05). PF1 complete (2026-11-05). PF2 complete (2026-11-05; refines Decision 0058 item 6, edge trips). PF3 complete (2026-11-05; see "PF3 as built"). PF4 complete (2026-11-05; see "PF4 as built"). PF5 complete (2026-11-05; see "PF5 as built"). PF6 complete (2026-11-05; see "PF6 as built"). PF7 has not started. Each package begins only when the user asks for it, and each ends at a verification gate where the agent reports and recommends the next package (`AGENTS.md`).
+- Status: PF0 complete (Decision 0058, 2026-11-05). PF1 complete (2026-11-05). PF2 complete (2026-11-05; refines Decision 0058 item 6, edge trips). PF3 complete (2026-11-05; see "PF3 as built"). PF4 complete (2026-11-05; see "PF4 as built"). PF5 complete (2026-11-05; see "PF5 as built"). PF6 complete (2026-11-05; see "PF6 as built"). PF7 complete (2026-11-05; see "PF7 as built"). PF8 has not started. Each package begins only when the user asks for it, and each ends at a verification gate where the agent reports and recommends the next package (`AGENTS.md`).
 - Branch: the branch the user names for each session. Never push to another branch. Do not open a pull request unless asked.
 - Staffing: one agent per package. Most packages are Sonnet. Packages marked **Opus** hold rules, data migrations or calculations where a mistake is hard to see or hard to undo.
 
@@ -285,6 +285,16 @@ If a skipped area turns out to be touched (for example a shared component), add 
 **Tests:** extend the Build trips Playwright tests: build from a three-period plan; duplicate slots skipped; mode disabled with no plan; a mid-route measure node gives first-stop times earlier than the slot.
 
 **Acceptance:** the One headway mode behaves exactly as before (existing tests unchanged).
+
+**PF7 as built (2026-11-05):**
+
+- `PlannedFrequencyService.previewBuildFromPlan({ routeId, serviceDayId, tripProfileId, patternId })` is the new read: the direction's measure node (with `measureNodeFellBack`), whether the Pattern serves it and visits it twice, and for each period its slots and the slots that already hold a trip of the same Pattern and Trip Profile at that node. It returns undefined when the day has no plan. Unit tests: 4 added to `plannedFrequencyService.test.ts`.
+- `BuildTripsDrawer` has a two-button group, **One headway** | **From planned frequencies**. The One headway form is the same JSX as before. The mode and the unchecked periods are part of `BuildTripsValues`, so they are remembered with the drawer's other values and cleared by a successful build. The drawer gets `plannedFrequencyService` and `nodes` as new props (`TripsWorkspace` and `App` pass them through).
+- **Duplicate slots are removed before the request is sent**, so the build is additive and never adds a trip the planner was told it would skip. The summary line lists them ("Skipped, already built: 6:00."). Existing trips of another Pattern or another Trip Profile are not duplicates.
+- Build sends one PF6 request with `slots` and `anchorNodeId`. A Pattern that does not stop at the measure node shows the PF6 text as soon as it is selected and Build stays disabled. A slot the runtimes cannot reach comes back as a finding and the drawer shows it with the slot's time.
+- Deviation: with no plan the second button is disabled and the hint is shown as text under the buttons (it is also the button's tooltip), because a tooltip alone is not reachable by keyboard.
+- Tests: `tests/ui/build-from-plan.spec.ts` (3: mode disabled with a hint; three-period plan with a skipped slot, an unchecked period remembered across closing the drawer; a mid-route measure node gives first-stop times 5:53 and 6:23 for slots at 6:00 and 6:30). The "Pattern does not serve the node" case is covered at unit level only, because the test Route has one Pattern.
+- Verification run: typecheck; full unit suite (1136); the new spec plus `trip-bounds`, `keyboard`, `trips-layout`, `unified-action-layer`, `workflow-section-layout`, `drafts-and-preferences`, `scenario-write-safety` and `single-tab` (74 tests; `unified-action-layer` "restores the page scroll position" failed once under parallel load and passed alone); production build; drawer screenshot at 1280 px inspected.
 
 ---
 

@@ -232,6 +232,48 @@ describe('PlannedFrequencyService', () => {
     });
   });
 
+  describe('previewBuildFromPlan', () => {
+    const tripAt = (s: Awaited<ReturnType<typeof setup>>, id: string, tripProfileId: string, time: number, patternId = s.pattern.id): Trip => ({ id, scenarioId: s.records.scenario.id, routeId: s.routeId, serviceDayId: s.weekday.id, patternId, tripProfileId, stopTimes: s.pattern.points.map((point, index) => ({ patternPointId: point.id, sequence: index, time: time + index * 600 })), provenance: { kind: 'manual', creationMethod: 'manual', manuallyChangedFields: [] }, ...metadata(at) });
+
+    it('is undefined without a plan', async () => {
+      const s = await setup();
+      expect(await s.plans.previewBuildFromPlan({ routeId: s.routeId, serviceDayId: s.weekday.id, tripProfileId: s.records.tripProfiles![0].id, patternId: s.pattern.id })).toBeUndefined();
+    });
+
+    it('lists each period with its slots, the default measure node, and the slots that already hold a trip of the same pattern and profile', async () => {
+      const s = await setup();
+      const profileId = s.records.tripProfiles![0].id;
+      await s.plans.savePlan({ routeId: s.routeId, serviceDayId: s.weekday.id, periods: [{ startTime: hours(6), endTime: hours(7), headwaySeconds: 1800 }, { startTime: hours(8), endTime: hours(9), headwaySeconds: 1800 }], measureNodeIdByDirectionId: {} });
+      await s.repository.updateScenarioRecords(s.records.scenario.id, (current) => ({ ...current, trips: [tripAt(s, 'same', profileId, hours(6, 30)), tripAt(s, 'other-profile', 'other', hours(6)), tripAt(s, 'off-grid', profileId, hours(8, 10))] }));
+      const preview = (await s.plans.previewBuildFromPlan({ routeId: s.routeId, serviceDayId: s.weekday.id, tripProfileId: profileId, patternId: s.pattern.id }))!;
+      expect(preview.directionId).toBe(s.direction.id);
+      expect(preview.measureNodeId).toBe(s.pattern.points[0].nodeId);
+      expect(preview).toMatchObject({ measureNodeFellBack: false, patternServesNode: true, patternVisitsNodeTwice: false });
+      expect(preview.periods.map((period) => [period.slots, period.duplicateSlots])).toEqual([[[hours(6), hours(6, 30)], [hours(6, 30)]], [[hours(8), hours(8, 30)], []]]);
+    });
+
+    it('measures at a stored mid-route node, so a trip is a duplicate by its time there', async () => {
+      const s = await setup();
+      const profileId = s.records.tripProfiles![0].id;
+      const second = s.pattern.points[1].nodeId;
+      await s.plans.savePlan({ routeId: s.routeId, serviceDayId: s.weekday.id, periods: [{ startTime: hours(6), endTime: hours(7), headwaySeconds: 1800 }], measureNodeIdByDirectionId: { [s.direction.id]: second } });
+      // Stops are 10 minutes apart, so a trip that leaves at 5:50 stands at the second stop at 6:00.
+      await s.repository.updateScenarioRecords(s.records.scenario.id, (current) => ({ ...current, trips: [tripAt(s, 'mid', profileId, hours(5, 50))] }));
+      const preview = (await s.plans.previewBuildFromPlan({ routeId: s.routeId, serviceDayId: s.weekday.id, tripProfileId: profileId, patternId: s.pattern.id }))!;
+      expect(preview.measureNodeId).toBe(second);
+      expect(preview.periods[0].duplicateSlots).toEqual([hours(6)]);
+    });
+
+    it('reports a pattern that does not stop at the stored measure node', async () => {
+      const s = await setup();
+      const stray = { ...s.pattern, id: 'stray', name: 'Stray', points: s.pattern.points.map((point, index) => ({ ...point, id: `stray-${index}`, nodeId: `x-${index}` })) } as RoutePattern;
+      await s.plans.savePlan({ routeId: s.routeId, serviceDayId: s.weekday.id, periods: [{ startTime: hours(6), endTime: hours(7), headwaySeconds: 1800 }], measureNodeIdByDirectionId: {} });
+      await s.repository.updateScenarioRecords(s.records.scenario.id, (current) => ({ ...current, patterns: [...current.patterns, stray] }));
+      const preview = (await s.plans.previewBuildFromPlan({ routeId: s.routeId, serviceDayId: s.weekday.id, tripProfileId: s.records.tripProfiles![0].id, patternId: 'stray' }))!;
+      expect(preview.patternServesNode).toBe(false);
+    });
+  });
+
   describe('comparePlan', () => {
     function trip(s: Awaited<ReturnType<typeof setup>>, id: string, tripProfileId: string, time: number, serviceDayId = s.weekday.id): Trip {
       const pattern: RoutePattern = s.pattern;

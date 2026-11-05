@@ -1,5 +1,5 @@
 import { newId } from '../domain/ids';
-import { normalizePeriods, validatePlannedFrequency } from '../domain/plannedFrequencies';
+import { normalizePeriods, plannedSlots, resolveMeasureNodeId, validatePlannedFrequency } from '../domain/plannedFrequencies';
 import { compareWithPlan, type PlanComparison } from '../domain/plannedFrequencyComparison';
 import type { ScenarioRecords } from '../domain/project';
 import type { EntityId, Node, PlannedFrequency, PlannedPeriod, RouteDirection, RoutePattern, ServiceDayDefinition, ValidationFinding } from '../domain/types';
@@ -101,6 +101,28 @@ export interface PlanComparisonResult {
   plan?: PlannedFrequency;
   /** One entry per direction of the Route, in direction order. Empty when the day has no plan. */
   directions: DirectionPlanComparison[];
+}
+
+export interface BuildFromPlanPeriod {
+  periodId: EntityId;
+  startTime: number;
+  endTime: number;
+  headwaySeconds: number;
+  /** Every planned time of the period. */
+  slots: number[];
+  /** The slots at which a trip of the same Pattern already stands at the measure node. A build skips them. */
+  duplicateSlots: number[];
+}
+
+export interface BuildFromPlanPreview {
+  directionId: EntityId;
+  /** Undefined when the direction has no usable node. */
+  measureNodeId?: EntityId;
+  measureNodeFellBack: boolean;
+  /** False when the Pattern does not stop at the measure node, so nothing can be built for it. */
+  patternServesNode: boolean;
+  patternVisitsNodeTwice: boolean;
+  periods: BuildFromPlanPeriod[];
 }
 
 const clean = (text: string | undefined): string => (text ?? '').trim().toLowerCase();
@@ -412,6 +434,47 @@ export class PlannedFrequencyService {
         directionName: direction.name,
         comparison: compareWithPlan({ plan, direction, patterns, trips }),
       })),
+    };
+  }
+
+  // ---- Build trips from the plan -----------------------------------------------------------------------------------------------------
+
+  /**
+   * What "Build trips: From planned frequencies" would build for one Pattern: the measure node of the Pattern's direction, and for each
+   * period its slots, with the slots that already hold a trip of the same Pattern at that node (Decision 0058 item 7). Read only.
+   * Returns undefined when the Route and Service day have no plan.
+   */
+  async previewBuildFromPlan(request: { routeId: EntityId; serviceDayId: EntityId; tripProfileId: EntityId; patternId: EntityId }): Promise<BuildFromPlanPreview | undefined> {
+    const scenarioId = await this.scenarioOfRoute(request.routeId);
+    const records = await this.records(scenarioId);
+    const plan = planOf(records, request.routeId, request.serviceDayId);
+    if (!plan) return undefined;
+    const patterns = routePatterns(records, request.routeId);
+    const pattern = patterns.find((item) => item.id === request.patternId);
+    if (!pattern) throw new Error('The selected pattern no longer exists.');
+    const direction = routeDirections(records, request.routeId).find((item) => item.id === pattern.directionId);
+    if (!direction) throw new Error('The direction of the selected pattern no longer exists.');
+    const { nodeId, fellBack } = resolveMeasureNodeId(plan, direction, patterns.filter((item) => item.directionId === direction.id));
+    const visits = [...pattern.points].sort((a, b) => a.sequence - b.sequence).filter((point) => nodeId !== undefined && point.nodeId === nodeId);
+    const measurePointId = visits[0]?.id;
+    const taken = new Set<number>();
+    if (measurePointId !== undefined) {
+      for (const trip of records.trips) {
+        if (trip.routeId !== request.routeId || trip.serviceDayId !== request.serviceDayId || trip.tripProfileId !== request.tripProfileId || trip.patternId !== pattern.id) continue;
+        const time = trip.stopTimes.find((stop) => stop.patternPointId === measurePointId)?.time;
+        if (time !== undefined) taken.add(time);
+      }
+    }
+    return {
+      directionId: direction.id,
+      measureNodeId: nodeId,
+      measureNodeFellBack: fellBack,
+      patternServesNode: measurePointId !== undefined,
+      patternVisitsNodeTwice: visits.length > 1,
+      periods: normalizePeriods(plan.periods).map((period) => {
+        const slots = plannedSlots(period);
+        return { periodId: period.id, startTime: period.startTime, endTime: period.endTime, headwaySeconds: period.headwaySeconds, slots, duplicateSlots: slots.filter((slot) => taken.has(slot)) };
+      }),
     };
   }
 

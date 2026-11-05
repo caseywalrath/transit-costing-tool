@@ -61,6 +61,13 @@
 .build-trips-drawer .dialog-field input,
 .build-trips-drawer .dialog-field select { width: 100%; }
 .build-trips-drawer input:disabled { background: var(--color-sunken); color: var(--color-text-subtle); cursor: not-allowed; }
+.build-trips-mode { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.build-trips-hint { margin: 0; color: var(--color-text-muted); font-size: var(--font-size-label); }
+.build-trips-periods { display: grid; gap: var(--space-1); margin: 0; border: 1px solid var(--color-border); padding: var(--space-2); min-width: 0; }
+.build-trips-periods legend { padding: 0 var(--space-1); color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
+.build-trips-period { display: flex; align-items: center; gap: var(--space-2); font-variant-numeric: tabular-nums; }
+.build-trips-period input { flex: none; width: auto; min-width: 0; height: auto; }
+.build-trips-summary { margin: 0; font-size: var(--font-size-label); overflow-wrap: anywhere; }
 .build-trips-profile { margin: var(--space-1) 0 0; color: var(--color-text-muted); font-size: var(--font-size-label); }
 .profile-usage { margin: var(--space-2) 0 0; color: var(--color-text-muted); font-size: var(--font-size-label); }
 .subtle-danger { color: var(--color-danger); border-color: var(--color-border); background: var(--color-surface); }
