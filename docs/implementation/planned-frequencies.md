@@ -1,7 +1,7 @@
 # Planned Frequencies: Work Order Plan
 
 - Requested by the user on 2026-11-05. Source proposal: `docs/backlog.md`, "Planned frequencies".
-- Status: PF0 complete (Decision 0058, 2026-11-05). PF1 complete (2026-11-05). PF2 complete (2026-11-05; refines Decision 0058 item 6, edge trips). PF3 complete (2026-11-05; see "PF3 as built"). PF4 complete (2026-11-05; see "PF4 as built"). PF5 complete (2026-11-05; see "PF5 as built"). PF6 complete (2026-11-05; see "PF6 as built"). PF7 complete (2026-11-05; see "PF7 as built"). PF8 has not started. Each package begins only when the user asks for it, and each ends at a verification gate where the agent reports and recommends the next package (`AGENTS.md`).
+- Status: PF0 complete (Decision 0058, 2026-11-05). PF1 complete (2026-11-05). PF2 complete (2026-11-05; refines Decision 0058 item 6, edge trips). PF3 complete (2026-11-05; see "PF3 as built"). PF4 complete (2026-11-05; see "PF4 as built"). PF5 complete (2026-11-05; see "PF5 as built"). PF6 complete (2026-11-05; see "PF6 as built"). PF7 complete (2026-11-05; see "PF7 as built"). PF8 complete (2026-11-05; see "PF8 as built"). PF9 has not started. Each package begins only when the user asks for it, and each ends at a verification gate where the agent reports and recommends the next package (`AGENTS.md`).
 - Branch: the branch the user names for each session. Never push to another branch. Do not open a pull request unless asked.
 - Staffing: one agent per package. Most packages are Sonnet. Packages marked **Opus** hold rules, data migrations or calculations where a mistake is hard to see or hard to undo.
 
@@ -312,6 +312,16 @@ If a skipped area turns out to be touched (for example a shared component), add 
 **Tests:** Playwright: chip states; the 5:55 case shows matches; a shifted trip turns the chip to differs and back on undo; markers do not change row height. Screenshots inspected.
 
 **Acceptance:** specification items; Trips table tests pass.
+
+**PF8 as built (2026-11-05):**
+
+- New `src/ui/trips/PlanStatusChip.tsx`: the chip, the popover (a dialog that closes on Escape or an outside click and returns focus to the chip) and `describePeriod` (the plain-language reasons). The chip sits between the Trip profile and Blocking scenario selectors.
+- `TripsWorkspace` reads `plannedFrequencyService.comparePlan` again whenever the route-day trips are reloaded (`routeDayTrips` changes after every build, shift, regenerate, delete, copy and import), so the chip follows every trip write without a reload.
+- Chip text: "Plan: matches", "Plan: N period(s) differ(s)", or "Plan: no trips yet" when no direction has trips. A direction with no trips is shown as "No trips built in this direction" and is not counted as a difference; inside a direction that has trips, a period with no trips counts as differing.
+- Reasons use the comparison's tolerances, so a period that is only one trip short can show "ends 30 min early" and no "missing" text (the count tolerance is ± 1). The popover also shows trips outside the plan and trips not measured.
+- Headway markers: with Show headways on, a gap outside tolerance gets a dotted underline and the tooltip "Planned every 30; this gap is 45" in the visible direction's measure-node column only. The marker is a text decoration, so row height does not change (tested).
+- Tests: `tests/ui/plan-status-chip.spec.ts` (4): hidden without a plan; differs with reasons, then matches after a build from the plan with no reload; a timetable 5 minutes early matches, one late trip differs, and moving it back matches again; markers, tooltip and equal row heights. The Shift-then-undo path was tested by writing the departures directly, not through the Shift drawer.
+- Verification run: typecheck; full unit suite (1136); the new spec, `trip-headways`, `trips-table-display`, `trip-table-layout`, `keyboard` and `build-from-plan` (33 tests); production build; popover screenshot at 1280 px inspected.
 
 ---
 
