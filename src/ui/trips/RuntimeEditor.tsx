@@ -81,7 +81,10 @@ export const RuntimeEditor2 = forwardRef<RuntimeEditorHandle, { service: RouteDe
           const saved = savedBands.get(band.id);
           const edited = !saved || cellValue(saved, c) !== cellValue(band, c);
           const editing = grid.editing?.r === bandIndex && grid.editing.c === c;
-          return <td key={c} {...grid.cellProps(bandIndex, c)} className={edited ? 'grid-cell grid-cell--edited' : 'grid-cell'} data-cell={cellLabel(bandIndex, c)}>
+          // Colour only: a missing run time is shaded and outlined, a zero is shaded. Both stay allowed.
+          const value = c >= 2 ? cellValue(band, c) : 1;
+          const gap = !Number.isFinite(value) ? ' grid-cell--missing' : value === 0 ? ' grid-cell--zero' : '';
+          return <td key={c} {...grid.cellProps(bandIndex, c)} className={`${edited ? 'grid-cell grid-cell--edited' : 'grid-cell'}${gap}`} data-cell={cellLabel(bandIndex, c)}>
             {editing ? <input {...grid.inputProps} className="grid-cell__input" aria-label={cellLabel(bandIndex, c)} aria-describedby={grid.message ? messageId : undefined} /> : <span>{cellText(bandIndex, c)}</span>}
           </td>;
         })}
