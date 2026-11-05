@@ -34,6 +34,7 @@ New record `PlannedFrequency`, one per Route × Service day:
 - `measureNodeIdByDirectionId`: the node where frequency is measured for each direction. Default: the first timepoint column of the direction. It matters for the Federal patterns, where one pattern's first stop is another's mid-route stop.
 - Directions share the periods by default. A per-direction override is a later option.
 - Not per Trip Profile: Trip Profiles are alternative timetables compared against one plan.
+- **Owned by the Scenario, not shared across Scenarios** (user decision 2026-11-05). Routes and service days are already Scenario records, so the plan cannot outlive them; Decision 0051 rejected live links between Scenarios; and a Scenario that tests a different service level needs its own plan. Duplicating a Scenario copies the plan, so carrying a plan forward is the copy, not a link.
 
 Dependencies: Dexie version 10 (new table), JSON backup schema 10 with older versions still readable, Scenario duplication and import-as-copy remapping of route and service-day IDs, Route deletion cascade, and service-day deletion review counts (Decision 0041).
 
