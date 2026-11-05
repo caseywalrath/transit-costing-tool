@@ -36,7 +36,7 @@ test('uses one header action layer, and Shift opens in the selection bar', async
   // U10, UR-15: the shift bar replaces the selection commands; step buttons name their size and direction, and step sizes are one press.
   await expect(drawer.getByRole('button')).toHaveText(['← 1 min earlier', '1 min later →', 'Undo', 'Redo', 'Discard', 'Done']);
   await expect(page.getByRole('toolbar', { name: 'Selected trips', exact: true })).toHaveCount(0);
-  await expect(drawer.getByRole('radio')).toHaveCount(4);
+  await expect(drawer.getByRole('radio')).toHaveCount(5);
   await expect(drawer.getByRole('radio', { name: '1', exact: true })).toBeChecked();
   await expect(drawer.getByLabel('Step minutes')).toHaveValue('1');
 

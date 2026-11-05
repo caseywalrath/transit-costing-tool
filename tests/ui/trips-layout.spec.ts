@@ -183,3 +183,23 @@ test('the selection bar is pinned, compact, above the pinned table headings whil
   await expect(bar).not.toHaveClass(/selection-bar--compact/);
   await expect(bar).toBeVisible();
 });
+
+test('the pinned Shift bar keeps the whole Shift menu: the step sizes, the typed step, Undo and Redo', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openGoldenTrips(page);
+  await page.locator('.trips-workspace .schedule-table tbody input[type="checkbox"]').nth(2).check();
+  await page.getByRole('toolbar', { name: 'Selected trips' }).getByRole('button', { name: 'Shift…', exact: true }).click();
+  const bar = shiftBar(page);
+  await expect(bar.getByRole('button', { name: /min earlier/ })).toBeEnabled();
+  await page.evaluate(() => window.scrollTo(0, 1500));
+  await expect(page.locator('.selection-bar-pinned')).toHaveCount(1);
+  await expect(bar).toHaveClass(/selection-bar--compact/);
+  await expect(bar.getByRole('radio')).toHaveCount(5);
+  await bar.getByRole('radio', { name: '0:30', exact: true }).check();
+  await bar.getByRole('button', { name: '30 s later' }).click();
+  await expect(bar.getByRole('status')).toHaveText('30 seconds later');
+  await bar.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(bar.getByRole('status')).toHaveText('No net shift');
+  await expect(bar.getByRole('button', { name: 'Redo', exact: true })).toBeEnabled();
+  await bar.getByRole('button', { name: 'Discard', exact: true }).click();
+});

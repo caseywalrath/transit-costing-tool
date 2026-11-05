@@ -77,13 +77,28 @@ export class TripShiftValidationError extends Error {
   }
 }
 
-/** The Shift minutes a planner typed, as seconds: a whole number of minutes above zero, else undefined. */
+/** The Shift step a planner typed, as seconds: minutes above zero in steps of 30 seconds, as decimal minutes ("1.5") or minutes:seconds ("1:30"). Else undefined. */
 export function parseShiftSeconds(text: string): DurationSeconds | undefined {
-  const minutes = Number(text);
-  return text.trim() !== '' && Number.isInteger(minutes) && minutes > 0 ? minutes * 60 : undefined;
+  const value = text.trim();
+  const clock = /^(\d+):([0-5]\d)$/.exec(value);
+  const seconds = clock ? Number(clock[1]) * 60 + Number(clock[2]) : /^\d+(\.\d+)?$/.test(value) ? Number(value) * 60 : NaN;
+  return Number.isInteger(seconds) && seconds > 0 && seconds % 30 === 0 ? seconds : undefined;
 }
 
-const shiftSize = (offsetSeconds: number) => `${Math.abs(offsetSeconds / 60)} minute${Math.abs(offsetSeconds) === 60 ? '' : 's'} ${offsetSeconds < 0 ? 'earlier' : 'later'}`;
+/** "30 s", "1 min", "1 min 30 s": the step on a Shift button. */
+export function formatShiftStep(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return [minutes ? `${minutes} min` : '', rest ? `${rest} s` : ''].filter(Boolean).join(' ');
+}
+
+const plural = (count: number, unit: string) => `${count} ${unit}${count === 1 ? '' : 's'}`;
+const shiftSize = (offsetSeconds: number) => {
+  const size = Math.abs(offsetSeconds);
+  const minutes = Math.floor(size / 60);
+  const rest = size % 60;
+  return `${[minutes ? plural(minutes, 'minute') : '', rest ? plural(rest, 'second') : ''].filter(Boolean).join(' ')} ${offsetSeconds < 0 ? 'earlier' : 'later'}`;
+};
 
 /** "No net shift", "1 minute later", "2 minutes earlier". */
 export function formatNetShift(offsetSeconds: number): string {

@@ -8,7 +8,7 @@ import { isUsablePattern, orderDirections, usableDirectionPatterns } from './dir
 import { sortServiceDays } from './serviceDays';
 import { patternTotalMiles } from './patterns';
 import { addRuntimeBand, describeTripBandShading, duplicateRuntimeBand, removeRuntimeBand, reverseRuntimeCandidates, routeRuntimeCalculationMethod, unifyRouteRuntimeCalculationMethods, updateRuntimeBand } from './runtime';
-import { formatNetShift, formatStagedShift, parseShiftSeconds } from './tripShift';
+import { formatNetShift, formatShiftStep, formatStagedShift, parseShiftSeconds } from './tripShift';
 import { calculateTimepointHeadways, duplicateDepartureKeys, roundServiceTimeToMinute } from './trips';
 import type { RouteDirection, RoutePattern, RuntimeBand, RuntimeProfile, ServiceDayDefinition, Trip } from './types';
 
@@ -129,10 +129,22 @@ describe('trip band shading (render-time Runtime calls)', () => {
 });
 
 describe('Shift minutes', () => {
-  it('turns a whole positive number of minutes into seconds and refuses anything else', () => {
+  it('turns minutes in steps of 30 seconds into seconds and refuses anything else', () => {
     expect(parseShiftSeconds('1')).toBe(60);
     expect(parseShiftSeconds(' 15 ')).toBe(900);
-    for (const bad of ['', '0', '-3', '1.5', 'abc', '1e1x']) expect(parseShiftSeconds(bad), bad).toBeUndefined();
+    expect(parseShiftSeconds('0.5')).toBe(30);
+    expect(parseShiftSeconds('1.5')).toBe(90);
+    expect(parseShiftSeconds('0:30')).toBe(30);
+    expect(parseShiftSeconds('2:30')).toBe(150);
+    for (const bad of ['', '0', '-3', '0.3', '1.25', '0:45', '1:60', '0:00', 'abc', '1e1x']) expect(parseShiftSeconds(bad), bad).toBeUndefined();
+  });
+  it('names a step and labels a 30-second shift', () => {
+    expect(formatShiftStep(30)).toBe('30 s');
+    expect(formatShiftStep(60)).toBe('1 min');
+    expect(formatShiftStep(90)).toBe('1 min 30 s');
+    expect(formatNetShift(30)).toBe('30 seconds later');
+    expect(formatNetShift(-90)).toBe('1 minute 30 seconds earlier');
+    expect(formatStagedShift(-30)).toBe('Staged 30 seconds earlier');
   });
   it('labels the net Shift and the staged Shift in minutes, earlier or later', () => {
     expect(formatNetShift(0)).toBe('No net shift');

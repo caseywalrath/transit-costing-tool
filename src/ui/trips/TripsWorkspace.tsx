@@ -9,7 +9,7 @@ import { type RouteDefinitionApplication, type ScenarioRecords } from '../../app
 import { TripShiftStalePreviewError, type TripGenerationApplication } from '../../application/tripGenerationService';
 import { TripShiftValidationError, type TripShiftPreview } from '../../domain/tripShift';
 import { TripGenerationError } from '../../domain/trips';
-import { createBlockingScenarioSourceSignature, formatNetShift, isUsablePattern, orderDirections, parseShiftSeconds, regenerationUndoApplies, reverseRuntimeCandidates, routeRuntimeCalculationMethod, sortServiceDays, summarizeTripTable, usableDirectionPatterns, type RuntimeCalculationMethod } from '../../application/tripsWorkspaceView';
+import { createBlockingScenarioSourceSignature, formatNetShift, formatShiftStep, isUsablePattern, orderDirections, parseShiftSeconds, regenerationUndoApplies, reverseRuntimeCandidates, routeRuntimeCalculationMethod, sortServiceDays, summarizeTripTable, usableDirectionPatterns, type RuntimeCalculationMethod } from '../../application/tripsWorkspaceView';
 import { formatServiceTime, parseServiceTime } from '../../domain/time';
 import { type BlockingBlock, type Route, type RouteDefinitionAggregate, type RuntimeAssignment, type RuntimeProfile, type ServiceDayDefinition, type Trip } from '../../domain/types';
 import { type BlockConnection } from '../../domain/blocking';
@@ -58,7 +58,9 @@ export function dayNameList(names: string[]): string {
 }
 
 /** Step sizes offered as one-press choices in the Shift drawer; any other whole number of minutes can be typed (U10). */
-export const SHIFT_STEP_PRESETS = [1, 5, 10, 15] as const;
+const SHIFT_STEP_MESSAGE = 'Enter minutes above 0 in steps of 30 seconds, such as 0:30, 1 or 1.5.';
+/** Preset Shift steps in seconds, with the text each puts in the step box and its label. */
+export const SHIFT_STEP_PRESETS = [{ seconds: 30, text: '0:30', label: '0:30' }, { seconds: 60, text: '1', label: '1' }, { seconds: 300, text: '5', label: '5' }, { seconds: 600, text: '10', label: '10' }, { seconds: 900, text: '15', label: '15' }] as const;
 
 /** The text for a refused Shift. The domain's generic wording for an invalid request is replaced with a next step. */
 export function shiftErrorText(error: unknown, fallback: string) {
@@ -643,15 +645,15 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   const shiftTripCount = shiftPreview?.selectedTripIds.length ?? selectedTripIds.length;
   const renderShiftBar = (compact: boolean) => <div className={compact ? 'selection-bar selection-bar--compact shift-bar' : 'selection-bar shift-bar'} role="toolbar" aria-label="Shift selected trips" data-shift-bar onClickCapture={(event) => { const control = (event.target as HTMLElement).closest('button'); if (control) lastShiftControl.current = control; }}>
     <b className="selection-bar__count">Shift {shiftTripCount} {shiftTripCount === 1 ? 'trip' : 'trips'}</b>
-    <button type="button" disabled={!canShiftSelectedTrips || busy || tripProfileBusy} title={parsedShiftSeconds === undefined ? 'Enter a whole number of minutes above 0.' : undefined} onClick={() => void appendStagedShift(-(parsedShiftSeconds ?? 0))}><span aria-hidden="true">← </span>{shiftStepLabel} earlier</button>
-    <button type="button" disabled={!canShiftSelectedTrips || busy || tripProfileBusy} title={parsedShiftSeconds === undefined ? 'Enter a whole number of minutes above 0.' : undefined} onClick={() => void appendStagedShift(parsedShiftSeconds ?? 0)}>{shiftStepLabel} later<span aria-hidden="true"> →</span></button>
-    {!compact && <fieldset className="shift-step-size" disabled={tripProfileBusy || busy}><legend>Step</legend>{SHIFT_STEP_PRESETS.map((minutes) => <label key={minutes} className="shift-step-preset"><input type="radio" name="shift-step" value={minutes} checked={shiftMinutes.trim() === String(minutes)} onChange={() => setShiftMinutes(String(minutes))} />{minutes}</label>)}<label className="shift-step-other"><input aria-label="Step minutes" type="number" min="1" step="1" inputMode="numeric" value={shiftMinutes} aria-invalid={parsedShiftSeconds === undefined} aria-describedby={parsedShiftSeconds === undefined ? 'shift-step-error' : undefined} onChange={(event) => setShiftMinutes(event.target.value)} /> min</label></fieldset>}
+    <button type="button" disabled={!canShiftSelectedTrips || busy || tripProfileBusy} title={parsedShiftSeconds === undefined ? SHIFT_STEP_MESSAGE : undefined} onClick={() => void appendStagedShift(-(parsedShiftSeconds ?? 0))}><span aria-hidden="true">← </span>{shiftStepLabel} earlier</button>
+    <button type="button" disabled={!canShiftSelectedTrips || busy || tripProfileBusy} title={parsedShiftSeconds === undefined ? SHIFT_STEP_MESSAGE : undefined} onClick={() => void appendStagedShift(parsedShiftSeconds ?? 0)}>{shiftStepLabel} later<span aria-hidden="true"> →</span></button>
+    <fieldset className="shift-step-size" disabled={tripProfileBusy || busy}><legend>Step</legend>{SHIFT_STEP_PRESETS.map((preset) => <label key={preset.seconds} className="shift-step-preset"><input type="radio" name={compact ? 'shift-step-pinned' : 'shift-step'} value={preset.seconds} checked={parsedShiftSeconds === preset.seconds} onChange={() => setShiftMinutes(preset.text)} />{preset.label}</label>)}<label className="shift-step-other"><input aria-label={compact ? 'Step minutes (pinned bar)' : 'Step minutes'} type="text" inputMode="decimal" value={shiftMinutes} aria-invalid={parsedShiftSeconds === undefined} aria-describedby={parsedShiftSeconds === undefined ? (compact ? 'shift-step-error-pinned' : 'shift-step-error') : undefined} onChange={(event) => setShiftMinutes(event.target.value)} /> min</label></fieldset>
     <span className="shift-net" role="status"><strong>{netShiftLabel}</strong></span>
-    {!compact && <><button type="button" disabled={!shiftOperations.length || busy} onClick={() => void undoStagedShift()}>Undo</button><button type="button" disabled={!redoShiftOperations.length || busy} onClick={() => void redoStagedShift()}>Redo</button></>}
+    <button type="button" disabled={!shiftOperations.length || busy} onClick={() => void undoStagedShift()}>Undo</button><button type="button" disabled={!redoShiftOperations.length || busy} onClick={() => void redoStagedShift()}>Redo</button>
     <span className="grow" />
     <button type="button" onClick={() => discardStagedShift()} disabled={busy}>Discard</button>
     <button className="primary" type="button" onClick={() => void completeStagedShift()} disabled={busy || Boolean(shiftError)}>{busy ? 'Saving…' : 'Done'}</button>
-    {!compact && parsedShiftSeconds === undefined && <p id="shift-step-error" className="field-error shift-bar__message">Enter a whole number of minutes above 0.</p>}
+    {parsedShiftSeconds === undefined && <p id={compact ? 'shift-step-error-pinned' : 'shift-step-error'} className="field-error shift-bar__message">{SHIFT_STEP_MESSAGE}</p>}
     {shiftError && <p className="field-error shift-bar__message" role="alert">{shiftError}</p>}
   </div>;
   const renderSelectionBar = (compact: boolean) => shiftDrawerOpen ? renderShiftBar(compact) : selectedTripIds.length > 0 ? <SelectionBar compact={compact} count={selectedTripIds.length} noun="trip" ariaLabel="Selected trips" onClear={clearTripSelection}>
@@ -664,7 +666,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   </SelectionBar> : null;
   const netShiftSeconds = shiftPreview?.netOffsetSeconds ?? 0;
   const netShiftLabel = formatNetShift(netShiftSeconds);
-  const shiftStepLabel = parsedShiftSeconds === undefined ? '—' : `${parsedShiftSeconds / 60} min`;
+  const shiftStepLabel = parsedShiftSeconds === undefined ? '—' : formatShiftStep(parsedShiftSeconds);
   if (!directions.length) return <section className="empty-state"><p>Add a direction on the Route tab before defining runtimes or trips.</p></section>;
   if (!patterns.length) return <section className="trips-workspace"><section className="prerequisite"><h1 className="box-heading">Add a pattern on Route</h1><p>Choose a direction, then add a pattern with at least two points before entering runtimes or trips.</p></section></section>;
   return <div className="trips-workspace">
