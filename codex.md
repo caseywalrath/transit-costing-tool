@@ -69,7 +69,7 @@ Packages are classified by capability class, as `AGENTS.md` states. The model na
 - Keep structural packages from establishing UI conventions through placeholders, and keep UI packages from duplicating business rules that belong in domain commands or selectors.
 - Place a user-verification gate between structural work and a separately owned UI/UX package when both are required.
 - The primary agent remains responsible for architecture, integration, cross-layer consistency, and final verification.
-- Every phased plan includes a "Verification per package" table (example: `docs/implementation/planned-frequencies.md`) with Run, Skip and Do-not-cut columns. The planning agent fills it by checking which files and screens each package touches and naming the browser specs in `tests/ui/` that cover them, following `AGENTS.md` (Verification). Be conservative: when unsure whether a spec covers touched code, include it. The full browser suite goes in the closeout package.
+- Every phased plan includes a "Verification per package" table with Run, Skip and Do-not-cut columns. The planning agent fills it by checking which files and screens each package touches and naming the browser specs in `tests/ui/` that cover them, following `AGENTS.md` (Verification). Be conservative: when unsure whether a spec covers touched code, include it. The full browser suite goes in the closeout package.
 
 Older plans may contain Terra assignments from when that model was available. Treat those as historical recommendations; do not use Terra for new work.
 
