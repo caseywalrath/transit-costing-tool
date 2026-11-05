@@ -35,6 +35,18 @@ export interface RouteDefinitionAggregate { route: Route; nodes: Node[]; pattern
 export interface RuntimeBand { id: EntityId; label: string; sequence: number; startTime: ServiceSeconds; endTime: ServiceSeconds; segmentRuntimeSeconds: DurationSeconds[]; }
 export interface RuntimeProfile extends EntityMetadata { id: EntityId; scenarioId: EntityId; routeId: EntityId; patternId: EntityId; name: string; bands: RuntimeBand[]; calculationMethod?: 'singleBand' | 'blendSegments' | 'segmentStart'; calculationRevision?: number; }
 export interface RuntimeAssignment extends EntityMetadata { id: EntityId; scenarioId: EntityId; patternId: EntityId; serviceDayId: EntityId; runtimeProfileId: EntityId; }
+/** One span of a planned-frequency plan: start inclusive, end exclusive (Decision 0058). */
+export interface PlannedPeriod { id: EntityId; startTime: ServiceSeconds; endTime: ServiceSeconds; headwaySeconds: DurationSeconds; }
+/** A Scenario-owned service plan for one Route and Service day. At most one per pair; a record with no periods is not stored. */
+export interface PlannedFrequency extends EntityMetadata {
+  id: EntityId;
+  scenarioId: EntityId;
+  routeId: EntityId;
+  serviceDayId: EntityId;
+  periods: PlannedPeriod[];
+  /** Direction ID → node ID. A missing entry means the default measure node. */
+  measureNodeIdByDirectionId: Record<EntityId, EntityId>;
+}
 /** A transient additive request. It is never persisted as a scheduling record. */
 export interface GenerateTripsRequest {
   scenarioId: EntityId;
