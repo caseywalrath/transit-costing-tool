@@ -56,3 +56,17 @@ test('the step sizes are a keyboard radio group', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(drawer).toHaveCount(0);
 });
+
+// A staged shift is marked by an edge bar, accent times and a tooltip, never by an added line, so the row keeps its height.
+test('staging a shift does not change the row height and marks the row without visible text', async ({ page }) => {
+  await createShiftReadySchedule(page, '06:20');
+  const row = page.locator('.schedule-table tbody tr').first();
+  await row.locator('input[type="checkbox"]').check();
+  await runCommand(page, 'trips.shift');
+  const before = (await row.boundingBox())!.height;
+  await shiftBar(page).getByRole('button', { name: /min later/ }).first().click();
+  await expect(row).toHaveAttribute('title', /Staged \d+ minutes? later/);
+  await expect(row.locator('.trip-time-staged').first()).toBeVisible();
+  await expect(row.locator('td').first()).toHaveCSS('box-shadow', /inset/);
+  expect((await row.boundingBox())!.height).toBe(before);
+});
