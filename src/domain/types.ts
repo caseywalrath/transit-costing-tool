@@ -53,15 +53,28 @@ export interface GenerateTripsRequest {
   routeId: EntityId;
   serviceDayId: EntityId;
   patternId: EntityId;
-  firstTrip: ServiceSeconds;
-  headwaySeconds: DurationSeconds;
+  /** Headway form: required unless `slots` is given. */
+  firstTrip?: ServiceSeconds;
+  /** Headway form: required unless `slots` is given. */
+  headwaySeconds?: DurationSeconds;
   /** Inclusive final departure when building by time. Exactly one generation limit is required. */
   lastTrip?: ServiceSeconds;
   /** Requested generated-trip count when building by count. Exactly one generation limit is required. */
   tripCount?: number;
+  /**
+   * Slot form (Decision 0058 item 7): the exact times to build, in increasing order. When given, `firstTrip`, `headwaySeconds`, `lastTrip`
+   * and `tripCount` must all be absent.
+   */
+  slots?: ServiceSeconds[];
+  /**
+   * Node whose time each departure or slot gives (the Pattern's first visit of it). Earlier and later stops are calculated with the anchor
+   * method of Regenerate (Decision 0046). Absent: the time is the first stop's, exactly as before Decision 0058.
+   */
+  anchorNodeId?: EntityId;
   tripProfileId?: EntityId;
 }
-export interface AddTripRequest extends Omit<GenerateTripsRequest, 'headwaySeconds' | 'lastTrip' | 'tripCount'> {
+export interface AddTripRequest extends Omit<GenerateTripsRequest, 'headwaySeconds' | 'lastTrip' | 'tripCount' | 'slots' | 'anchorNodeId' | 'firstTrip'> {
+  firstTrip: ServiceSeconds;
   directionId: EntityId;
 }
 export type GenerationLimit = { mode: 'endTime'; endTime: ServiceSeconds } | { mode: 'tripCount'; tripCount: number };

@@ -1,7 +1,7 @@
 # Planned Frequencies: Work Order Plan
 
 - Requested by the user on 2026-11-05. Source proposal: `docs/backlog.md`, "Planned frequencies".
-- Status: PF0 complete (Decision 0058, 2026-11-05). PF1 complete (2026-11-05). PF2 complete (2026-11-05; refines Decision 0058 item 6, edge trips). PF3 complete (2026-11-05; see "PF3 as built"). PF4 complete (2026-11-05; see "PF4 as built"). PF5 complete (2026-11-05; see "PF5 as built"). PF6 has not started. Each package begins only when the user asks for it, and each ends at a verification gate where the agent reports and recommends the next package (`AGENTS.md`).
+- Status: PF0 complete (Decision 0058, 2026-11-05). PF1 complete (2026-11-05). PF2 complete (2026-11-05; refines Decision 0058 item 6, edge trips). PF3 complete (2026-11-05; see "PF3 as built"). PF4 complete (2026-11-05; see "PF4 as built"). PF5 complete (2026-11-05; see "PF5 as built"). PF6 complete (2026-11-05; see "PF6 as built"). PF7 has not started. Each package begins only when the user asks for it, and each ends at a verification gate where the agent reports and recommends the next package (`AGENTS.md`).
 - Branch: the branch the user names for each session. Never push to another branch. Do not open a pull request unless asked.
 - Staffing: one agent per package. Most packages are Sonnet. Packages marked **Opus** hold rules, data migrations or calculations where a mistake is hard to see or hard to undo.
 
@@ -257,6 +257,15 @@ If a skipped area turns out to be touched (for example a shared component), add 
 5. Tests: no-anchor results identical to today (golden comparison); anchor at the first stop equals no anchor; anchor mid-route matches `recalculateTripWithAnchor`; a slot near a band boundary under `segmentStart`; a pattern that does not serve the node.
 
 **Acceptance:** all existing trip tests pass unchanged; new tests pass.
+
+**PF6 as built (2026-11-05):**
+
+- `GenerateTripsRequest` gains `slots` and `anchorNodeId`; `firstTrip` and `headwaySeconds` become optional in the type because the slot form must leave them out. The headway-form validation is unchanged (a missing first trip or headway is still refused with the same findings). `AddTripRequest` and `createAuthoritativeTrip` keep `firstTrip` required.
+- With an anchor past the first stop, each time is put on the anchor point of a seed trip and `recalculateTripWithAnchor` (Regenerate's method) calculates the rest, so the two agree by construction rather than by a second implementation. An anchor at the first stop, or no anchor, takes the existing path untouched.
+- A slot whose anchor is ambiguous or unreachable is a finding for that slot (with `parameters.departure`); a build cannot ask the planner to choose a band, unlike Regenerate.
+- The historical `generateTrips` overload now tells a generation set apart by `firstDeparture`, because a slot-form request has no `firstTrip`.
+- New findings: `tripGeneration.anchorNodeNotServed`, `tripGeneration.slotsInvalid`, `tripGeneration.slotsExclusive` (texts in `src/ui/shared/messages.ts`).
+- Tests: `src/domain/tripAnchorGeneration.test.ts` (11). No existing test changed.
 
 ---
 
