@@ -12,7 +12,7 @@
 
 ## Summary of the feature
 
-Two actions are added to the Runtime profile "..." menu:
+Two actions are added to the Runtime actions ("...") menu, in an Other patterns group (moved there from the Runtime profile menu after review):
 
 | Action | Direction | Overwrites existing values | Purpose |
 |---|---|---|---|

@@ -80,6 +80,14 @@ describe('segment runtime matching', () => {
     expect(plan.skips.filter((skip) => skip.reason === 'bandMismatch').length).toBeGreaterThan(0);
   });
 
+  it('6b. fill uses the bands that match even when the open profile has fewer bands', () => {
+    const twoBands = profile('PB', 'B', 7, () => 0, {}, [[4, 6], [6, 10]]);
+    const plan = planFillFromOthers(input(twoBands, [profileA]));
+    expect(plan.changes).toHaveLength(10);
+    expect(new Set(plan.changes.map((change) => change.bandId))).toEqual(new Set(['PB-b0', 'PB-b1']));
+    expect(plan.skips.filter((skip) => skip.reason === 'bandMismatch').map((skip) => skip.bandId)).toEqual(['PA-b2', 'PA-b3', 'PA-b4']);
+  });
+
   it('7. matches only profiles that share a service day, and reports unassigned profiles', () => {
     const saturdayOnly = { ...route, assignments: [assign('PA', 'A'), assign('PB', 'B', 'saturday')] };
     expect(planCopyToOthers({ ...input(profileA, [emptyB]), assignments: saturdayOnly.assignments }).changes).toEqual([]);
