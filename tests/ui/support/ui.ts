@@ -172,7 +172,11 @@ export async function runCommand(page: Page, id: CommandId) {
     // The Trips selection bar is above the table, or pinned above the table headings (outside the Trips section) while the page is scrolled.
     const toolbars = { selectionBar: 'Selected trips', blockSelectionBar: 'Selected block trips', unassignedSelectionBar: 'Selected unassigned trips' } as const;
     const scope = button.within && button.within in toolbars ? page.getByRole('toolbar', { name: toolbars[button.within as keyof typeof toolbars] }) : button.within ? region(page, button.within as RegionId) : page;
-    await scope.getByRole('button', typeof button.name === 'string' ? { name: button.name, exact: true } : { name: button.name }).click();
+    const target = scope.getByRole('button', typeof button.name === 'string' ? { name: button.name, exact: true } : { name: button.name });
+    // Selecting a Trip can swap the bar above the table for the pinned one a moment later. A click that started on the first copy waits on
+    // it for the whole timeout once it is hidden, because Playwright keeps the element it found. Looking the button up again fixes that.
+    if (button.within === 'selectionBar') await expect(async () => { await target.click({ timeout: 3000 }); }).toPass({ timeout: 40000 });
+    else await target.click();
     return;
   }
   const command: Command = commands[id as keyof typeof commands];
