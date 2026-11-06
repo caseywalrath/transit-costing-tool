@@ -24,11 +24,11 @@ function useNarrowLayout() {
  * ends; Home and End go to the first and last segment. `onChange` may be refused by the caller (an unsaved-draft prompt); the checked
  * segment always follows `value`. Below the narrow layout, or when `fallback` is set, the native select is shown instead.
  */
-export function SegmentedControl({ label, options, value, onChange, fallback = false, className }: { label: string; options: SegmentOption[]; value: string; onChange: (value: string) => void; fallback?: boolean; className?: string }) {
+export function SegmentedControl({ label, options, value, onChange, fallback = false, className, disabled = false, title }: { disabled?: boolean; title?: string; label: string; options: SegmentOption[]; value: string; onChange: (value: string) => void; fallback?: boolean; className?: string }) {
   const narrow = useNarrowLayout();
   const buttons = useRef<Array<HTMLButtonElement | null>>([]);
   if (fallback || narrow) {
-    return <select className="segmented-fallback" aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option.value} value={option.value}>{option.title ?? option.text}</option>)}</select>;
+    return <select className="segmented-fallback" aria-label={label} disabled={disabled} title={title} value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option.value} value={option.value}>{option.title ?? option.text}</option>)}</select>;
   }
   const checkedIndex = Math.max(0, options.findIndex((option) => option.value === value));
   function move(event: KeyboardEvent<HTMLButtonElement>, index: number) {
@@ -41,10 +41,10 @@ export function SegmentedControl({ label, options, value, onChange, fallback = f
     buttons.current[target]?.focus();
     if (options[target].value !== value) onChange(options[target].value);
   }
-  return <div role="radiogroup" aria-label={label} className={['segmented', className].filter(Boolean).join(' ')}>
+  return <div role="radiogroup" aria-label={label} aria-disabled={disabled || undefined} title={title} className={['segmented', className].filter(Boolean).join(' ')}>
     {options.map((option, index) => {
       const checked = option.value === value;
-      return <button key={option.value} ref={(element) => { buttons.current[index] = element; }} type="button" role="radio" aria-checked={checked} tabIndex={index === checkedIndex ? 0 : -1} title={option.title} aria-label={option.title} data-value={option.value} className="segmented__segment" onClick={() => { if (!checked) onChange(option.value); }} onKeyDown={(event) => move(event, index)}>{option.text}</button>;
+      return <button key={option.value} ref={(element) => { buttons.current[index] = element; }} type="button" role="radio" disabled={disabled} aria-checked={checked} tabIndex={index === checkedIndex ? 0 : -1} title={option.title} aria-label={option.title} data-value={option.value} className="segmented__segment" onClick={() => { if (!checked) onChange(option.value); }} onKeyDown={(event) => move(event, index)}>{option.text}</button>;
     })}
   </div>;
 }
