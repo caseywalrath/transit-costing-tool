@@ -479,6 +479,60 @@ describe('Service day and Scenario validation', () => {
     expect(renamed.serviceDays.find((day) => day.id === saturday.id)!.name).toBe('Saturday service');
   });
 
+  it('stores a normalized abbreviation, reads it back, and clears it to the default (Decision 0059)', async () => {
+    const { service, records, weekday } = await setup();
+    const set = await service.updateServiceDay(records, weekday.id, { abbreviation: ' wk ' });
+    expect(set.serviceDays.find((day) => day.id === weekday.id)!.abbreviation).toBe('WK');
+    const stored = (await service.loadWorkspace(records.scenario.projectId, records.scenario.id)).records!.serviceDays.find((day) => day.id === weekday.id)!;
+    expect(stored.abbreviation).toBe('WK');
+    const cleared = await service.updateServiceDay(set, weekday.id, { abbreviation: '  ' });
+    const day = cleared.serviceDays.find((candidate) => candidate.id === weekday.id)!;
+    expect(day).not.toHaveProperty('abbreviation');
+  });
+
+  it('writes nothing when the abbreviation is unchanged or cleared while already blank', async () => {
+    const { service, records, weekday } = await setup();
+    expect((await service.updateServiceDay(records, weekday.id, { abbreviation: '' })).serviceDays).toEqual(records.serviceDays);
+    const set = await service.updateServiceDay(records, weekday.id, { abbreviation: 'WK' });
+    const again = await service.updateServiceDay(set, weekday.id, { abbreviation: 'wk' });
+    expect(again.serviceDays.find((day) => day.id === weekday.id)!.updatedAt).toBe(set.serviceDays.find((day) => day.id === weekday.id)!.updatedAt);
+  });
+
+  it('refuses an invalid abbreviation with a field finding and a plain message', async () => {
+    const { service, records, weekday } = await setup();
+    const findings = await findingsOf(service.updateServiceDay(records, weekday.id, { abbreviation: 'ABCD' }));
+    expect(findings).toMatchObject([{ ruleId: 'serviceDay.abbreviationInvalid', field: 'abbreviation', entityId: weekday.id }]);
+    await expect(service.updateServiceDay(records, weekday.id, { abbreviation: 'A-B' })).rejects.toThrow('An abbreviation must be 1 to 3 letters or digits.');
+  });
+
+  it('refuses an abbreviation that another day uses, entered or derived', async () => {
+    const { service, records, weekday, saturday } = await setup();
+    await expect(service.updateServiceDay(records, weekday.id, { abbreviation: 'sat' })).rejects.toThrow('Another service day already uses the abbreviation SAT.');
+    const set = await service.updateServiceDay(records, saturday.id, { abbreviation: 'S1' });
+    const findings = await findingsOf(service.updateServiceDay(set, weekday.id, { abbreviation: 's1' }));
+    expect(findings).toMatchObject([{ ruleId: 'serviceDay.abbreviationDuplicate', field: 'abbreviation', entityId: weekday.id, parameters: { abbreviation: 'S1' } }]);
+    // The refused edit stored nothing.
+    expect((await service.loadWorkspace(records.scenario.projectId, records.scenario.id)).records!.serviceDays.find((day) => day.id === weekday.id)).not.toHaveProperty('abbreviation');
+  });
+
+  it('lets a day be renamed without raising findings about a clash saved between other days', async () => {
+    const { service, records, weekday, saturday } = await setup();
+    const repository = (service as unknown as { repository: InMemoryRouteDefinitionRepository }).repository;
+    await repository.updateScenarioRecords(records.scenario.id, (current) => ({ ...current, serviceDays: current.serviceDays.map((day) => day.id === saturday.id ? { ...day, kind: 'custom' as const, name: 'Holiday extra' } : day) }));
+    const stale = (await repository.getScenarioRecords(records.scenario.id))!;
+    const renamed = await service.updateServiceDay(stale, weekday.id, { name: 'Weekday plan' });
+    expect(renamed.serviceDays.find((day) => day.id === weekday.id)!.name).toBe('Weekday plan');
+  });
+
+  it('refuses a rename that makes a derived custom default clash, reporting it on the name', async () => {
+    const { service, records, saturday } = await setup();
+    const repository = (service as unknown as { repository: InMemoryRouteDefinitionRepository }).repository;
+    await repository.updateScenarioRecords(records.scenario.id, (current) => ({ ...current, serviceDays: current.serviceDays.map((day) => day.id === saturday.id ? { ...day, kind: 'custom' as const, name: 'Summer' } : day) }));
+    const stale = (await repository.getScenarioRecords(records.scenario.id))!;
+    const findings = await findingsOf(service.updateServiceDay(stale, saturday.id, { name: 'Sunday special' }));
+    expect(findings).toMatchObject([{ ruleId: 'serviceDay.abbreviationDuplicate', field: 'name', entityId: saturday.id }]);
+  });
+
   it('renameScenario rejects a blank name and trims a name', async () => {
     const { service, records } = await setup();
     await expect(service.renameScenario(records, '   ')).rejects.toThrow('Scenario name is required');

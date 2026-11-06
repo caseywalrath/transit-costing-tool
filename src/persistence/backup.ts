@@ -23,6 +23,7 @@ import type {
 import { assertPlannedFrequencies, type PlannedFrequencyOwners } from './plannedFrequencyPersistence';
 import { remapMeasureNodes } from '../domain/plannedFrequencies';
 import { metadata, newId } from '../domain/ids';
+import { isValidServiceDayAbbreviation, validateServiceDayAbbreviations } from '../domain/serviceDays';
 import { remapAutoBlockingRecord, validateAutoBlockingRules, type AutoBlockingRules } from '../domain/autoBlocking';
 import { validatePattern } from '../domain/patterns';
 import { validateDirection, validatePatternDirection } from '../domain/directions';
@@ -249,7 +250,7 @@ function validateScenarios(values: unknown[], projectId: string): Scenario[] {
 
 function validateServiceDays(values: unknown[], scenarioIds: Set<string>): ServiceDayDefinition[] {
   const ids = new Set<string>();
-  return values.map((value, index) => {
+  const days = values.map((value, index) => {
     if (!isRecord(value)) throw new Error(`Invalid project backup: serviceDays[${index}] must be an object`);
     const day = value as unknown as ServiceDayDefinition;
     requiredString(day.id, `serviceDays[${index}].id`);
@@ -260,9 +261,17 @@ function validateServiceDays(values: unknown[], scenarioIds: Set<string>): Servi
     requiredString(day.name, `serviceDays[${index}].name`);
     if (!Number.isInteger(day.annualServiceDays) || day.annualServiceDays < 0) throw new Error(`Invalid project backup: serviceDays[${index}].annualServiceDays`);
     if (!Number.isInteger(day.sequence) || day.sequence < 0) throw new Error(`Invalid project backup: serviceDays[${index}].sequence`);
+    if (day.abbreviation !== undefined && (typeof day.abbreviation !== 'string' || !isValidServiceDayAbbreviation(day.abbreviation))) throw new Error(`Invalid project backup: serviceDays[${index}].abbreviation must be 1 to 3 capital letters or digits`);
     assertMetadata(value, `serviceDays[${index}]`);
     return day;
   });
+  // A clash is refused only when a stored abbreviation is part of it, so a backup written before abbreviations existed always imports.
+  for (const scenarioId of new Set(days.map((day) => day.scenarioId))) {
+    const scenarioDays = days.filter((day) => day.scenarioId === scenarioId);
+    const clash = validateServiceDayAbbreviations(scenarioDays).find((finding) => finding.ruleId === 'serviceDay.abbreviationDuplicate' && scenarioDays.some((day) => day.abbreviation !== undefined && day.id === finding.entityId));
+    if (clash) throw new Error(`Invalid project backup: serviceDays[${days.findIndex((day) => day.id === clash.entityId)}].abbreviation repeats the abbreviation ${clash.parameters?.abbreviation} within one Scenario`);
+  }
+  return days;
 }
 
 function validateRoutes(values: unknown[], scenarioIds: Set<string>): Route[] {

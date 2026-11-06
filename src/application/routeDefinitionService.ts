@@ -4,7 +4,7 @@ import { createProject, createScenarioRecords, duplicateRouteRecords, duplicateS
 import { duplicatePattern, getSegmentMiles, normalizePattern, reversePattern, validatePattern } from '../domain/patterns';
 import { createManagedDirections, ensureManagedDirections, oppositeDirectionGroup } from '../domain/directions';
 import { classifyPatternEdit, describePatternPointChange, getPatternServiceImpact, rebalanceRuntimeProfile, rebalanceTripForPattern, reconcileRouteTimetables, resetPatternService, type DirectionOrderConflict, type PatternServiceImpact, type RouteEditClassification, type RouteEditMode } from '../domain/safeRouteEditing';
-import { sortServiceDays } from '../domain/serviceDays';
+import { normalizeServiceDayAbbreviation, sortServiceDays, validateServiceDayAbbreviations } from '../domain/serviceDays';
 import { applySegmentRuntimePlan, planCopyToOthers, planFillFromOthers, qualifyingProfiles, type SegmentRuntimePlan } from '../domain/segmentRuntimeMatching';
 import { formatServiceTime } from '../domain/time';
 import { copyRuntimeProfile, normalizeRuntimeProfile, reverseCopyRuntimeProfile, routeRuntimeCalculationMethod, unifyRouteRuntimeCalculationMethods, validateRuntimeProfile, withRuntimeCalculationRevision, RuntimeProfileDeletionError, type RuntimeCalculationMethod } from '../domain/runtime';
@@ -125,8 +125,16 @@ function removeNonRevenueActivitiesForNodes(blocks: Block[], nodeIds: Set<string
   return { blocks: updated, affectedBlockIds, affectedBlockCount: affectedBlockIds.length, removedActivityCount };
 }
 
+/** A copy of the service day with the stored abbreviation set, or removed when `abbreviation` is undefined. */
+function withAbbreviation(day: ServiceDayDefinition, abbreviation: string | undefined): ServiceDayDefinition {
+  const { abbreviation: _previous, ...rest } = day;
+  return abbreviation === undefined ? rest : { ...rest, abbreviation };
+}
+
 const SERVICE_DAY_MESSAGES: Record<string, (finding: ValidationFinding) => string> = {
   'serviceDay.nameRequired': () => 'Enter a service day name.',
+  'serviceDay.abbreviationInvalid': () => 'An abbreviation must be 1 to 3 letters or digits.',
+  'serviceDay.abbreviationDuplicate': (finding) => `Another service day already uses the abbreviation ${finding.parameters?.abbreviation ?? ''}. Enter a different abbreviation.`,
   'serviceDay.annualServiceDaysInvalid': () => 'Annual service days must be a whole number of 0 or more.',
   'serviceDay.annualServiceDaysExceed365': (finding) => `Annual service days cannot total more than ${finding.parameters?.maximum ?? MAX_ANNUAL_SERVICE_DAYS}. This change would make the total ${finding.parameters?.total}.`,
 };
@@ -149,12 +157,22 @@ export class ServiceDayValidationError extends Error {
  * of 0 or more, and the counts of all Service days must not total more than 365 (Phase 5 plan, PL05-07). A total that is already
  * above 365 (saved before this check) may be reduced in steps but not raised, so a planner can always correct it.
  */
-type ServiceDayEdit = Partial<Pick<ServiceDayDefinition, 'name' | 'annualServiceDays'>>;
+type ServiceDayEdit = Partial<Pick<ServiceDayDefinition, 'name' | 'annualServiceDays'>> & {
+  /** An entered abbreviation. A blank value clears the stored abbreviation, so the derived default applies (Decision 0059). */
+  abbreviation?: string;
+};
 
 function serviceDayFindings(days: ServiceDayDefinition[], id: string, patch: ServiceDayEdit): ValidationFinding[] {
   const finding = (messageKey: string, field: string, parameters?: Record<string, string | number>): ValidationFinding => ({ ruleId: messageKey, severity: 'error', entityType: 'serviceDay', entityId: id, field, messageKey, ...(parameters ? { parameters } : {}) });
   const findings: ValidationFinding[] = [];
   if (patch.name !== undefined && !patch.name.trim()) findings.push(finding('serviceDay.nameRequired', 'name'));
+  if (patch.abbreviation !== undefined || patch.name !== undefined) {
+    // Only findings about the edited day are raised, so a clash already saved between other days never blocks an unrelated edit.
+    const entered = patch.abbreviation === undefined ? undefined : normalizeServiceDayAbbreviation(patch.abbreviation);
+    const next = days.map((day) => day.id !== id ? day : withAbbreviation({ ...day, ...(patch.name !== undefined && patch.name.trim() ? { name: patch.name.trim() } : {}) }, patch.abbreviation === undefined ? day.abbreviation : entered));
+    const own = validateServiceDayAbbreviations(next).filter((item) => item.entityId === id);
+    for (const item of own) findings.push({ ...item, field: patch.abbreviation !== undefined ? 'abbreviation' : 'name' });
+  }
   if (patch.annualServiceDays !== undefined) {
     const count = patch.annualServiceDays;
     if (!Number.isInteger(count) || count < 0) findings.push(finding('serviceDay.annualServiceDaysInvalid', 'annualServiceDays'));
@@ -513,7 +531,7 @@ export class RouteDefinitionService {
     assertReviewCurrent('route', reviewToken, plan.impact.reviewToken);
     return this.saveScenarioRecords(plan.next);
   }
-  /** Edits the name or the annual count of one Service day. Other fields of the Service day are not editable here and are ignored. */
+  /** Edits the name, abbreviation, or annual count of one Service day. Other fields of the Service day are not editable here and are ignored. */
   async updateServiceDay(records: ScenarioRecords, id: string, patch: ServiceDayEdit): Promise<ScenarioRecords> {
     const stored = await this.repository.getScenarioRecords(records.scenario.id);
     if (!stored) throw new Error('Scenario not found.');
@@ -522,13 +540,22 @@ export class RouteDefinitionService {
     const change: ServiceDayEdit = {};
     if (patch.name !== undefined) change.name = patch.name.trim();
     if (patch.annualServiceDays !== undefined) change.annualServiceDays = patch.annualServiceDays;
-    if ((Object.keys(change) as Array<keyof ServiceDayEdit>).every((key) => day[key] === change[key])) return stored;
+    if (patch.abbreviation !== undefined) change.abbreviation = normalizeServiceDayAbbreviation(patch.abbreviation) ?? '';
+    const unchanged = (change.name === undefined || day.name === change.name)
+      && (change.annualServiceDays === undefined || day.annualServiceDays === change.annualServiceDays)
+      && (change.abbreviation === undefined || (day.abbreviation ?? '') === change.abbreviation);
+    if (unchanged) return stored;
     const findings = serviceDayFindings(stored.serviceDays, id, change);
     if (findings.length) throw new ServiceDayValidationError(findings);
+    const apply = (candidate: ServiceDayDefinition): ServiceDayDefinition => {
+      const { abbreviation, ...rest } = change;
+      const edited = withAbbreviation({ ...candidate, ...rest }, abbreviation === undefined ? candidate.abbreviation : abbreviation || undefined);
+      return withUpdatedAt(edited, this.now());
+    };
     return this.updateScenarioRecords(records.scenario.id, (current) => {
       const recheck = serviceDayFindings(current.serviceDays, id, change);
       if (recheck.length) throw new ServiceDayValidationError(recheck);
-      return { ...current, serviceDays: current.serviceDays.map((candidate) => candidate.id === id ? withUpdatedAt({ ...candidate, ...change }, this.now()) : candidate) };
+      return { ...current, serviceDays: current.serviceDays.map((candidate) => candidate.id === id ? apply(candidate) : candidate) };
     });
   }
 
