@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { seedSnapshot } from './support/dexieEnv';
 import { goldenRaw } from './support/goldenFixture';
-import { scopeField } from './support/ui';
+import { chooseScope, scopeField } from './support/ui';
 
 test.setTimeout(90_000);
 
@@ -11,7 +11,7 @@ test('deletes checked blocks, then every block on the day', async ({ page }) => 
   await page.goto('/');
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30000 });
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await scopeField(page, 'Day').selectOption({ label: 'Saturday' });
+  await chooseScope(page, 'Day', { label: 'Saturday' });
   await expect(scopeField(page, 'Blocking scenario')).toHaveValue(/.+/);
 
   const table = page.locator('.blocking-blocks-table');
@@ -19,6 +19,8 @@ test('deletes checked blocks, then every block on the day', async ({ page }) => 
   await expect.poll(() => rows.count()).toBeGreaterThan(2);
   const before = await rows.count();
   const openedRows = table.locator('tbody tr.selected-block-row');
+  // The Day's first Block opens once the Blocks load; wait for it so the count below is settled.
+  await expect(openedRows).toHaveCount(1);
   const openedBefore = await openedRows.count();
 
   await rows.nth(0).getByRole('checkbox').check();

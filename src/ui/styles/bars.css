@@ -6,6 +6,17 @@
   background: var(--color-selection); border: 1px solid var(--color-accent-soft); border-radius: var(--radius-panel); }
 .selection-bar__count { margin-right: var(--space-inline); }
 .context-field { display: inline-flex; align-items: center; gap: var(--space-inline); flex: none; min-width: 0; }
+/* Decision 0059: a segmented scope selector. One pill outline, thin dividers, the pressed-toggle look on the checked segment. */
+.segmented { display: inline-flex; flex: none; align-items: stretch; height: var(--control-height); border: 1px solid var(--color-border); border-radius: var(--radius-pill); background: var(--color-surface); }
+.segmented__segment { min-height: 0; min-width: 3.4em; margin: -1px 0; padding: 0 var(--space-3); border: 1px solid transparent; border-radius: 0; background: transparent; color: var(--color-text); white-space: nowrap; }
+.segmented__segment + .segmented__segment { box-shadow: inset 1px 0 0 var(--color-border); }
+.segmented__segment:first-child { margin-left: -1px; border-radius: var(--radius-pill) 0 0 var(--radius-pill); }
+.segmented__segment:last-child { margin-right: -1px; border-radius: 0 var(--radius-pill) var(--radius-pill) 0; }
+.segmented__segment:hover:not(:disabled):not([aria-checked="true"]) { background: var(--color-surface-2); }
+.segmented__segment[aria-checked="true"] { position: relative; z-index: 1; border-color: var(--color-accent); background: var(--color-selection); color: var(--color-accent-strong); font-weight: var(--font-weight-bold); box-shadow: none; }
+.segmented__segment[aria-checked="true"] + .segmented__segment { box-shadow: none; }
+.segmented__segment:focus-visible { position: relative; z-index: 2; }
+.segmented--days .segmented__segment { min-width: 3.6em; padding: 0 var(--space-2); }
 .context-field__label { font-size: var(--font-size-label); font-weight: var(--font-weight-semibold); color: var(--color-text-muted); }
 .chip { display: inline-flex; align-items: center; height: 22px; padding: 0 var(--space-2); border-radius: var(--radius-control); background: var(--color-sunken);
   font-size: var(--font-size-chip); font-weight: var(--font-weight-semibold); white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }

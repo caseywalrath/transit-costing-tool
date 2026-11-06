@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { seedSnapshot } from './support/dexieEnv';
 import { goldenRaw } from './support/goldenFixture';
-import { scopeField } from './support/ui';
+import { chooseScope, scopeField } from './support/ui';
 
 test.setTimeout(90_000);
 
@@ -12,7 +12,7 @@ test('copies blocks from another day with exact, acknowledged, and refused match
   await page.goto('/');
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30000 });
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await scopeField(page, 'Day').selectOption({ label: 'Holiday' });
+  await chooseScope(page, 'Day', { label: 'Holiday' });
   await expect(scopeField(page, 'Blocking scenario')).toHaveValue(/.+/);
 
   await page.getByRole('button', { name: 'Blocks actions', exact: true }).click();

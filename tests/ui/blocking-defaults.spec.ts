@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { goldenRaw } from './support/goldenFixture';
-import { scopeField } from './support/ui';
+import { chooseScope, scopeField, scopeText } from './support/ui';
 
 test.setTimeout(120_000);
 
@@ -64,22 +64,22 @@ test('switching scenarios restores the Day last viewed in each scenario', async 
   };
 
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await scopeField(page, 'Day').selectOption({ label: 'Sunday' });
+  await chooseScope(page, 'Day', { label: 'Sunday' });
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await scopeField(page, 'Day').selectOption({ label: 'Saturday' });
+  await chooseScope(page, 'Day', { label: 'Saturday' });
 
   await switchTo(original);
-  await scopeField(page, 'Day').selectOption({ label: 'Holiday' });
+  await chooseScope(page, 'Day', { label: 'Holiday' });
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await scopeField(page, 'Day').selectOption({ label: 'Saturday' });
+  await chooseScope(page, 'Day', { label: 'Saturday' });
 
   await switchTo(copy);
-  await expect(scopeField(page, 'Day').locator('option:checked')).toHaveText('Sunday');
+  await expect.poll(() => scopeText(page, 'Day')).toBe('Sunday');
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await expect(scopeField(page, 'Day').locator('option:checked')).toHaveText('Saturday');
+  await expect.poll(() => scopeText(page, 'Day')).toBe('Saturday');
 
   await switchTo(original);
-  await expect(scopeField(page, 'Day').locator('option:checked')).toHaveText('Holiday');
+  await expect.poll(() => scopeText(page, 'Day')).toBe('Holiday');
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await expect(scopeField(page, 'Day').locator('option:checked')).toHaveText('Saturday');
+  await expect.poll(() => scopeText(page, 'Day')).toBe('Saturday');
 });

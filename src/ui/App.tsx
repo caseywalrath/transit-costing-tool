@@ -11,7 +11,7 @@ import { ServiceDayValidationError, type RouteDefinitionApplication, type RouteE
 import { type TripGenerationApplication } from '../application/tripGenerationService';
 import { type PlannedFrequencyService } from '../application/plannedFrequencyService';
 import { TripGenerationError } from '../domain/trips';
-import { isUsablePattern, orderDirections, sortServiceDays } from '../application/tripsWorkspaceView';
+import { isUsablePattern, orderDirections, serviceDayAbbreviation, sortServiceDays } from '../application/tripsWorkspaceView';
 import { type Project, type Route, type RouteDefinitionAggregate, type ServiceDayDefinition, type Trip, type ValidationFinding } from '../domain/types';
 import { type CostingCommands, type CostingQueries } from '../application/ports';
 import { type NameDialog, type Confirmation, NameDialogForm, ConfirmDialog } from './shared/dialogs';
@@ -22,7 +22,7 @@ import { RouteWorkspace } from './route/RouteWorkspace';
 import { AppHeader, Switcher, type HeaderTab } from './shell/AppHeader';
 import { headerStatus, routeOptionLabel } from './shell/headerStatus';
 import { ContextField } from './shared/ContextField';
-import { TripsWorkspace } from './trips/TripsWorkspace';
+import { SegmentedControl } from './shared/SegmentedControl';import { TripsWorkspace } from './trips/TripsWorkspace';
 
 export type Props = { service: RouteDefinitionApplication; tripService: TripGenerationApplication; blockingService: BlockingCommands & BlockingQueries; costingService: CostingCommands & CostingQueries; plannedFrequencyService: PlannedFrequencyService; session?: SessionStatusQueries };
 export type Notice = { kind: 'error' | 'success'; text: string } | undefined;
@@ -280,8 +280,8 @@ export function App({ service, tripService, blockingService, costingService, pla
   const scopeFields = records && (activeTab === 'route' || activeTab === 'trips') ? <>
     {routeSelect}
     {activeTab === 'trips' && aggregate && <>
-      <ContextField label="Day"><select aria-label="Day" value={workspaceServiceDayId} onChange={(event) => { const next = event.target.value; requestRouteNavigation(() => setWorkspaceServiceDayId(next)); }}>{sortServiceDays(records.serviceDays).map((day) => <option key={day.id} value={day.id}>{day.name}</option>)}</select></ContextField>
-      <ContextField label="Direction"><select aria-label="Direction" value={workspaceDirectionId} onChange={(event) => { const next = event.target.value; requestRouteNavigation(() => setWorkspaceDirectionId(next)); }}>{[...(aggregate.directions ?? [])].sort((left, right) => left.sequence - right.sequence).map((direction) => <option key={direction.id} value={direction.id}>{direction.name}</option>)}</select></ContextField>
+      <ContextField><SegmentedControl label="Day" className="segmented--days" value={workspaceServiceDayId} onChange={(next) => requestRouteNavigation(() => setWorkspaceServiceDayId(next))} options={sortServiceDays(records.serviceDays).map((day) => ({ value: day.id, text: serviceDayAbbreviation(day), title: day.name }))} /></ContextField>
+      <ContextField>{(() => { const directions = [...(aggregate.directions ?? [])].sort((left, right) => left.sequence - right.sequence); return <SegmentedControl label="Direction" fallback={directions.length > 2} value={workspaceDirectionId} onChange={(next) => requestRouteNavigation(() => setWorkspaceDirectionId(next))} options={directions.map((direction) => ({ value: direction.id, text: direction.name }))} />; })()}</ContextField>
     </>}
     <span className="scope-bar__spacer" />
     <MenuButton label="Actions" triggerAriaLabel="Route actions" menuLabel="Route actions" groups={routeActions} />

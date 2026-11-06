@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule, openGoldenTrips } from './support/tripsWorkspace';
-import { editGridCell, gridCell, openRuntimes, projectSwitcher, runCommand, scopeField, shiftBar } from './support/ui';
+import { editGridCell, gridCell, openRuntimes, projectSwitcher, runCommand, chooseScope, scopeField, shiftBar } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
@@ -149,7 +149,7 @@ test('every dialog opened from the screens has an accessible name, and the axe d
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
+  await chooseScope(page, 'Day', { label: 'Weekday' });
   await expect(page.locator('.trips-workspace .schedule-table tbody tr').first()).toBeVisible({ timeout: 30_000 });
   expect(await axeViolations(page)).toEqual([]);
   await openRuntimes(page);

@@ -1,6 +1,6 @@
 // What the Trips and Runtime screens derive from their data (review package P15, issue I-074c, finding 4-014). The screen calls these
 // instead of calculating, so the rules have one home and a test. Everything here is pure: no reads, no writes.
-import { sortServiceDays } from '../domain/serviceDays';
+import { serviceDayAbbreviation, sortServiceDays } from '../domain/serviceDays';
 import { createBlockingScenarioSourceSignature, type BlockConnection } from '../domain/blocking';
 import { isUsablePattern, orderDirections, usableDirectionPatterns } from '../domain/directions';
 import { parseRuntimeDuration, RuntimeDurationError } from '../domain/durations';
@@ -14,7 +14,7 @@ import { removeSelectedTripsFromBlock } from './blockingService';
 
 export {
   addRuntimeBand, createBlockingScenarioSourceSignature, duplicateRuntimeBand, formatNetShift, formatShiftStep, formatStagedShift, isUsablePattern, MAX_TRIPS_PER_GENERATION, orderDirections, parseShiftSeconds,
-  patternTotalMiles, removeRuntimeBand, reverseRuntimeCandidates, roundServiceTimeToMinute, routeRuntimeCalculationMethod, runtimeBandTotalSeconds, sortServiceDays, tripRunTimeSeconds, updateRuntimeBand, usableDirectionPatterns,
+  patternTotalMiles, removeRuntimeBand, reverseRuntimeCandidates, roundServiceTimeToMinute, routeRuntimeCalculationMethod, runtimeBandTotalSeconds, serviceDayAbbreviation, sortServiceDays, tripRunTimeSeconds, updateRuntimeBand, usableDirectionPatterns,
 };
 export type { BlendedSegment, RuntimeCalculationMethod };
 
