@@ -68,6 +68,10 @@ A category of scheduled service rather than a calendar date. Initial categories 
 
 The code name is `ServiceDayDefinition`.
 
+### Service day abbreviation
+
+A label of up to three letters or digits for a Service day, such as WKD, SAT, SUN, or HOL. It labels the Day toggle in the scope bar. The planner may enter one on the Route tab; otherwise a default is derived from the Service day's kind or name. See Decision 0059.
+
 ### Annual service days
 
 The number of times a service-day schedule operates during an analysis year. It is an editable input used to annualize daily quantities.
