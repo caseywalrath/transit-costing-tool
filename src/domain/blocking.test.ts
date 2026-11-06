@@ -186,6 +186,17 @@ describe('blocking domain contracts', () => {
     expect(summary.validBlockCount).toBe(1); expect(summary.incompleteBlockCount).toBe(1); expect(summary.revenueHours).toBeCloseTo(600 / 3600); expect(summary.complete).toBe(false);
   });
 
+  it('reports peak pullout as the largest overlap of pull-out to pull-in spans, ending before starting at a shared time', () => {
+    const span = (id: string, tripId: string, start: number, end: number) => block(id, [{ id: id + 'po', type: 'pullOut', sequence: 0, startTime: start, endTime: start + 60, toNodeId: 'A', miles: 1 }, { id: id + 'r', type: 'revenueTrip', sequence: 1, tripId }, { id: id + 'pi', type: 'pullIn', sequence: 2, startTime: end - 60, endTime: end, fromNodeId: 'A', miles: 1 }]);
+    const trips = [trip('a', 600, 900), trip('b', 700, 900), trip('c', 1000, 1100)];
+    const peak = (blocks: ReturnType<typeof block>[]) => summarizeBlockingScenario(scenario, blocks, { trips, patterns: [pattern] }).peakPullout;
+    expect(peak([])).toBe(0);
+    expect(peak([span('x', 'a', 500, 1000)])).toBe(1);
+    expect(peak([span('x', 'a', 500, 1000), span('y', 'b', 600, 1100)])).toBe(2);
+    expect(peak([span('x', 'a', 500, 1000), span('y', 'c', 1000, 1200)])).toBe(1);
+    expect(peak([span('x', 'a', 500, 1000), block('open', [{ id: 'r', type: 'revenueTrip', sequence: 0, tripId: 'b' }])])).toBeUndefined();
+  });
+
   it('moves a Trip atomically and rejects a duplicate or cross-route assignment', () => {
     const selected = trip('move', 600, 1200); const source = block('source', [{ id: 'r', type: 'revenueTrip', sequence: 0, tripId: selected.id }]); const destination = block('destination', []);
     const moved = applyTripAssignment({ blockingScenarioId: scenario.id, serviceDayId: 'weekday', tripId: selected.id, sourceBlockId: source.id, destinationBlockId: destination.id, destinationIndex: 0 }, scenario, [source, destination], [selected]);
