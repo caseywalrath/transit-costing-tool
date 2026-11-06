@@ -22,6 +22,36 @@ export function storedTextMap(value: unknown): Record<string, string> | undefine
   return entries.length ? Object.fromEntries(entries) : undefined;
 }
 
+// Recent operating cost rates (Decision 0061): per-viewer convenience state, never Scenario data and never in backups.
+export const RATE_HISTORY_KEY = 'transit-costing-tool.costing-rate-history.v1';
+export const RATE_HISTORY_LIMIT = 10;
+export type RateHistoryEntry = { rate: number; rateYear: number; sourceType: 'user' | 'ntd' };
+
+/** Stored entries that are well formed, newest first, at most the limit. Anything else in storage is dropped. */
+export function readRateHistory(storage: StorageReader | undefined = typeof localStorage === 'undefined' ? undefined : localStorage): RateHistoryEntry[] {
+  try {
+    const value: unknown = JSON.parse(storage?.getItem(RATE_HISTORY_KEY) ?? 'null');
+    if (!Array.isArray(value)) return [];
+    const entries = value.filter((item): item is RateHistoryEntry => item !== null && typeof item === 'object'
+      && typeof item.rate === 'number' && Number.isFinite(item.rate) && item.rate >= 0
+      && Number.isInteger(item.rateYear) && item.rateYear >= 1 && item.rateYear <= 9999
+      && (item.sourceType === 'user' || item.sourceType === 'ntd'));
+    return withoutDuplicates(entries).slice(0, RATE_HISTORY_LIMIT);
+  } catch { return []; }
+}
+
+const sameEntry = (a: RateHistoryEntry, b: RateHistoryEntry) => a.rate === b.rate && a.rateYear === b.rateYear && a.sourceType === b.sourceType;
+function withoutDuplicates(entries: RateHistoryEntry[]) { return entries.filter((entry, index) => entries.findIndex((other) => sameEntry(entry, other)) === index); }
+
+/** The history with `entry` first and any identical earlier entry removed; the list keeps the newest ten. */
+export function rememberRate(history: readonly RateHistoryEntry[], entry: RateHistoryEntry): RateHistoryEntry[] {
+  return [entry, ...history.filter((item) => !sameEntry(item, entry))].slice(0, RATE_HISTORY_LIMIT);
+}
+
+export function writeRateHistory(history: readonly RateHistoryEntry[]) {
+  try { localStorage.setItem(RATE_HISTORY_KEY, JSON.stringify(history)); } catch { /* Storage is a convenience only. */ }
+}
+
 // Side-by-side Trips (Decision 0060 item 5): per-viewer convenience state, never Scenario data and never in backups.
 export const SIDE_BY_SIDE_PREFERENCE_KEY = 'transit-costing-tool.trips-side-by-side.v1';
 export type SideBySidePreference = { on: boolean; leftDirectionId?: string; rightDirectionId?: string };

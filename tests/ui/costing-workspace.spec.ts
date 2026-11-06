@@ -49,6 +49,55 @@ test('Costing workspace displays a partial estimate, supports year selection, an
   }
 });
 
+// Decision 0061: the rate box remembers saved rates, with their year and source, in the browser.
+test('the rate box lists the last saved rates and a picked one fills the rate, year, and source (Decision 0061)', async ({ page }) => {
+  await seedCostingFixture(page);
+  await page.evaluate(() => localStorage.removeItem('transit-costing-tool.costing-rate-history.v1'));
+  await page.reload();
+  await page.getByRole('button', { name: 'Costing', exact: true }).click();
+  const rate = page.getByLabel('Operating cost per revenue hour in USD');
+  const toggle = page.getByRole('button', { name: 'Show recent rates' });
+  const save = page.getByRole('button', { name: 'Save assumptions', exact: true });
+  await expect(rate).toBeVisible();
+  await expect(page.getByText('Future years')).toHaveCount(0);
+  await expect(page.getByText('Costing horizon (years)')).toBeVisible();
+  await expect(page.getByText(/Shared by every cost basis/)).toHaveCount(0);
+  await expect(page.getByText(/edit on the Route tab/)).toHaveCount(0);
+  await expect(toggle).toBeDisabled();
+
+  await page.getByLabel('Source').selectOption('user');
+  await rate.fill('151.5');
+  await page.getByLabel('Rate year').fill('2023');
+  await save.click();
+  await expect(save).toHaveCount(0);
+  await rate.fill('160');
+  await page.getByLabel('Rate year').fill('2025');
+  await save.click();
+  await expect(save).toHaveCount(0);
+
+  await expect(toggle).toBeEnabled();
+  await toggle.click();
+  const options = page.getByRole('listbox', { name: 'Recent rates' }).getByRole('option');
+  await expect(options).toHaveText(['$160.00 · 2025 · User entered', '$151.50 · 2023 · User entered']);
+  await options.nth(1).click();
+  await expect(rate).toHaveValue('151.5');
+  await expect(page.getByLabel('Rate year')).toHaveValue('2023');
+  await expect(save).toBeVisible();
+
+  // Keyboard: ArrowDown opens on the first entry, ArrowDown moves, Enter picks, Escape closes.
+  await rate.focus();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Enter');
+  await expect(rate).toHaveValue('160');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('listbox')).toHaveCount(0);
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('transit-costing-tool.costing-rate-history.v1') ?? '[]'));
+  expect(stored).toHaveLength(2);
+});
+
 // Review package U06 (issues I-031, I-033, I-044 loading state, I-087; Decision C3).
 import type { Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';

@@ -7,7 +7,8 @@ import { DEFAULT_COSTING_ESCALATION } from '../../domain/costing';
 import { formatHours, formatMoney, MISSING } from '../format';
 import type { CostingAssumptions, CostingEstimateFactors, Scenario, ServiceDayDefinition, TripProfile, ValidationFinding } from '../../domain/types';
 import { sortServiceDays } from '../../domain/serviceDays';
-import { readStoredRecord, storedText } from '../preferences';
+import { readRateHistory, readStoredRecord, rememberRate, storedText, writeRateHistory } from '../preferences';
+import { RateCombobox } from './RateCombobox';
 import { EstimateFactorsGrid } from './EstimateFactorsGrid';
 import { createCsvArchive } from '../../application/csvDownload';
 import { ContextField } from '../shared/ContextField';
@@ -55,8 +56,8 @@ export function costingFindingMessage(finding: ValidationFinding, serviceDayName
     case 'costing.rateYearInvalid': return 'Enter a rate year from 1 to 9999.';
     case 'costing.baseServiceYearInvalid': return 'Enter a first year of service from 1 to 9999.';
     case 'costing.rateYearAfterBaseServiceYear': return 'The rate year cannot be later than the base service year.';
-    case 'costing.futureYearCountInvalid': return 'Enter future years as a whole number from 0 to 10.';
-    case 'costing.projectionYearOutOfRange': return 'The last projected year must not be later than 9999. Lower the first year of service or future years.';
+    case 'costing.futureYearCountInvalid': return 'Enter the costing horizon as a whole number of years from 0 to 10.';
+    case 'costing.projectionYearOutOfRange': return 'The last projected year must not be later than 9999. Lower the first year of service or the costing horizon.';
     case 'costing.annualEscalationInvalid': return 'Enter an inflation rate above −100%.';
     case 'costing.estimateFactorInvalid': case 'costing.estimateFactorDuplicateDay': return 'Enter each estimate factor as a percentage from 0 up to 100, once per service day.';
     default: return 'Review this item and correct it before trying again.';
@@ -123,6 +124,7 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
   const [busy, setBusy] = useState(true);
   const [calculating, setCalculating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [rateHistory, setRateHistory] = useState(() => readRateHistory());
   const [navigationDialog, setNavigationDialog] = useState<{ action: () => void }>();
   const [summary, setSummary] = useState<CostSummary>();
   const [partialSummary, setPartialSummary] = useState<{ summary: CostSummary; reasons: string[] }>();
@@ -222,6 +224,11 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
     setSaving(true);
     try {
       const saved = await costingService.saveAssumptions(scenario.id, assumptions);
+      if (saved.enteredRate !== undefined) {
+        const next = rememberRate(rateHistory, { rate: saved.enteredRate, rateYear: saved.rateYear, sourceType: saved.sourceType });
+        setRateHistory(next);
+        writeRateHistory(next);
+      }
       setPersisted(saved);
       setLoadedAssumptions(toInput(saved));
       return true;
@@ -314,16 +321,17 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
       <span className="scope-bar__spacer" /><MenuButton label="Actions" triggerAriaLabel="Costing actions" menuLabel="Costing actions" groups={costingActionsMenu} />
     </>, scopeSlot)}
     <div className="costing-top-grid">
-      <WorkSurface title="Costing assumptions" ariaLabel="Costing assumptions" subtitle={`Shared by every cost basis in ${scenario.name}`} footer={dirty && <SaveBar message={persisted ? `${plural(assumptionChanges, 'unsaved change')} · the estimate below already includes ${assumptionChanges === 1 ? 'it' : 'them'}` : 'Not saved yet · the estimate below already uses these values'} saveLabel={saving ? 'Saving…' : 'Save assumptions'} busy={saving} saveDisabled={validation.length > 0} onSave={() => void save()} onDiscard={discardAssumptions} />}>
+      <WorkSurface title="Costing assumptions" ariaLabel="Costing assumptions" footer={dirty && <SaveBar message={persisted ? `${plural(assumptionChanges, 'unsaved change')} · the estimate below already includes ${assumptionChanges === 1 ? 'it' : 'them'}` : 'Not saved yet · the estimate below already uses these values'} saveLabel={saving ? 'Saving…' : 'Save assumptions'} busy={saving} saveDisabled={validation.length > 0} onSave={() => void save()} onDiscard={discardAssumptions} />}>
         <div className="costing-assumptions-grid">
-          <label>Operating cost per revenue hour (USD)<input aria-label="Operating cost per revenue hour in USD"{...invalidProps('enteredRate')} type="number" min="0" step="0.01" placeholder="Enter rate" value={assumptions.enteredRate ?? ''} onChange={(event) => update('enteredRate', event.target.value === '' ? undefined : Number(event.target.value))} /></label>
+          <RateCombobox label="Operating cost per revenue hour (USD)" ariaLabel="Operating cost per revenue hour in USD" invalidProps={invalidProps('enteredRate')} value={assumptions.enteredRate} onValueChange={(rate) => update('enteredRate', rate)} history={rateHistory}
+            onPick={(entry) => setAssumptions((current) => ({ ...current, enteredRate: entry.rate, rateYear: entry.rateYear, sourceType: entry.sourceType }))} />
           <label>Rate year<input {...invalidProps('rateYear')} type="number" min="1" max="9999" value={assumptions.rateYear} onChange={(event) => update('rateYear', Number(event.target.value))} /></label>
           <label>Source<select value={assumptions.sourceType} onChange={(event) => update('sourceType', event.target.value as 'user' | 'ntd')}><option value="user">User entered</option><option value="ntd">NTD</option></select></label>
           <label>First year of service<input {...invalidProps('baseServiceYear')} type="number" min="1" max="9999" value={assumptions.baseServiceYear} onChange={(event) => { const value = Number(event.target.value); update('baseServiceYear', value); setViewYear(value); }} /></label>
-          <label>Future years<input {...invalidProps('futureYearCount')} type="number" min="0" max="10" step="1" value={assumptions.futureYearCount} onChange={(event) => { const value = Number(event.target.value); update('futureYearCount', costingService.normalizeFutureYearCount(value)); }} /></label>
+          <label>Costing horizon (years)<input {...invalidProps('futureYearCount')} type="number" min="0" max="10" step="1" value={assumptions.futureYearCount} onChange={(event) => { const value = Number(event.target.value); update('futureYearCount', costingService.normalizeFutureYearCount(value)); }} /></label>
           <label>Inflation rate (%)<input {...invalidProps('annualEscalation')} type="number" min="-99.99" step="0.1" value={assumptions.annualEscalation * 100} onChange={(event) => update('annualEscalation', Number(event.target.value) / 100)} /></label>
         </div>
-        <p className="costing-days">Annual service days: {serviceDays.map((day) => <span key={day.id}><strong>{day.name}</strong> {day.annualServiceDays}</span>)}<span className={annualDays.exceedsMaximum ? 'invalid' : ''}><strong>Total</strong> {annualDays.total} of {annualDays.maximum}</span> · edit on the Route tab</p>
+        <p className="costing-days">Annual service days: {serviceDays.map((day) => <span key={day.id}><strong>{day.name}</strong> {day.annualServiceDays}</span>)}<span className={annualDays.exceedsMaximum ? 'invalid' : ''}><strong>Total</strong> {annualDays.total} of {annualDays.maximum}</span></p>
         {validation.length > 0 && <div className="costing-alert error" id="costing-assumptions-alert" role="alert">Review the rate, years, horizon, and escalation. The rate year cannot be later than the base service year.</div>}
       </WorkSurface>
       <WorkSurface title="Estimate factors" ariaLabel="Estimate factors" subtitle="Blank days use All days" footer={hasUnsavedFactors && <SaveBar message={`${plural(factorChangeCount, 'unsaved change')} · the estimate below already includes ${factorChangeCount === 1 ? 'it' : 'them'}`} saveLabel={saving ? 'Saving…' : 'Save factors'} busy={saving} saveDisabled={factorCellInvalid} onSave={() => void saveFactors()} onDiscard={() => setFactors(savedFactors)} />}>

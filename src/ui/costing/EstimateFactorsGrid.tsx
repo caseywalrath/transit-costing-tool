@@ -79,6 +79,5 @@ export function EstimateFactorsGrid({ days, factors, savedFactors, disabled, onC
       </tr>)}</tbody>
     </table></div>
     <p id={messageId} className="grid-message" role="status" aria-live="polite">{grid.message}</p>
-    <p className="costing-factor-hint">Layover % is of revenue hours; deadhead % is of platform hours, as on the Blocking summary.</p>
   </>;
 }

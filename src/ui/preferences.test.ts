@@ -1,6 +1,6 @@
 // Review package U03 (I-026, finding 4-010): a stored value of the wrong shape must read as "nothing stored".
 import { describe, expect, it } from 'vitest';
-import { readStoredRecord, storedText, storedTextMap } from './preferences';
+import { readRateHistory, readStoredRecord, rememberRate, storedText, storedTextMap } from './preferences';
 
 const store = (value: string | null) => ({ getItem: () => value });
 
@@ -43,4 +43,22 @@ describe('side-by-side Trips preference', () => {
     expect(sideBySideDirectionIds(directions, 'a', 'c')).toEqual(['a', 'c']);
     expect(sideBySideDirectionIds(directions, 'c', 'c')).toEqual(['c', 'a']);
   });
+});
+
+describe('recent operating cost rates (Decision 0061)', () => {
+  const entry = (rate: number, rateYear = 2024, sourceType: 'user' | 'ntd' = 'user') => ({ rate, rateYear, sourceType });
+  it('puts the newest first, moves an identical entry to the top, and keeps ten', () => {
+    expect(rememberRate([entry(1), entry(2)], entry(2))).toEqual([entry(2), entry(1)]);
+    expect(rememberRate([entry(1)], entry(1, 2025))).toEqual([entry(1, 2025), entry(1)]);
+    const full = Array.from({ length: 10 }, (_, index) => entry(index + 1));
+    const next = rememberRate(full, entry(99));
+    expect(next).toHaveLength(10);
+    expect(next[0]).toEqual(entry(99));
+    expect(next).not.toContainEqual(entry(10));
+  });
+  it('reads well-formed entries and drops the rest', () => {
+    const stored = JSON.stringify([entry(150.5), { rate: -1, rateYear: 2024, sourceType: 'user' }, { rate: 'x', rateYear: 2024, sourceType: 'user' }, { rate: 1, rateYear: 2024, sourceType: 'other' }, { rate: 1, rateYear: 0, sourceType: 'user' }, null, entry(150.5)]);
+    expect(readRateHistory(store(stored))).toEqual([entry(150.5)]);
+  });
+  it.each(['{"a":1}', '5', '{broken', '', null])('reads %s as an empty list', (stored) => { expect(readRateHistory(store(stored))).toEqual([]); });
 });

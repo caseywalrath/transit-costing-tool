@@ -37,7 +37,7 @@ test('marks a total above 365, saved earlier, as invalid', async ({ page }) => {
 test('lists the service years from the first year of service and clamps future years to 0 to 10', async ({ page }) => {
   await openCosting(page);
   const firstYear = page.getByLabel('First Year of Service');
-  const futureYears = page.getByLabel('Future Years');
+  const futureYears = page.getByLabel('Costing horizon (years)');
   await firstYear.fill('2030');
   await futureYears.fill('2');
   expect(await yearOptions(page)).toEqual(['2030', '2031', '2032']);
