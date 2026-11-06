@@ -25,8 +25,9 @@
 .costing-alert p { margin: 0; }
 .costing-alert ul { margin: 6px 0 0; padding-left: 20px; }
 .costing-results-table th, .costing-results-table td, .costing-outlook-table th, .costing-outlook-table td { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.costing-results-table td:not(:first-child), .costing-results-table thead th:not(:first-child), .costing-results-table tfoot td { text-align: right; }
-.costing-results-table tbody th[scope='row'], .costing-results-table tfoot th[scope='row'] { text-align: left; vertical-align: middle; font-size: var(--font-size-note); }
+.costing-results-table td, .costing-results-table thead th, .costing-results-table tfoot td { text-align: right; }
+.costing-outlook-table th, .costing-outlook-table td { text-align: right; }
+.costing-results-table tbody th[scope='row'], .costing-results-table tfoot th[scope='row'] { text-align: right; vertical-align: middle; font-size: var(--font-size-note); }
 .costing-results-table tfoot, .costing-outlook-table .selected-costing-year { background: var(--color-sunken); font-weight: var(--font-weight-bold); }
 .costing-results-table tfoot th { background: var(--color-sunken); }
 .costing-lower-grid { display: grid; grid-template-columns: minmax(0, 560px); gap: 14px; min-width: 0; }
@@ -51,8 +52,6 @@
 .costing-top-grid .costing-assumptions-grid { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
 .costing-factor-grid table { min-width: 0; width: 100%; }
 .costing-factor-grid th, .costing-factor-grid td { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.costing-factor-grid tbody th[scope='row'] { text-align: left; }
-.costing-factor-grid .costing-factor-fallback { background: var(--color-surface-2); }
 
 /* Decision 0061. The rate box with a list of recent rates: the arrow button sits inside the input's right edge. */
 .rate-combobox__box { position: relative; display: grid; }

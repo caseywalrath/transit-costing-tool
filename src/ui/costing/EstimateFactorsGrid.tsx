@@ -60,7 +60,7 @@ export function EstimateFactorsGrid({ days, factors, savedFactors, disabled, onC
   useEffect(() => onInvalidChange(Boolean(grid.message)), [grid.message, onInvalidChange]);
   return <>
     <div className="table-scroll data-grid costing-factor-grid"><table className="grid-table" role="grid" aria-label="Estimate factors">
-      <thead><tr><th scope="col"><span className="visually-hidden">Factor</span></th><th scope="col" className="costing-factor-fallback">All days</th>{days.map((day) => <th scope="col" key={day.id}>{day.name}</th>)}</tr></thead>
+      <thead><tr><th scope="col"><span className="visually-hidden">Factor</span></th><th scope="col" >All days</th>{days.map((day) => <th scope="col" key={day.id}>{day.name}</th>)}</tr></thead>
       <tbody>{ROWS.map((row, r) => <tr key={row.key} {...grid.rowProps(r)}>
         <th scope="row">{row.label}</th>
         {Array.from({ length: days.length + 1 }, (_, c) => {
@@ -68,7 +68,7 @@ export function EstimateFactorsGrid({ days, factors, savedFactors, disabled, onC
           const edited = value !== pairOf(savedFactors, days, c)?.[row.key];
           const editing = grid.editing?.r === r && grid.editing.c === c;
           const fallback = c > 0 && value === undefined ? factors?.allDays[row.key] : undefined;
-          const className = ['grid-cell', edited && 'grid-cell--edited', c === 0 && 'costing-factor-fallback'].filter(Boolean).join(' ');
+          const className = ['grid-cell', edited && 'grid-cell--edited'].filter(Boolean).join(' ');
           return <td key={c} {...grid.cellProps(r, c)} className={className} data-cell={cellLabel(r, c)}>
             {editing
               ? <input {...grid.inputProps} className="grid-cell__input" inputMode="decimal" aria-label={cellLabel(r, c)} aria-describedby={grid.message ? messageId : undefined} />
