@@ -2,7 +2,7 @@
 
 - Requested by the user on 2026-11-06.
 - Branch: `claude/costing-empty-blocking-scenario-6sbnrj` (the branch assigned to this session). Do not push to another branch. Do not open a pull request unless the user asks.
-- Status: ST1 and ST2 complete (2026-11-06). ST3 to ST5 not started.
+- Status: ST1 to ST3 complete (2026-11-06). ST4 and ST5 not started.
 
 ## Goal
 
