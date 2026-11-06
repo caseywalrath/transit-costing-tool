@@ -78,7 +78,9 @@ export class CostingApplicationService implements CostingQueries, CostingCommand
   async listCostBases(scenarioId: string): Promise<CostBasisOption[]> {
     const [blockingScenarios, tripProfiles] = await Promise.all([this.contextQueries.listBlockingScenarios(scenarioId), this.contextQueries.listTripProfiles(scenarioId)]);
     const profileNames = new Map(tripProfiles.map((profile) => [profile.id, profile.name]));
-    const blocked: CostBasisOption[] = blockingScenarios.map((blockingScenario) => ({
+    // An empty Blocking Scenario has nothing to cost, so it is never offered as a cost basis.
+    const blockCounts = await Promise.all(blockingScenarios.map((blockingScenario) => this.contextQueries.countBlocks(blockingScenario.id)));
+    const blocked: CostBasisOption[] = blockingScenarios.filter((_, index) => blockCounts[index] > 0).map((blockingScenario) => ({
       kind: 'blocked', id: blockingScenario.id, name: blockingScenario.name,
       tripProfileId: blockingScenario.tripProfileId, tripProfileName: profileNames.get(blockingScenario.tripProfileId) ?? '',
     }));
