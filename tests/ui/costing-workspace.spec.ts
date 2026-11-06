@@ -117,10 +117,11 @@ test.describe('Costing estimate display (U06 criteria 2 to 5)', () => {
     await expect(page.getByRole('button', { name: 'Costing', exact: true })).toBeEnabled();
     await expect(page.getByRole('textbox', { name: 'Route name' })).toBeVisible();
     // Hold a write transaction on the stores the estimate reads so that its reads wait, while the Blocking Scenarios and the
-    // assumptions (other stores) still load. The transaction stays open until `release` is set.
+    // assumptions (other stores) still load. The cost basis list counts Blocks, so `blocks` is not held. The transaction stays open
+    // until `release` is set.
     await page.evaluate(async () => {
       const database = await new Promise<IDBDatabase>((resolve, reject) => { const request = indexedDB.open('transit-costing-tool'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
-      const transaction = database.transaction(['trips', 'blocks', 'patterns'], 'readwrite');
+      const transaction = database.transaction(['trips', 'patterns'], 'readwrite');
       const store = transaction.objectStore('trips');
       const holder = { release: false, database };
       (window as unknown as { __hold: typeof holder }).__hold = holder;

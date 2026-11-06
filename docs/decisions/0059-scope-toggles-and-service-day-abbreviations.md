@@ -1,6 +1,6 @@
 # Decision 0059: Scope Toggles and Service Day Abbreviations
 
-- Status: Accepted (package ST1); data and save layers built (package ST2); Route tab Abbr. column built (package ST3); scope toggles built (package ST4); closeout pending (package ST5)
+- Status: Accepted and implemented (packages ST1 to ST5, 2026-11-06)
 - Date: 2026-11-06 (user design review; plan `docs/implementation/scope-toggles.md`)
 - Related: Decisions 0002 (service day time model), 0011 (managed directions), 0017 (service day copy), 0039 (backup import validation), 0041 (service day validation), 0047 (interface revision)
 
