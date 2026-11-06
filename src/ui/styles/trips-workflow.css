@@ -214,3 +214,35 @@
 /* Totals row of the Trips table (Decision 0051, package E3). */
 .schedule-table tfoot th, .schedule-table tfoot td { background: var(--color-sunken); font-weight: var(--font-weight-bold); font-variant-numeric: tabular-nums; border-top: 1px solid var(--color-border); }
 .schedule-table tfoot th[scope='row'] { position: sticky; left: 0; z-index: 1; text-align: left; font-size: var(--font-size-note); white-space: nowrap; }
+
+/* Side-by-side Trips (Decision 0060). The shared Trips header, a strip with Switch sides and Close, then one pane per direction. */
+.side-by-side-strip { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-inline) var(--inset-panel); border-bottom: 1px solid var(--color-border-soft); background: var(--color-surface-2); color: var(--color-text-muted); font-size: var(--font-size-note); }
+.side-by-side-strip__text { font-weight: var(--font-weight-semibold); }
+.side-by-side-strip button { min-height: var(--space-5); padding: 0 var(--space-2); font-size: var(--font-size-label); }
+/* Item 9 and 11: each pane is as wide as its table and is never stretched. When both do not fit, they shrink in proportion to their natural
+   widths and each scrolls its own timepoints; the page itself never scrolls sideways. */
+.side-by-side-panes { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2); }
+.trips-pane > .work-surface__body { padding: var(--space-2); }
+.side-by-side-pane { flex: 0 1 auto; min-width: 0; }
+.side-by-side-pane .trips-pane-host { display: grid; min-width: 0; }
+/* Notes, the selection bar, and the band legend wrap to the pane's width instead of widening it. */
+.trips-pane .work-surface__body > :not(:has(.schedule-table)), .trips-pane .runtime-band-legend { contain: inline-size; }
+
+/* Item 8: compact density. Narrower columns and padding, 13 px text; Deadhead is left out by ScheduleTable (its total joins the totals label). */
+.schedule-table--compact th, .schedule-table--compact td { padding: 3px; }
+.schedule-table--compact td { font-size: var(--font-size-note); }
+.schedule-table--compact .trip-pattern-column { min-width: 84px; width: 84px; max-width: 84px; }
+.schedule-table--compact .trip-pattern-column .chip-menu-trigger { overflow: hidden; text-overflow: ellipsis; }
+.schedule-table--compact .trip-departs-column { left: 140px; min-width: 52px; width: 52px; }
+.schedule-table--compact .trip-timepoint-column { min-width: 50px; width: 50px; }
+.schedule-table--compact .trip-timepoint-column .time-input { width: 100%; min-width: 0; padding-inline: 2px; }
+/* Item 11: Run time, Layover, Next trip, Block (and the row's delete button) stay pinned at the right while the timepoints scroll.
+   Offsets are the fixed widths of the columns to their right. `:where` keeps row states (selected, warning, staged) in charge of the colour. */
+.schedule-table--compact .trip-run-time-column, .schedule-table--compact .trip-connection-column, .schedule-table--compact .trip-next-trip-column, .schedule-table--compact .trip-block-column, .schedule-table--compact .trip-actions-column { position: sticky; z-index: 1; }
+.schedule-table--compact :where(td.trip-run-time-column, td.trip-connection-column, td.trip-next-trip-column, td.trip-block-column, td.trip-actions-column) { background: var(--color-surface); }
+.schedule-table--compact th:is(.trip-run-time-column, .trip-connection-column, .trip-next-trip-column, .trip-block-column, .trip-actions-column) { z-index: 3; }
+.schedule-table--compact .trip-actions-column { right: 0; min-width: 34px; width: 34px; max-width: 34px; }
+.schedule-table--compact .trip-block-column { right: 34px; min-width: 64px; width: 64px; max-width: 64px; }
+.schedule-table--compact .trip-next-trip-column { right: 98px; min-width: 56px; width: 56px; max-width: 56px; }
+.schedule-table--compact .trip-connection-column { right: 154px; min-width: 56px; width: 56px; max-width: 56px; }
+.schedule-table--compact .trip-run-time-column { right: 210px; min-width: 56px; width: 56px; max-width: 56px; box-shadow: -1px 0 0 var(--color-border); }

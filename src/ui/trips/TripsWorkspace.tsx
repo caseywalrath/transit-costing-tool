@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { type BlockingCommands, type BlockingQueries } from '../../application/ports';
 import { MenuButton, type MenuGroup } from '../MenuButton';
 import { userFacingError } from '../errorMessages';
@@ -29,6 +30,12 @@ import { InlineNote, WorkSurface } from '../shared/surfaces';
 import { formatHours, withUnit } from '../format';
 import { SaveBar, SelectionBar } from '../shared/bars';
 import { ContextField } from '../shared/ContextField';
+
+/** The Trips View options (show runtime bands, headways, rounded times). Not stored: they reset when the Trips tab is drawn again. */
+export type TripViewOptions = { showRuntimeBands: boolean; showHeadways: boolean; roundDisplayedTimes: boolean };
+export const DEFAULT_VIEW_OPTIONS: TripViewOptions = { showRuntimeBands: false, showHeadways: false, roundDisplayedTimes: false };
+/** The View menu's side-by-side item (Decision 0060 item 1). A disabled reason greys it out and is its tooltip. */
+export type SideBySideMenuItem = { checked: boolean; disabledReason?: string; onToggle: () => void };
 
 export const TRIP_BLOCKING_SCENARIO_PREFERENCE_KEY = 'transit-costing-tool.trip-blocking-scenario.v1';
 export const RUNTIMES_OPEN_PREFERENCE_KEY = 'transit-costing-tool.runtimes-open.v1';
@@ -68,7 +75,7 @@ export function shiftErrorText(error: unknown, fallback: string) {
   return userFacingError(error, fallback);
 }
 
-export function TripsWorkspace({ service, tripService, plannedFrequencyService, blockingService, aggregate, records, serviceDayId, directionId, tripProfileId, tripProfileBusy, tripPatternSelections, onTripPatternChange, onTripProfileChange, onTripProfileRename, onTripProfileCopy, onTripProfileDelete, onRegisterNavigationGuard, runtimeVersion, onRuntimeChanged, onError, pane, sharedControls = true, blockingScenarioId: sharedBlockingScenarioId, onBlockingScenarioChange, onBeforeOpenEdit, onOpenEditChange, yieldToken }: { service: RouteDefinitionApplication; tripService: TripGenerationApplication; plannedFrequencyService: Pick<PlannedFrequencyService, 'getPlan' | 'previewBuildFromPlan' | 'comparePlan'>; blockingService: BlockingCommands & BlockingQueries; aggregate: RouteDefinitionAggregate; records: ScenarioRecords; serviceDayId: string; directionId: string; tripProfileId: string; tripProfileBusy: boolean; tripPatternSelections: Record<string, string>; onTripPatternChange: (key: string, id: string) => void; onTripProfileChange: (id: string) => void; onTripProfileRename: () => void; onTripProfileCopy: () => void; onTripProfileDelete: () => void; onRegisterNavigationGuard: (guard: RouteNavigationGuard | undefined) => void; runtimeVersion: number; onRuntimeChanged: () => void; onError: (error: unknown, fallback?: string) => void; pane?: { side: 'left' | 'right' }; sharedControls?: boolean; blockingScenarioId?: string; onBlockingScenarioChange?: (id: string) => void; onBeforeOpenEdit?: (start: () => void) => void; onOpenEditChange?: (open: boolean) => void; yieldToken?: number }) {
+export function TripsWorkspace({ service, tripService, plannedFrequencyService, blockingService, aggregate, records, serviceDayId, directionId, tripProfileId, tripProfileBusy, tripPatternSelections, onTripPatternChange, onTripProfileChange, onTripProfileRename, onTripProfileCopy, onTripProfileDelete, onRegisterNavigationGuard, runtimeVersion, onRuntimeChanged, onError, pane, sharedControls = true, blockingScenarioId: sharedBlockingScenarioId, onBlockingScenarioChange, onBeforeOpenEdit, onOpenEditChange, yieldToken, sharedSlots, viewOptions, onViewOptionsChange, sideBySideMenu, paneContext }: { sharedSlots?: { context: HTMLElement | null; actions: HTMLElement | null }; viewOptions?: TripViewOptions; onViewOptionsChange?: (next: TripViewOptions) => void; sideBySideMenu?: SideBySideMenuItem; paneContext?: ReactNode; service: RouteDefinitionApplication; tripService: TripGenerationApplication; plannedFrequencyService: Pick<PlannedFrequencyService, 'getPlan' | 'previewBuildFromPlan' | 'comparePlan'>; blockingService: BlockingCommands & BlockingQueries; aggregate: RouteDefinitionAggregate; records: ScenarioRecords; serviceDayId: string; directionId: string; tripProfileId: string; tripProfileBusy: boolean; tripPatternSelections: Record<string, string>; onTripPatternChange: (key: string, id: string) => void; onTripProfileChange: (id: string) => void; onTripProfileRename: () => void; onTripProfileCopy: () => void; onTripProfileDelete: () => void; onRegisterNavigationGuard: (guard: RouteNavigationGuard | undefined) => void; runtimeVersion: number; onRuntimeChanged: () => void; onError: (error: unknown, fallback?: string) => void; pane?: { side: 'left' | 'right' }; sharedControls?: boolean; blockingScenarioId?: string; onBlockingScenarioChange?: (id: string) => void; onBeforeOpenEdit?: (start: () => void) => void; onOpenEditChange?: (open: boolean) => void; yieldToken?: number }) {
   const days = sortServiceDays(records.serviceDays);
   const directions = orderDirections(aggregate.directions ?? []);
   const [profiles, setProfiles] = useState<RuntimeProfile[]>([]);
@@ -123,9 +130,14 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   const lastShiftControl = useRef<HTMLButtonElement | null>(null);
   const buildValues = useRef<BuildTripsValues>(EMPTY_BUILD_VALUES);
   const [runtimeEditorState, setRuntimeEditorState] = useState<RuntimeEditorState>({ dirty: false, saving: false, changeCount: 0 });
-  const [showRuntimeBands, setShowRuntimeBands] = useState(false);
-  const [showHeadways, setShowHeadways] = useState(false);
-  const [roundDisplayedTimes, setRoundDisplayedTimes] = useState(false);
+  // The View options. Side by side shares them between the panes (Decision 0060 item 7), so the container may own them.
+  const [ownViewOptions, setOwnViewOptions] = useState<TripViewOptions>(DEFAULT_VIEW_OPTIONS);
+  const shownViewOptions = viewOptions ?? ownViewOptions;
+  const toggleViewOption = (key: keyof TripViewOptions) => {
+    const next = { ...shownViewOptions, [key]: !shownViewOptions[key] };
+    if (onViewOptionsChange) onViewOptionsChange(next); else setOwnViewOptions(next);
+  };
+  const { showRuntimeBands, showHeadways, roundDisplayedTimes } = shownViewOptions;
   const [busy, setBusy] = useState(false);
   const [runtimeCopyOpen, setRuntimeCopyOpen] = useState(false);
   const [segmentRuntimeDialog, setSegmentRuntimeDialog] = useState<'copy' | 'fill'>();
@@ -678,10 +690,28 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   ] }];
   const applicableRegenerationUndo = regenerationUndoApplies(lastRegenerationUndo, records.scenario.id, tripProfileId, trips) ? lastRegenerationUndo : undefined;
   const viewMenu: MenuGroup[] = [{ items: [
-    { id: 'show-runtime-bands', label: 'Show runtime bands', checked: showRuntimeBands, kind: 'checkbox', onSelect: () => setShowRuntimeBands((current) => !current) },
-    { id: 'show-headways', label: 'Show headways', checked: showHeadways, kind: 'checkbox', onSelect: () => setShowHeadways((current) => !current) },
-    { id: 'round-table-times', label: 'Round displayed times', checked: roundDisplayedTimes, kind: 'checkbox', onSelect: () => setRoundDisplayedTimes((current) => !current) },
-  ] }];
+    { id: 'show-runtime-bands', label: 'Show runtime bands', checked: showRuntimeBands, kind: 'checkbox', onSelect: () => toggleViewOption('showRuntimeBands') },
+    { id: 'show-headways', label: 'Show headways', checked: showHeadways, kind: 'checkbox', onSelect: () => toggleViewOption('showHeadways') },
+    { id: 'round-table-times', label: 'Round displayed times', checked: roundDisplayedTimes, kind: 'checkbox', onSelect: () => toggleViewOption('roundDisplayedTimes') },
+  ] },
+  // Decision 0060 item 1. Turning side by side on or off draws the Trips again, so the single table first asks about its open edits and Runtimes;
+  // a pane's item is answered by the side-by-side container, which asks both panes.
+  ...(sideBySideMenu ? [{ items: [{ id: 'side-by-side', label: 'Show both directions side by side', checked: sideBySideMenu.checked, kind: 'checkbox' as const, disabled: Boolean(sideBySideMenu.disabledReason), title: sideBySideMenu.disabledReason, onSelect: () => { if (pane) sideBySideMenu.onToggle(); else requestContextChange(sideBySideMenu.onToggle); } }] }] : [])];
+  // What the Trips header shares across directions: in side by side the left pane draws it into the container's header (Decision 0060 item 7).
+  // The plan status chip covers every direction of the Route, so it is shared too.
+  const sharedContext = <>
+    <MenuButton fieldLabel="Trip profile" label={selectedTripProfile?.name ?? 'Select profile'} menuLabel="Trip profile" groups={tripProfileMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} menuAlign="start" />
+    <PlanStatusChip result={planResult} nodes={aggregate.nodes} />
+    <MenuButton fieldLabel="Blocking scenario" label={selectedBlockingScenario?.name ?? 'No blocking scenario'} menuLabel="Blocking scenario" groups={tripBlockingScenarioMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} menuAlign="start" />
+  </>;
+  const viewButton = <MenuButton label="View" menuLabel="View" groups={viewMenu} />;
+  const paneDirection = directions.find((direction) => direction.id === directionId);
+  // A pane's subtitle names its first and last timepoints, so two panes read as the two ends of the same Route.
+  const paneEnds = (() => {
+    const columns = [...(paneDirection?.columns ?? [])].sort((left, right) => left.sequence - right.sequence);
+    const name = (column?: typeof columns[number]) => column ? column.labelOverride || aggregate.nodes.find((node) => node.id === column.nodeId)?.shortName || aggregate.nodes.find((node) => node.id === column.nodeId)?.name || '' : '';
+    return columns.length > 1 ? `${name(columns[0])} → ${name(columns.at(-1))}` : undefined;
+  })();
   // The ⋯ menu holds only what is not a selection command: Undo (Decision 0046: listed only while the saved undo applies, never shown disabled for that reason), service-day copy, and CSV export.
   const tripActionsMenu: MenuGroup[] = [
     ...(applicableRegenerationUndo ? [{ items: [{ id: 'undo-regeneration', label: `Undo last regeneration (${applicableRegenerationUndo.afterTrips.length} trips)`, disabled: busy || tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => void undoRegeneration() }] }] : []),
@@ -719,7 +749,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   const shiftStepLabel = parsedShiftSeconds === undefined ? '—' : formatShiftStep(parsedShiftSeconds);
   if (!directions.length) return <section className="empty-state"><p>Add a direction on the Route tab before defining runtimes or trips.</p></section>;
   if (!patterns.length) return <section className="trips-workspace"><section className="prerequisite"><h1 className="box-heading">Add a pattern on Route</h1><p>Choose a direction, then add a pattern with at least two points before entering runtimes or trips.</p></section></section>;
-  return <div className="trips-workspace" ref={workspaceRootRef}>
+  return <div className={pane ? 'trips-pane-host' : 'trips-workspace'} ref={workspaceRootRef}>
     {!pane && <h1 className="visually-hidden">Trips and runtimes</h1>}
     {!pane && <section className="work-surface runtimes-surface" aria-label="Runtimes section">
       <header className="work-surface__header">
@@ -758,14 +788,12 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
       {routeMethodChange && <RouteRuntimeMethodDialog routeName={aggregate.route.name || 'this Route'} method={routeMethodChange.method} impact={routeMethodChange.impact} busy={routeMethodChange.busy} onConfirm={() => void confirmRouteMethodChange()} onClose={() => setRouteMethodChange(undefined)} />}
       {runtimesOpen && runtimeEditorState.dirty && <SaveBar message={runtimeEditorState.changeCount ? `${runtimeEditorState.changeCount} unsaved change${runtimeEditorState.changeCount === 1 ? '' : 's'} in Runtimes` : 'Unsaved changes in Runtimes'} saveLabel={runtimeEditorState.saving ? 'Saving…' : 'Save'} busy={runtimeEditorState.saving || tripProfileBusy} onSave={() => saveRuntimeThen(() => { window.setTimeout(() => runtimeCopyButtonRef.current?.focus()); })} onDiscard={() => { runtimeEditorRef.current?.discard(); window.setTimeout(() => runtimeCopyButtonRef.current?.focus()); }} />}
     </section>}
-    <WorkSurface title="Trips" count={trips.length} ariaLabel={pane ? `${directions.find((direction) => direction.id === directionId)?.name ?? 'Direction'} trips` : 'Trips section'} className="trips-surface"
-      context={<>
-        {sharedControls && <MenuButton fieldLabel="Trip profile" label={selectedTripProfile?.name ?? 'Select profile'} menuLabel="Trip profile" groups={tripProfileMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} menuAlign="start" />}
-        <PlanStatusChip result={planResult} nodes={aggregate.nodes} />
-        {sharedControls && <MenuButton fieldLabel="Blocking scenario" label={selectedBlockingScenario?.name ?? 'No blocking scenario'} menuLabel="Blocking scenario" groups={tripBlockingScenarioMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} menuAlign="start" />}
-      </>}
+    {pane && sharedControls && sharedSlots?.context && createPortal(sharedContext, sharedSlots.context)}
+    {pane && sharedControls && sharedSlots?.actions && createPortal(viewButton, sharedSlots.actions)}
+    <WorkSurface title={pane ? paneDirection?.name ?? 'Direction' : 'Trips'} count={trips.length} subtitle={pane ? paneEnds : undefined} ariaLabel={pane ? `${paneDirection?.name ?? 'Direction'} trips` : 'Trips section'} className={pane ? 'trips-surface trips-pane' : 'trips-surface'}
+      context={pane ? paneContext : sharedContext}
       actions={<>
-        <MenuButton label="View" menuLabel="View" groups={viewMenu} />
+        {!pane && viewButton}
         <button type="button" disabled={Boolean(draftTrip) || tripProfileBusy || shiftOperations.length > 0} title={shiftOperations.length ? 'Discard the staged shift first.' : undefined} onClick={() => startOpenEdit(() => setDraftTrip({ patternId: '', firstTrip: '' }))}>Add trip</button>
         <button type="button" ref={buildTripsButtonRef} className="primary" disabled={tripProfileBusy || shiftOperations.length > 0 || buildOpen} title={buildOpen ? 'The Build trips drawer is already open.' : shiftOperations.length ? 'Discard the staged shift first.' : undefined} onClick={() => startOpenEdit(() => setBuildOpen(true))}>Build trips…</button>
         <MenuButton label="Actions" menuLabel="Trip actions" groups={tripActionsMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} triggerRef={tripsActionsRef} />
@@ -773,7 +801,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
       {tripsWithChangedRuntimes.length > 0 && <InlineNote kind="warn"><b>Run times have changed</b> for {tripsWithChangedRuntimes.length} {tripsWithChangedRuntimes.length === 1 ? 'trip' : 'trips'}. <button type="button" className="small" disabled={busy || tripProfileBusy} onClick={selectTripsWithChangedRuntimes}>Select these trips</button></InlineNote>}
       {staleReasons && <InlineNote kind="warn" live>{staleTripNoticeText(staleReasons)}</InlineNote>}
       {tripBlockAssignmentStatus && <InlineNote kind="ok" live>{tripBlockAssignmentStatus}</InlineNote>}
-      <ScheduleTable selectionBar={renderSelectionBar} planGaps={planGaps} onStartTimeChange={tripProfileBusy || shiftDrawerOpen || shiftOperations.length > 0 ? undefined : changeTripStartTime} trips={trips} previewTrips={shiftPreview?.shiftedTrips} stagedShiftSeconds={shiftPreview?.netOffsetSeconds} draft={draftTrip} patterns={patterns} direction={directions.find((direction) => directionId === direction.id)!} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} showRuntimeBands={showRuntimeBands} showHeadways={showHeadways} roundDisplayedTimes={roundDisplayedTimes} blockAssignments={tripBlockByTripId} tripConnections={tripConnections} totals={tableTotals} blockWarnings={tripBlockWarnings} blockOptions={tripBlockOptions} blockAssignmentDisabled={busy || tripProfileBusy || tripBlockingBlocksBusy || shiftOperations.length > 0 || shiftDrawerOpen || Boolean(tripBlockAssignment)} onAssignBlock={(trip, blockId, trigger) => openTripBlockAssignment([trip.id], blockId, 'pill', trigger)} onUnassignBlock={(trip, trigger) => openTripBlockAssignment([trip.id], '', 'pill', trigger, 'unassign')} selectedIds={selectedTripIds} changedRuntimeTripIds={changedRuntimeTripIds} onToggle={(id, index, shiftKey) => requestShiftScopeChange(() => {
+      <ScheduleTable compact={Boolean(pane)} selectionBar={renderSelectionBar} planGaps={planGaps} onStartTimeChange={tripProfileBusy || shiftDrawerOpen || shiftOperations.length > 0 ? undefined : changeTripStartTime} trips={trips} previewTrips={shiftPreview?.shiftedTrips} stagedShiftSeconds={shiftPreview?.netOffsetSeconds} draft={draftTrip} patterns={patterns} direction={directions.find((direction) => directionId === direction.id)!} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} showRuntimeBands={showRuntimeBands} showHeadways={showHeadways} roundDisplayedTimes={roundDisplayedTimes} blockAssignments={tripBlockByTripId} tripConnections={tripConnections} totals={tableTotals} blockWarnings={tripBlockWarnings} blockOptions={tripBlockOptions} blockAssignmentDisabled={busy || tripProfileBusy || tripBlockingBlocksBusy || shiftOperations.length > 0 || shiftDrawerOpen || Boolean(tripBlockAssignment)} onAssignBlock={(trip, blockId, trigger) => openTripBlockAssignment([trip.id], blockId, 'pill', trigger)} onUnassignBlock={(trip, trigger) => openTripBlockAssignment([trip.id], '', 'pill', trigger, 'unassign')} selectedIds={selectedTripIds} changedRuntimeTripIds={changedRuntimeTripIds} onToggle={(id, index, shiftKey) => requestShiftScopeChange(() => {
         setSelectedTripIds((current) => {
           const anchorIndex = selectionAnchorId.current ? trips.findIndex((trip) => trip.id === selectionAnchorId.current) : -1;
           if (shiftKey && anchorIndex >= 0) {

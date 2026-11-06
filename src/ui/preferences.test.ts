@@ -27,10 +27,11 @@ describe('storedText and storedTextMap', () => {
 describe('side-by-side Trips preference', () => {
   it('reads off when nothing or a wrong shape is stored', async () => {
     const { readSideBySidePreference } = await import('./preferences');
-    expect(readSideBySidePreference(store(null))).toEqual({ on: false, leftDirectionId: undefined });
-    expect(readSideBySidePreference(store('[]'))).toEqual({ on: false, leftDirectionId: undefined });
-    expect(readSideBySidePreference(store('{"on":"yes","leftDirectionId":5}'))).toEqual({ on: false, leftDirectionId: undefined });
-    expect(readSideBySidePreference(store('{"on":true,"leftDirectionId":"d2"}'))).toEqual({ on: true, leftDirectionId: 'd2' });
+    const off = { on: false, leftDirectionId: undefined, rightDirectionId: undefined };
+    expect(readSideBySidePreference(store(null))).toEqual(off);
+    expect(readSideBySidePreference(store('[]'))).toEqual(off);
+    expect(readSideBySidePreference(store('{"on":"yes","leftDirectionId":5}'))).toEqual(off);
+    expect(readSideBySidePreference(store('{"on":true,"leftDirectionId":"d2","rightDirectionId":"d1"}'))).toEqual({ on: true, leftDirectionId: 'd2', rightDirectionId: 'd1' });
   });
   it('picks the stored left direction, or the first by sequence, and the first other direction on the right', async () => {
     const { sideBySideDirectionIds } = await import('./preferences');
@@ -39,5 +40,7 @@ describe('side-by-side Trips preference', () => {
     expect(sideBySideDirectionIds(directions, 'b')).toEqual(['b', 'a']);
     expect(sideBySideDirectionIds(directions, 'gone')).toEqual(['a', 'b']);
     expect(sideBySideDirectionIds([{ id: 'a', sequence: 1 }], 'a')).toBeUndefined();
+    expect(sideBySideDirectionIds(directions, 'a', 'c')).toEqual(['a', 'c']);
+    expect(sideBySideDirectionIds(directions, 'c', 'c')).toEqual(['c', 'a']);
   });
 });

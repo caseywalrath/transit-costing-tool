@@ -1,4 +1,6 @@
 .app-shell { max-width: 1720px; margin: 0 auto; padding: 0 var(--space-4) var(--space-5); }
+/* Side-by-side Trips uses the whole window (Decision 0060 item 10). */
+.app-shell.app-shell--full-width { max-width: none; }
 
 /* Application header (H-B). Row 1 is the app bar; row 2 is the scope bar and never wraps. */
 .app-header { margin: 0 calc(-1 * var(--space-4)) var(--space-3); }
