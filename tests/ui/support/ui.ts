@@ -164,6 +164,18 @@ const commands = {
 
 export type CommandId = keyof typeof commands | keyof typeof buttonCommands;
 
+/** Opens a menu and waits until it is open. Many menu triggers are disabled while the screen is busy (Blocking disables its menus during
+ * the compatibility review). Playwright checks that the trigger is enabled and then clicks, so a review that starts between the two
+ * leaves the click on a disabled button: nothing opens, and a later wait for the menu item runs to the test timeout. Clicking again
+ * until the menu is visible fixes that. A trigger that is already open is not clicked again, since a second click would close it. */
+export async function openMenu(page: Page, trigger: Locator, menuName: string) {
+  const menu = page.getByRole('menu', { name: menuName, exact: true });
+  await expect(async () => {
+    if (await trigger.getAttribute('aria-expanded', { timeout: 3000 }) !== 'true') await trigger.click({ timeout: 3000 });
+    await expect(menu).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 40000 });
+}
+
 /** Opens the command's menu and chooses its item. Item names match exactly, except the Undo item, whose name ends in "(N trips)". */
 export async function runCommand(page: Page, id: CommandId) {
   if (id in buttonCommands) {
@@ -180,6 +192,6 @@ export async function runCommand(page: Page, id: CommandId) {
   }
   const command: Command = commands[id as keyof typeof commands];
   const scope = command.within ? region(page, command.within) : page;
-  await scope.getByRole('button', command.trigger ? { name: command.trigger } : { name: command.menu, exact: true }).click();
+  await openMenu(page, scope.getByRole('button', command.trigger ? { name: command.trigger } : { name: command.menu, exact: true }), command.menu);
   await page.getByRole('menu', { name: command.menu, exact: true }).getByRole(command.role ?? 'menuitem', { name: command.item, exact: id !== 'trips.undoRegeneration' }).click();
 }

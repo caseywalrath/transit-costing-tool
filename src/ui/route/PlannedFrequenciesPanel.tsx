@@ -103,7 +103,11 @@ export const PlannedFrequenciesPanel = forwardRef<PlannedFrequenciesHandle, {
 
   const plan = day ? plans[day.id] : undefined;
   const saved = useMemo(() => draftOf(plan), [plan]);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+  // The draft is copied from the saved plan one render after the plan arrives (the effect below). Until it has been, the draft is not an
+  // edit: counting it as one made the Route tab ask "Save route changes before leaving?" when Trips was opened right after loading.
+  const syncedKey = useRef('');
+  const draftCurrent = loaded && syncedKey.current === `${day?.id}|${JSON.stringify(saved)}`;
+  const dirty = draftCurrent && JSON.stringify(draft) !== JSON.stringify(saved);
   useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
 
@@ -120,7 +124,6 @@ export const PlannedFrequenciesPanel = forwardRef<PlannedFrequenciesHandle, {
   }, [service, routeId, sortedDays, version, stableError]);
 
   // The draft is replaced when the saved plan (or the day) changes, never while the planner is typing in the same plan.
-  const syncedKey = useRef('');
   useEffect(() => {
     if (!loaded) return;
     const key = `${day?.id}|${JSON.stringify(saved)}`;

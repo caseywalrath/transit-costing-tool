@@ -28,6 +28,19 @@ const reopenTrips = async (page: Page) => {
 };
 const storedTimes = (page: Page): Promise<number[][]> => runInPage(page, `return (await e.db.trips.toArray()).map((trip) => trip.stopTimes.map((point) => point.time)).sort((a, b) => a[0] - b[0])`);
 
+// The Planned frequencies draft is copied from the saved plan one render after it loads. It used to count as an unsaved edit for that
+// render, so opening Trips right after loading sometimes asked "Save route changes before leaving?" (about 1 load in 6 under load).
+test('opening Trips right after loading a Route with a saved plan does not ask to save route changes', async ({ page }) => {
+  await createShiftReadySchedule(page);
+  await storePlan(page, [[21600, 25200, 1800]], 'B');
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await page.reload();
+    await page.getByRole('button', { name: 'Trips', exact: true }).click();
+    await expect(page.locator('.schedule-table tbody tr')).toHaveCount(1);
+    await expect(page.getByRole('dialog', { name: 'Save route changes before leaving?' })).toHaveCount(0);
+  }
+});
+
 test('the mode is disabled with a hint when the day has no plan, and One headway stays the form', async ({ page }) => {
   await createShiftReadySchedule(page);
   await tripsSection(page).getByRole('button', { name: 'Build trips…', exact: true }).click();

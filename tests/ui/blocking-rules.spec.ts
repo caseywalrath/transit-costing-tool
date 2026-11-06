@@ -1,6 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import { createRouteWithPattern } from './support/tripsWorkspace';
-import { runCommand } from './support/ui';
+import { openMenu, runCommand } from './support/ui';
+
+const openUnassignedActions = (page: Page) => openMenu(page, page.getByLabel('Unassigned trips').getByRole('button', { name: 'Unassigned trip actions', exact: true }), 'Unassigned trip actions');
 
 // Package P14: Blocking rules that the Blocking screen used to apply itself (findings 4-007, 4-014, 4-018; Decision 0039).
 test.setTimeout(90_000);
@@ -91,7 +93,7 @@ test('a blank minutes field is refused for a deadhead, a bulk pull-out, and a mi
   await pullOut.getByRole('button', { name: 'Cancel' }).click();
   await expect(currentBlock.getByRole('cell', { name: 'Pull-out', exact: true })).toHaveCount(0);
 
-  await page.getByLabel('Unassigned trips').getByRole('button', { name: 'Unassigned trip actions', exact: true }).click();
+  await openUnassignedActions(page);
   await page.getByRole('menuitem', { name: /^Minimum layover/ }).click();
   const layover = page.getByRole('dialog', { name: 'Minimum layover' });
   await layover.getByLabel('Minutes', { exact: true }).fill('');
@@ -154,12 +156,12 @@ test('the minimum layover is one rule for both directions until "Same for both d
   await openBlockingWithTrips(page, 3);
   await (await newBlock(page)).getByRole('button', { name: 'Create block', exact: true }).click();
   const openDialog = async () => {
-    await page.getByLabel('Unassigned trips').getByRole('button', { name: 'Unassigned trip actions', exact: true }).click();
+    await openUnassignedActions(page);
     await page.getByRole('menuitem', { name: /^Minimum layover/ }).click();
     return page.getByRole('dialog', { name: 'Minimum layover' });
   };
   const menuLabel = async () => {
-    await page.getByLabel('Unassigned trips').getByRole('button', { name: 'Unassigned trip actions', exact: true }).click();
+    await openUnassignedActions(page);
     const label = (await page.getByRole('menuitem', { name: /^Minimum layover/ }).innerText()).trim();
     await page.keyboard.press('Escape');
     return label;
@@ -217,6 +219,6 @@ test('a minimum layover stored before the change is read as the rule for both di
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await (await newBlock(page)).getByRole('button', { name: 'Create block', exact: true }).click();
   await expect(page.getByLabel('Current block').getByText('This empty block is valid.')).toBeVisible();
-  await page.getByLabel('Unassigned trips').getByRole('button', { name: 'Unassigned trip actions', exact: true }).click();
+  await openUnassignedActions(page);
   await expect(page.getByRole('menuitem', { name: /^Minimum layover/ })).toHaveText('Minimum layover: 7 min');
 });
