@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { ValidationFinding } from '../../domain/types';
-import { costingFindingMessage } from './CostingWorkspace';
+import { costingFindingMessage, sortCostBasisOptions } from './CostingWorkspace';
+
+describe('sortCostBasisOptions', () => {
+  const option = (kind: 'blocked' | 'estimated', name: string) => ({ kind, id: kind + name, name, tripProfileId: 'p', tripProfileName: 'P' });
+  it('keeps one kind, alphabetical, ignoring case and reading digits as numbers', () => {
+    const options = [option('estimated', 'Weekend'), option('blocked', 'scenario 10'), option('blocked', 'Scenario 2'), option('blocked', 'Alpha'), option('estimated', 'Default')];
+    expect(sortCostBasisOptions(options, 'blocked').map((item) => item.name)).toEqual(['Alpha', 'Scenario 2', 'scenario 10']);
+    expect(sortCostBasisOptions(options, 'estimated').map((item) => item.name)).toEqual(['Default', 'Weekend']);
+    expect(options).toHaveLength(5);
+  });
+});
 
 const finding = (messageKey: string, entityId = 'x', parameters?: Record<string, string | number>): ValidationFinding => ({ ruleId: messageKey, severity: 'error', entityType: 'scenario', entityId, messageKey, ...(parameters ? { parameters } : {}) });
 const everyKey = ['costing.annualServiceDaysExceed365', 'costing.annualServiceDaysInvalid', 'costing.duplicateServiceDay', 'costing.serviceDayScenarioMismatch', 'costing.blockingScenarioMismatch', 'costing.tripProfileMismatch', 'costing.duplicateTrip', 'costing.duplicateBlock', 'costing.tripSourceMismatch', 'costing.blockSourceMismatch', 'costing.adjustedRateInvalid', 'costing.calculationOverflow', 'costing.rateInvalid', 'costing.rateYearInvalid', 'costing.baseServiceYearInvalid', 'costing.rateYearAfterBaseServiceYear', 'costing.futureYearCountInvalid', 'costing.projectionYearOutOfRange', 'costing.annualEscalationInvalid'];

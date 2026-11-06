@@ -35,6 +35,13 @@ export async function chooseScope(page: Page, label: ToggleScope, choice: ScopeC
   await target.click();
 }
 
+/** Chooses a Cost basis by group and name. A Blocking Scenario and a Trip Profile may share a name, so the group decides. */
+export async function chooseCostBasis(page: Page, group: 'Blocked hours' | 'Estimated from running time', name: string) {
+  const field = scopeField(page, 'Cost basis');
+  const value = await field.locator(`optgroup[label="${group}"] option`).filter({ hasText: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) }).getAttribute('value');
+  await field.selectOption({ value: value! });
+}
+
 /** The record id of the chosen Day or Direction. */
 export const scopeValue = (page: Page, label: ToggleScope): Promise<string> => scopeField(page, label).evaluate((element) => element instanceof HTMLSelectElement ? element.value : element.querySelector('[role="radio"][aria-checked="true"]')?.getAttribute('data-value') ?? '');
 

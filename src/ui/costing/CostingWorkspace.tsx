@@ -98,7 +98,12 @@ const money = (value: number) => formatMoney(value);
 
 const COST_BASIS_PREFERENCE_KEY = 'transit-costing-tool.costing-basis.v1';
 const optionValue = (option: CostBasisOption) => `${option.kind}:${option.id}`;
-const optionLabel = (option: CostBasisOption) => `${option.kind === 'blocked' ? 'Blocked' : 'Estimated'} · ${option.name}`;
+/** The group heading says Blocked or Estimated, so an option shows its name alone. */
+const optionLabel = (option: CostBasisOption) => option.name;
+/** The options of one kind, alphabetical by name (digits compare as numbers, case ignored). */
+export function sortCostBasisOptions(options: readonly CostBasisOption[], kind: CostBasisOption['kind']): CostBasisOption[] {
+  return options.filter((option) => option.kind === kind).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+}
 const toBasis = (option: CostBasisOption): CostBasis => option.kind === 'blocked' ? { kind: 'blocked', blockingScenarioId: option.id } : { kind: 'estimated', tripProfileId: option.id };
 /** The cost basis remembered for a Scenario on this device (Decision 0051 item 7). Never in a backup. */
 function rememberedBasis(scenarioId: string): string | undefined { return storedText(readStoredRecord(COST_BASIS_PREFERENCE_KEY)[scenarioId]); }
@@ -299,8 +304,8 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
   ] }];
 
   const annualDays = costingService.summarizeServiceDays(serviceDays);
-  const blockedOptions = basisOptions.filter((option) => option.kind === 'blocked');
-  const estimatedOptions = basisOptions.filter((option) => option.kind === 'estimated');
+  const blockedOptions = sortCostBasisOptions(basisOptions, 'blocked');
+  const estimatedOptions = sortCostBasisOptions(basisOptions, 'estimated');
   const assumptionChanges = persisted ? countAssumptionChanges(toInput(persisted), assumptions) : 0;
   const badge = !result ? undefined
     : result.state === 'complete' ? undefined
