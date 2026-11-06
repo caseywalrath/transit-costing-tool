@@ -2,7 +2,7 @@
 
 - Requested by the user on 2026-11-06.
 - Branch: `claude/costing-empty-blocking-scenario-6sbnrj`. Do not push to another branch. Do not open a pull request unless the user asks.
-- Status: SS1 to SS3 done (2026-11-06). SS4 next.
+- Status: Complete (2026-11-06). SS1 to SS4 done; the closeout's full browser suite passed after two test updates (see the SS4 commit).
 - Decision: 0060.
 
 ## Goal

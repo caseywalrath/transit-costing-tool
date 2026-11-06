@@ -107,12 +107,18 @@ test('compact panes pin the compare columns at the right and leave out Deadhead'
   const table = pane(page, 'Southbound').locator('.schedule-table').first();
   await expect(table.getByRole('columnheader', { name: 'Deadhead' })).toHaveCount(0);
   await expect(table.getByRole('columnheader', { name: 'Run time' })).toHaveCSS('position', 'sticky');
+  await expect(table.locator('tbody tr').first()).toBeVisible();
   const scrolls = await table.evaluate((element) => element.scrollWidth > element.clientWidth);
   if (scrolls) {
-    const before = await table.getByRole('columnheader', { name: 'Block' }).boundingBox();
-    await table.evaluate((element) => { element.scrollLeft = element.scrollWidth; });
-    const after = await table.getByRole('columnheader', { name: 'Block' }).boundingBox();
-    expect(Math.round(after!.x)).toBe(Math.round(before!.x));
+    // Measured inside the page in one step, so a layout pass between two reads cannot move the heading.
+    const shift = await table.evaluate(async (element) => {
+      const heading = [...element.querySelectorAll('thead th')].find((cell) => cell.textContent === 'Block')!;
+      const before = heading.getBoundingClientRect().right - element.getBoundingClientRect().right;
+      element.scrollLeft = element.scrollWidth;
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return Math.abs(heading.getBoundingClientRect().right - element.getBoundingClientRect().right - before);
+    });
+    expect(shift).toBeLessThan(1);
   }
 });
 

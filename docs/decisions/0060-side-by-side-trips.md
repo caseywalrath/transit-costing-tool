@@ -1,6 +1,6 @@
 # Decision 0060: Side-by-Side Trips
 
-- Status: Accepted (2026-11-06; implementation plan `docs/implementation/side-by-side-trips.md`)
+- Status: Accepted and implemented (packages SS1 to SS4, 2026-11-06; implementation plan `docs/implementation/side-by-side-trips.md`)
 - Date: 2026-11-06 (user design review of the level A mock-up, versions 1 and 2)
 - Related: Decisions 0011 (managed directions), 0046 (regeneration undo), 0047 (interface revision), 0059 (scope toggles)
 

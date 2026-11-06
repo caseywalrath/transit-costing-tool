@@ -140,7 +140,7 @@ test('the Pattern column shows a chip, and the Block column a pill with the bloc
   await expect(firstRow.locator('td.trip-block-column .block-pill__dot')).toHaveCount(1);
 });
 
-test('Build trips and Add trip are header buttons, and View holds the three display options', async ({ page }) => {
+test('Build trips and Add trip are header buttons, and View holds the three display options and the side-by-side item', async ({ page }) => {
   await openGoldenTrips(page);
   await openRuntimes(page);
   const trips = region(page, 'trips');
@@ -149,7 +149,7 @@ test('Build trips and Add trip are header buttons, and View holds the three disp
   await expect(trips.locator('.draft-trip-row')).toBeVisible();
   await expect(trips.getByRole('button', { name: 'Add trip', exact: true })).toBeDisabled();
   await trips.getByRole('button', { name: 'View', exact: true }).click();
-  await expect(page.getByRole('menu', { name: 'View' }).getByRole('menuitemcheckbox')).toHaveText(['Show runtime bands', 'Show headways', 'Round displayed times']);
+  await expect(page.getByRole('menu', { name: 'View' }).getByRole('menuitemcheckbox')).toHaveText(['Show runtime bands', 'Show headways', 'Round displayed times', 'Show both directions side by side']);
 });
 
 test('the selection bar is pinned, compact, above the pinned table headings while the page is scrolled, and the live copy is always unique', async ({ page }) => {
