@@ -52,7 +52,7 @@ test('builds a blocking scenario automatically and offers it as a blocked cost b
 
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Costing Assumptions' })).toBeVisible();
-  await expect(scopeField(page, 'Cost basis').locator('option', { hasText: `Blocked · ${name}` })).toHaveCount(1);
+  await expect(scopeField(page, 'Cost basis').locator('optgroup[label="Blocked hours"] option', { hasText: name })).toHaveCount(1);
 });
 
 // Decision 0056, package MR3. The preview shows peak vehicles (equal to blocks on the golden Weekday), and the Maximum vehicles field in

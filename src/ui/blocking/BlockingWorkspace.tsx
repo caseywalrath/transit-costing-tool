@@ -17,7 +17,7 @@ import { userFacingError } from '../errorMessages';
 import { ModalDialog } from '../ModalDialog';
 import { readStoredRecord, storedText, storedTextMap } from '../preferences';
 import { createLatestRequest } from '../latestRequest';
-import { formatClock, formatDuration, formatHours, formatMiles, formatPercent, MISSING, withUnit } from '../format';
+import { formatClock, formatDuration, formatHours, formatMiles, formatPercent, INCOMPLETE, MISSING, withUnit } from '../format';
 import { figure } from '../shared/figures';
 import { ContextField } from '../shared/ContextField';
 import { rememberTripBlockingScenario } from '../trips/TripsWorkspace';
@@ -574,10 +574,10 @@ function Findings({ summary }: { summary?: BlockSummary }) {
     {mileageNotes.length > 0 && <InlineNote kind="warn">{mileageNotes.map(message).join(' ')}</InlineNote>}
   </>;
 }
-/** The day summary: a seven-cell strip above the Blocks table. Values keep their unit (F3, F4); an Incomplete value takes the warning style. */
+/** The day summary: a ten-cell strip above the Blocks table. Values keep their unit (F3, F4); an Incomplete value takes the warning style. */
 function SummaryPanel({ summary, allDayFactors, serviceDayName, blockCount }: { summary: Awaited<ReturnType<BlockingQueries['getScenarioSummary']>>; allDayFactors?: { layoverPercent?: number; deadheadPercent?: number }; serviceDayName: string; blockCount: number }) {
   const aside = summary && allDayFactors ? <span className="support-panel__aside">{`All days, weighted by annual service days: layover ${formatPercent(allDayFactors.layoverPercent)} · deadhead ${formatPercent(allDayFactors.deadheadPercent)}`}</span> : undefined;
-  return <SupportPanel title={`${serviceDayName} summary · ${plural(blockCount, 'block')}`} aside={aside} ariaLabel="Blocking summary">{summary ? <dl className="stat-strip"><div><dt>Revenue</dt><dd>{tileHours(summary.revenueHours)}</dd></div><div><dt>Running</dt><dd>{tileHours(summary.runningHours)}</dd></div><div><dt>Platform</dt><dd>{tileHours(summary.platformHours)}</dd></div><div><dt>Layover</dt><dd>{tileHours(summary.layoverHours)}</dd></div><div><dt>Layover %<small>of revenue hours</small></dt><dd>{formatPercent(summary.layoverPercent)}</dd></div><div><dt>Deadhead</dt><dd>{tileHours(summary.deadheadHours)}</dd></div><div><dt>Deadhead %<small>of platform hours</small></dt><dd>{formatPercent(summary.deadheadPercent)}</dd></div><div><dt>Revenue miles</dt><dd>{tileMiles(summary.revenueMiles)}</dd></div><div><dt>Platform miles</dt><dd>{tileMiles(summary.platformMiles)}</dd></div></dl> : <p className="profile-usage">Select a blocking scenario to view its summary.</p>}</SupportPanel>;
+  return <SupportPanel title={`${serviceDayName} summary · ${plural(blockCount, 'block')}`} aside={aside} ariaLabel="Blocking summary">{summary ? <dl className="stat-strip"><div><dt>Revenue</dt><dd>{tileHours(summary.revenueHours)}</dd></div><div><dt>Running</dt><dd>{tileHours(summary.runningHours)}</dd></div><div><dt>Platform</dt><dd>{tileHours(summary.platformHours)}</dd></div><div><dt>Layover</dt><dd>{tileHours(summary.layoverHours)}</dd></div><div><dt>Layover %<small>of revenue hours</small></dt><dd>{formatPercent(summary.layoverPercent)}</dd></div><div><dt>Deadhead</dt><dd>{tileHours(summary.deadheadHours)}</dd></div><div><dt>Deadhead %<small>of platform hours</small></dt><dd>{formatPercent(summary.deadheadPercent)}</dd></div><div><dt>Revenue miles</dt><dd>{tileMiles(summary.revenueMiles)}</dd></div><div><dt>Platform miles</dt><dd>{tileMiles(summary.platformMiles)}</dd></div><div><dt>Peak pullout<small>vehicles at once</small></dt><dd>{figure(summary.peakPullout === undefined ? INCOMPLETE : String(summary.peakPullout))}</dd></div></dl> : <p className="profile-usage">Select a blocking scenario to view its summary.</p>}</SupportPanel>;
 }
 function NameDialog({ title, initialValue, submitLabel, busy, onSubmit, onClose }: { title: string; initialValue: string; submitLabel: string; busy: boolean; onSubmit: (value: string) => void; onClose: () => void }) {
   const [value, setValue] = useState(initialValue);

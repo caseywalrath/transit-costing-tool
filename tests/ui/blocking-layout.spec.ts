@@ -223,11 +223,14 @@ test('the Current block header shows the subtitle, New block, and a menu with Re
   await expect(page.getByRole('menu', { name: 'Current block actions' }).getByRole('menuitem')).toHaveText(['Rename block…', 'Edit notes…', 'Delete block…']);
 });
 
-test('the day summary is a nine-cell strip above the Blocks table, and the footer counts the blocks', async ({ page }) => {
+test('the day summary is a ten-cell strip above the Blocks table, and the footer counts the blocks', async ({ page }) => {
   await openGoldenBlocking(page);
   const summary = page.getByLabel('Blocking summary');
   await expect(summary.getByRole('heading', { name: /^Weekday summary · \d+ blocks$/ })).toBeVisible();
-  await expect(summary.locator('.stat-strip dt')).toHaveText(['Revenue', 'Running', 'Platform', 'Layover', 'Layover %of revenue hours', 'Deadhead', 'Deadhead %of platform hours', 'Revenue miles', 'Platform miles']);
+  await expect(summary.locator('.stat-strip dt')).toHaveText(['Revenue', 'Running', 'Platform', 'Layover', 'Layover %of revenue hours', 'Deadhead', 'Deadhead %of platform hours', 'Revenue miles', 'Platform miles', 'Peak pulloutvehicles at once']);
+  // Figures share one baseline whatever the label height.
+  const bottoms = await summary.locator('.stat-strip dd').evaluateAll((cells) => cells.map((cell) => Math.round(cell.getBoundingClientRect().bottom)));
+  expect(new Set(bottoms).size).toBe(1);
   const summaryBox = await summary.boundingBox();
   const blocksBox = await page.getByLabel('Blocks', { exact: true }).boundingBox();
   expect(summaryBox!.y + summaryBox!.height).toBeLessThanOrEqual(blocksBox!.y);

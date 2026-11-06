@@ -2,7 +2,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
-import { editGridCell, gridCell, scopeField } from './support/ui';
+import { chooseCostBasis, editGridCell, gridCell, scopeField } from './support/ui';
 
 test.setTimeout(120_000);
 
@@ -12,8 +12,8 @@ async function openEstimated(page: Page) {
   await page.goto('/');
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
-  await expect(scopeField(page, 'Cost basis').locator('option:checked')).toHaveText('Blocked · Workbook Blocks');
-  await scopeField(page, 'Cost basis').selectOption({ label: 'Estimated · Default' });
+  await expect(scopeField(page, 'Cost basis').locator('option:checked')).toHaveText('Workbook Blocks');
+  await chooseCostBasis(page, 'Estimated from running time', 'Default');
   await expect(page.locator('.costing-results-table tbody tr').first().locator('td').nth(1)).not.toHaveText('—');
 }
 
@@ -28,8 +28,8 @@ test('the cost basis lists blocked and estimated choices, and Weekday factors fr
   await openEstimated(page);
   const select = scopeField(page, 'Cost basis');
   await expect(select.locator('optgroup')).toHaveCount(2);
-  await expect(select.locator('optgroup[label="Blocked hours"] option')).toHaveText(['Blocked · Workbook Blocks']);
-  await expect(select.locator('optgroup[label="Estimated from running time"] option')).toHaveText(['Estimated · Default']);
+  await expect(select.locator('optgroup[label="Blocked hours"] option')).toHaveText(['Workbook Blocks']);
+  await expect(select.locator('optgroup[label="Estimated from running time"] option')).toHaveText(['Default']);
   await expect(page.locator('.context-field__value')).toHaveText('Default');
   await expect(page.locator('.costing-results-table thead th')).toHaveText(['Service day', 'Days', 'Trips', 'Blocks', 'Daily running (h)', 'Daily revenue (h)', 'Daily platform (h)', 'Daily cost', 'Annual revenue (h)', 'Annual platform (h)', 'Annual cost']);
   // The estimated basis has no blocks.
@@ -79,7 +79,7 @@ test('Save factors keeps them over a reload with the remembered basis; Discard r
 
   await page.reload();
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
-  await expect(scopeField(page, 'Cost basis').locator('option:checked')).toHaveText('Estimated · Default');
+  await expect(scopeField(page, 'Cost basis').locator('option:checked')).toHaveText('Default');
   await expect(gridCell(factors(page), 'All days layover percent')).toHaveText('18.2');
 
   await editGridCell(gridCell(factors(page), 'All days layover percent'), '30');

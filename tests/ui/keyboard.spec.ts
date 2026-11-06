@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule, openGoldenTrips } from './support/tripsWorkspace';
-import { editGridCell, gridCell, openRuntimes, projectSwitcher, runCommand, chooseScope, scopeField, shiftBar } from './support/ui';
+import { chooseCostBasis, editGridCell, gridCell, openRuntimes, projectSwitcher, runCommand, chooseScope, scopeField, shiftBar } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
@@ -184,7 +184,7 @@ test('every dialog opened from the screens has an accessible name, and the axe d
   await expect(page.getByRole('heading', { name: 'Costing Assumptions' })).toBeVisible();
   expect(await axeViolations(page)).toEqual([]);
   // The estimated cost basis: the Estimate factors grid and the Cost breakdown (Decision 0051).
-  await scopeField(page, 'Cost basis').selectOption({ label: 'Estimated · Default' });
+  await chooseCostBasis(page, 'Estimated from running time', 'Default');
   await expect(page.locator('.costing-results-table tbody tr').first().locator('td').nth(2)).toHaveText('—');
   expect(await axeViolations(page)).toEqual([]);
 });
