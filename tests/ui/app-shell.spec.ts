@@ -37,12 +37,13 @@ for (const width of [1024, 1440]) {
 
 test('the scope row holds each tab\'s selectors', async ({ page }) => {
   await openGolden(page);
-  const names = async () => scopeBar(page).locator('.context-field__label').allTextContents();
+  // Each field's name: its visible label, or, for Day and Direction, which have none (Decision 0059), the control's aria-label.
+  const names = async () => scopeBar(page).locator('.context-field').evaluateAll((fields) => fields.map((field) => field.querySelector('.context-field__label')?.textContent ?? `(${field.querySelector('[aria-label]')?.getAttribute('aria-label')})`));
   expect(await names()).toEqual(['Route']);
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await expect.poll(names).toEqual(['Route', 'Day', 'Direction']);
+  await expect.poll(names).toEqual(['Route', '(Day)', '(Direction)']);
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await expect.poll(names).toEqual(['Route', 'Trip profile', 'Blocking scenario', 'Day']);
+  await expect.poll(names).toEqual(['Route', 'Trip profile', 'Blocking scenario', '(Day)']);
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await expect.poll(names).toEqual(['Cost basis', 'Trip profile', 'View year']);
 });

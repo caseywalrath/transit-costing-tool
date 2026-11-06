@@ -21,3 +21,25 @@ export function storedTextMap(value: unknown): Record<string, string> | undefine
   const entries = Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== '');
   return entries.length ? Object.fromEntries(entries) : undefined;
 }
+
+// Side-by-side Trips (Decision 0060 item 5): per-viewer convenience state, never Scenario data and never in backups.
+export const SIDE_BY_SIDE_PREFERENCE_KEY = 'transit-costing-tool.trips-side-by-side.v1';
+export type SideBySidePreference = { on: boolean; leftDirectionId?: string; rightDirectionId?: string };
+
+export function readSideBySidePreference(storage?: StorageReader): SideBySidePreference {
+  const stored = readStoredRecord(SIDE_BY_SIDE_PREFERENCE_KEY, storage);
+  return { on: stored.on === true, leftDirectionId: storedText(stored.leftDirectionId), rightDirectionId: storedText(stored.rightDirectionId) };
+}
+
+export function writeSideBySidePreference(preference: SideBySidePreference) {
+  try { localStorage.setItem(SIDE_BY_SIDE_PREFERENCE_KEY, JSON.stringify(preference)); } catch { /* Storage is a convenience only. */ }
+}
+
+/** The two directions to show, left then right, by `sequence`. A stored direction is used while it still exists and differs from the other side; otherwise the left is the first direction and the right the first other one. Fewer than two directions gives `undefined`. */
+export function sideBySideDirectionIds(directions: ReadonlyArray<{ id: string; sequence: number }>, leftDirectionId: string | undefined, rightDirectionId?: string): [string, string] | undefined {
+  const ordered = [...directions].sort((a, b) => a.sequence - b.sequence);
+  if (ordered.length < 2) return undefined;
+  const left = ordered.find((direction) => direction.id === leftDirectionId) ?? ordered[0]!;
+  const right = ordered.find((direction) => direction.id === rightDirectionId && direction.id !== left.id) ?? ordered.find((direction) => direction.id !== left.id)!;
+  return [left.id, right.id];
+}

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { createShiftReadySchedule, settleFrames } from './support/tripsWorkspace';
-import { editRuntimeCell, runCommand, runtimeCell, scopeField, shiftBar } from './support/ui';
+import { editRuntimeCell, runCommand, runtimeCell, chooseScope, scopeField, shiftBar } from './support/ui';
 
 test.setTimeout(60_000);
 
@@ -194,7 +194,7 @@ test('stages Shift actions, guards scope changes, and persists only on Done', as
   await expect(page.getByText('Staged 1 minute earlier')).toBeVisible();
   await expect(page.locator('.schedule-table')).toContainText('5:59');
 
-  await scopeField(page, 'Day').selectOption({ index: 1 });
+  await chooseScope(page, 'Day', { index: 1 });
   await expect(page.getByRole('heading', { name: 'Discard staged shift?' })).toBeVisible();
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Discard staged shift?' })).toHaveCount(0);

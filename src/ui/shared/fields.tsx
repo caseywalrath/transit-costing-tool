@@ -38,6 +38,23 @@ export function NumericCommit({ label, value, integer = false, step = '1', blank
   return <>{saved && <InlineNote kind="ok" live>Saved</InlineNote>}<input aria-label={label} aria-invalid={Boolean(error)} aria-describedby={error ? `${label.replaceAll(/[^a-z0-9]/gi, '-')}-error` : undefined} type="number" min="0" step={step} value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { cancelled.current = true; setDraft(String(value)); setError(''); event.currentTarget.blur(); } }} />{error && <small id={`${label.replaceAll(/[^a-z0-9]/gi, '-')}-error`} className="field-error" role="alert">{error} Saved value remains {value}.</small>}</>;
 }
 
+/**
+ * The abbreviation field of a Service day (Decision 0059). It commits on blur and Enter; Escape restores the saved value. The placeholder
+ * shows the derived default used while the field is blank. A refused value shows its reason and the field returns to the saved value.
+ */
+export function ServiceDayAbbreviationInput({ dayName, saved, placeholder, onCommit }: { dayName: string; saved: string | undefined; placeholder: string; onCommit: (value: string) => Promise<string | undefined> }) {
+  const [draft, setDraft] = useState(saved ?? '');
+  const [error, setError] = useState('');
+  const cancelled = useRef(false);
+  const errorId = useId();
+  useEffect(() => setDraft(saved ?? ''), [saved]);
+  function commit() {
+    if (cancelled.current) { cancelled.current = false; return; }
+    void onCommit(draft).then((refusal) => { setError(refusal ?? ''); if (refusal) setDraft(saved ?? ''); });
+  }
+  return <><input aria-label={`Abbreviation for ${dayName}`} aria-invalid={error ? true : undefined} aria-describedby={error ? errorId : undefined} maxLength={3} placeholder={placeholder} value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { cancelled.current = true; setDraft(saved ?? ''); setError(''); event.currentTarget.blur(); } }} />{error && <small id={errorId} className="field-error" role="alert">{error}{saved ? ` Saved abbreviation remains ${saved}.` : ' The default abbreviation remains.'}</small>}</>;
+}
+
 /** The name field of a Service day. A refused name shows its reason beside the field and the saved name stays. */
 export function ServiceDayNameInput({ name, onCommit }: { name: string; onCommit: (name: string) => Promise<string | undefined> }) {
   const [error, setError] = useState('');

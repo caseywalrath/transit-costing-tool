@@ -11,6 +11,7 @@ const emptyQueries = (overrides: Partial<CostingCalculationContextQueries> = {})
   listBlockingScenarios: async () => [],
   listServiceDays: async () => [],
   listTripProfiles: async () => [],
+  countBlocks: async () => 1,
   getCostingCalculationContext: async () => undefined,
   getEstimatedCostingContext: async () => undefined,
   ...overrides,
@@ -108,6 +109,11 @@ describe('CostingApplicationService', () => {
       ...overrides,
     });
     const at = () => '2026-10-30T12:00:00.000Z';
+
+    it('omits a Blocking Scenario that has no Blocks', async () => {
+      const options = await new CostingApplicationService(queries({ countBlocks: async (id: string) => id === 'blocking-a' ? 0 : 2 })).listCostBases(scenarioId);
+      expect(options.filter((option) => option.kind === 'blocked').map((option) => option.id)).toEqual(['blocking-other-scenario']);
+    });
 
     it('lists the Blocking Scenarios first, then every Trip Profile in name order', async () => {
       const options = await new CostingApplicationService(queries()).listCostBases(scenarioId);

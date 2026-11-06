@@ -2,7 +2,7 @@
 import { test, expect } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { openGoldenTrips } from './support/tripsWorkspace';
-import { editRuntimeCell, openRuntimes, runCommand, runtimeCell, scopeField } from './support/ui';
+import { editRuntimeCell, openRuntimes, runCommand, runtimeCell, chooseScope, scopeField } from './support/ui';
 
 test.skip(!process.env.UI_TOUR, 'Set UI_TOUR=1 to capture the tour.');
 
@@ -63,7 +63,7 @@ for (const width of [1024, 1440]) {
     // UR-8: headways on (pinned Departs column, changed-headway markers), scrolled down and right to show the pinned columns and headings.
     await page.reload();
     await page.getByRole('button', { name: 'Trips', exact: true }).click();
-    await scopeField(page, 'Day').selectOption({ label: 'Weekday' });
+    await chooseScope(page, 'Day', { label: 'Weekday' });
     await expect(page.locator('.trips-workspace .schedule-table tbody tr')).toHaveCount(138, { timeout: 30_000 });
     await runCommand(page, 'trips.toggleHeadways');
     const schedule = page.locator('.trips-workspace .schedule-table');

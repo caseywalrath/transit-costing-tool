@@ -381,6 +381,70 @@ describe('automatic blocking record in backups (schema 8 and 9, Decisions 0055 a
     expect(() => importProjectJson(JSON.stringify(fileWithRecord(8, (record) => { record.builtAt = 5; })))).toThrow('builtAt must be a string');
   });
 
+  describe('service day abbreviations (Decision 0059)', () => {
+    const stamp = metadata('2026-01-01T00:00:00.000Z');
+    function snapshotWith(days: Array<Record<string, unknown>>, scenarioCount = 1): ProjectSnapshot {
+      const scenarios = Array.from({ length: scenarioCount }, (_, index) => ({ id: `s${index}`, projectId: 'p', name: `Scenario ${index}`, ...stamp }));
+      const serviceDays = scenarios.flatMap((scenario) => days.map((day, index) => ({ id: `${scenario.id}-d${index}`, scenarioId: scenario.id, kind: 'weekday', name: 'Day', annualServiceDays: 0, sequence: index, ...day, ...stamp })));
+      return { project: { id: 'p', name: 'Demo', distanceUnit: 'miles', currencyCode: 'USD', ...stamp }, scenarios, serviceDays, routes: [], nodes: [], patterns: [], runtimeProfiles: [], runtimeAssignments: [], tripProfiles: [], generationSets: [], trips: [], blocks: [] } as unknown as ProjectSnapshot;
+    }
+    const days = [{ kind: 'weekday', name: 'Weekday', abbreviation: 'WK' }, { kind: 'saturday', name: 'Saturday' }];
+
+    it('round trips a stored abbreviation, writes it at schema version 10, and omits it when absent', () => {
+      const snapshot = snapshotWith(days);
+      const exported = JSON.parse(exportProjectJson(snapshot));
+      expect(exported.exportSchemaVersion).toBe(10);
+      expect(exported.serviceDays[0].abbreviation).toBe('WK');
+      expect(exported.serviceDays[1]).not.toHaveProperty('abbreviation');
+      expect(importProjectJson(JSON.stringify(exported)).serviceDays).toEqual(snapshot.serviceDays);
+    });
+
+    it('imports a version 10 file written before abbreviations existed', () => {
+      const exported = JSON.parse(exportProjectJson(snapshotWith([{ kind: 'weekday', name: 'Weekday' }, { kind: 'saturday', name: 'Saturday' }])));
+      for (const day of exported.serviceDays) expect(day).not.toHaveProperty('abbreviation');
+      expect(() => importProjectJson(JSON.stringify(exported))).not.toThrow();
+    });
+
+    it('imports a file whose custom days already share a derived default, because no abbreviation is stored', () => {
+      const snapshot = snapshotWith([{ kind: 'custom', name: 'Summer A' }, { kind: 'custom', name: 'Summer B' }]);
+      expect(() => importProjectJson(exportProjectJson(snapshot))).not.toThrow();
+    });
+
+    it.each([
+      ['a value longer than 3 characters', 'ABCD'],
+      ['a lowercase value', 'wk'],
+      ['a value with punctuation', 'A-B'],
+      ['an empty value', ''],
+      ['a value that is not text', 7],
+    ])('refuses %s, naming the field', (_label, abbreviation) => {
+      const file = JSON.parse(exportProjectJson(snapshotWith(days)));
+      file.serviceDays[0].abbreviation = abbreviation;
+      expect(() => importProjectJson(JSON.stringify(file))).toThrow('serviceDays[0].abbreviation must be 1 to 3 capital letters or digits');
+    });
+
+    it('refuses two days of one Scenario that share a stored abbreviation, and one that clashes with a derived default', () => {
+      const same = JSON.parse(exportProjectJson(snapshotWith([{ kind: 'weekday', name: 'Weekday', abbreviation: 'X' }, { kind: 'saturday', name: 'Saturday', abbreviation: 'X' }])));
+      expect(() => importProjectJson(JSON.stringify(same))).toThrow('serviceDays[0].abbreviation repeats the abbreviation X within one Scenario');
+      const derived = JSON.parse(exportProjectJson(snapshotWith([{ kind: 'weekday', name: 'Weekday' }, { kind: 'custom', name: 'Late', abbreviation: 'WKD' }])));
+      expect(() => importProjectJson(JSON.stringify(derived))).toThrow('repeats the abbreviation WKD');
+    });
+
+    it('allows the same abbreviation in different Scenarios', () => {
+      expect(() => importProjectJson(exportProjectJson(snapshotWith(days, 2)))).not.toThrow();
+    });
+
+    it('keeps the abbreviation when a project is imported as a copy', () => {
+      const copy = cloneProjectSnapshot(snapshotWith(days), '2026-01-02T00:00:00.000Z');
+      expect(copy.serviceDays.map((day) => day.abbreviation)).toEqual(['WK', undefined]);
+    });
+
+    it('keeps the abbreviation when a Scenario is duplicated', () => {
+      const snapshot = snapshotWith(days);
+      const copy = duplicateScenario(snapshotForScenario(snapshot, 's0')!, 'Copy', '2026-01-02T00:00:00.000Z');
+      expect(copy.serviceDays.map((day) => day.abbreviation)).toEqual(['WK', undefined]);
+    });
+  });
+
   it('still imports version 1 to 6 files', () => {
     expect(() => importProjectJson(goldenJson())).not.toThrow();
   });

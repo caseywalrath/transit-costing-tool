@@ -275,6 +275,8 @@ export interface CostingCalculationContextQueries {
   listBlockingScenarios(scenarioId: string): Promise<BlockingScenario[]>;
   listServiceDays(scenarioId: string): Promise<ServiceDayDefinition[]>;
   listTripProfiles(scenarioId: string): Promise<TripProfile[]>;
+  /** The number of Blocks the Blocking Scenario holds. A Blocking Scenario with none is not offered as a cost basis. */
+  countBlocks(blockingScenarioId: string): Promise<number>;
   getCostingCalculationContext(scenarioId: string, blockingScenarioId: string): Promise<CostingCalculationContext | undefined>;
   /** `undefined` when the Trip Profile is not the Scenario's. */
   getEstimatedCostingContext(scenarioId: string, tripProfileId: string): Promise<EstimatedCostingContext | undefined>;

@@ -18,6 +18,33 @@ const scopeFieldToday: Record<ScopeFieldName, string> = {
 /** Returns the scope selector with this label. The selectors sit in row 2 of the header (the scope bar). */
 export const scopeField = (page: Page, label: ScopeFieldName): Locator => page.getByRole('region', { name: 'Scope', exact: true }).getByLabel(scopeFieldToday[label], { exact: true });
 
+/** A Day or Direction choice: by full name, by position, or by record id. */
+export type ScopeChoice = { label?: string; index?: number; value?: string };
+type ToggleScope = Extract<ScopeFieldName, 'Day' | 'Direction'>;
+const isSelect = (field: Locator) => field.evaluate((element) => element.tagName === 'SELECT');
+
+/** Chooses a Day or Direction. At desktop widths the control is a radio group (Decision 0059); in the narrow layout it is a select. */
+export async function chooseScope(page: Page, label: ToggleScope, choice: ScopeChoice) {
+  const field = scopeField(page, label);
+  if (await isSelect(field)) {
+    await field.selectOption(choice.label !== undefined ? { label: choice.label } : choice.index !== undefined ? { index: choice.index } : { value: choice.value! });
+    return;
+  }
+  const radios = field.getByRole('radio');
+  const target = choice.label !== undefined ? field.getByRole('radio', { name: choice.label, exact: true }) : choice.index !== undefined ? radios.nth(choice.index) : field.locator(`[role="radio"][data-value="${choice.value}"]`);
+  await target.click();
+}
+
+/** The record id of the chosen Day or Direction. */
+export const scopeValue = (page: Page, label: ToggleScope): Promise<string> => scopeField(page, label).evaluate((element) => element instanceof HTMLSelectElement ? element.value : element.querySelector('[role="radio"][aria-checked="true"]')?.getAttribute('data-value') ?? '');
+
+/** The full name of the chosen Day or Direction. */
+export const scopeText = (page: Page, label: ToggleScope): Promise<string> => scopeField(page, label).evaluate((element) => {
+  if (element instanceof HTMLSelectElement) return element.selectedOptions[0]?.textContent ?? '';
+  const checked = element.querySelector('[role="radio"][aria-checked="true"]');
+  return checked?.getAttribute('aria-label') ?? checked?.textContent ?? '';
+});
+
 /** The Project and Scenario switchers in the header: the menu buttons whose names are "Project: <name>" and "Scenario: <name>". */
 export const projectSwitcher = (page: Page): Locator => page.getByRole('button', { name: /^Project: / });
 export const scenarioSwitcher = (page: Page): Locator => page.getByRole('button', { name: /^Scenario: / });

@@ -27,3 +27,12 @@ User decision 3 settles it: reject and list the candidates, as single-band profi
 4. The Recalculate dialog presents an `AnchorBandChoiceError` with a band picker. Choosing a band for a segment-start or blended Trip is refused (`trip.anchorBandChoiceInvalid`), so the dialog must not offer the picker for those methods.
 5. **User decision, 2026-10-23: a planner cannot choose one of the listed candidates under a segment-start or blended profile.** The candidates are listed so the planner can see why the anchor is ambiguous. The planner resolves it with the dialog's existing options: switch the Trip to first-departure anchoring ("Use first departure for this trip"), choose another anchor, or revise the runtime bands. Manual band override stays limited to single-band profiles, as the paragraph above says. The dialog change (hide the picker for those methods, state the reason in plain text) belongs to the Trips and Runtime UI package (U07). No domain change is required.
 
+## Addendum (2026-11-06): skipping Trips that cannot be regenerated
+
+One Trip that fails (for example, no runtime band can produce a valid departure) used to block the regeneration of every other selected Trip. The Regenerate dialog now lets the planner skip a Trip:
+
+1. When a Trip's anchor error has no resolution in the dialog (no band picker and no first-departure switch), the dialog offers "Skip this trip and regenerate the others".
+2. When Trips have other errors, the dialog offers to skip them as a group.
+3. Skipped Trips are removed from the review and are not changed. The dialog states how many were skipped and offers to include them again. With every Trip skipped, "Regenerate trips" stays disabled.
+4. The skip is a dialog choice. Nothing is stored, and the application service is unchanged: the dialog reviews and applies only the Trips that remain.
+

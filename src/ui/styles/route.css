@@ -16,6 +16,10 @@
 .route-bottom-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.6fr); gap: var(--space-4); align-items: start; }
 .route-details-fields { grid-template-columns: minmax(0, 1fr); margin-top: 0; }
 .service-days-table th:last-child, .service-days-table td:last-child { width: 9em; }
+/* The Abbr. column takes its width from the Service day column, so the table keeps its overall width (Decision 0059). */
+.service-days-table th:nth-child(2), .service-days-table td:nth-child(2) { width: 5.5em; }
+.service-days-table td:nth-child(2) input { text-align: center; text-transform: uppercase; }
+.service-days-table td:nth-child(2) input::placeholder { text-transform: uppercase; }
 .service-days-table td:last-child input { text-align: right; }
 .service-days-total { margin-top: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-note); }
 .service-days-total.value-invalid { color: var(--color-danger); }

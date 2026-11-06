@@ -4,7 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
-import { runCommand, scopeField } from './support/ui';
+import { chooseScope, runCommand, scopeField } from './support/ui';
 
 test.setTimeout(120_000);
 test.use({ actionTimeout: 15_000 });
@@ -16,7 +16,7 @@ async function openBlocking(page: Page, day = 'Weekday') {
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Scope' })).toBeVisible();
-  if (day !== 'Weekday') await scopeField(page, 'Day').selectOption({ label: day });
+  if (day !== 'Weekday') await chooseScope(page, 'Day', { label: day });
 }
 
 const blocksTable = (page: Page) => page.getByLabel('Blocks', { exact: true });

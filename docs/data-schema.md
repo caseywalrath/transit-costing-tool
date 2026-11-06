@@ -71,10 +71,14 @@ interface ServiceDayDefinition extends EntityMetadata {
   scenarioId: EntityId;
   kind: ServiceDayKind;
   name: string;
+  /** Optional 1-3 letters or digits, stored in capitals. Absent means the derived default (Decision 0059). */
+  abbreviation?: string;
   annualServiceDays: number;
   sequence: number;
 }
 ```
+
+The effective abbreviation is the stored `abbreviation`, or else a default: `WKD`, `SAT`, `SUN`, `HOL` for the standard kinds, and the first three letters or digits of the name, in capitals, for a custom day. Effective abbreviations must be unique within a scenario. The field is not indexed, needs no database migration, and leaves the backup schema at version 10. Scenario copy and import as copy carry it; CSV outputs do not include it.
 
 The four standard service days are created for a new scenario. Annual service days must be a non-negative integer. The application may warn if their sum does not match the analysis-year calendar but must not silently change them.
 
