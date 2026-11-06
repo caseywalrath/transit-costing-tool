@@ -20,6 +20,7 @@ Switching direction or service day takes one click instead of opening a drop-dow
 | U2 | Show every service day of the Scenario. Do not hide days with no trips or zero annual days. |
 | U3 | Service day labels come from a user-editable abbreviation of up to three characters, entered on the Route tab. |
 | U4 | The Annual service days table keeps its overall size. The Service day (name) column gives up the width the new column needs. |
+| U5 | No visible "Day" or "Direction" label, on the toggles or on their `<select>` fallbacks. The function is clear from the options. Each control keeps an accessible name ("Day", "Direction") through `aria-label`. |
 
 ## Decisions the primary agent makes in ST1 (recorded in the new decision record)
 
@@ -61,7 +62,7 @@ ST3 and ST4 own separate files and may run in either order. Each package ends at
 
 1. Write Decision 0059 recording U1 to U4 and R1 to R7.
 2. In `docs/data-schema.md`, add `abbreviation?: string` to ServiceDayDefinition, with the rules of R1 to R3.
-3. In `docs/ui-conventions.md`, change the scope selector paragraph: Day and Direction on Trips, and Day on Blocking, are segmented toggles with a `<select>` fallback (R7).
+3. In `docs/ui-conventions.md`, change the scope selector paragraph: Day and Direction on Trips, and Day on Blocking, are segmented toggles with a `<select>` fallback (R7). They have no visible label; their `aria-label` is "Day" or "Direction" (U5). This is an exception to the rule that the `aria-label` equals the visible label.
 4. In `docs/domain-glossary.md`, add "Service day abbreviation".
 
 **Acceptance:** documents agree with each other and with this plan. Verification: proofread only.
@@ -121,20 +122,20 @@ ST3 and ST4 own separate files and may run in either order. Each package ends at
 
 **Requirements:**
 
-1. **Component:** a segmented control with radio-group semantics: `role="radiogroup"` with an accessible name equal to the visible label ("Day", "Direction"). Each segment has `role="radio"` and `aria-checked`. Exactly one segment is selected.
+1. **Component:** a segmented control with radio-group semantics: `role="radiogroup"` with `aria-label` "Day" or "Direction" and no visible label (U5). Each segment has `role="radio"` and `aria-checked`. Exactly one segment is selected.
 2. **Keyboard:** Tab enters the group on the selected segment. Left/Right and Up/Down move and select, wrapping at the ends. Home and End go to the first and last segment.
 3. **Labels:** a Day segment shows the abbreviation, and its tooltip and accessible name give the full service day name. A Direction segment shows the direction name.
 4. **Order:** Day segments follow the existing `sortServiceDays` order. Direction segments follow direction `sequence`, as the current drop-down does.
 5. **Behavior:** a switch goes through the same handlers as the current `<select>`, including `requestRouteNavigation` and its unsaved-draft prompt. A switch that the prompt cancels leaves the previous segment selected.
-6. **Fallback (R7):** below the narrow-layout breakpoint already used by the scope bar, and for Direction when there are more than two directions, render the current `<select>` unchanged.
+6. **Fallback (R7):** below the narrow-layout breakpoint already used by the scope bar, and for Direction when there are more than two directions, render the current `<select>` with its `aria-label` and without the visible `ContextField` label (U5).
 7. **Visual (proposed; the design agent may refine within these tokens):**
    - One pill-shaped outline (`--radius-pill`) containing all segments, joined by 1 px dividers. Same height as the current `<select>`.
    - Selected segment: the existing `.toggle-button[aria-pressed="true"]` look (`--color-selection` fill, `--color-accent` border, `--color-accent-strong` bold text). Unselected: the normal button surface and text color.
    - Day segments have equal widths sized for three capital letters. Direction segments size to the longer direction name.
-   - The `ContextField` label stays to the left, as now. Hover, focus ring, and disabled states use the existing button tokens, in light and dark themes.
+   - No visible label (U5). The two controls are separated by the scope bar's normal field gap. Hover, focus ring, and disabled states use the existing button tokens, in light and dark themes.
 
    ```text
-   Day  ( WKD | SAT | SUN | HOL )     Direction  ( Outbound | Inbound )
+   ( WKD | SAT | SUN | HOL )     ( Outbound | Inbound )
           ^^^ selected: tinted fill, accent border, bold
    ```
 
