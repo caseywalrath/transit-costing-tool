@@ -132,9 +132,16 @@ export interface CostingAssumptions extends EntityMetadata {
   baseServiceYear: number;
   futureYearCount: number;
   annualEscalation: number;
-  /** Decision 0051. Typed layover and deadhead factors for an estimated cost basis. Absent until the user enters one. */
+  /**
+   * Decision 0051. The Scenario's shared layover and deadhead factors. Since Decision 0062 they are written no more; a Trip Profile with no
+   * entry in `tripProfileEstimateFactors` still uses them.
+   */
   estimateFactors?: CostingEstimateFactors;
+  /** Decision 0062. Each Trip Profile's own factors, at most one entry per Trip Profile. An entry, even an empty one, replaces `estimateFactors`. */
+  tripProfileEstimateFactors?: TripProfileEstimateFactors[];
 }
+/** Decision 0062. The estimate factors of one Trip Profile of the Scenario. */
+export interface TripProfileEstimateFactors { tripProfileId: EntityId; factors: CostingEstimateFactors }
 /** Decision 0051. A value absent means "not entered". Fractions are in [0, 1). */
 export interface CostingFactorPair { layoverFraction?: number; deadheadFraction?: number }
 export interface CostingServiceDayFactors extends CostingFactorPair { serviceDayId: EntityId }

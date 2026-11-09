@@ -34,8 +34,8 @@ export async function buildCostingCalculationContext(sources: CostingContextSour
 export async function buildEstimatedCostingContext(sources: CostingContextSources, scenarioId: string, tripProfileId: string): Promise<EstimatedCostingContext | undefined> {
   const [scenario, serviceDays, tripProfile] = await Promise.all([sources.getScenario(scenarioId), sources.listServiceDays(scenarioId), sources.getTripProfile(tripProfileId)]);
   if (!scenario || !tripProfile || tripProfile.scenarioId !== scenarioId) return undefined;
-  const trips = await sources.listTrips(scenarioId, tripProfile.id);
-  return { scenario, serviceDays, tripProfile, trips };
+  const [trips, patterns, routes] = await Promise.all([sources.listTrips(scenarioId, tripProfile.id), sources.listPatterns(scenarioId), sources.listRoutes?.(scenarioId) ?? Promise.resolve([])]);
+  return { scenario, serviceDays, tripProfile, trips, patterns, routes };
 }
 
 /** The read side `CostingApplicationService` needs, over the given sources. */

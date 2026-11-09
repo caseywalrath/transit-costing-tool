@@ -61,6 +61,7 @@ async function start() {
     listTrips: listProfileTrips,
     listPatterns: listScenarioPatterns,
     listBlockingBlocks: (id) => blocking.listBlockingBlocks(id),
+    listRoutes: (id) => repository.db.routes.where('scenarioId').equals(id).toArray(),
   }), repository, undefined, saveStatus);
 
   const plannedFrequencies = new PlannedFrequencyService(repository, undefined, saveStatus);

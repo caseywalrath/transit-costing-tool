@@ -8,6 +8,7 @@ import { TransitDatabase } from './database';
 import { assertRuntimeGraph } from './runtimePersistence';
 import { assertTripProfileReferences } from '../domain/trips';
 import { sortServiceDays } from '../domain/serviceDays';
+import { assumptionsAfterTripProfileCopy, assumptionsAfterTripProfileDeletion } from '../domain/estimatedCosting';
 import { orderDirections } from '../domain/directions';
 import { assertCostingAssumptions, assertCostingAssumptionsCollection } from './costingPersistence';
 
@@ -397,15 +398,28 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
     await this.db.tripProfiles.put(profile);
   }
   async copyTripProfileAtomically(profile: TripProfile, trips: Trip[]): Promise<void> {
-    await this.db.transaction('rw', [this.db.tripProfiles, this.db.trips], async () => {
+    await this.db.transaction('rw', [this.db.tripProfiles, this.db.trips, this.db.costingAssumptions], async () => {
       if (!profile.name.trim()) throw new Error('Enter a trip profile name.');
       const existing = await this.db.tripProfiles.where('scenarioId').equals(profile.scenarioId).toArray();
       if (existing.some((candidate) => candidate.name.trim().toLowerCase() === profile.name.trim().toLowerCase())) throw new Error('A Trip profile with this name already exists.');
       await this.db.tripProfiles.add(profile); if (trips.length) await this.db.trips.bulkAdd(trips);
+      // Decision 0062: the copy gets the source's own estimate factors in the same transaction.
+      if (profile.sourceTripProfileId) {
+        const [assumptions] = await this.db.costingAssumptions.where('scenarioId').equals(profile.scenarioId).toArray();
+        const updated = assumptionsAfterTripProfileCopy(assumptions, profile.sourceTripProfileId, profile.id, profile.createdAt);
+        if (updated) await this.db.costingAssumptions.put(updated);
+      }
     });
   }
   async deleteTripProfile(profileId: string): Promise<void> {
-    await this.db.transaction('rw', [this.db.tripProfiles, this.db.blockingScenarios, this.db.trips, this.db.tripRegenerationUndo, this.db.blocks], async () => {
+    await this.db.transaction('rw', [this.db.tripProfiles, this.db.blockingScenarios, this.db.trips, this.db.tripRegenerationUndo, this.db.blocks, this.db.costingAssumptions], async () => {
+      // Decision 0062: the Profile's own estimate factors go with it.
+      const profile = await this.db.tripProfiles.get(profileId);
+      if (profile) {
+        const [assumptions] = await this.db.costingAssumptions.where('scenarioId').equals(profile.scenarioId).toArray();
+        const updated = assumptionsAfterTripProfileDeletion(assumptions, profileId, new Date().toISOString());
+        if (updated) await this.db.costingAssumptions.put(updated);
+      }
       const blockingScenarios = await this.db.blockingScenarios.where('tripProfileId').equals(profileId).toArray();
       const blockingScenarioIds = blockingScenarios.map((scenario) => scenario.id);
       const profileTrips = await this.db.trips.where('tripProfileId').equals(profileId).toArray();

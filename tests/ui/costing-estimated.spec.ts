@@ -75,7 +75,9 @@ test('Save factors keeps them over a reload with the remembered basis; Discard r
   await editGridCell(gridCell(factors(page), 'All days layover percent'), '18.2');
   await page.getByRole('button', { name: 'Save factors', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Save factors', exact: true })).toHaveCount(0);
-  await expect.poll(() => runInPage(page, 'return (await e.db.costingAssumptions.toArray())[0]?.estimateFactors?.allDays?.layoverFraction')).toBeCloseTo(0.182, 9);
+  // Decision 0062: the factors are saved for the selected basis's Trip Profile, not as the Scenario's shared factors.
+  await expect.poll(() => runInPage(page, 'return (await e.db.costingAssumptions.toArray())[0]?.tripProfileEstimateFactors?.[0]?.factors?.allDays?.layoverFraction')).toBeCloseTo(0.182, 9);
+  await expect.poll(() => runInPage(page, 'return (await e.db.costingAssumptions.toArray())[0]?.estimateFactors')).toBeUndefined();
 
   await page.reload();
   await page.getByRole('button', { name: 'Costing', exact: true }).click();

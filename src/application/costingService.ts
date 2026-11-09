@@ -1,6 +1,6 @@
 import { calculateCosting, MAX_ANNUAL_SERVICE_DAYS, MAX_COSTING_FUTURE_YEARS, selectCostingBlockingScenario, validateCostingAssumptions, type CostingFinding } from '../domain/costing';
 import type { CostingAssumptionsInput } from '../domain/costing';
-import { calculateEstimatedCosting, normalizeEstimateFactors } from '../domain/estimatedCosting';
+import { calculateEstimatedCosting, normalizeEstimateFactors, setTripProfileEstimateFactors } from '../domain/estimatedCosting';
 import type { CostingAssumptions, CostingEstimateFactors, ServiceDayDefinition } from '../domain/types';
 import type { CostBasis, CostBasisOption, CostingAssumptionsRepository, CostingCalculationContextQueries, CostingCommands, CostingQueries, CostingResult } from './ports';
 import { costingCsvFiles } from '../persistence/csv';
@@ -47,9 +47,11 @@ export class CostingApplicationService implements CostingQueries, CostingCommand
     return assumptions;
   }
 
-  async saveEstimateFactors(scenarioId: string, factors: CostingEstimateFactors | undefined, assumptionsIfNew: CostingAssumptionsInput) {
+  async saveEstimateFactors(scenarioId: string, tripProfileId: string, factors: CostingEstimateFactors | undefined, assumptionsIfNew: CostingAssumptionsInput) {
     if (!this.assumptionsRepository) throw new Error('Costing assumptions persistence is unavailable.');
-    const serviceDays = await this.contextQueries.listServiceDays(scenarioId);
+    const [serviceDays, tripProfiles] = await Promise.all([this.contextQueries.listServiceDays(scenarioId), this.contextQueries.listTripProfiles(scenarioId)]);
+    const tripProfileIds = new Set(tripProfiles.filter((profile) => profile.scenarioId === scenarioId).map((profile) => profile.id));
+    if (!tripProfileIds.has(tripProfileId)) throw new Error('The trip profile of the estimate factors is not in this scenario.');
     const dayIds = new Set(serviceDays.map((day) => day.id));
     if ((factors?.serviceDays ?? []).some((row) => !dayIds.has(row.serviceDayId))) {
       throw new Error('A service day of the estimate factors is not in this scenario.');
@@ -59,13 +61,14 @@ export class CostingApplicationService implements CostingQueries, CostingCommand
     const normalized = normalizeEstimateFactors(factors, serviceDays);
     const existing = await this.assumptionsRepository.getCostingAssumptions(scenarioId);
     const timestamp = this.now();
+    // The Scenario's shared `estimateFactors` are kept as they are: they remain the fallback of every Trip Profile without an entry.
+    const tripProfileEstimateFactors = setTripProfileEstimateFactors(existing?.tripProfileEstimateFactors, tripProfileId, normalized, tripProfileIds);
     let assumptions: CostingAssumptions;
     if (existing) {
-      const { estimateFactors: _previous, ...rest } = existing;
-      assumptions = { ...rest, ...(normalized ? { estimateFactors: normalized } : {}), updatedAt: timestamp };
+      assumptions = { ...existing, tripProfileEstimateFactors, updatedAt: timestamp };
     } else {
       const { estimateFactors: _ignored, ...fields } = assumptionsIfNew;
-      assumptions = { id: newId(), scenarioId, currencyCode: 'USD' as const, ...fields, ...(normalized ? { estimateFactors: normalized } : {}), ...metadata(timestamp) };
+      assumptions = { id: newId(), scenarioId, currencyCode: 'USD' as const, ...fields, tripProfileEstimateFactors, ...metadata(timestamp) };
     }
     await this.assumptionsRepository.saveCostingAssumptions(assumptions);
     return assumptions;
