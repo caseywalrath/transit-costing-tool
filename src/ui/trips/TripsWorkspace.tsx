@@ -2,6 +2,10 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { type BlockingCommands, type BlockingQueries } from '../../application/ports';
 import { MenuButton, type MenuGroup } from '../MenuButton';
+import { type MenuItem } from '../menuItems';
+import { type ContextMenuContent } from '../useContextMenu';
+import { CommandButton } from '../shared/CommandButton';
+import { patternShortName } from '../../application/shortNames';
 import { userFacingError } from '../errorMessages';
 import { staleTripNotice, staleTripNoticeText, type StaleTripNotice } from '../staleTripReasons';
 import { readStoredRecord, storedText, storedTextMap } from '../preferences';
@@ -21,7 +25,7 @@ import { type RuntimeEditorHandle, type RuntimeEditorState, RuntimeEditor2, Rout
 import { type PlannedFrequencyService, type PlanComparisonResult } from '../../application/plannedFrequencyService';
 import { PlanStatusChip } from './PlanStatusChip';
 import { type BuildTripsValues, EMPTY_BUILD_VALUES, type NewRuntimeDialog, TripBlockAssignmentDialog, TripBlockUnassignmentDialog, BuildTripsDrawer, RuntimeProfileDialog2, DeleteRuntimeProfileDialog, DeleteTripsDialog, RecalculationDialog, RuntimeDayCopyDialog, SegmentRuntimeDialog, TripDayCopyDialog, BatchPatternChangeDialog, TripPatternChangeDialog, StartTimeChangeDialog } from './dialogs';
-import { type TripBlockAssignmentDraft, type TripBlockOption, type TripSelectionRequest, ScheduleTable } from './ScheduleTable';
+import { type TripBlockAssignmentDraft, type TripBlockOption, type TripSelectionRequest, formatTripTableClock, ScheduleTable } from './ScheduleTable';
 import { combineSelection, invertSelection, tripIdsMatching } from '../../application/tripSelection';
 import { download } from '../shared/download';
 import { messages, userMessage } from '../shared/messages';
@@ -486,12 +490,13 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   async function appendStagedShift(offsetSeconds: number) { if (await reviewStagedShift([...shiftOperations, offsetSeconds])) setRedoShiftOperations([]); }
   async function undoStagedShift() { const undone = shiftOperations.at(-1); if (undone !== undefined && await reviewStagedShift(shiftOperations.slice(0, -1))) setRedoShiftOperations((current) => [...current, undone]); }
   async function redoStagedShift() { const restored = redoShiftOperations.at(-1); if (restored !== undefined && await reviewStagedShift([...shiftOperations, restored])) setRedoShiftOperations((current) => current.slice(0, -1)); }
-  async function openShiftDrawer() {
-    if (!selectedTripIds.length) return;
+  /** `tripIds` is given when a row's context menu has just made that Trip the only selection, before the state reaches this closure. */
+  async function openShiftDrawer(tripIds: string[] = selectedTripIds) {
+    if (!tripIds.length) return;
     setShiftDrawerOpen(true); setShiftOperations([]); setRedoShiftOperations([]); setShiftError('');
     try {
       setBusy(true);
-      setShiftPreview(await tripService.previewStagedTripShift(shiftRequest(0, [...selectedTripIds])));
+      setShiftPreview(await tripService.previewStagedTripShift(shiftRequest(0, [...tripIds])));
     } catch (error) { setShiftError(shiftErrorText(error, 'Unable to preview the selected trips. Discard the shift and try again.')); }
     finally { setBusy(false); }
   }
@@ -663,6 +668,20 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
       setSelectedTripIds((current) => combineSelection(current, matching, request.mode));
     });
   }
+  /** A row checkbox's toggle: Shift extends from the anchor; otherwise the Trip is added or removed and becomes the anchor. */
+  function toggleTrip(id: string, index: number, shiftKey: boolean) {
+    requestShiftScopeChange(() => {
+      setSelectedTripIds((current) => {
+        const anchorIndex = selectionAnchorId.current ? trips.findIndex((trip) => trip.id === selectionAnchorId.current) : -1;
+        if (shiftKey && anchorIndex >= 0) {
+          const start = Math.min(anchorIndex, index); const end = Math.max(anchorIndex, index);
+          return [...new Set([...current, ...trips.slice(start, end + 1).map((trip) => trip.id)])];
+        }
+        selectionAnchorId.current = id;
+        return current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
+      });
+    });
+  }
   function clearTripSelection() { requestShiftScopeChange(() => { selectionAnchorId.current = undefined; setSelectedTripIds([]); }); }
   const runtimeProfileMenu: MenuGroup[] = [
     { label: 'Profiles', items: profiles.map((profile) => ({ id: profile.id, label: profile.name, wrapLabel: true, checked: profile.id === profileId, disabled: loading || tripProfileBusy, onSelect: () => requestScopeChange(() => void assignProfile(profile.id)) })) },
@@ -736,14 +755,58 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     {parsedShiftSeconds === undefined && <p id={compact ? 'shift-step-error-pinned' : 'shift-step-error'} className="field-error shift-bar__message">{SHIFT_STEP_MESSAGE}</p>}
     {shiftError && <p className="field-error shift-bar__message" role="alert">{shiftError}</p>}
   </div>;
+  // The selection commands (Decision 0066 rule 5): the selection bar's buttons and a selected row's context menu use this one list.
+  const assignBlockDisabled = !selectedBlockingScenario || tripBlockingBlocksBusy || !tripBlockOptions.length || !hasAssignableTripBlock || busy || tripProfileBusy || shiftOperations.length > 0 || shiftDrawerOpen;
+  const assignBlockTitle = !selectedBlockingScenario ? 'Select a blocking scenario first.' : tripBlockingBlocksBusy ? 'Loading blocks.' : !tripBlockOptions.length ? 'Create a block in the selected blocking scenario first.' : !hasAssignableTripBlock ? 'No blocks can accept trips from the selected route.' : shiftOperations.length || shiftDrawerOpen ? 'Finish or discard the staged shift first.' : undefined;
+  const unassignDisabled = (canUnassign: boolean) => !canUnassign || !selectedBlockingScenario || tripBlockingBlocksBusy || busy || tripProfileBusy || shiftOperations.length > 0 || shiftDrawerOpen;
+  const unassignTitle = (canUnassign: boolean, none: string) => !canUnassign ? none : !selectedBlockingScenario ? 'Select a blocking scenario first.' : shiftOperations.length || shiftDrawerOpen ? 'Finish or discard the staged shift first.' : undefined;
+  const shiftDisabled = busy || tripProfileBusy || shiftDrawerOpen;
+  const shiftTitle = shiftDrawerOpen ? 'The shift drawer is already open.' : undefined;
+  const stagedLockDisabled = busy || tripProfileBusy || shiftOperations.length > 0;
+  const stagedLockTitle = shiftOperations.length ? 'Discard the staged shift first.' : undefined;
+  const selectionCommands: MenuItem[] = [
+    { id: 'shift', label: 'Shift…', disabled: shiftDisabled, title: shiftTitle, onSelect: () => startOpenEdit(() => void openShiftDrawer()) },
+    { id: 'change-pattern', label: 'Change pattern…', disabled: stagedLockDisabled, title: stagedLockTitle, onSelect: () => (selectedTrips.length === 1 ? setTripPatternChangeOpen(true) : setBatchPatternChangeOpen(true)) },
+    { id: 'regenerate', label: 'Regenerate…', disabled: stagedLockDisabled || !selectedChangedRuntimeTripIds.length, title: shiftOperations.length ? 'Discard the staged shift first.' : !selectedChangedRuntimeTripIds.length ? 'Select trips with changed runtimes.' : undefined, onSelect: () => setRecalculationTripIds([...selectedChangedRuntimeTripIds]) },
+    { id: 'assign-block', label: 'Assign block…', disabled: assignBlockDisabled, title: assignBlockTitle, onSelect: () => openTripBlockAssignment(selectedTripIds, '', 'actions', tripsActionsRef.current) },
+    { id: 'unassign-block', label: 'Unassign…', disabled: unassignDisabled(canUnassignSelected), title: unassignTitle(canUnassignSelected, 'Select at least one assigned trip.'), onSelect: () => openTripBlockAssignment(selectedTripIds, '', 'actions', tripsActionsRef.current, 'unassign') },
+    { id: 'delete', label: 'Delete…', destructive: true, disabled: stagedLockDisabled, title: stagedLockTitle, onSelect: () => void requestTripDeletion(selectedTripIds) },
+  ];
   const renderSelectionBar = (compact: boolean) => shiftDrawerOpen ? renderShiftBar(compact) : selectedTripIds.length > 0 ? <SelectionBar compact={compact} count={selectedTripIds.length} noun="trip" ariaLabel="Selected trips" onClear={clearTripSelection}>
-    <button type="button" disabled={busy || tripProfileBusy || shiftDrawerOpen} title={shiftDrawerOpen ? 'The shift drawer is already open.' : undefined} onClick={() => startOpenEdit(() => void openShiftDrawer())}>Shift…</button>
-    <button type="button" disabled={busy || tripProfileBusy || shiftOperations.length > 0} title={shiftOperations.length ? 'Discard the staged shift first.' : undefined} onClick={() => (selectedTrips.length === 1 ? setTripPatternChangeOpen(true) : setBatchPatternChangeOpen(true))}>Change pattern…</button>
-    <button type="button" disabled={busy || tripProfileBusy || shiftOperations.length > 0 || !selectedChangedRuntimeTripIds.length} title={shiftOperations.length ? 'Discard the staged shift first.' : !selectedChangedRuntimeTripIds.length ? 'Select trips with changed runtimes.' : undefined} onClick={() => setRecalculationTripIds([...selectedChangedRuntimeTripIds])}>Regenerate…</button>
-    <button type="button" disabled={!selectedBlockingScenario || tripBlockingBlocksBusy || !tripBlockOptions.length || !hasAssignableTripBlock || busy || tripProfileBusy || shiftOperations.length > 0 || shiftDrawerOpen} title={!selectedBlockingScenario ? 'Select a blocking scenario first.' : tripBlockingBlocksBusy ? 'Loading blocks.' : !tripBlockOptions.length ? 'Create a block in the selected blocking scenario first.' : !hasAssignableTripBlock ? 'No blocks can accept trips from the selected route.' : shiftOperations.length || shiftDrawerOpen ? 'Finish or discard the staged shift first.' : undefined} onClick={() => openTripBlockAssignment(selectedTripIds, '', 'actions', tripsActionsRef.current)}>Assign block…</button>
-    <button type="button" disabled={!canUnassignSelected || !selectedBlockingScenario || tripBlockingBlocksBusy || busy || tripProfileBusy || shiftOperations.length > 0 || shiftDrawerOpen} title={!canUnassignSelected ? 'Select at least one assigned trip.' : !selectedBlockingScenario ? 'Select a blocking scenario first.' : shiftOperations.length || shiftDrawerOpen ? 'Finish or discard the staged shift first.' : undefined} onClick={() => openTripBlockAssignment(selectedTripIds, '', 'actions', tripsActionsRef.current, 'unassign')}>Unassign…</button>
-    <button type="button" className="subtle-danger" disabled={busy || tripProfileBusy || shiftOperations.length > 0} title={shiftOperations.length ? 'Discard the staged shift first.' : undefined} onClick={() => void requestTripDeletion(selectedTripIds)}>Delete…</button>
+    {selectionCommands.map((item) => <CommandButton key={item.id} item={item} />)}
   </SelectionBar> : null;
+  // A Trip row's context menu (Decision 0066 item 8). A selected row acts on the selection; an unselected row acts on that Trip only and
+  // leaves the selection as it is, except Change pattern… and Shift…, which first make that Trip the only selection.
+  const selectOnly = (tripId: string) => { selectionAnchorId.current = tripId; setSelectedTripIds([tripId]); };
+  const rowContextMenu = (trip: Trip, selected: boolean, editStartTime: (() => void) | undefined): ContextMenuContent | undefined => {
+    if (shiftDrawerOpen) return undefined;
+    if (selected) return { heading: `${selectedTripIds.length} selected ${selectedTripIds.length === 1 ? 'trip' : 'trips'}`, groups: [{ items: selectionCommands }, { items: [{ id: 'clear', label: 'Clear selection', onSelect: clearTripSelection }] }] };
+    const pattern = patterns.find((item) => item.id === trip.patternId);
+    const direction = directions.find((item) => item.id === directionId);
+    const chip = patternShortName(pattern, direction?.name ?? '', new Map(aggregate.nodes.map((node) => [node.id, node])));
+    const start = trip.stopTimes[0]?.time;
+    const heading = start === undefined ? chip : `${chip} ${formatTripTableClock(start, roundDisplayedTimes)}`;
+    const index = trips.findIndex((item) => item.id === trip.id);
+    const assigned = tripBlockByTripId.has(trip.id);
+    return { heading, groups: [
+      { label: 'Select', items: [
+        { id: 'add-to-selection', label: 'Add to selection', disabled: busy || tripProfileBusy, onSelect: () => toggleTrip(trip.id, index, false) },
+        { id: 'select-only', label: 'Select only this trip', disabled: busy || tripProfileBusy, onSelect: () => requestShiftScopeChange(() => selectOnly(trip.id)) },
+        ...(pattern ? [{ id: 'select-pattern', label: `Select all on ${chip}`, disabled: busy || tripProfileBusy, onSelect: () => selectTripsBy({ kind: 'pattern', patternId: pattern.id, mode: 'replace' }) }] : []),
+      ] },
+      { label: 'Edit', items: [
+        { id: 'edit-start', label: 'Edit start time', disabled: !editStartTime, title: editStartTime ? undefined : stagedLockTitle, onSelect: () => editStartTime?.() },
+        { id: 'change-pattern', label: 'Change pattern…', disabled: stagedLockDisabled, title: stagedLockTitle, onSelect: () => requestShiftScopeChange(() => { selectOnly(trip.id); setTripPatternChangeOpen(true); }) },
+        { id: 'shift', label: 'Shift…', disabled: shiftDisabled, title: shiftTitle, onSelect: () => requestShiftScopeChange(() => { selectOnly(trip.id); startOpenEdit(() => void openShiftDrawer([trip.id])); }) },
+        ...(changedRuntimeTripIds.has(trip.id) ? [{ id: 'regenerate', label: 'Regenerate…', disabled: stagedLockDisabled, title: stagedLockTitle, onSelect: () => setRecalculationTripIds([trip.id]) }] : []),
+      ] },
+      { label: 'Block', items: [
+        { id: 'assign-block', label: 'Assign block…', disabled: assignBlockDisabled, title: assignBlockTitle, onSelect: () => openTripBlockAssignment([trip.id], '', 'actions', null) },
+        ...(assigned ? [{ id: 'unassign-block', label: 'Unassign from block', disabled: unassignDisabled(true), title: unassignTitle(true, ''), onSelect: () => openTripBlockAssignment([trip.id], '', 'actions', null, 'unassign') }] : []),
+      ] },
+      { items: [{ id: 'delete', label: 'Delete trip…', destructive: true, disabled: busy || tripProfileBusy, onSelect: () => requestShiftScopeChange(() => void requestTripDeletion([trip.id])) }] },
+    ] };
+  };
   const netShiftSeconds = shiftPreview?.netOffsetSeconds ?? 0;
   const netShiftLabel = formatNetShift(netShiftSeconds);
   const shiftStepLabel = parsedShiftSeconds === undefined ? '—' : formatShiftStep(parsedShiftSeconds);
@@ -801,17 +864,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
       {tripsWithChangedRuntimes.length > 0 && <InlineNote kind="warn"><b>Run times have changed</b> for {tripsWithChangedRuntimes.length} {tripsWithChangedRuntimes.length === 1 ? 'trip' : 'trips'}. <button type="button" className="small" disabled={busy || tripProfileBusy} onClick={selectTripsWithChangedRuntimes}>Select these trips</button></InlineNote>}
       {staleReasons && <InlineNote kind="warn" live>{staleTripNoticeText(staleReasons)}</InlineNote>}
       {tripBlockAssignmentStatus && <InlineNote kind="ok" live>{tripBlockAssignmentStatus}</InlineNote>}
-      <ScheduleTable compact={Boolean(pane)} selectionBar={renderSelectionBar} planGaps={planGaps} onStartTimeChange={tripProfileBusy || shiftDrawerOpen || shiftOperations.length > 0 ? undefined : changeTripStartTime} trips={trips} previewTrips={shiftPreview?.shiftedTrips} stagedShiftSeconds={shiftPreview?.netOffsetSeconds} draft={draftTrip} patterns={patterns} direction={directions.find((direction) => directionId === direction.id)!} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} showRuntimeBands={showRuntimeBands} showHeadways={showHeadways} roundDisplayedTimes={roundDisplayedTimes} blockAssignments={tripBlockByTripId} tripConnections={tripConnections} totals={tableTotals} blockWarnings={tripBlockWarnings} blockOptions={tripBlockOptions} blockAssignmentDisabled={busy || tripProfileBusy || tripBlockingBlocksBusy || shiftOperations.length > 0 || shiftDrawerOpen || Boolean(tripBlockAssignment)} onAssignBlock={(trip, blockId, trigger) => openTripBlockAssignment([trip.id], blockId, 'pill', trigger)} onUnassignBlock={(trip, trigger) => openTripBlockAssignment([trip.id], '', 'pill', trigger, 'unassign')} selectedIds={selectedTripIds} changedRuntimeTripIds={changedRuntimeTripIds} onToggle={(id, index, shiftKey) => requestShiftScopeChange(() => {
-        setSelectedTripIds((current) => {
-          const anchorIndex = selectionAnchorId.current ? trips.findIndex((trip) => trip.id === selectionAnchorId.current) : -1;
-          if (shiftKey && anchorIndex >= 0) {
-            const start = Math.min(anchorIndex, index); const end = Math.max(anchorIndex, index);
-            return [...new Set([...current, ...trips.slice(start, end + 1).map((trip) => trip.id)])];
-          }
-          selectionAnchorId.current = id;
-          return current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
-        });
-      })} onSelectAll={(selected) => requestShiftScopeChange(() => { selectionAnchorId.current = undefined; setSelectedTripIds(selected ? trips.map((trip) => trip.id) : []); })} onSelectBy={selectTripsBy} onDelete={(trip) => requestShiftScopeChange(() => void requestTripDeletion([trip.id]))} onDraftChange={setDraftTrip} onDraftSave={() => void saveDraftTrip()} onDraftCancel={() => setDraftTrip(undefined)} busy={busy || tripProfileBusy} />
+      <ScheduleTable compact={Boolean(pane)} selectionBar={renderSelectionBar} planGaps={planGaps} onStartTimeChange={tripProfileBusy || shiftDrawerOpen || shiftOperations.length > 0 ? undefined : changeTripStartTime} trips={trips} previewTrips={shiftPreview?.shiftedTrips} stagedShiftSeconds={shiftPreview?.netOffsetSeconds} draft={draftTrip} patterns={patterns} direction={directions.find((direction) => directionId === direction.id)!} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} showRuntimeBands={showRuntimeBands} showHeadways={showHeadways} roundDisplayedTimes={roundDisplayedTimes} blockAssignments={tripBlockByTripId} tripConnections={tripConnections} totals={tableTotals} blockWarnings={tripBlockWarnings} blockOptions={tripBlockOptions} blockAssignmentDisabled={busy || tripProfileBusy || tripBlockingBlocksBusy || shiftOperations.length > 0 || shiftDrawerOpen || Boolean(tripBlockAssignment)} onAssignBlock={(trip, blockId, trigger) => openTripBlockAssignment([trip.id], blockId, 'pill', trigger)} onUnassignBlock={(trip, trigger) => openTripBlockAssignment([trip.id], '', 'pill', trigger, 'unassign')} selectedIds={selectedTripIds} changedRuntimeTripIds={changedRuntimeTripIds} onToggle={toggleTrip} rowContextMenu={rowContextMenu} headerContextGroups={viewMenu} onSelectAll={(selected) => requestShiftScopeChange(() => { selectionAnchorId.current = undefined; setSelectedTripIds(selected ? trips.map((trip) => trip.id) : []); })} onSelectBy={selectTripsBy} onDelete={(trip) => requestShiftScopeChange(() => void requestTripDeletion([trip.id]))} onDraftChange={setDraftTrip} onDraftSave={() => void saveDraftTrip()} onDraftCancel={() => setDraftTrip(undefined)} busy={busy || tripProfileBusy} />
       {dayLine && <InlineNote>{dayLine}</InlineNote>}
     </WorkSurface>
     {tripBlockAssignment?.operation === 'assign' && <TripBlockAssignmentDialog draft={tripBlockAssignment} blockingScenarioName={selectedBlockingScenario?.name ?? 'blocking scenario'} serviceDayName={selectedDay?.name ?? 'selected service day'} blocks={dayBlockingBlocks} blockOptions={tripBlockOptions} currentAssignments={tripBlockByTripId} onConfirm={(destinationId) => void confirmTripBlockAssignment(destinationId)} onClose={closeTripBlockAssignment} busy={busy} error={tripBlockAssignmentError} />}

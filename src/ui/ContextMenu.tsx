@@ -18,16 +18,20 @@ export function ContextMenu({ heading, groups, point, onChoose, onClose }: { hea
   useLayoutEffect(() => {
     const rect = menuRef.current?.getBoundingClientRect();
     if (rect) setPosition({ x: Math.max(EDGE_PX, Math.min(point.x, window.innerWidth - rect.width - EDGE_PX)), y: Math.max(EDGE_PX, Math.min(point.y, window.innerHeight - rect.height - EDGE_PX)) });
-    menuRef.current?.querySelector<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)')?.focus();
+    // The clamped position applies on the next render, so focusing must not scroll: a scroll closes the menu.
+    menuRef.current?.querySelector<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
   }, [point.x, point.y]);
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as globalThis.Node)) onClose(false); };
-    const onMove = (event: Event) => { if (!menuRef.current?.contains(event.target as globalThis.Node)) onClose(false); };
+    // A scroll event is delivered on the next frame, so a scroll that happened just before the menu opened arrives after it: ignore the first frames.
+    let settled = false;
+    const frame = window.requestAnimationFrame(() => { window.requestAnimationFrame(() => { settled = true; }); });
+    const onMove = (event: Event) => { if (settled && !menuRef.current?.contains(event.target as globalThis.Node)) onClose(false); };
     document.addEventListener('pointerdown', onPointerDown, true);
     window.addEventListener('scroll', onMove, true);
     window.addEventListener('resize', onMove);
-    return () => { document.removeEventListener('pointerdown', onPointerDown, true); window.removeEventListener('scroll', onMove, true); window.removeEventListener('resize', onMove); };
+    return () => { window.cancelAnimationFrame(frame); document.removeEventListener('pointerdown', onPointerDown, true); window.removeEventListener('scroll', onMove, true); window.removeEventListener('resize', onMove); };
   }, [onClose]);
 
   return createPortal(<div ref={menuRef} id={menuId} data-menu-layer="" className="action-menu action-menu--context" role="menu" aria-label={`${heading} actions`} style={{ left: position.x, top: position.y }}
