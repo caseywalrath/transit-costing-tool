@@ -43,9 +43,9 @@ Haiku must not assume anything beyond these facts. If any of these facts no long
 | After a commit the workspace calls `onCommitted(result)` with a `RouteEditCommitResult`. | `src/ui/route/RouteWorkspace.tsx:161` |
 | `SegmentRuntimeDialog` is the dialog to copy for structure, classes, focus, and error handling. | `src/ui/trips/dialogs.tsx:141-201` |
 | Browser specs that read the current mile column: `tests/ui/pattern-distance.spec.ts`, `tests/ui/route-grid.spec.ts` (lines 64-87 and 111-120). | `tests/ui/` |
-| The next free Decision number is **0064**. | `docs/decisions/` |
+| This plan uses Decision **0065**. 0064 is claimed by another unmerged branch; do not use it. | `docs/decisions/` |
 
-## 3. Rules (Opus records these in Decision 0064 before D1 starts)
+## 3. Rules (Opus records these in Decision 0065 before D1 starts)
 
 1. **Entry.** The planner types segment miles. Cumulative miles are derived for display. Storage stays `cumulativeMiles`.
 2. **Segment index.** In domain code, segment `i` is the segment from point `i` to point `i + 1` of the points sorted by `sequence`, the same indexing as `segmentKeys`. In the UI, segment `i` is shown on the row of point `i + 1`. The first row has no segment.
@@ -66,11 +66,11 @@ Haiku must not assume anything beyond these facts. If any of these facts no long
 
 Opus does this before delegating.
 
-- Create `docs/decisions/0064-segment-distance-entry-and-sharing.md` with Context (summary of the 2026-11-10 discussion: shared corridors, opposite directions on different streets, the runtime precedent in Decision 0049), Decision (the rules in section 3), Alternatives considered (a shared route-level distance table with per-point overrides, rejected for now because it needs a schema migration and lets one edit change the revenue miles of other patterns without a review), and Consequences (no schema change; 0-mile segments are treated as not entered; Copy can overwrite a deliberate difference, which the preview, exclusion, and undo reduce; undo is lost on reload).
-- `architecture_overview.md` line 194: replace with "Each pattern point stores cumulative miles from the beginning of the pattern. The planner enters segment miles; the application rewrites the cumulative values (Decision 0064). Fill and Copy share segment distances between patterns of one Route; matching is derived and not stored." Line 205: append "(Decision 0064 adds Fill, which can use reverse-direction distances.)"
-- `docs/data-schema.md` line 186: add a sentence that segment entry does not change storage (Decision 0064).
-- `docs/domain-glossary.md` "Segment" entry (line 49): add "The planner enters segment distance; cumulative distance is derived for display (Decision 0064)."
-- Commit: `Record Decision 0064: segment distance entry and sharing`.
+- Create `docs/decisions/0065-segment-distance-entry-and-sharing.md` with Context (summary of the 2026-11-10 discussion: shared corridors, opposite directions on different streets, the runtime precedent in Decision 0049), Decision (the rules in section 3), Alternatives considered (a shared route-level distance table with per-point overrides, rejected for now because it needs a schema migration and lets one edit change the revenue miles of other patterns without a review), and Consequences (no schema change; 0-mile segments are treated as not entered; Copy can overwrite a deliberate difference, which the preview, exclusion, and undo reduce; undo is lost on reload).
+- `architecture_overview.md` line 194: replace with "Each pattern point stores cumulative miles from the beginning of the pattern. The planner enters segment miles; the application rewrites the cumulative values (Decision 0065). Fill and Copy share segment distances between patterns of one Route; matching is derived and not stored." Line 205: append "(Decision 0065 adds Fill, which can use reverse-direction distances.)"
+- `docs/data-schema.md` line 186: add a sentence that segment entry does not change storage (Decision 0065).
+- `docs/domain-glossary.md` "Segment" entry (line 49): add "The planner enters segment distance; cumulative distance is derived for display (Decision 0065)."
+- Commit: `Record Decision 0065: segment distance entry and sharing`.
 
 Opus then gives Haiku the D1 brief (section 5) verbatim, plus the facts table (section 2) and the rules (section 3).
 
@@ -78,7 +78,7 @@ Opus then gives Haiku the D1 brief (section 5) verbatim, plus the facts table (s
 
 ### Read first
 
-`AGENTS.md`, `codex.md`, Decision 0049, Decision 0064, `src/domain/patterns.ts`, `src/domain/segmentRuntimeMatching.ts` (all of it), `src/application/routeDefinitionService.ts` lines 200-330, 370-415, 760-860, 1110-1260, and the `RouteDefinitionApplication` type near line 1260.
+`AGENTS.md`, `codex.md`, Decision 0049, Decision 0065, `src/domain/patterns.ts`, `src/domain/segmentRuntimeMatching.ts` (all of it), `src/application/routeDefinitionService.ts` lines 200-330, 370-415, 760-860, 1110-1260, and the `RouteDefinitionApplication` type near line 1260.
 
 ### Files Haiku may change
 
@@ -97,7 +97,7 @@ Add, directly after `getSegmentMiles`:
 
 ```ts
 /**
- * Decision 0064. Sets the miles of segment `segmentIndex` (point `segmentIndex` to point `segmentIndex + 1`, by `sequence`) and shifts
+ * Decision 0065. Sets the miles of segment `segmentIndex` (point `segmentIndex` to point `segmentIndex + 1`, by `sequence`) and shifts
  * the cumulative miles of every later point by the difference. Values are rounded to 6 decimal places. Returns a new Pattern.
  * Throws if `segmentIndex` is out of range or `miles` is not a finite, non-negative number.
  */
@@ -183,7 +183,7 @@ Tests: `src/domain/segmentDistanceMatching.test.ts`. Build the fixture inline: n
 Add near the segment-runtime types (line ~253):
 
 ```ts
-/** What the distance Fill and Copy dialogs show (Decision 0064). */
+/** What the distance Fill and Copy dialogs show (Decision 0065). */
 export interface SegmentDistancePreview extends SegmentDistancePlan {
   scenarioId: string; routeId: string;
   excludedPatternIds: string[];                          // empty for Fill
@@ -224,7 +224,7 @@ Tests in `src/application/routeDefinitionService.test.ts`, using the in-memory r
 - While working: `pnpm vitest run src/domain/segmentDistanceMatching.test.ts`, `pnpm vitest run src/domain/patterns.test.ts`, `pnpm vitest run src/application/routeDefinitionService.test.ts`.
 - At the end: `pnpm typecheck` and `pnpm test` (the full unit suite). Report the summary lines and any failures only.
 - Skipped: browser suite (no UI changed); backup round-trip (no schema change; `src/persistence/backup.test.ts` runs in `pnpm test` and must pass unchanged).
-- Commit message: `Add segment distance fill and copy planning (Decision 0064)` with `Verified:` lines naming the commands, and naming the browser suite as skipped because no UI changed.
+- Commit message: `Add segment distance fill and copy planning (Decision 0065)` with `Verified:` lines naming the commands, and naming the browser suite as skipped because no UI changed.
 
 ### 5.5 Opus review gate after D1
 
@@ -320,7 +320,7 @@ Add `tests/ui/segment-distance-fill.spec.ts`, built with the helpers that `segme
 - `pnpm test:ui -- --trace off tests/ui/pattern-distance.spec.ts tests/ui/route-grid.spec.ts tests/ui/segment-distance-fill.spec.ts tests/ui/pattern-discard-save.spec.ts tests/ui/route-editing.spec.ts tests/ui/keyboard.spec.ts`.
 - `pnpm test` (full unit suite) and `pnpm build`.
 - Skipped: the full browser suite runs in the closeout (section 8).
-- Commit message: `Enter segment miles and add distance fill and copy to the pattern editor (Decision 0064)` with `Verified:` lines.
+- Commit message: `Enter segment miles and add distance fill and copy to the pattern editor (Decision 0065)` with `Verified:` lines.
 
 ### 6.6 Opus review gate after D2
 
@@ -333,7 +333,7 @@ Add `tests/ui/segment-distance-fill.spec.ts`, built with the helpers that `segme
 
 | Package | Run | Skip | Do not cut |
 |---|---|---|---|
-| D0 | Proofread; cross-check Decision 0064 against sections 3 and 4 | Tests (documentation only) | — |
+| D0 | Proofread; cross-check Decision 0065 against sections 3 and 4 | Tests (documentation only) | — |
 | D1 | Focused Vitest files; `pnpm typecheck`; `pnpm test` | Browser suite (no UI changed) | `backup.test.ts`, `safeRouteEditing.test.ts`, the existing segment-runtime tests in `routeDefinitionService.test.ts` |
 | D2 | `pnpm typecheck`; the six browser specs in 6.5; `pnpm test`; `pnpm build`; visual inspection | Full browser suite (closeout) | `pattern-distance.spec.ts`, `route-grid.spec.ts`, `pattern-discard-save.spec.ts`, `route-editing.spec.ts` |
 | Closeout (Opus) | Full `pnpm test`, `pnpm typecheck`, `pnpm build`, full `pnpm test:ui -- --trace off` | — | All of it |
@@ -342,12 +342,12 @@ Add `tests/ui/segment-distance-fill.spec.ts`, built with the helpers that `segme
 
 - Run the full verification row above. Report the results, including any failures with their output.
 - Confirm that `exportProject` followed by `importProject` round-trips a project with edited segment distances (the existing backup test covers the schema; add no new schema version).
-- Update the Status line of Decision 0064 to "Accepted and implemented".
+- Update the Status line of Decision 0065 to "Accepted and implemented".
 - Push to `claude/fervent-cannon-rw8mso`. Report to the user and stop.
 
 ## 9. Out of scope
 
-- A shared route-level distance table with live links (the rejected alternative in Decision 0064).
+- A shared route-level distance table with live links (the rejected alternative in Decision 0065).
 - Package D3 (UI design): automatic fill when a node is added to a pattern, and a marker on segments that differ from other patterns.
 - Changing how **Move point** and **Remove point** treat distances. Cumulative values still move with their points, and `validatePattern` reports a decreasing distance.
 - Matching across Routes.
