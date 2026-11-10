@@ -18,7 +18,9 @@ import { countAssumptionChanges, countEstimateFactorChanges } from '../../applic
 import { MenuButton, type MenuGroup } from '../MenuButton';
 import { buildCostSummary, costSummaryPartialReasons, type CostSummary } from '../../domain/costSummary';
 import { CostSummaryView } from './CostSummaryView';
-import { estimateFactorsForTripProfile, type EstimateFactorOwner, type EstimatedCostingCalculationResult, type ImpliedRouteService } from '../../domain/estimatedCosting';
+import { estimateFactorsForTripProfile, type EstimateFactorOwner } from '../../domain/estimatedCosting';
+import { CycleCalculator } from './CycleCalculator';
+import { setEstimateFactor } from './EstimateFactorsGrid';
 
 type Props = {
   /** The element in the header's scope bar that receives the scope selectors (UR-5). */
@@ -385,13 +387,15 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
       {!result && !calculating && !validation.length && <p className="table-empty">Select a cost basis to calculate an estimate.</p>}
     </WorkSurface>
 
+    {result?.basis === 'estimated' && result.dailyRows.some((row) => row.impliedService?.length) && <WorkSurface title="Cycle calculator" ariaLabel="Cycle calculator" subtitle={tripProfileName ? `Trip profile ${tripProfileName}` : undefined}>
+      <CycleCalculator key={basisValue} result={result} rate={selectedYearResult?.appliedRateUsdPerRevenueHour} disabled={saving || !factorProfileId}
+        onUseLayover={(serviceDayId, fraction) => setFactors((current) => setEstimateFactor(current, serviceDayId, 'layoverFraction', Number(fraction.toFixed(6))))} />
+    </WorkSurface>}
+
     <div className="costing-lower-grid">
       <SupportPanel title="Yearly outlook" ariaLabel="Yearly outlook">
         {result?.yearRows.length ? <div className="table-scroll data-grid costing-outlook-table"><table><thead><tr><th scope="col">Year</th><th scope="col">Applied $ per revenue hour</th><th scope="col">Annual cost</th></tr></thead><tbody>{result.yearRows.map((row) => <tr key={row.serviceYear} className={row.serviceYear === selectedYear ? 'selected-costing-year' : ''}><th scope="row"><button className="link-button" onClick={() => setViewYear(row.serviceYear)}>{row.serviceYear}</button></th><td>{rate(row.appliedRateUsdPerRevenueHour)}</td><td>{money(row.annualCostUsd)}</td></tr>)}</tbody></table></div> : <InlineNote>Appears after you enter an operating cost rate.</InlineNote>}
       </SupportPanel>
-      {result?.basis === 'estimated' && <SupportPanel title="Implied service" ariaLabel="Implied service" aside="What the layover % implies">
-        <ImpliedServiceTable result={result} />
-      </SupportPanel>}
     </div>
     {partialSummary && <ModalDialog role="alertdialog" labelledBy="cost-summary-partial-title" className="confirm-dialog" onClose={() => setPartialSummary(undefined)}><h2 id="cost-summary-partial-title">This estimate is partial</h2><p>The cost summary will not show that some service is left out:</p><ul>{partialSummary.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul><div className="dialog-actions"><button autoFocus onClick={() => setPartialSummary(undefined)}>Cancel</button><button className="primary" onClick={() => { setSummary(partialSummary.summary); setPartialSummary(undefined); }}>Open summary</button></div></ModalDialog>}
     {summary && <CostSummaryView summary={summary} onClose={() => setSummary(undefined)} />}
@@ -459,33 +463,6 @@ function CostBreakdownTable({ result, selectedYear, totalDays }: { result: Costi
 function factorSubtitle(tripProfileName: string | undefined, owner: EstimateFactorOwner): string {
   const name = tripProfileName ? `Trip profile ${tripProfileName}` : 'No trip profile';
   return owner === 'scenario' ? `${name} · shared scenario factors` : `${name} · blank days use All days`;
-}
-
-const minutes = (seconds: number | undefined) => seconds === undefined ? MISSING : (seconds / 60).toFixed(1);
-
-/**
- * Decision 0062: for each service day and Route, the running time of one cycle through every direction, that cycle with the layover %
- * applied, the observed headway of each direction, and the vehicles that cycle needs at that headway.
- */
-function ImpliedServiceTable({ result }: { result: EstimatedCostingCalculationResult }) {
-  const rows = result.dailyRows.flatMap((day) => (day.impliedService ?? []).map((route) => ({ day, route })));
-  if (!rows.length) return <InlineNote>Appears when the trip profile has trips with run times.</InlineNote>;
-  const showRoute = new Set(rows.map(({ route }) => route.routeId)).size > 1;
-  const headways = (route: ImpliedRouteService) => {
-    const values = [...new Set(route.directions.map((direction) => minutes(direction.headwaySeconds)))];
-    return values.join(' / ');
-  };
-  return <>
-    <div className="table-scroll data-grid costing-outlook-table costing-implied-table"><table>
-      <thead><tr><th scope="col">Service day</th>{showRoute && <th scope="col">Route</th>}<th scope="col">Cycle running (min)</th><th scope="col">Cycle with layover (min)</th><th scope="col">Headway (min)</th><th scope="col">Implied vehicles</th></tr></thead>
-      <tbody>{rows.map(({ day, route }) => <tr key={`${day.serviceDayId}-${route.routeId}`}>
-        <th scope="row">{day.serviceDayName}</th>{showRoute && <td>{route.routeName ?? MISSING}</td>}
-        <td>{minutes(route.roundTripRunSeconds)}</td><td>{minutes(route.roundTripWithLayoverSeconds)}</td><td>{headways(route)}</td>
-        <td>{route.impliedVehicles === undefined ? MISSING : route.impliedVehicles.toFixed(2)}</td>
-      </tr>)}</tbody>
-    </table></div>
-    <InlineNote>The cycle adds the mean run time of each direction. With layover = cycle ÷ (1 − layover %). Headway is the median gap between departures in each direction. Implied vehicles are not rounded; compare them with the cycle and fleet you planned.</InlineNote>
-  </>;
 }
 
 function CostingNavigationDraftDialog({ factorsOnly, saving, saveDisabled, onCancel, onDiscard, onSave }: { factorsOnly?: boolean; saving: boolean; saveDisabled: boolean; onCancel: () => void; onDiscard: () => void; onSave: () => void }) {

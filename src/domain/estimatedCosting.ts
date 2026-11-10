@@ -133,6 +133,8 @@ export interface ImpliedRouteService {
   directions: ImpliedDirectionService[];
   /** The mean run time of each direction, added: the running part of one cycle through every direction. */
   roundTripRunSeconds: number;
+  /** The total run time of the Route's Trips on the day, in hours (Decision 0063). */
+  runningHours: number;
   /** `roundTripRunSeconds ÷ (1 − layover)`. Undefined without a layover factor. */
   roundTripWithLayoverSeconds?: number;
   /** Σ over directions of (mean run ÷ (1 − layover)) ÷ headway. Undefined without a layover factor or a headway in any direction. */
@@ -184,7 +186,8 @@ export function deriveImpliedService(
         };
       });
       const roundTripRunSeconds = listed.reduce((sum, direction) => sum + direction.meanRunSeconds, 0);
-      const route: ImpliedRouteService = { routeId, ...(routeName.has(routeId) ? { routeName: routeName.get(routeId) } : {}), directions: listed, roundTripRunSeconds };
+      const runningHours = listed.reduce((sum, direction) => sum + direction.meanRunSeconds * direction.tripCount, 0) / 3600;
+      const route: ImpliedRouteService = { routeId, ...(routeName.has(routeId) ? { routeName: routeName.get(routeId) } : {}), directions: listed, roundTripRunSeconds, runningHours };
       if (usableLayover === undefined) return route;
       route.roundTripWithLayoverSeconds = roundTripRunSeconds / (1 - usableLayover);
       if (listed.every((direction) => direction.headwaySeconds !== undefined)) {

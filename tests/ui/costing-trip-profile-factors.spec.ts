@@ -22,27 +22,45 @@ async function open(page: Page) {
 
 const factors = (page: Page) => page.getByRole('grid', { name: 'Estimate factors' });
 const factorsPanel = (page: Page) => page.getByRole('region', { name: 'Estimate factors' });
-const implied = (page: Page) => page.getByRole('region', { name: 'Implied service' });
+const calculator = (page: Page) => page.getByRole('region', { name: 'Cycle calculator' });
 
-test('the Implied service panel shows the cycle, headway, and vehicles of each day, and they follow the layover %', async ({ page }) => {
+test('the cycle calculator solves vehicles, layover, or headway, and "Use" puts a layover % into the factors grid (Decision 0063)', async ({ page }) => {
   await open(page);
-  await expect(implied(page).locator('thead th')).toHaveText(['Service day', 'Cycle running (min)', 'Cycle with layover (min)', 'Headway (min)', 'Implied vehicles']);
-  const weekday = implied(page).locator('tbody tr').filter({ has: page.locator('th', { hasText: 'Weekday' }) });
-  await expect(weekday.locator('td').nth(1)).toHaveText('—');
-  await expect(weekday.locator('td').nth(3)).toHaveText('—');
-  const running = Number(await weekday.locator('td').nth(0).innerText());
-  expect(running).toBeGreaterThan(0);
+  await expect(calculator(page).locator('thead th')).toHaveText(['Service day', 'Cycle running, mean (min)', 'Layover %', 'Cycle with layover (min)', 'Headway, median (min)', 'Vehicles', 'Revenue (h/day)', 'Annual cost', 'Use layover']);
+  const running = page.getByRole('textbox', { name: 'Weekday cycle running minutes' });
+  const runningMinutes = Number(await running.inputValue());
+  expect(runningMinutes).toBeGreaterThan(0);
+  await expect(page.locator('output[aria-label="Weekday vehicles"]')).toHaveText('—');
 
-  await editGridCell(gridCell(factors(page), 'All days layover percent'), '20');
-  await expect(weekday.locator('td').nth(1)).toHaveText((running / 0.8).toFixed(1));
-  await expect(weekday.locator('td').nth(3)).not.toHaveText('—');
-  const twenty = Number(await weekday.locator('td').nth(3).innerText());
-  await editGridCell(gridCell(factors(page), 'All days layover percent'), '10');
-  await expect(weekday.locator('td').nth(3)).not.toHaveText(twenty.toFixed(2));
-  expect(Number(await weekday.locator('td').nth(3).innerText())).toBeLessThan(twenty);
-  // The panel belongs to the estimated basis only.
+  // Solve for vehicles: type a layover % and a headway.
+  await page.getByRole('textbox', { name: 'Weekday layover percent' }).fill('20');
+  await page.getByRole('textbox', { name: 'Weekday headway minutes' }).fill('15');
+  await expect(page.locator('output[aria-label="Weekday vehicles"]')).toHaveText((runningMinutes / 0.8 / 15).toFixed(2));
+  await page.getByRole('checkbox', { name: 'Whole vehicles' }).check();
+  const whole = Math.ceil(runningMinutes / 0.8 / 15);
+  await expect(page.locator('output[aria-label="Weekday vehicles"]')).toHaveText(String(whole));
+  await expect(page.locator('output[aria-label="Weekday layover percent"]')).toHaveText(((1 - runningMinutes / (whole * 15)) * 100).toFixed(2));
+
+  // Solve for layover: the solved vehicles become a typed value.
+  await page.getByRole('radio', { name: 'Layover %' }).click();
+  await expect(page.getByRole('textbox', { name: 'Weekday vehicles' })).toHaveValue(String(whole));
+  await page.getByRole('textbox', { name: 'Weekday vehicles' }).fill(String(whole + 1));
+  const layover = (1 - runningMinutes / ((whole + 1) * 15)) * 100;
+  await expect(page.locator('output[aria-label="Weekday layover percent"]')).toHaveText(layover.toFixed(2));
+  await page.getByRole('button', { name: `Use ${layover.toFixed(2)}% layover for Weekday` }).click();
+  await expect(gridCell(factors(page), 'Weekday layover percent')).toHaveText(String(Number(layover.toFixed(2))));
+  await expect(page.getByRole('button', { name: 'Save factors', exact: true })).toBeVisible();
+
+  // A cycle shorter than the running time is reported.
+  await page.getByRole('textbox', { name: 'Weekday vehicles' }).fill('1');
+  await expect(calculator(page).getByRole('alert')).toHaveText('The cycle with layover is shorter than the running cycle.');
+  await page.getByRole('button', { name: 'Reset to schedule' }).click();
+  await expect(running).toHaveValue(runningMinutes.toFixed(1));
+
+  // The calculator belongs to the estimated basis only.
+  await factorsPanel(page).getByRole('button', { name: 'Discard', exact: true }).click();
   await chooseCostBasis(page, 'Blocked hours', 'Workbook Blocks');
-  await expect(implied(page)).toHaveCount(0);
+  await expect(calculator(page)).toHaveCount(0);
 });
 
 test('each Trip Profile keeps its own factors, and changing to another Profile with unsaved factors asks first', async ({ page }) => {
