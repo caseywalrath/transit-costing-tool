@@ -159,6 +159,34 @@ describe('LocalDataProtectionService', () => {
     ]);
     expect(store.load()).toMatchObject({ lastBackupExportedAt: at, persistentStorage: 'granted' });
   });
+
+  it('records a per-project backup time with the project ID, and only the global time without one', () => {
+    const withProject = new LocalDataProtectionService(memoryStore(), undefined, () => at);
+    withProject.recordBackupExported('p1');
+    expect(withProject.getLocalDataProtection()).toEqual({ lastBackupExportedAt: at, projectBackupExportedAt: { p1: at } });
+    const withoutProject = new LocalDataProtectionService(memoryStore(), undefined, () => at);
+    withoutProject.recordBackupExported();
+    expect(withoutProject.getLocalDataProtection()).toEqual({ lastBackupExportedAt: at });
+    expect(withoutProject.getLocalDataProtection()).not.toHaveProperty('projectBackupExportedAt');
+  });
+
+  it('forgets one project backup time, and removes the map when it was the last entry', () => {
+    const store = memoryStore({ projectBackupExportedAt: { p1: at, p2: at } });
+    const protection = new LocalDataProtectionService(store, undefined, () => at);
+    protection.forgetProjectBackup('p1');
+    expect(protection.getLocalDataProtection()).toEqual({ projectBackupExportedAt: { p2: at } });
+    protection.forgetProjectBackup('p2');
+    expect(protection.getLocalDataProtection()).not.toHaveProperty('projectBackupExportedAt');
+    expect(store.load()).not.toHaveProperty('projectBackupExportedAt');
+  });
+
+  it('does not notify listeners when the forgotten project has no backup time', () => {
+    const protection = new LocalDataProtectionService(memoryStore({ projectBackupExportedAt: { p1: at } }), undefined, () => at);
+    const seen: LocalDataProtection[] = [];
+    protection.subscribeToLocalDataProtection((state) => seen.push(state));
+    protection.forgetProjectBackup('missing');
+    expect(seen).toHaveLength(1);
+  });
 });
 
 // Review issue I-023 (user decision 11): every write of the four services shows in the one save status.
@@ -219,9 +247,10 @@ describe('every write of the four services publishes through one publisher', () 
     expect(route.getLocalDataProtection()).toEqual({});
     const payload = await route.exportProject(created.project.id);
     expect(JSON.parse(payload).project.name).toBe('Backup time');
-    expect(route.getLocalDataProtection()).toEqual({ lastBackupExportedAt: at });
-    expect(seen).toEqual([{}, { lastBackupExportedAt: at }]);
-    expect(saved).toEqual([{ lastBackupExportedAt: at }]);
+    const exported = { lastBackupExportedAt: at, projectBackupExportedAt: { [created.project.id]: at } };
+    expect(route.getLocalDataProtection()).toEqual(exported);
+    expect(seen).toEqual([{}, exported]);
+    expect(saved).toEqual([exported]);
     // A failed export is not recorded as a backup.
     await expect(route.exportProject('missing')).rejects.toThrow();
     expect(saved).toHaveLength(1);
@@ -229,6 +258,9 @@ describe('every write of the four services publishes through one publisher', () 
     const plain = new RouteDefinitionService(repository, backup, () => at);
     await plain.exportProject(created.project.id);
     expect(plain.getLocalDataProtection()).toEqual({});
+    // Deleting the project forgets its backup time and keeps the global one (Decision 0064).
+    await route.deleteProject(created.project.id, (await route.getProjectDeletionImpact(created.project.id)).reviewToken);
+    expect(route.getLocalDataProtection()).toEqual({ lastBackupExportedAt: at });
   });
 
   // Each repository method that writes must be classified. A new write-like method on a repository fails this test until it is

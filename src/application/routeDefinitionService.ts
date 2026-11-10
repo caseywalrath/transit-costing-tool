@@ -444,6 +444,7 @@ export class RouteDefinitionService {
     if (!snapshot) throw new Error('Project not found.');
     assertReviewCurrent('project', reviewToken, projectDeletionToken(snapshot));
     await this.save(() => this.repository.deleteProject(projectId));
+    this.protection?.forgetProjectBackup(projectId);
   }
 
   async createScenario(projectId: string, name: string): Promise<ScenarioRecords> {
@@ -637,7 +638,7 @@ export class RouteDefinitionService {
   /** Produces the project JSON backup and records that a backup was exported now, so the screen can say when the last one was made. */
   async exportProject(projectId: string): Promise<string> {
     const payload = await this.backup.exportProject(projectId);
-    this.protection?.recordBackupExported();
+    this.protection?.recordBackupExported(projectId);
     return payload;
   }
   async importProject(payload: string): Promise<Project> { return this.save(() => this.backup.importProject(payload, 'copy')); }

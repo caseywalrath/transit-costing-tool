@@ -74,6 +74,8 @@ export interface SaveStatus {
 export interface LocalDataProtection {
   /** When the planner last exported a project JSON backup (ISO time). Absent until the first export on this browser profile. */
   lastBackupExportedAt?: string;
+  /** When each project was last exported as a JSON backup on this browser profile (Decision 0064), by project ID. Absent until the first export. */
+  projectBackupExportedAt?: Record<string, string>;
   /** The browser's answer to the persistent-storage request: kept, refused, or no such request in this browser. Absent until asked. */
   persistentStorage?: 'granted' | 'denied' | 'unavailable';
   /** When that answer was recorded (ISO time). */
