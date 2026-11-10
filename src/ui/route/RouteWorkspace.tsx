@@ -20,7 +20,7 @@ import { NodesGrid, usePatternPointsGrid } from './RouteGrids';
 import { type PlannedFrequencyService } from '../../application/plannedFrequencyService';
 import { PlannedFrequenciesPanel, type PlannedFrequenciesHandle } from './PlannedFrequenciesPanel';
 import { generatedPatternShortName, patternNameWithoutDirection, patternShortName } from '../../application/shortNames';
-import { setSegmentMiles } from '../../domain/patterns';
+import { rebaseCumulativeMiles, setSegmentMiles } from '../../domain/patterns';
 import { PatternDistanceDialog } from './PatternDistanceDialog';
 
 const plural = (count: number, singular: string) => `${count} ${singular}${count === 1 ? '' : 's'}`;
@@ -149,8 +149,8 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
   /** Decision 0065. Setting a segment shifts the later cumulative values in the draft; nothing is saved here. */
   function setSegment(segmentIndex: number, miles: number) { if (!patternDraft) return; updateDraft({ points: setSegmentMiles(patternDraft, segmentIndex, miles).points }); }
   const onUndoDistances = () => void service.undoDistanceCopy().then(onCommitted).catch(onError);
-  function movePoint(index: number, direction: -1 | 1) { if (!patternDraft) return; const target = index + direction; if (target < 0 || target >= patternDraft.points.length) return; const points = [...patternDraft.points]; [points[index], points[target]] = [points[target], points[index]]; updateDraft({ points }); }
-  function removePoint(index: number) { if (patternDraft) updateDraft({ points: patternDraft.points.filter((_, pointIndex) => pointIndex !== index) }); }
+  function movePoint(index: number, direction: -1 | 1) { if (!patternDraft) return; const target = index + direction; if (target < 0 || target >= patternDraft.points.length) return; const points = [...patternDraft.points]; [points[index], points[target]] = [points[target], points[index]]; updateDraft({ points: rebaseCumulativeMiles(points) }); }
+  function removePoint(index: number) { if (patternDraft) updateDraft({ points: rebaseCumulativeMiles(patternDraft.points.filter((_, pointIndex) => pointIndex !== index)) }); }
   async function reviewPatternSave(afterCommit?: () => void) {
     if (!patternDraft) return;
     setPatternSaving(true);
