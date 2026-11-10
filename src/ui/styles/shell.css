@@ -36,6 +36,9 @@ nav { display: flex; gap: 2px; }
 .switcher__name { flex: 0 1 auto; min-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-chevron { flex: none; color: var(--color-text-subtle); font-size: var(--font-size-caption); }
 .action-menu--start { left: 0; right: auto; }
+/* Decision 0064. A context menu is placed by window position (inline left and top) above any open menu. */
+.action-menu--context { position: fixed; z-index: 30; right: auto; }
+.action-menu-heading { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; color: var(--color-text); }
 @media (max-width: 1279px) { .switcher__caption { display: none; } }
 
 /* A select in a work surface header (the Runtimes Pattern select) is drawn the same way, so no browser draws a native control outside its box. */
