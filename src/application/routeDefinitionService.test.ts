@@ -4,7 +4,7 @@ import { ProjectBackupService } from '../persistence/backupRepository';
 import { TransitDatabase } from '../persistence/database';
 import { DexieRouteDefinitionRepository } from '../persistence/dexieRepository';
 import { InMemoryRouteDefinitionRepository } from '../persistence/inMemoryRepository';
-import { RouteDefinitionService, ServiceDayValidationError } from './routeDefinitionService';
+import { RouteDefinitionService, SEGMENT_DISTANCE_UNDO_REFUSED, ServiceDayValidationError } from './routeDefinitionService';
 import type { RouteDefinitionRepository, TripGenerationRepository } from './ports';
 import { metadata, newId } from '../domain/ids';
 import type { Block, ProjectSnapshot, Trip } from '../domain/types';
@@ -825,5 +825,112 @@ describe('Service days that share a Runtime profile', () => {
     const unused = await service.createDefaultRuntimeProfile(aggregate.patterns[0], 'Unused');
     expect(await service.listRuntimeProfileServiceDays(unused.id)).toEqual([]);
     await expect(service.listRuntimeProfileServiceDays('missing')).rejects.toThrow('no longer available');
+  });
+});
+
+describe('distance fill and copy between patterns (Decision 0065)', () => {
+  const at = '2026-09-10T12:00:00.000Z';
+  /** A Route with Trunk (South, North, Third at 0, 1.5, 4) and Branch (the same nodes at 0), each with a runtime profile, and one Trip on Branch. */
+  async function distanceRoute() {
+    const repository = new InMemoryRouteDefinitionRepository();
+    const backup = new ProjectBackupService((id) => repository.getProjectSnapshot(id), (snapshot) => repository.saveProjectSnapshot(snapshot));
+    const service = new RouteDefinitionService(repository, backup, () => at);
+    const created = await service.createProject('Distances');
+    const scenarioId = created.records.scenario.id;
+    const weekday = created.records.serviceDays[0];
+    const addedRoute = await service.addRoute(created.records);
+    const routeId = addedRoute.route.id;
+    let aggregate = (await service.loadWorkspace(created.project.id, scenarioId, routeId)).aggregate!;
+    const withNodes = await addRouteNodes(service, aggregate, [{ name: 'South' }, { name: 'North' }, { name: 'Third' }]);
+    aggregate = withNodes.aggregate;
+    const [south, north, third] = withNodes.nodes;
+    const trunk = await savePattern(service, aggregate, { name: 'Trunk', stops: [{ nodeId: south.id, miles: 0 }, { nodeId: north.id, miles: 1.5 }, { nodeId: third.id, miles: 4 }] });
+    aggregate = trunk.aggregate;
+    const branch = await savePattern(service, aggregate, { name: 'Branch', stops: [{ nodeId: south.id, miles: 0 }, { nodeId: north.id, miles: 0 }, { nodeId: third.id, miles: 0 }] });
+    aggregate = branch.aggregate;
+    for (const pattern of aggregate.patterns) {
+      const profile = await service.createDefaultRuntimeProfile(pattern, `${pattern.name} runtimes`);
+      await service.assignRuntimeProfile(scenarioId, pattern.id, weekday.id, profile.id);
+    }
+    await repository.saveTrips([{ id: 'trip-1', scenarioId, routeId, serviceDayId: weekday.id, patternId: branch.pattern.id, stopTimes: [], provenance: { kind: 'manual', creationMethod: 'manual', manuallyChangedFields: [] }, ...metadata(at) } as unknown as Trip]);
+    return { repository, service, scenarioId, routeId, aggregate, trunk: trunk.pattern, branch: branch.pattern };
+  }
+  const cumulative = (pattern: { points: { cumulativeMiles: number }[] }) => pattern.points.map((point) => point.cumulativeMiles);
+  /** Runtime profiles and Trips, as stored. */
+  const runtimesAndTrips = async (repository: InMemoryRouteDefinitionRepository, scenarioId: string) => {
+    const records = (await repository.getScenarioRecords(scenarioId))!;
+    return JSON.stringify({ runtimeProfiles: records.runtimeProfiles, trips: records.trips });
+  };
+
+  it('fill changes only the draft, and nothing is written until the draft is saved', async () => {
+    const { service, repository, scenarioId, aggregate, branch } = await distanceRoute();
+    const before = JSON.stringify(await repository.getScenarioRecords(scenarioId));
+    const preview = service.previewDistanceFill(aggregate, branch);
+    const filled = service.applyDistanceFill(branch, preview);
+    expect(cumulative(filled)).toEqual([0, 1.5, 4]);
+    expect(cumulative(branch)).toEqual([0, 0, 0]);
+    expect(JSON.stringify(await repository.getScenarioRecords(scenarioId))).toBe(before);
+  });
+
+  it('copy writes the saved pattern to the other patterns, and leaves runtimes and Trips unchanged', async () => {
+    const { service, repository, scenarioId, routeId, trunk, branch } = await distanceRoute();
+    const runtimesBefore = await runtimesAndTrips(repository, scenarioId);
+    const preview = await service.previewDistanceCopy(trunk.id);
+    expect(preview.changes.map((change) => [change.patternId, change.segmentIndex, change.nextMiles])).toEqual([[branch.id, 0, 1.5], [branch.id, 1, 2.5]]);
+    const result = await service.applyDistanceCopy(preview);
+    expect(cumulative(result.aggregate.patterns.find((pattern) => pattern.id === branch.id)!)).toEqual([0, 1.5, 4]);
+    expect(cumulative(result.aggregate.patterns.find((pattern) => pattern.id === trunk.id)!)).toEqual([0, 1.5, 4]);
+    expect(await runtimesAndTrips(repository, scenarioId)).toBe(runtimesBefore);
+    expect(service.getDistanceUndo()).toEqual({ routeId, patternCount: 1 });
+  });
+
+  it('refuses a copy with no changes, and a copy that the preview no longer matches', async () => {
+    const { service, repository, scenarioId, aggregate, trunk, branch } = await distanceRoute();
+    await expect(service.applyDistanceCopy(await service.previewDistanceCopy(trunk.id, [branch.id]))).rejects.toThrow('No distances would change.');
+    const preview = await service.previewDistanceCopy(trunk.id);
+    const edited = { ...branch, points: branch.points.map((point, index) => ({ ...point, cumulativeMiles: index })) };
+    await service.commitPatternChange((await service.previewPatternChange(aggregate.route.id, branch.id, edited)).previewToken);
+    const before = JSON.stringify(await repository.getScenarioRecords(scenarioId));
+    await expect(service.applyDistanceCopy(preview)).rejects.toThrow('Distances changed after the preview. Review the changes again.');
+    expect(JSON.stringify(await repository.getScenarioRecords(scenarioId))).toBe(before);
+  });
+
+  it('aborts the whole copy when a target fails validation', async () => {
+    const { service, repository, scenarioId, trunk, branch } = await distanceRoute();
+    const preview = await service.previewDistanceCopy(trunk.id);
+    // A stored target without a Direction cannot pass the pattern validation that the copy runs (a Copy never makes a decreasing value).
+    await repository.updateScenarioRecords(scenarioId, (current) => ({ ...current, patterns: current.patterns.map((pattern) => pattern.id === branch.id ? { ...pattern, directionId: undefined } : pattern) }));
+    const before = JSON.stringify(await repository.getScenarioRecords(scenarioId));
+    await expect(service.applyDistanceCopy(preview)).rejects.toThrow();
+    expect(JSON.stringify(await repository.getScenarioRecords(scenarioId))).toBe(before);
+  });
+
+  it('undoes the last copy once, and is cleared by a pattern commit', async () => {
+    const { service, routeId, trunk, branch } = await distanceRoute();
+    await expect(service.undoDistanceCopy()).rejects.toThrow('There is no distance copy to undo.');
+    await service.applyDistanceCopy(await service.previewDistanceCopy(trunk.id));
+    const restored = await service.undoDistanceCopy();
+    expect(cumulative(restored.aggregate.patterns.find((pattern) => pattern.id === branch.id)!)).toEqual([0, 0, 0]);
+    expect(service.getDistanceUndo()).toBeUndefined();
+
+    await service.applyDistanceCopy(await service.previewDistanceCopy(trunk.id));
+    const storedTrunk = restored.aggregate.patterns.find((pattern) => pattern.id === trunk.id)!;
+    await service.commitPatternChange((await service.previewPatternChange(routeId, storedTrunk.id, { ...storedTrunk, name: 'Trunk renamed' })).previewToken);
+    expect(service.getDistanceUndo()).toBeUndefined();
+  });
+
+  it('refuses an undo when a target changed after the copy, and writes nothing', async () => {
+    const { service, repository, scenarioId, trunk, branch } = await distanceRoute();
+    await service.applyDistanceCopy(await service.previewDistanceCopy(trunk.id));
+    await repository.updateScenarioRecords(scenarioId, (current) => ({ ...current, patterns: current.patterns.map((pattern) => pattern.id === branch.id ? { ...pattern, updatedAt: '2026-09-11T00:00:00.000Z' } : pattern) }));
+    const before = JSON.stringify(await repository.getScenarioRecords(scenarioId));
+    await expect(service.undoDistanceCopy()).rejects.toThrow(SEGMENT_DISTANCE_UNDO_REFUSED);
+    expect(JSON.stringify(await repository.getScenarioRecords(scenarioId))).toBe(before);
+    expect(service.getDistanceUndo()).toBeUndefined();
+  });
+
+  it('refuses a preview for a pattern that is not saved', async () => {
+    const { service } = await distanceRoute();
+    await expect(service.previewDistanceCopy('not-saved')).rejects.toThrow('Save this pattern before copying its distances.');
   });
 });

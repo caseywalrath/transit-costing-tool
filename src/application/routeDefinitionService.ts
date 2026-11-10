@@ -1,7 +1,8 @@
 import { MAX_ANNUAL_SERVICE_DAYS } from '../domain/costing';
 import { metadata, newId, withUpdatedAt } from '../domain/ids';
 import { createProject, createScenarioRecords, duplicateRouteRecords, duplicateScenario, renameProject as renameProjectRecord, type ScenarioRecords } from '../domain/project';
-import { duplicatePattern, getSegmentMiles, normalizePattern, reversePattern, validatePattern } from '../domain/patterns';
+import { duplicatePattern, getSegmentMiles, normalizePattern, reversePattern, setSegmentMiles, validatePattern } from '../domain/patterns';
+import { applySegmentDistancePlan, copyCandidatePatternIds, planDistanceCopy, planDistanceFill, type SegmentDistancePlan } from '../domain/segmentDistanceMatching';
 import { createManagedDirections, ensureManagedDirections, oppositeDirectionGroup } from '../domain/directions';
 import { classifyPatternEdit, describePatternPointChange, getPatternServiceImpact, rebalanceRuntimeProfile, rebalanceTripForPattern, reconcileRouteTimetables, resetPatternService, type DirectionOrderConflict, type PatternServiceImpact, type RouteEditClassification, type RouteEditMode } from '../domain/safeRouteEditing';
 import { normalizeServiceDayAbbreviation, sortServiceDays, validateServiceDayAbbreviations } from '../domain/serviceDays';
@@ -273,6 +274,19 @@ const SEGMENT_RUNTIME_PREVIEW_STALE = 'Runtimes changed after the preview. Revie
 
 interface SegmentRuntimeUndo { routeId: string; scenarioId: string; before: RuntimeProfile[]; writtenRevisions: Map<string, number> }
 
+/** What the distance Fill and Copy dialogs show (Decision 0065). */
+export interface SegmentDistancePreview extends SegmentDistancePlan {
+  scenarioId: string; routeId: string;
+  excludedPatternIds: string[];                          // empty for Fill
+  copyCandidates: { patternId: string; included: boolean }[]; // Copy: every other pattern sharing at least one non-ambiguous key; empty for Fill
+  patternNames: Record<string, string>;
+  /** Pattern id to its segment labels by segment index, such as `WSTMNST → CCR`, built exactly like `segmentLabels` in describeSegmentRuntimePlan. */
+  segmentLabels: Record<string, string[]>;
+}
+export const SEGMENT_DISTANCE_UNDO_REFUSED = "These distances were changed after the copy, so it can't be undone.";
+const SEGMENT_DISTANCE_PREVIEW_STALE = 'Distances changed after the preview. Review the changes again.';
+interface SegmentDistanceUndo { routeId: string; scenarioId: string; before: RoutePattern[]; writtenUpdatedAt: Map<string, string> }
+
 export class RouteEditPreviewExpiredError extends Error {
   constructor() {
     super('Route or service data changed after this review. Review the impacts again.');
@@ -314,6 +328,8 @@ export class RouteDefinitionService {
   private readonly routeEditPreviews = new Map<string, StoredRouteEditPreview>();
   /** The last confirmed segment copy or fill, for one undo. It lives in memory only and is cleared by any other runtime write (Decision 0049). */
   private segmentRuntimeUndo?: SegmentRuntimeUndo;
+  /** The last confirmed distance copy, for one undo (Decision 0065). In memory only; cleared by any other pattern or node commit and by pattern deletion. */
+  private segmentDistanceUndo?: SegmentDistanceUndo;
 
   /**
    * `saveStatus` is the one publisher of the visible save status; the application passes the same instance to every service that writes
@@ -361,6 +377,7 @@ export class RouteDefinitionService {
 
   /** Commit a previously reviewed Node draft as one scenario transaction. */
   async commitNodeChanges(previewToken: string, mode: RouteEditMode = 'rebalance'): Promise<RouteEditCommitResult> {
+    this.segmentDistanceUndo = undefined;
     const preview = this.takePreview(previewToken, 'nodes');
     const records = await this.recordsForRoute(preview.routeId);
     if (this.routeEditSignature(records, preview.routeId) !== preview.sourceSignature) throw new RouteEditPreviewExpiredError();
@@ -385,6 +402,7 @@ export class RouteDefinitionService {
 
   /** Commit a reviewed Pattern draft. Rebalance and reset are both atomic. */
   async commitPatternChange(previewToken: string, mode: RouteEditMode = 'rebalance'): Promise<RouteEditCommitResult> {
+    this.segmentDistanceUndo = undefined;
     const preview = this.takePreview(previewToken, 'pattern');
     const records = await this.recordsForRoute(preview.routeId);
     if (this.routeEditSignature(records, preview.routeId) !== preview.sourceSignature) throw new RouteEditPreviewExpiredError();
@@ -586,6 +604,7 @@ export class RouteDefinitionService {
 
   /** Confirmed pattern deletion removes only records that cannot remain valid without that pattern. It runs only if the stored data still matches the review (`getPatternDeletionImpact`) that `reviewToken` came from. */
   async deletePattern(patternId: string, reviewToken: string): Promise<{ aggregate: RouteDefinitionAggregate; impact: PatternDeletionImpact }> {
+    this.segmentDistanceUndo = undefined;
     const records = await this.recordsForPattern(patternId);
     const plan = this.planPatternDeletion(records, patternId);
     assertReviewCurrent('pattern', reviewToken, plan.impact.reviewToken);
@@ -593,6 +612,97 @@ export class RouteDefinitionService {
     const aggregate = await this.repository.getRouteDefinition(plan.routeId);
     if (!aggregate) throw new Error('Route not found after deleting pattern.');
     return { aggregate, impact: plan.impact };
+  }
+
+  /** Decision 0065. What "Fill distances from other patterns" would write into the draft. Synchronous; nothing is read or written. */
+  previewDistanceFill(aggregate: RouteDefinitionAggregate, draft: RoutePattern): SegmentDistancePreview {
+    const plan = planDistanceFill({ openPattern: draft, patterns: aggregate.patterns });
+    return this.describeSegmentDistancePlan(plan, { scenarioId: aggregate.route.scenarioId, routeId: aggregate.route.id, excludedPatternIds: [], copyCandidates: [], patterns: aggregate.patterns, nodes: aggregate.nodes, draft });
+  }
+
+  /** Writes the previewed fill into the draft only. Nothing is saved; the draft goes through the normal save review. */
+  applyDistanceFill(draft: RoutePattern, preview: SegmentDistancePreview): RoutePattern {
+    return [...preview.changes].sort((left, right) => left.segmentIndex - right.segmentIndex).reduce((next, change) => setSegmentMiles(next, change.segmentIndex, change.nextMiles), draft);
+  }
+
+  /** Decision 0065. What "Copy distances to other patterns" would write from the stored pattern; nothing is written. */
+  async previewDistanceCopy(patternId: string, excludedPatternIds: string[] = []): Promise<SegmentDistancePreview> {
+    const stored = await this.repository.getPattern(patternId);
+    if (!stored) throw new Error('Save this pattern before copying its distances.');
+    const records = await this.repository.getScenarioRecords(stored.scenarioId);
+    if (!records) throw new Error('The selected scenario is no longer available.');
+    const patterns = records.patterns.filter((pattern) => pattern.routeId === stored.routeId);
+    const plan = planDistanceCopy({ openPattern: stored, patterns, excludedPatternIds });
+    return this.describeSegmentDistancePlan(plan, { scenarioId: stored.scenarioId, routeId: stored.routeId, excludedPatternIds, copyCandidates: copyCandidatePatternIds(stored, patterns), patterns, nodes: records.nodes.filter((node) => node.routeId === stored.routeId), draft: stored });
+  }
+
+  /**
+   * Writes a confirmed copy. The plan is built again from the stored records inside the write (Decision 0036); if it no longer matches the
+   * preview, nothing is written. Every changed pattern is validated, and one error aborts the whole write.
+   */
+  async applyDistanceCopy(preview: SegmentDistancePreview): Promise<RouteEditCommitResult> {
+    if (!preview.changes.length) throw new Error('No distances would change.');
+    let undo: SegmentDistanceUndo | undefined;
+    const records = await this.updateScenarioRecords(preview.scenarioId, (current) => {
+      const patterns = current.patterns.filter((pattern) => pattern.routeId === preview.routeId);
+      const open = patterns.find((pattern) => pattern.id === preview.sourcePatternId);
+      if (!open) throw new Error('The selected Pattern is no longer available.');
+      const plan = planDistanceCopy({ openPattern: open, patterns, excludedPatternIds: preview.excludedPatternIds });
+      if (JSON.stringify(plan.changes) !== JSON.stringify(preview.changes)) throw new Error(SEGMENT_DISTANCE_PREVIEW_STALE);
+      const now = this.now();
+      const aggregate = this.managedAggregate(current, preview.routeId);
+      const written = applySegmentDistancePlan(patterns, plan).map((pattern) => withUpdatedAt(pattern, now));
+      for (const pattern of written) {
+        const findings = this.basicPatternFindings(pattern, aggregate);
+        if (findings.some((finding) => finding.severity === 'error')) throw new RouteEditValidationError(findings);
+      }
+      const writtenIds = new Set(written.map((pattern) => pattern.id));
+      undo = { routeId: preview.routeId, scenarioId: preview.scenarioId, before: patterns.filter((pattern) => writtenIds.has(pattern.id)), writtenUpdatedAt: new Map(written.map((pattern) => [pattern.id, pattern.updatedAt])) };
+      const byId = new Map(written.map((pattern) => [pattern.id, pattern]));
+      return { ...current, patterns: current.patterns.map((pattern) => byId.get(pattern.id) ?? pattern) };
+    });
+    this.segmentDistanceUndo = undo;
+    return { records, aggregate: this.aggregateFromRecords(records, preview.routeId) };
+  }
+
+  /** The distance copy that "Undo last distance copy" would reverse, if any. */
+  getDistanceUndo(): { routeId: string; patternCount: number } | undefined {
+    return this.segmentDistanceUndo ? { routeId: this.segmentDistanceUndo.routeId, patternCount: this.segmentDistanceUndo.before.length } : undefined;
+  }
+
+  /** Restores the patterns of the last distance copy, only while each one still has the timestamp the copy wrote. Restored patterns get a new timestamp. */
+  async undoDistanceCopy(): Promise<RouteEditCommitResult> {
+    const undo = this.segmentDistanceUndo;
+    if (!undo) throw new Error('There is no distance copy to undo.');
+    this.segmentDistanceUndo = undefined;
+    const records = await this.updateScenarioRecords(undo.scenarioId, (current) => {
+      const now = this.now();
+      const restored = new Map<string, RoutePattern>();
+      for (const previous of undo.before) {
+        const stored = current.patterns.find((pattern) => pattern.id === previous.id);
+        if (!stored || stored.updatedAt !== undo.writtenUpdatedAt.get(previous.id)) throw new Error(SEGMENT_DISTANCE_UNDO_REFUSED);
+        restored.set(previous.id, withUpdatedAt(previous, now));
+      }
+      return { ...current, patterns: current.patterns.map((pattern) => restored.get(pattern.id) ?? pattern) };
+    });
+    return { records, aggregate: this.aggregateFromRecords(records, undo.routeId) };
+  }
+
+  private describeSegmentDistancePlan(plan: SegmentDistancePlan, scope: { scenarioId: string; routeId: string; excludedPatternIds: string[]; copyCandidates: string[]; patterns: RoutePattern[]; nodes: Node[]; draft: RoutePattern }): SegmentDistancePreview {
+    const nodeName = (nodeId: string) => { const node = scope.nodes.find((candidate) => candidate.id === nodeId); return node?.shortName || node?.name || 'Unnamed point'; };
+    const patternNames: Record<string, string> = {};
+    const segmentLabels: Record<string, string[]> = {};
+    // The draft is last so that its unsaved name and points win over a saved record with the same id.
+    for (const pattern of [...scope.patterns, scope.draft]) {
+      patternNames[pattern.id] = pattern.name;
+      const points = [...pattern.points].sort((left, right) => left.sequence - right.sequence);
+      segmentLabels[pattern.id] = points.slice(1).map((point, index) => `${nodeName(points[index].nodeId)} → ${nodeName(point.nodeId)}`);
+    }
+    const byName = (left: string, right: string) => (patternNames[left] ?? '').localeCompare(patternNames[right] ?? '', undefined, { numeric: true, sensitivity: 'base' }) || left.localeCompare(right);
+    const copyCandidates = plan.mode === 'copyToOthers'
+      ? [...scope.copyCandidates].sort(byName).map((patternId) => ({ patternId, included: !scope.excludedPatternIds.includes(patternId) }))
+      : [];
+    return { ...plan, scenarioId: scope.scenarioId, routeId: scope.routeId, excludedPatternIds: plan.mode === 'copyToOthers' ? scope.excludedPatternIds : [], copyCandidates, patternNames, segmentLabels };
   }
 
   private async recordsForPattern(patternId: string): Promise<ScenarioRecords> {
@@ -1317,6 +1427,12 @@ export type RouteDefinitionApplication = Pick<RouteDefinitionService,
   | 'applySegmentRuntimePlan'
   | 'getSegmentRuntimeUndo'
   | 'undoSegmentRuntimePlan'
+  | 'previewDistanceFill'
+  | 'applyDistanceFill'
+  | 'previewDistanceCopy'
+  | 'applyDistanceCopy'
+  | 'getDistanceUndo'
+  | 'undoDistanceCopy'
   | 'reverseCopyRuntimeProfile'
   | 'deleteRuntimeProfile'
   | 'getRuntimeProfileDeletionImpact'
