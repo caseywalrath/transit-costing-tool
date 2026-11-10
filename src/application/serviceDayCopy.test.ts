@@ -133,6 +133,39 @@ describe('Package 3A service-day copy commands', () => {
     expect((await repository.getTrip('source-inbound'))?.patternId).toBe('inbound');
   });
 
+  it('batch Pattern change with an anchor node keeps that node time, and a changed source Pattern makes the review stale', async () => {
+    const base = sourceSnapshot();
+    const withNodes = (id: string, nodeIds: string[]): RoutePattern => ({ ...pattern(id, 'outbound'), points: nodeIds.map((nodeId, sequence) => ({ id: `${id}-${sequence}`, nodeId, sequence, cumulativeMiles: sequence })) });
+    const long = withNodes('long', ['N1', 'N2', 'N3']);
+    const short = withNodes('short', ['N2', 'N3']);
+    const longTrip: Trip = { ...trip('long-trip', 'weekday', long.id), stopTimes: [1000, 1500, 2200].map((timeValue, sequence) => ({ patternPointId: `${long.id}-${sequence}`, sequence, time: timeValue })) };
+    const repository = new InMemoryRouteDefinitionRepository();
+    await repository.saveProjectSnapshot({
+      ...base,
+      patterns: [...base.patterns, long, short],
+      runtimeProfiles: [...base.runtimeProfiles, profile('short-profile', short.id)],
+      runtimeAssignments: [...base.runtimeAssignments, { id: 'weekday-short', scenarioId: scenario.id, patternId: short.id, serviceDayId: 'weekday', runtimeProfileId: 'short-profile', ...metadata(time) }],
+      trips: [...base.trips, longTrip],
+    });
+    const service = new TripGenerationService(repository, () => '2026-09-15T00:00:00.000Z');
+    const request = { tripIds: ['long-trip'], targetPatternId: short.id, anchorNodeId: 'N3' };
+
+    const stale = await service.previewBatchPatternChange(request);
+    expect(stale.eligibleTripIds).toEqual(['long-trip']);
+    expect(stale.changes[0].newStopTimes?.map((point) => point.time)).toEqual([1600, 2200]);
+    const current = (await repository.getRouteDefinition(route.id))!;
+    await repository.saveRouteDefinition({ ...current, patterns: current.patterns.map((item) => (item.id === long.id ? { ...item, points: item.points.map((point) => (point.nodeId === 'N2' ? { ...point, nodeId: 'N2-moved' } : point)) } : item)) });
+    await expect(service.applyBatchPatternChange(stale)).rejects.toBeInstanceOf(ServiceDayCopyStalePreviewError);
+    expect((await repository.getTrip('long-trip'))?.patternId).toBe('long');
+
+    const fresh = await service.previewBatchPatternChange(request);
+    expect(fresh.request.anchorNodeId).toBe('N3');
+    await service.applyBatchPatternChange(fresh);
+    const applied = await repository.getTrip('long-trip');
+    expect(applied?.patternId).toBe('short');
+    expect(applied?.stopTimes.map((point) => [point.patternPointId, point.time])).toEqual([['short-0', 1600], ['short-1', 2200]]);
+  });
+
   it('handles the Package 3A capacity targets for 20 Patterns and 500 source Trips', async () => {
     const base = sourceSnapshot();
     const extraPatterns = Array.from({ length: 18 }, (_, index) => pattern(`capacity-${index}`, index % 2 ? 'inbound' : 'outbound'));
