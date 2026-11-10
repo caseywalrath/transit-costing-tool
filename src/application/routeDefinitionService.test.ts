@@ -11,12 +11,12 @@ import type { Block, ProjectSnapshot, Trip } from '../domain/types';
 import { addBlocks } from '../testSupport/addBlocks';
 import { addRouteNodes, addTwoStopPattern, savePattern, savePatternDraft } from '../testSupport/routeFixtures';
 
-function createService(repository = new InMemoryRouteDefinitionRepository()) {
+function createService(repository = new InMemoryRouteDefinitionRepository(), now = () => '2026-09-10T12:00:00.000Z') {
   const backup = new ProjectBackupService(
     (projectId) => repository.getProjectSnapshot(projectId),
     (snapshot) => repository.saveProjectSnapshot(snapshot),
   );
-  return { service: new RouteDefinitionService(repository, backup, () => '2026-09-10T12:00:00.000Z') };
+  return { service: new RouteDefinitionService(repository, backup, now) };
 }
 
 describe('RouteDefinitionService', () => {
@@ -538,6 +538,56 @@ describe('Service day and Scenario validation', () => {
     await expect(service.renameScenario(records, '   ')).rejects.toThrow('Scenario name is required');
     expect((await service.loadWorkspace(records.scenario.projectId, records.scenario.id)).records!.scenario.name).toBe('Scenario 1');
     expect((await service.renameScenario(records, '  Base  ')).scenario.name).toBe('Base');
+  });
+});
+
+// Scenario actions addressed by Scenario ID (CM3), used by the Scenario context menu for any Scenario in a Project.
+describe('Scenario actions by ID', () => {
+  it('renameScenarioById changes only the named Scenario name and updatedAt', async () => {
+    const repository = new InMemoryRouteDefinitionRepository();
+    const { service } = createService(repository);
+    const created = await service.createProject('Rename by ID');
+    const other = await service.createScenario(created.project.id, 'Other');
+    const { service: later } = createService(repository, () => '2026-09-12T08:00:00.000Z');
+    const targetBefore = { ...(await repository.getScenarioRecords(created.records.scenario.id))!.scenario };
+    const otherBefore = JSON.stringify(await repository.getScenarioRecords(other.scenario.id));
+
+    const renamed = await later.renameScenarioById(created.records.scenario.id, '  Renamed by ID  ');
+
+    expect(renamed.scenario.id).toBe(created.records.scenario.id);
+    expect(renamed.scenario.name).toBe('Renamed by ID');
+    const stored = (await repository.getScenarioRecords(created.records.scenario.id))!.scenario;
+    expect(stored).toEqual({ ...targetBefore, name: 'Renamed by ID', updatedAt: '2026-09-12T08:00:00.000Z' });
+    expect(JSON.stringify(await repository.getScenarioRecords(other.scenario.id))).toBe(otherBefore);
+  });
+
+  it('renameScenarioById rejects a blank name', async () => {
+    const { service } = createService();
+    const created = await service.createProject('Blank by ID');
+    await expect(service.renameScenarioById(created.records.scenario.id, '   ')).rejects.toThrow('Scenario name is required');
+  });
+
+  it('duplicateScenarioById copies the stored Scenario named by ID, not the open one', async () => {
+    const repository = new InMemoryRouteDefinitionRepository();
+    const { service } = createService(repository);
+    const created = await service.createProject('Duplicate by ID');
+    const other = await service.createScenario(created.project.id, 'Other');
+    const sourceBefore = JSON.stringify(await repository.getScenarioRecords(other.scenario.id));
+
+    const copy = await service.duplicateScenarioById(other.scenario.id, 'Other copy');
+
+    expect(copy.scenario.id).not.toBe(other.scenario.id);
+    expect(copy.scenario).toMatchObject({ projectId: created.project.id, name: 'Other copy' });
+    expect(copy.serviceDays.map((day) => day.kind)).toEqual(other.serviceDays.map((day) => day.kind));
+    const stored = await repository.getScenarioRecords(copy.scenario.id);
+    expect(stored?.scenario.name).toBe('Other copy');
+    expect(stored?.serviceDays).toHaveLength(other.serviceDays.length);
+    expect(JSON.stringify(await repository.getScenarioRecords(other.scenario.id))).toBe(sourceBefore);
+  });
+
+  it('duplicateScenarioById rejects an unknown Scenario ID', async () => {
+    const { service } = createService();
+    await expect(service.duplicateScenarioById('missing-scenario', 'Copy')).rejects.toThrow('Scenario not found.');
   });
 });
 

@@ -12,7 +12,7 @@ import { type TripGenerationApplication } from '../application/tripGenerationSer
 import { type PlannedFrequencyService } from '../application/plannedFrequencyService';
 import { TripGenerationError } from '../domain/trips';
 import { isUsablePattern, orderDirections, serviceDayAbbreviation, sortServiceDays } from '../application/tripsWorkspaceView';
-import { type Project, type Route, type RouteDefinitionAggregate, type ServiceDayDefinition, type Trip, type ValidationFinding } from '../domain/types';
+import { type Project, type Route, type RouteDefinitionAggregate, type Scenario, type ServiceDayDefinition, type Trip, type ValidationFinding } from '../domain/types';
 import { type CostingCommands, type CostingQueries } from '../application/ports';
 import { type NameDialog, type Confirmation, NameDialogForm, ConfirmDialog } from './shared/dialogs';
 import { type RouteNavigationGuard } from './shared/types';
@@ -150,9 +150,11 @@ export function App({ service, tripService, blockingService, costingService, pla
   async function addScenario(name: string) { if (!selectedProject) return; try { const next = await service.createScenario(selectedProject.id, name); await reload(selectedProject.id, next.scenario.id); } catch (error) { showError(error, 'Unable to create scenario.'); } }
   async function renameCurrentScenario(name: string) { if (!records) return; try { const next = await service.renameScenario(records, name); setRecords(next); setScenarioOptions((current) => current.map((scenario) => scenario.id === next.scenario.id ? next.scenario : scenario)); } catch (error) { showError(error, 'Unable to save scenario.'); } }
   async function duplicateCurrentScenario(name: string) { if (!records || !selectedProject) return; try { const next = await service.duplicateScenario(records, name); await reload(selectedProject.id, next.scenario.id); } catch (error) { showError(error, 'Unable to duplicate scenario.'); } }
-  function deleteCurrentScenario() {
-    if (!records) return;
-    void service.getScenarioDeletionImpact(records.scenario.id).then((impact) => {
+  function deleteCurrentScenario() { if (records) deleteScenario(records.scenario); }
+  /** Deletes any scenario of the open project (Decision 0066 item 10). Deleting one that is not open keeps the open scenario, route and tab. */
+  function deleteScenario(scenario: Scenario) {
+    const open = scenario.id === scenarioId;
+    void service.getScenarioDeletionImpact(scenario.id).then((impact) => {
       if (impact.remainingScenarioCount === 0) {
         setNotice({ kind: 'error', text: 'Create another scenario before deleting the only scenario in this project.' });
         return;
@@ -165,7 +167,7 @@ export function App({ service, tripService, blockingService, costingService, pla
         impact.tripCount ? `${impact.tripCount} trip${impact.tripCount === 1 ? '' : 's'}` : '',
         impact.blockCount ? `${impact.blockCount} block${impact.blockCount === 1 ? '' : 's'}` : '',
       ].filter(Boolean);
-      setConfirm({ title: 'Delete scenario?', text: `Delete “${records.scenario.name}”${affected.length ? ` and its ${affected.join(', ')}?` : '?'} All service days and remaining scenario data will also be deleted. This cannot be undone.`, confirmLabel: 'Delete scenario', action: () => { void service.deleteScenario(records.scenario.id, impact.reviewToken).then(async () => { setActiveTab('route'); await reload(projectId); }).catch((error) => showError(error, 'Unable to delete scenario.')); } });
+      setConfirm({ title: 'Delete scenario?', text: `Delete “${scenario.name}”${affected.length ? ` and its ${affected.join(', ')}?` : '?'} All service days and remaining scenario data will also be deleted. This cannot be undone.`, confirmLabel: 'Delete scenario', action: () => { void service.deleteScenario(scenario.id, impact.reviewToken).then(async () => { if (open) { setActiveTab('route'); await reload(projectId); } else await reload(projectId, scenarioId, routeId); }).catch((error) => showError(error, 'Unable to delete scenario.')); } });
     }).catch((error) => showError(error, 'Unable to review scenario deletion.'));
   }
   async function addRoute() { if (!records) return; try { const next = await service.addRoute(records); setRecords(next.records); await reload(projectId, scenarioId, next.route.id); } catch (error) { showError(error, 'Unable to add route.'); } }
@@ -260,9 +262,21 @@ export function App({ service, tripService, blockingService, costingService, pla
     ] },
     { items: [{ id: 'delete-project', label: 'Delete project…', disabled: !selectedProject, destructive: true, onSelect: () => requestRouteNavigation(deleteCurrentProject) }] },
   ];
+  function openScenario(scenario: Scenario) { if (scenario.id !== scenarioId) requestRouteNavigation(() => { void reload(projectId, scenario.id).catch(selectionFailed); }); }
+  async function renameScenarioById(scenario: Scenario, name: string) { try { const next = await service.renameScenarioById(scenario.id, name); if (next.scenario.id === scenarioId) setRecords(next); setScenarioOptions((current) => current.map((item) => item.id === next.scenario.id ? next.scenario : item)); } catch (error) { showError(error, 'Unable to save scenario.'); } }
+  async function duplicateScenarioById(scenario: Scenario, name: string) { try { const next = await service.duplicateScenarioById(scenario.id, name); requestRouteNavigation(() => { void reload(projectId, next.scenario.id).catch(selectionFailed); }); } catch (error) { showError(error, 'Unable to duplicate scenario.'); } }
+  // The context menu of a scenario in the Scenarios group (Decision 0066 item 10). It acts on that scenario, which need not be the open one.
+  const scenarioContextGroups = (scenario: Scenario): MenuGroup[] => [
+    { items: [{ id: 'ctx-open', label: 'Open', disabled: scenario.id === scenarioId, onSelect: () => openScenario(scenario) }] },
+    { items: [
+      { id: 'ctx-rename', label: 'Rename…', onSelect: () => setNameDialog({ title: 'Rename scenario', label: 'Scenario name', initialValue: scenario.name, submitLabel: 'Rename', action: (name) => renameScenarioById(scenario, name) }) },
+      { id: 'ctx-duplicate', label: 'Duplicate…', onSelect: () => setNameDialog({ title: 'Duplicate scenario', initialValue: `${scenario.name} Copy`, submitLabel: 'Duplicate', action: (name) => duplicateScenarioById(scenario, name) }) },
+    ] },
+    { items: [{ id: 'ctx-delete', label: 'Delete scenario…', destructive: true, onSelect: () => scenario.id === scenarioId ? requestRouteNavigation(() => deleteScenario(scenario)) : deleteScenario(scenario) }] },
+  ];
   const scenarioActions: MenuGroup[] = [
     { label: 'Scenarios', items: [
-      ...scenarios.map((scenario) => ({ id: `scenario-${scenario.id}`, label: scenario.name, checked: scenario.id === scenarioId, wrapLabel: true, onSelect: () => { if (scenario.id !== scenarioId) requestRouteNavigation(() => { void reload(projectId, scenario.id).catch(selectionFailed); }); } })),
+      ...scenarios.map((scenario) => ({ id: `scenario-${scenario.id}`, label: scenario.name, checked: scenario.id === scenarioId, wrapLabel: true, onSelect: () => openScenario(scenario), contextGroups: () => scenarioContextGroups(scenario), contextHeading: scenario.name })),
       { id: 'new-scenario', label: 'New scenario…', disabled: !records, onSelect: () => setNameDialog({ title: 'New scenario', label: 'Scenario name', submitLabel: 'Create scenario', action: addScenario }) },
     ] },
     { items: [

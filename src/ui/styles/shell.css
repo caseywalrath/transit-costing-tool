@@ -37,7 +37,8 @@ nav { display: flex; gap: 2px; }
 .menu-chevron { flex: none; color: var(--color-text-subtle); font-size: var(--font-size-caption); }
 .action-menu--start { left: 0; right: auto; }
 /* Decision 0064. A context menu is placed by window position (inline left and top) above any open menu. */
-.action-menu--context { position: fixed; z-index: 30; right: auto; width: max-content; }
+/* Doubled class: it must beat the later `.action-menu { position: absolute }`, because the menu is placed by window coordinates. */
+.action-menu.action-menu--context { position: fixed; z-index: 30; right: auto; width: max-content; }
 .action-menu .action-menu-heading { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; color: var(--color-text); }
 @media (max-width: 1279px) { .switcher__caption { display: none; } }
 
