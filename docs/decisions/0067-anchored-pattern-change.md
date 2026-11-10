@@ -1,6 +1,6 @@
 # Decision 0067: Anchored Pattern Change
 
-- Status: Accepted, not implemented
+- Status: Accepted and implemented
 - Date: 2026-11-10 (user request; plan: `docs/implementation/anchored-pattern-change.md`)
 - Related: Decision 0031 (Trip regeneration anchors), Decision 0058 item 7 (built and regenerated Trips give the same times at an anchor)
 - Number: 0066 is reserved for another branch.
