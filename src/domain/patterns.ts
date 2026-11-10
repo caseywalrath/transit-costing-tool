@@ -17,6 +17,17 @@ export function getSegmentMiles(pattern: RoutePattern, pointIndex: number): numb
 const round6 = (value: number) => Math.round(value * 1e6) / 1e6;
 
 /**
+ * Decision 0065. Shifts every point's cumulative miles so the first point (by array order) is at 0. Moving or removing points keeps each
+ * point's cumulative value, so a point moved to the top could keep a nonzero start that segment entry cannot reach. Returns the same
+ * points when the first is already 0 or not finite.
+ */
+export function rebaseCumulativeMiles(points: PatternPoint[]): PatternPoint[] {
+  const start = points[0]?.cumulativeMiles;
+  if (start === undefined || start === 0 || !Number.isFinite(start)) return points;
+  return points.map((point) => ({ ...point, cumulativeMiles: round6(point.cumulativeMiles - start) }));
+}
+
+/**
  * Decision 0065. Sets the miles of segment `segmentIndex` (point `segmentIndex` to point `segmentIndex + 1`, by `sequence`) and shifts
  * the cumulative miles of every later point by the difference. Values are rounded to 6 decimal places. Returns a new Pattern.
  * Throws if `segmentIndex` is out of range or `miles` is not a finite, non-negative number.

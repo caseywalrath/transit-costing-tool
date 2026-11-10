@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
-import { duplicatePattern, getSegmentMiles, normalizePattern, reversePattern, setSegmentMiles, validatePattern } from './patterns';
+import { duplicatePattern, getSegmentMiles, normalizePattern, rebaseCumulativeMiles, reversePattern, setSegmentMiles, validatePattern } from './patterns';
 import type { RoutePattern } from './types';
 
 const nodes = [
@@ -106,4 +106,17 @@ describe('setSegmentMiles (Decision 0065)', () => {
     expect(next.points.map((point) => point.id)).toEqual(['a', 'b', 'c']);
     expect(next.updatedAt).toBe(source.updatedAt);
   });
+});
+
+describe('rebaseCumulativeMiles', () => {
+  const point = (id: string, cumulativeMiles: number, sequence: number) => ({ id, nodeId: `n-${id}`, sequence, cumulativeMiles });
+  it('shifts a point moved to the top back to 0 and keeps the segments', () => {
+    const rebased = rebaseCumulativeMiles([point('c', 3.5, 0), point('a', 3.5, 1), point('b', 4.75, 2)]);
+    expect(rebased.map((p) => p.cumulativeMiles)).toEqual([0, 0, 1.25]);
+  });
+  it('returns the same points when the first is already 0', () => {
+    const points = [point('a', 0, 0), point('b', 2, 1)];
+    expect(rebaseCumulativeMiles(points)).toBe(points);
+  });
+  it('returns an empty list unchanged', () => expect(rebaseCumulativeMiles([])).toEqual([]));
 });
