@@ -4,8 +4,7 @@ import { goldenRaw } from './support/goldenFixture';
 import { chooseScope, openMenu, scopeField } from './support/ui';
 
 test.setTimeout(120_000);
-// The Blocks table sits below the fold at the default height. A context menu is positioned in document coordinates (see the report on
-// CM2: the .action-menu position rule overrides the fixed one), so a scrolled page closes it at once. A tall viewport keeps the rows in view.
+// A tall viewport keeps the Blocks table in view without scrolling.
 test.use({ viewport: { width: 1280, height: 2400 } });
 
 // Decision 0066 and CM2: the Blocking tab's rows and the Block picker item have context menus that act on that row or Block.
@@ -37,9 +36,12 @@ test('a Blocks row menu renames a block that is not the current block', async ({
   await contextMenu(page, label).getByRole('menuitem', { name: 'Rename block…', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Rename block', exact: true });
   await expect(dialog.getByLabel('Name')).toHaveValue(label);
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await dialog.getByLabel('Name').fill(`${label} renamed`);
+  await dialog.getByRole('button', { name: 'Rename', exact: true }).click();
   await expect(dialog).toHaveCount(0);
+  // Decision 0066 acceptance 6: renaming a block that is not current keeps the current block.
   await expect(page.locator('.blocking-blocks-table tbody tr.selected-block-row .blocking-block-name button')).toHaveText(current);
+  await expect(page.locator('.blocking-blocks-table .blocking-block-name button', { hasText: `${label} renamed` })).toHaveCount(1);
 });
 
 test('deleting a block from its row menu keeps the current block selected', async ({ page }) => {

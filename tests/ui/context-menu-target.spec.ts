@@ -82,3 +82,18 @@ test('right-click with text selected inside a Trips row opens no app menu', asyn
   await cell.click({ button: 'right' });
   await expect(page.getByRole('menu', { name: /actions$/ })).toHaveCount(0);
 });
+
+test('on a scrolled page a row menu opens at the pointer, inside the window', async ({ page }) => {
+  await openTripsRows(page);
+  await page.setViewportSize({ width: 1024, height: 500 });
+  const cell = page.locator('.schedule-table tbody tr').nth(2).locator('.trip-run-time-column');
+  await cell.scrollIntoViewIfNeeded();
+  await page.evaluate(() => window.scrollBy(0, 40));
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await cell.click({ button: 'right' });
+  const menu = page.locator('.action-menu--context');
+  await expect(menu).toBeVisible();
+  const box = (await menu.boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(500);
+});
