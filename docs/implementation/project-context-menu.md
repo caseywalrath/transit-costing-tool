@@ -2,7 +2,7 @@
 
 - Decision: `docs/decisions/0064-project-context-menu-and-deletion-from-list.md`
 - Date: 2026-11-10
-- Status: Planned. No package started.
+- Status: Implemented (2026-11-10). See `project-context-menu-closeout.md`.
 
 ## Roles
 

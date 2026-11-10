@@ -1,6 +1,6 @@
 # Decision 0064: Project Context Menu, Deleting Any Project from the List, and Shared Context Menus
 
-- Status: Accepted (2026-11-10). Plan: `docs/implementation/project-context-menu.md`.
+- Status: Accepted and implemented (2026-11-10). Plan: `docs/implementation/project-context-menu.md`. Closeout: `docs/implementation/project-context-menu-closeout.md`.
 - Date: 2026-11-10 (user choice of option A: removing a project from the list deletes it from this browser)
 - Related: Decision 0061 (per-viewer convenience state), review issue I-045 (local data protection)
 
