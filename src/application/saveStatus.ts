@@ -148,8 +148,22 @@ export class LocalDataProtectionService implements LocalDataProtectionQueries {
   }
 
   /** Records that a JSON backup was exported now. */
-  recordBackupExported(): void {
-    this.update({ ...this.state, lastBackupExportedAt: this.now() });
+  recordBackupExported(projectId?: string): void {
+    const at = this.now();
+    const next: LocalDataProtection = { ...this.state, lastBackupExportedAt: at };
+    if (projectId !== undefined) next.projectBackupExportedAt = { ...this.state.projectBackupExportedAt, [projectId]: at };
+    this.update(next);
+  }
+
+  /** Forgets a deleted project's backup time (Decision 0064). */
+  forgetProjectBackup(projectId: string): void {
+    const current = this.state.projectBackupExportedAt;
+    if (!current || !(projectId in current)) return;
+    const { [projectId]: _removed, ...remaining } = current;
+    const next: LocalDataProtection = { ...this.state };
+    if (Object.keys(remaining).length > 0) next.projectBackupExportedAt = remaining;
+    else delete next.projectBackupExportedAt;
+    this.update(next);
   }
 
   private update(next: LocalDataProtection) {

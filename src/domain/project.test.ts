@@ -3,9 +3,9 @@ import { asSnapshot, goldenRaw, goldenWithAltBlocking, goldenWithDeadhead } from
 import { summarizeBlock } from './blocking';
 import { evaluateBlockEligibility } from './costing';
 import { metadata } from './ids';
-import { createScenarioRecords, duplicateRouteRecords, duplicateScenario, snapshotForScenario } from './project';
+import { createScenarioRecords, duplicateRouteRecords, duplicateScenario, projectLastChangedAt, snapshotForScenario } from './project';
 import { assertTripProfileReferences } from './trips';
-import type { Block, BlockingBlock, ProjectSnapshot } from './types';
+import type { Block, BlockingBlock, CostingAssumptions, ProjectSnapshot, Trip } from './types';
 
 describe('scenario duplication', () => {
   it('creates the four standard service days for a new scenario', () => {
@@ -239,5 +239,25 @@ describe('scenario duplication of automatic blocking records (Decision 0055)', (
     const snapshot = asSnapshot(goldenRaw());
     const source = snapshotForScenario(snapshot, snapshot.scenarios[0].id)!;
     expect(duplicateScenario(source, 'Copy').blockingScenarios!.every((scenario) => !('autoBlocking' in scenario))).toBe(true);
+  });
+});
+
+describe('projectLastChangedAt', () => {
+  const at = (day: number) => `2026-01-${String(day).padStart(2, '0')}T00:00:00.000Z`;
+  const base = (): ProjectSnapshot => ({ project: { id: 'p', name: 'Project', distanceUnit: 'miles', currencyCode: 'USD', ...metadata(at(1)) }, scenarios: [], serviceDays: [], routes: [], nodes: [], patterns: [], runtimeProfiles: [], runtimeAssignments: [], generationSets: [], trips: [], blocks: [] });
+
+  it('returns the latest updatedAt across the Project, a Trip and a Block', () => {
+    expect(projectLastChangedAt({ ...base(), trips: [{ updatedAt: at(5) } as Trip], blocks: [{ updatedAt: at(3) } as Block] })).toBe(at(5));
+    expect(projectLastChangedAt({ ...base(), blocks: [{ updatedAt: at(7) } as Block] })).toBe(at(7));
+  });
+
+  it('treats absent optional collections as empty and reads the ones that are present', () => {
+    expect(projectLastChangedAt({ ...base(), directions: undefined, tripProfiles: undefined, costingAssumptions: undefined })).toBe(at(1));
+    expect(projectLastChangedAt({ ...base(), costingAssumptions: [{ updatedAt: at(9) } as CostingAssumptions] })).toBe(at(9));
+  });
+
+  it('ignores values that are not dates', () => {
+    expect(projectLastChangedAt({ ...base(), trips: [{ updatedAt: 'not a date' } as Trip], blocks: [{ updatedAt: at(4) } as Block] })).toBe(at(4));
+    expect(projectLastChangedAt({ ...base(), trips: [{ updatedAt: 'not a date' } as Trip] })).toBe(at(1));
   });
 });

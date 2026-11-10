@@ -135,14 +135,18 @@ export function App({ service, tripService, blockingService, costingService, pla
     setRuntimeVersion((current) => current + 1);
   }
   async function createNewProject(name: string) { try { const created = await service.createProject(name); await reload(created.project.id, created.records.scenario.id); } catch (error) { showError(error, 'Unable to create project.'); } }
-  async function renameCurrentProject(name: string) { if (!selectedProject) return; try { const next = await service.renameProject(selectedProject.id, name); setProjects((current) => current.map((project) => project.id === next.id ? next : project)); } catch (error) { showError(error, 'Unable to rename project.'); } }
-  function deleteCurrentProject() {
-    if (!selectedProject) return;
-    void service.getProjectDeletionImpact(selectedProject.id).then((impact) => {
+  async function renameProjectById(project: Project, name: string) { try { const next = await service.renameProject(project.id, name); setProjects((current) => current.map((item) => item.id === next.id ? next : item)); } catch (error) { showError(error, 'Unable to rename project.'); } }
+  async function renameCurrentProject(name: string) { if (!selectedProject) return; await renameProjectById(selectedProject, name); }
+  function deleteProject(project: Project) {
+    void service.getProjectDeletionImpact(project.id).then((impact) => {
       const summary = `${impact.scenarioCount} scenario${impact.scenarioCount === 1 ? '' : 's'}, ${impact.routeCount} route${impact.routeCount === 1 ? '' : 's'}, ${impact.patternCount} pattern${impact.patternCount === 1 ? '' : 's'}, ${impact.tripCount} trip${impact.tripCount === 1 ? '' : 's'}, and ${impact.blockCount} block${impact.blockCount === 1 ? '' : 's'}`;
-      setConfirm({ title: 'Delete project?', text: `Delete “${selectedProject.name}” and its ${summary}? All related service days, runtime and trip profiles, blocking scenarios, and costing data will also be deleted. This cannot be undone.`, confirmLabel: 'Delete project', action: () => { void service.deleteProject(selectedProject.id, impact.reviewToken).then(async () => { setActiveTab('route'); await reload(selectedProject.id); }).catch((error) => showError(error, 'Unable to delete project.')); } });
+      const runDelete = () => { void service.deleteProject(project.id, impact.reviewToken).then(async () => { if (project.id === projectId) { setActiveTab('route'); await reload(project.id); } else { await reload(projectId, scenarioId, routeId); } }).catch((error) => showError(error, 'Unable to delete project.')); };
+      const backupNote = impact.backedUpSinceLastChange ? '' : ' No backup of this project has been exported since its last change.';
+      setConfirm({ title: 'Delete project?', text: `Delete “${project.name}” and its ${summary}? All related service days, runtime and trip profiles, blocking scenarios, and costing data will also be deleted. This cannot be undone.${backupNote}`, confirmLabel: 'Delete project', action: runDelete,
+        secondary: impact.backedUpSinceLastChange ? undefined : { label: 'Back up and delete', action: () => { void exportProjectJson(project).then((ok) => { if (ok) runDelete(); }); } } });
     }).catch((error) => showError(error, 'Unable to review project deletion.'));
   }
+  function deleteCurrentProject() { if (selectedProject) deleteProject(selectedProject); }
   async function addScenario(name: string) { if (!selectedProject) return; try { const next = await service.createScenario(selectedProject.id, name); await reload(selectedProject.id, next.scenario.id); } catch (error) { showError(error, 'Unable to create scenario.'); } }
   async function renameCurrentScenario(name: string) { if (!records) return; try { const next = await service.renameScenario(records, name); setRecords(next); setScenarioOptions((current) => current.map((scenario) => scenario.id === next.scenario.id ? next.scenario : scenario)); } catch (error) { showError(error, 'Unable to save scenario.'); } }
   async function duplicateCurrentScenario(name: string) { if (!records || !selectedProject) return; try { const next = await service.duplicateScenario(records, name); await reload(selectedProject.id, next.scenario.id); } catch (error) { showError(error, 'Unable to duplicate scenario.'); } }
@@ -198,7 +202,8 @@ export function App({ service, tripService, blockingService, costingService, pla
       setConfirm({ title: 'Delete pattern?',text: `Delete “${selectedPattern.name || 'Untitled pattern'}”${affected.length ? ` and remove ${affected.join(', ')}?` : '?'} This cannot be undone.`, confirmLabel: 'Delete pattern',action: () => { void service.deletePattern(selectedPattern.id, impact.reviewToken).then(async () => { setSelectedPatternId(''); await reload(projectId, scenarioId, routeId); }).catch((error) => showError(error, 'Unable to delete pattern.')); } });
     }).catch((error) => showError(error, 'Unable to review pattern deletion.'));
   }
-  async function exportJson() { if (!projectId || !selectedProject) return; try { download(`${selectedProject.name}.json`, await service.exportProject(projectId), 'application/json'); } catch (error) { showError(error, 'Unable to export the project backup. Your data was not changed. Try again.'); } }
+  async function exportProjectJson(project: Project): Promise<boolean> { try { download(`${project.name}.json`, await service.exportProject(project.id), 'application/json'); return true; } catch (error) { showError(error, 'Unable to export the project backup. Your data was not changed. Try again.'); return false; } }
+  async function exportJson() { if (!projectId || !selectedProject) return; await exportProjectJson(selectedProject); }
   async function importJson(event: ChangeEvent<HTMLInputElement>) { const file = event.target.files?.[0]; if (!file) return; try { const project = await service.importProject(await file.text()); setNotice({ kind: 'success', text: `Imported ${project.name} as an independent project.` }); await reload(project.id); } catch (error) { showError(error, 'Import failed.'); } finally { event.target.value = ''; } }
   function exportCsv() { if (!aggregate || !records || !selectedProject) return; try { const safe = selectedProject.name.replaceAll(/[^a-z0-9]+/gi, '-') || 'transit-costing-tool'; const files = service.exportAuthoritativeCsv(aggregate, records); downloadBlob(`${safe}-csv.zip`, createCsvArchive(files.map((file) => ({ filename: `${safe}-${file.suffix}.csv`, contents: file.contents })))); } catch (error) { showError(error, 'Unable to export the route CSV files. Try again.'); } }
   function requestRouteNavigation(action: () => void) {
@@ -235,9 +240,17 @@ export function App({ service, tripService, blockingService, costingService, pla
       setConfirm({ title: 'Delete trip profile?',text: `Delete “${profile.name}” and its ${tripDetail}${blockDetail}? ${blockingScenarioDetail}This cannot be undone.`, confirmLabel: 'Delete trip profile',action: () => { setTripProfileBusy(true); void tripService.deleteTripProfile(profile.id, impact.previewToken).then(() => reload(projectId, scenarioId, routeId)).catch((error) => showError(error, 'Unable to delete trip profile.')).finally(() => setTripProfileBusy(false)); } });
     }).catch((error) => showError(error, 'Unable to review trip profile deletion.'));
   }
+  function openProject(project: Project) { if (project.id !== projectId) requestRouteNavigation(() => { void reload(project.id).catch(selectionFailed); }); }
+  // The context menu of a project in the Projects group (Decision 0064). It acts on that project, which need not be the open one.
+  const projectContextGroups = (project: Project): MenuGroup[] => [
+    { items: [{ id: 'ctx-open', label: 'Open', disabled: project.id === projectId, onSelect: () => openProject(project) }] },
+    { items: [{ id: 'ctx-rename', label: 'Rename…', onSelect: () => setNameDialog({ title: 'Rename project', label: 'Project name', initialValue: project.name, submitLabel: 'Rename', action: (name) => renameProjectById(project, name) }) }] },
+    { label: 'Project data', items: [{ id: 'ctx-backup', label: 'Back up project (JSON)', note: protection.projectBackupExportedAt?.[project.id] ? `Last backup: ${formatBackupTime(protection.projectBackupExportedAt[project.id])}` : 'No backup exported yet', onSelect: () => { void exportProjectJson(project); } }] },
+    { items: [{ id: 'ctx-delete', label: 'Delete project…', destructive: true, onSelect: () => project.id === projectId ? requestRouteNavigation(() => deleteProject(project)) : deleteProject(project) }] },
+  ];
   const projectActions: MenuGroup[] = [
     { label: 'Projects', items: [
-      ...projects.map((project) => ({ id: `project-${project.id}`, label: project.name, checked: project.id === projectId, wrapLabel: true, onSelect: () => { if (project.id !== projectId) requestRouteNavigation(() => { void reload(project.id).catch(selectionFailed); }); } })),
+      ...projects.map((project) => ({ id: `project-${project.id}`, label: project.name, checked: project.id === projectId, wrapLabel: true, onSelect: () => openProject(project), contextGroups: () => projectContextGroups(project), contextHeading: project.name })),
       { id: 'new-project', label: 'New project…', onSelect: () => setNameDialog({ title: 'New project', submitLabel: 'New project',action: createNewProject }) },
     ] },
     { items: [{ id: 'rename-project', label: 'Rename project…', disabled: !selectedProject, onSelect: () => setNameDialog({ title: 'Rename project', label: 'Project name', initialValue: selectedProject?.name, submitLabel: 'Rename', action: renameCurrentProject }) }] },
