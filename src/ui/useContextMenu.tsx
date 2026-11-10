@@ -8,7 +8,8 @@ export type ContextMenuResolve = () => ContextMenuContent | undefined;
 
 const LONG_PRESS_MS = 500;
 const LONG_PRESS_SLOP_PX = 10;
-const FIELD_SELECTOR = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
+// Text fields only: a row's checkbox opens the row's menu.
+const FIELD_SELECTOR = 'input:not([type="checkbox"]):not([type="radio"]):not([type="button"]), textarea, select, [contenteditable]:not([contenteditable="false"])';
 const FOCUSABLE_SELECTOR = 'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
 type OpenMenu = ContextMenuContent & { point: { x: number; y: number }; returnTo: HTMLElement | null };
