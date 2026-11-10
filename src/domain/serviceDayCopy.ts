@@ -36,6 +36,8 @@ export interface TripCopyRequest {
 export interface BatchPatternChangeRequest {
   tripIds: EntityId[];
   targetPatternId: EntityId;
+  /** One anchor node for every selected Trip (Decision 0067 item 9). Absent keeps each Trip's first departure. */
+  anchorNodeId?: EntityId;
 }
 
 export interface CopySourceSignature {
@@ -342,7 +344,7 @@ export function buildBatchPatternChangePreview(
       changes.push({ tripId: trip.id, sourcePatternId: trip.patternId, targetPatternId: targetPattern.id, oldStopTimes: [...trip.stopTimes], finding: finding('trip', trip.id, 'trip.patternDirectionMismatch', 'trip.patternDirectionMismatch', 'patternId') });
       continue;
     }
-    const preview = profilesByTripId.get(trip.id) ? previewPatternChange(trip, targetPattern, profilesByTripId.get(trip.id)!) : { tripId: trip.id, sourcePatternId: trip.patternId, targetPatternId: targetPattern.id, oldStopTimes: [...trip.stopTimes], finding: finding('trip', trip.id, 'trip.targetRuntimeUnavailable', 'trip.targetRuntimeUnavailable', 'patternId') };
+    const preview = profilesByTripId.get(trip.id) ? previewPatternChange(trip, targetPattern, profilesByTripId.get(trip.id)!, { sourcePattern, anchorNodeId: request.anchorNodeId }) : { tripId: trip.id, sourcePatternId: trip.patternId, targetPatternId: targetPattern.id, oldStopTimes: [...trip.stopTimes], finding: finding('trip', trip.id, 'trip.targetRuntimeUnavailable', 'trip.targetRuntimeUnavailable', 'patternId') };
     const blockIds = blocks.filter((block) => block.activities.some((activity) => activity.type === 'revenueTrip' && activity.tripId === trip.id)).map((block) => block.id);
     for (const blockId of blockIds) affectedBlockIds.add(blockId);
     changes.push({ ...preview, affectedBlockIds: blockIds });
