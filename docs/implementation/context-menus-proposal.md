@@ -3,7 +3,7 @@
 - Status: Proposal. Not a decision. The user reviews it, and the chosen items become a decision record and an implementation plan.
 - Date: 2026-11-10
 - Builds on: Decision 0064 item 7 (shared context-menu rules), `src/ui/ContextMenu.tsx`, `src/ui/menuItems.tsx`
-- Evidence: the code as of `6a6afd1`. Each entry names the file that holds the existing behavior.
+- Evidence: the code as of `c899267` (after PR 52, Decision 0064, and PR 53, Decision 0065). Each entry names the file that holds the existing behavior.
 
 ## How to read this
 
@@ -85,7 +85,7 @@ These are menus that list objects. Each listed object gets the same context menu
 | Current block picker, `BlockingWorkspace.tsx` `currentBlockMenu` | Block | Open · Rename… · Edit notes… · Delete block… | **Do** | `setBlockDialog` already takes a block. `requestDeleteBlock()` uses `selectedBlock` and needs a block parameter. The same builder serves the Blocks table rows (B4). |
 | Trip profile picker, `TripsWorkspace.tsx` `tripProfileMenu` | Trip profile | Open · Rename… · Copy… · Delete… | **Consider** | Rename, copy and delete handlers act on the selected profile. There are usually only one or two profiles, so the benefit is small. |
 | Runtime profile picker, `runtimeProfileMenu` | Runtime profile | Open · Rename… · Copy… · Reverse-copy… · Delete… | **Consider** | Same as above. Reverse-copy depends on the candidates for the selected pattern. |
-| Pattern list, `RouteWorkspace.tsx` (aside buttons) | Pattern | Open · Reverse · Duplicate · Delete pattern… · Edit runtimes (Trips tab) | **Do** | These are list buttons, not menu items, so they need the CM0 target hook. They act on that pattern. An unsaved pattern draft asks the existing discard question first. "Edit runtimes" is **(new)** navigation (Category F). |
+| Pattern list, `RouteWorkspace.tsx` (aside buttons) | Pattern | Open · Reverse · Duplicate · Delete pattern… · Edit runtimes (Trips tab) | **Do** | These are list buttons, not menu items, so they need the CM0 target hook. They act on that pattern. The Decision 0065 distance items (Fill, Copy, Undo) are not offered here: Fill changes only the open pattern's draft, and Copy reads the open pattern after it is saved (Decision 0065 items 7 and 9). An unsaved pattern draft asks the existing discard question first. "Edit runtimes" is **(new)** navigation (Category F). |
 
 ### Category B: table rows with selection (the main new use)
 
@@ -151,7 +151,7 @@ The grids use `useGridNavigation`. A cell that is not in edit mode can show a co
 | Grid | Proposed items | Rec. |
 |---|---|---|
 | Runtimes, `RuntimeEditor.tsx` | Edit cell (F2) · Insert band above · Insert band below · Duplicate band · Remove band | **Do**. Duplicate and Remove are already row buttons; insert above and below are **(new)**, because the add button only appends. |
-| Pattern points, `RouteWorkspace.tsx` `PatternEditor` | Move up · Move down · Insert node above · Insert node below · Remove point | **Do**. Insert above and below are **(new)**. Long patterns now need an append followed by many moves up. |
+| Pattern points, `RouteWorkspace.tsx` `PatternEditor` | Edit segment (F2; rows after the first) · Move up · Move down · Insert node above · Insert node below · Remove point | **Do**. Since Decision 0065 the editable column is Segment mi, and the first row has no segment. Insert above and below are **(new)**. Long patterns now need an append followed by many moves up. An inserted point gets a 0 segment ("not entered", so Fill can supply it) and takes the cumulative miles of the point before it, so no later cumulative value moves. |
 | Nodes, `RouteGrids.tsx` | Edit cell · Remove node / Undo remove · New node | **Consider**. The row's trash button is visible. A "Used by N patterns" note would be **(new)**. |
 | Estimate factors, `EstimateFactorsGrid.tsx` | Edit cell · Clear (use All days) | **Consider** |
 | Planned frequencies, `PlannedFrequenciesPanel.tsx` | Insert period above · Insert period below · Remove period | **Defer**. Every cell is an input, so the browser menu wins almost everywhere. |
@@ -180,7 +180,7 @@ The grids use `useGridNavigation`. A cell that is not in edit mode can show a co
 | **Route.** A native `<select>` for choosing the route (`App.tsx` `routeSelect`, which also holds a "New route" option), plus a separate Route Actions ⋯ menu. | One Route switcher like Project and Scenario: a list of routes with New route, Rename, Duplicate, Export route CSV and Delete route, and a context menu on each route. The Actions ⋯ button goes away. | **Do**. A native option cannot have a context menu, and Route is the only scope level that works differently. This changes layout and interaction, so it is a UI-design (Sol) package. |
 | **Blocking scenario.** A native `<select>`, plus Blocking Actions ⋯, which holds the blocking-scenario commands under Decision 0053. | The same treatment as Route: a Blocking scenario switcher, with Auto-blocking… and Export in it. | **Consider**, after Route proves the pattern. |
 | **Current block.** The Block picker, plus Current block Actions ⋯ (Rename, Notes, Delete). | Keep both visible. Use one `blockGroups(block)` builder for Actions, the picker's context menus and the Blocks table rows. | **Do** (the shared builder only) |
-| **Pattern.** The Pattern editor header's Reverse button and Actions ⋯ (Duplicate, Delete), plus the proposed pattern list menu. | One `patternGroups(pattern)` builder for both. | **Do** |
+| **Pattern.** The Pattern editor header's Reverse button and Actions ⋯ (Duplicate, Delete, and the Decision 0065 items Fill distances…, Copy distances…, Undo last distance copy), plus the proposed pattern list menu. | One `patternGroups(pattern)` builder for both. The distance items appear only in the editor's Actions ⋯ (see Category A). | **Do** |
 | **Selecting by pattern** appears in three places: the Pattern chip menu, the "By pattern" group of "Select trips by…", and the proposed row menu. | One builder for these selection items. Keep the chip, because it is the fastest path. | **Do** |
 | **Selection bars** in Trips, Unassigned trips, Current block and Blocks, plus their proposed selection menus. | One command list per bar (1.5). | **Do** |
 | **Trips View ⋯** plus the proposed header menu. | The same `viewMenu` groups. | **Do** |
@@ -206,7 +206,7 @@ These items open another tab with a specific object selected. The app has no suc
 | CM2 | Blocking: `blockGroups` builder, the block picker context menu, and the Blocks, Current block and Unassigned row menus (A, B2–B4) | Haiku with exact steps, reviewed by Opus | CM0 |
 | CM3 | Scenario switcher context menu, plus by-id scenario rename and duplicate in the application layer | Haiku (application and tests), Opus (wiring) | none |
 | CM4 | Route switcher replacing the select and Actions ⋯ (E, first row) | Sol (design), then Haiku | CM3 |
-| CM5 | Grids: insert above and below, plus menus for Runtimes and Pattern points (C) | Haiku for the domain inserts, Opus for menus | CM0 |
+| CM5 | Grids: insert above and below, plus menus for Runtimes and Pattern points (C). A pattern-point insert follows Decision 0065: 0 segment, no change to later cumulative miles. | Haiku for the domain inserts, Opus for menus | CM0 |
 | CM6 | Copy table for result tables (D) | Haiku: a pure table-to-TSV helper with tests, then wiring | CM0 |
 | CM7 | Tab-to-tab navigation (F): its own decision first | Opus | CM1, CM2 |
 
