@@ -379,6 +379,11 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
       </WorkSurface>
     </div>
 
+    {result?.basis === 'estimated' && result.dailyRows.some((row) => row.impliedService?.length) && <WorkSurface title="Vehicle requirement" ariaLabel="Vehicle requirement" subtitle={tripProfileName ? `Trip profile ${tripProfileName}` : undefined}>
+      <CycleCalculator key={basisValue} result={result} rate={selectedYearResult?.appliedRateUsdPerRevenueHour} disabled={saving || !factorProfileId}
+        onUseLayover={(serviceDayId, fraction) => setFactors((current) => setEstimateFactor(current, serviceDayId, 'layoverFraction', Number(fraction.toFixed(6))))} />
+    </WorkSurface>}
+
     <WorkSurface title={`Cost breakdown · ${selectedYear}`} titleRef={estimateHeading} ariaLabel="Cost breakdown" badge={badge} subtitle={subtitle}>
       {result?.state === 'noEstimate' && <InlineNote kind="warn" live>{noEstimateText(result, tripProfileName)}</InlineNote>}
       {result?.state === 'invalid' && <div className="costing-alert error" role="alert"><p>The estimate cannot be calculated until the listed input or source-data problems are corrected.</p><ul>{result.findings.filter((finding) => finding.severity === 'error').map((finding, index) => <li key={`${finding.messageKey}-${finding.entityId}-${index}`}>{costingFindingMessage(finding, (id) => serviceDays.find((day) => day.id === id)?.name)}</li>)}</ul></div>}
@@ -386,11 +391,6 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
       {!result && calculating && <p className="table-empty" role="status">Calculating estimate…</p>}
       {!result && !calculating && !validation.length && <p className="table-empty">Select a cost basis to calculate an estimate.</p>}
     </WorkSurface>
-
-    {result?.basis === 'estimated' && result.dailyRows.some((row) => row.impliedService?.length) && <WorkSurface title="Cycle calculator" ariaLabel="Cycle calculator" subtitle={tripProfileName ? `Trip profile ${tripProfileName}` : undefined}>
-      <CycleCalculator key={basisValue} result={result} rate={selectedYearResult?.appliedRateUsdPerRevenueHour} disabled={saving || !factorProfileId}
-        onUseLayover={(serviceDayId, fraction) => setFactors((current) => setEstimateFactor(current, serviceDayId, 'layoverFraction', Number(fraction.toFixed(6))))} />
-    </WorkSurface>}
 
     <div className="costing-lower-grid">
       <SupportPanel title="Yearly outlook" ariaLabel="Yearly outlook">

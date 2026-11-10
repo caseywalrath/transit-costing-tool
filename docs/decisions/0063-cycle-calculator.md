@@ -1,4 +1,4 @@
-# Decision 0063: Cycle Calculator on the Costing Screen
+# Decision 0063: Vehicle Requirement (Cycle Calculator) on the Costing Screen
 
 - Status: Accepted and implemented (2026-11-10)
 - Date: 2026-11-10 (user choice of option A, one row per service day)
@@ -10,7 +10,7 @@ The Implied service panel showed what a layover % implies but did not let the pl
 
 ## Decision
 
-1. **Place.** With an estimated cost basis, a Cycle calculator surface follows the Cost breakdown. It has one row per service day with Trips, and per Route when the Scenario has more than one.
+1. **Place.** With an estimated cost basis, a Vehicle requirement surface precedes the Cost breakdown, because it is mainly an input (user request, 2026-11-10; first called "Cycle calculator" and placed after the Cost breakdown). It has one row per service day with Trips, and per Route when the Scenario has more than one.
 2. **Columns.** Service day, Cycle running (mean, min), Layover %, Cycle with layover (min), Headway (median, min), Vehicles, Revenue (h/day), Annual cost, and a Use button. The column labels name the statistic: cycle running is the sum of each direction's mean run time, and headway is the median departure gap (Decision 0062).
 3. **Starting values.**
    - Cycle running and headway start from the Trips. Headway starts blank when the directions' headways differ.

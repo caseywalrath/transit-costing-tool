@@ -1,5 +1,5 @@
 /**
- * The cycle calculator of the Costing screen (Decision 0063): vehicles = cycle with layover ÷ headway, and
+ * The Vehicle requirement calculator of the Costing screen (Decision 0063): vehicles = cycle with layover ÷ headway, and
  * cycle with layover = running cycle ÷ (1 − layover). Given the running cycle, one of layover, headway, and vehicles is solved from the
  * other two. Pure; nothing here is stored.
  */
