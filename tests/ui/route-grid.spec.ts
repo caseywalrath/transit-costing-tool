@@ -61,10 +61,10 @@ test('Nodes: New node focuses its Name cell, and Escape cancels an edit', async 
   await expect(gridCell(page, 'Node name').last()).toHaveText('Enter node name');
 });
 
-test('Pattern points: Cumulative mi edits with a parser message, and Tab reaches the Node select', async ({ page }) => {
+test('Pattern points: Segment mi edits with a parser message, and Tab reaches the Node select', async ({ page }) => {
   await createRouteWithPattern(page, 'Points grid');
   const points = page.getByRole('grid', { name: 'Pattern points' });
-  const distance = gridCell(page, 'Point 2 cumulative miles');
+  const distance = gridCell(page, 'Point 2 segment miles');
   await distance.click();
   await page.keyboard.press('Enter');
   await page.keyboard.type('abc');
@@ -78,7 +78,7 @@ test('Pattern points: Cumulative mi edits with a parser message, and Tab reaches
   await expect(distance).toHaveText('4.50');
   await expect(distance).toHaveClass(/grid-cell--edited/);
   await expect(points.locator('tbody tr output').nth(1)).toHaveText('4.50');
-  // Shift+Tab from Cumulative mi reaches the Node select of the same point.
+  // Shift+Tab from Segment mi reaches the Node select of the same point.
   await distance.click();
   await page.keyboard.press('Shift+Tab');
   expect(await page.evaluate(() => document.activeElement?.getAttribute('aria-label'))).toBe('Point 2 node');
@@ -108,8 +108,8 @@ test('Nodes and Pattern points: Tab wraps from the end of a row to the start of 
   await expect(gridCell(page, 'Node notes').first()).toHaveText('Note');
   expect(await focusedName()).toBe(`Remove ${firstName}`);
 
-  // Pattern points: Node, Cumulative mi, the enabled Order button, Remove, then the next point's Node.
-  await gridCell(page, 'Point 1 cumulative miles').click();
+  // Pattern points: Node, Segment mi, the enabled Order button, Remove, then the next point's Node.
+  await gridCell(page, 'Point 1 segment miles').click();
   await page.keyboard.press('Tab');
   expect(await focusedName()).toBe('Move point down');
   await page.keyboard.press('Tab');

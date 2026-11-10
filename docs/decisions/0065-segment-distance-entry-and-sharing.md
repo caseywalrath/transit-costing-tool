@@ -1,6 +1,6 @@
 # Decision 0065: Segment Distance Entry and Sharing Between Patterns
 
-- Status: Accepted
+- Status: Accepted and implemented
 - Date: 2026-11-10 (user request; plan: `docs/implementation/segment-distance-entry.md`)
 - Related: Decision 0049 (copy and fill of matching segment runtimes)
 
