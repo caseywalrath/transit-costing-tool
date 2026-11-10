@@ -4,7 +4,7 @@ import type { CostBasis, CostBasisOption, CostingCommands, CostingQueries, Costi
 import { ModalDialog } from '../ModalDialog';
 import type { CostingAssumptionsInput } from '../../domain/costing';
 import { DEFAULT_COSTING_ESCALATION } from '../../domain/costing';
-import { formatHours, formatMoney, MISSING } from '../format';
+import { formatMoney, MISSING } from '../format';
 import type { CostingAssumptions, CostingEstimateFactors, Scenario, ServiceDayDefinition, TripProfile, ValidationFinding } from '../../domain/types';
 import { sortServiceDays } from '../../domain/serviceDays';
 import { readRateHistory, readStoredRecord, rememberRate, storedText, writeRateHistory } from '../preferences';
@@ -21,6 +21,9 @@ import { CostSummaryView } from './CostSummaryView';
 import { estimateFactorsForTripProfile, type EstimateFactorOwner } from '../../domain/estimatedCosting';
 import { CycleCalculator } from './CycleCalculator';
 import { setEstimateFactor } from './EstimateFactorsGrid';
+import { annualHours, BREAKDOWN_COLUMNS, breakdownRows, costBreakdownText, dailyHours, money } from './costBreakdownText';
+import { tableToTsv } from '../tableText';
+import { useContextMenu } from '../useContextMenu';
 
 type Props = {
   /** The element in the header's scope bar that receives the scope selectors (UR-5). */
@@ -94,10 +97,7 @@ function downloadBlob(filename: string, blob: Blob) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-const dailyHours = (value: number) => formatHours(value, 'daily');
-const annualHours = (value: number) => formatHours(value, 'annual');
 const rate = (value: number) => formatMoney(value, { cents: true });
-const money = (value: number) => formatMoney(value);
 
 const COST_BASIS_PREFERENCE_KEY = 'transit-costing-tool.costing-basis.v1';
 const optionValue = (option: CostBasisOption) => `${option.kind}:${option.id}`;
@@ -137,6 +137,10 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
   const [navigationDialog, setNavigationDialog] = useState<{ action: () => void; factorsOnly?: boolean }>();
   const [summary, setSummary] = useState<CostSummary>();
   const [partialSummary, setPartialSummary] = useState<{ summary: CostSummary; reasons: string[] }>();
+  /** The outcome of the last Copy cost breakdown; it describes the table of `result` and `selectedYear`, so either change clears it. */
+  const [breakdownCopy, setBreakdownCopy] = useState<{ kind: 'ok' | 'warn'; text: string }>();
+  // Right-click, Shift+F10 or a touch press on the Cost breakdown opens the same list as Costing actions (Decision 0066 item 11).
+  const contextMenu = useContextMenu();
   const estimateHeading = useRef<HTMLHeadingElement>(null);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
@@ -210,6 +214,8 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
     return () => { current = false; };
     // `basis` is rebuilt every render from `basisValue`, which is the dependency that matters.
   }, [calculationInput, basisValue, basisOptions, costingService, scenario.id, validation]);
+
+  useEffect(() => { setBreakdownCopy(undefined); }, [result, selectedYear]);
 
   useEffect(() => {
     const guard = (action: () => void) => {
@@ -329,11 +335,24 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
     if (reasons.length) setPartialSummary({ summary: built, reasons }); else setSummary(built);
   }
 
+  /** Copies the Cost breakdown as tab-separated text (Decision 0066 item 11). A failed write changes only the status line. */
+  async function copyBreakdown() {
+    if (!result) return;
+    const text = tableToTsv(costBreakdownText(result, selectedYear, costingService.summarizeServiceDays(serviceDays).total));
+    try {
+      await navigator.clipboard.writeText(text);
+      setBreakdownCopy({ kind: 'ok', text: `Copied the cost breakdown for ${selectedYear}.` });
+    } catch {
+      setBreakdownCopy({ kind: 'warn', text: 'The browser did not allow copying. Use Export costing CSV instead.' });
+    }
+  }
+
   if (busy) return <section className="costing-workspace"><div className="prerequisite">Loading Costing…</div></section>;
 
   const summaryAvailable = !!result && (result.state === 'complete' || result.state === 'partial') && result.yearRows.length > 0;
   const costingActionsMenu: MenuGroup[] = [{ items: [
     { id: 'summary', label: 'View cost summary…', restoreFocus: false, disabled: !summaryAvailable || calculating, title: summaryAvailable ? undefined : 'Enter a rate and correct any input problems to view the cost summary.', onSelect: openSummary },
+    { id: 'copy', label: 'Copy cost breakdown', disabled: !result || !result.dailyRows.length, onSelect: () => void copyBreakdown() },
     { id: 'csv', label: 'Export costing CSV', disabled: saving || !result, onSelect: () => { void exportCsv(); } },
   ] }];
 
@@ -387,7 +406,9 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
     <WorkSurface title={`Cost breakdown · ${selectedYear}`} titleRef={estimateHeading} ariaLabel="Cost breakdown" badge={badge} subtitle={subtitle}>
       {result?.state === 'noEstimate' && <InlineNote kind="warn" live>{noEstimateText(result, tripProfileName)}</InlineNote>}
       {result?.state === 'invalid' && <div className="costing-alert error" role="alert"><p>The estimate cannot be calculated until the listed input or source-data problems are corrected.</p><ul>{result.findings.filter((finding) => finding.severity === 'error').map((finding, index) => <li key={`${finding.messageKey}-${finding.entityId}-${index}`}>{costingFindingMessage(finding, (id) => serviceDays.find((day) => day.id === id)?.name)}</li>)}</ul></div>}
-      {result && result.dailyRows.length > 0 && <CostBreakdownTable result={result} selectedYear={selectedYear} totalDays={annualDays.total} />}
+      {result && result.dailyRows.length > 0 && <CostBreakdownTable result={result} selectedYear={selectedYear} totalDays={annualDays.total}
+        menuTarget={contextMenu.target(() => ({ heading: `Cost breakdown · ${selectedYear}`, groups: costingActionsMenu }))} />}
+      {breakdownCopy && <InlineNote kind={breakdownCopy.kind} live>{breakdownCopy.text}</InlineNote>}
       {!result && calculating && <p className="table-empty" role="status">Calculating estimate…</p>}
       {!result && !calculating && !validation.length && <p className="table-empty">Select a cost basis to calculate an estimate.</p>}
     </WorkSurface>
@@ -400,6 +421,7 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
     {partialSummary && <ModalDialog role="alertdialog" labelledBy="cost-summary-partial-title" className="confirm-dialog" onClose={() => setPartialSummary(undefined)}><h2 id="cost-summary-partial-title">This estimate is partial</h2><p>The cost summary will not show that some service is left out:</p><ul>{partialSummary.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul><div className="dialog-actions"><button autoFocus onClick={() => setPartialSummary(undefined)}>Cancel</button><button className="primary" onClick={() => { setSummary(partialSummary.summary); setPartialSummary(undefined); }}>Open summary</button></div></ModalDialog>}
     {summary && <CostSummaryView summary={summary} onClose={() => setSummary(undefined)} />}
     {navigationDialog && <CostingNavigationDraftDialog factorsOnly={navigationDialog.factorsOnly} saving={saving} saveDisabled={(!navigationDialog.factorsOnly && validation.some((finding) => finding.severity === 'error')) || factorCellInvalid} onCancel={() => setNavigationDialog(undefined)} onDiscard={() => { const action = navigationDialog.action; if (!navigationDialog.factorsOnly) setAssumptions(loadedAssumptions ?? assumptions); setFactors(savedFactors); setNavigationDialog(undefined); action(); }} onSave={() => void saveAndNavigate()} />}
+    {contextMenu.menu}
   </div>;
 }
 
@@ -411,47 +433,15 @@ function noEstimateText(result: CostingResult, tripProfileName: string | undefin
   return `Enter a layover % for ${listText(missing)} or for All days to estimate revenue hours. Running hours are shown below.`;
 }
 
-/** One row of the Cost breakdown. A value the cost basis does not have is undefined and shows as a dash. */
-type BreakdownRow = {
-  key: string; name: string; days: number; trips?: number; blocks?: number;
-  running?: number; revenue?: number; platform?: number; dailyCost?: number;
-  annualRevenue?: number; annualPlatform?: number; annualCost?: number;
-};
+type ContextTarget = ReturnType<ReturnType<typeof useContextMenu>['target']>;
 
-/** The rows of either cost basis in one shape, so the blocked and estimated tables have the same eleven columns. */
-function breakdownRows(result: CostingResult, selectedYear: number): { rows: BreakdownRow[]; total: BreakdownRow } {
-  const year = result.yearRows.find((row) => row.serviceYear === selectedYear);
-  const sum = (values: Array<number | undefined>) => values.every((value) => value !== undefined) ? values.reduce<number>((total, value) => total + value!, 0) : undefined;
-  const rows: BreakdownRow[] = result.basis === 'estimated'
-    ? result.dailyRows.map((row) => { const cost = row.yearCosts.find((item) => item.serviceYear === selectedYear); return {
-      key: row.serviceDayId, name: row.serviceDayName, days: row.annualServiceDays, trips: row.tripCount, running: row.runningHoursPerDay,
-      revenue: row.revenueHoursPerDay, platform: row.platformHoursPerDay, dailyCost: cost?.costPerDayUsd,
-      annualRevenue: row.annualRevenueHours, annualPlatform: row.annualPlatformHours, annualCost: cost?.annualCostUsd,
-    }; })
-    : result.dailyRows.map((row) => { const cost = row.yearCosts.find((item) => item.serviceYear === selectedYear); return {
-      key: row.serviceDayId, name: row.serviceDayName, days: row.annualServiceDays, blocks: row.eligibleBlockCount,
-      revenue: row.revenueHoursPerDay, platform: row.platformHoursPerDay, dailyCost: cost?.costPerDayUsd,
-      annualRevenue: row.annualRevenueHours, annualPlatform: row.annualPlatformHours, annualCost: cost?.annualCostUsd,
-    }; });
-  const total: BreakdownRow = {
-    key: 'total', name: 'Total', days: rows.reduce((total, row) => total + row.days, 0),
-    ...(result.basis === 'estimated' ? { trips: result.tripCount } : { blocks: result.eligibleBlockCount }),
-    annualRevenue: year ? year.annualRevenueHours : sum(rows.map((row) => row.annualRevenue)),
-    annualPlatform: year ? year.annualPlatformHours : sum(rows.map((row) => row.annualPlatform)),
-    annualCost: year?.annualCostUsd,
-  };
-  return { rows, total };
-}
-
-const BREAKDOWN_COLUMNS = ['Service day', 'Days', 'Trips', 'Blocks', 'Daily running (h)', 'Daily revenue (h)', 'Daily platform (h)', 'Daily cost', 'Annual revenue (h)', 'Annual platform (h)', 'Annual cost'];
-
-function CostBreakdownTable({ result, selectedYear, totalDays }: { result: CostingResult; selectedYear: number; totalDays: number }) {
+function CostBreakdownTable({ result, selectedYear, totalDays, menuTarget }: { result: CostingResult; selectedYear: number; totalDays: number; menuTarget: ContextTarget }) {
   const { rows, total } = breakdownRows(result, selectedYear);
   const count = (value: number | undefined) => value === undefined ? MISSING : String(value);
   const daily = (value: number | undefined) => value === undefined ? MISSING : dailyHours(value);
   const annual = (value: number | undefined) => value === undefined ? MISSING : annualHours(value);
   const cash = (value: number | undefined) => value === undefined ? MISSING : money(value);
-  return <div className="table-scroll data-grid costing-results-table"><table>
+  return <div className="table-scroll data-grid costing-results-table" {...menuTarget}><table>
     <colgroup><col className="costing-col-day" /><col className="costing-col-count" /><col className="costing-col-count" /><col className="costing-col-count" />{Array.from({ length: 3 }, (_, index) => <col key={index} className="costing-col-hours" />)}<col className="costing-col-money" /><col className="costing-col-hours" /><col className="costing-col-hours" /><col className="costing-col-total" /></colgroup>
     <thead><tr>{BREAKDOWN_COLUMNS.map((name) => <th key={name} scope="col">{name}</th>)}</tr></thead>
     <tbody>{rows.map((row) => <tr key={row.key}><th scope="row">{row.name}</th><td>{row.days}</td><td>{count(row.trips)}</td><td>{count(row.blocks)}</td><td>{daily(row.running)}</td><td>{daily(row.revenue)}</td><td>{daily(row.platform)}</td><td>{cash(row.dailyCost)}</td><td>{annual(row.annualRevenue)}</td><td>{annual(row.annualPlatform)}</td><td>{cash(row.annualCost)}</td></tr>)}</tbody>
