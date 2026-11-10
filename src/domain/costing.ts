@@ -1,6 +1,6 @@
 import type { BlockSummary } from './blocking';
 import { sortServiceDays } from './serviceDays';
-import type { BlockingBlock, BlockingScenario, CostingAssumptions, CostingEstimateFactors, Scenario, ServiceDayDefinition, Trip, TripProfile, ValidationFinding } from './types';
+import type { BlockingBlock, BlockingScenario, CostingAssumptions, CostingEstimateFactors, Scenario, ServiceDayDefinition, Trip, TripProfile, TripProfileEstimateFactors, ValidationFinding } from './types';
 
 export const MAX_ANNUAL_SERVICE_DAYS = 365;
 export const MAX_COSTING_FUTURE_YEARS = 10;
@@ -183,6 +183,26 @@ export function validateCostingAssumptions(assumptions: CostingAssumptionsInput,
     findings.push(assumptionFinding('costing.sourceNoteInvalid', 'sourceNote'));
   }
   if (assumptions.estimateFactors !== undefined) findings.push(...validateEstimateFactors(assumptions.estimateFactors, scenarioId));
+  const owned = (assumptions as { tripProfileEstimateFactors?: unknown }).tripProfileEstimateFactors;
+  if (owned !== undefined) findings.push(...validateTripProfileEstimateFactors(owned, scenarioId));
+  return findings;
+}
+
+/** Decision 0062: an array with one entry per Trip Profile, each holding valid factors. */
+function validateTripProfileEstimateFactors(entries: unknown, scenarioId: string): CostingFinding[] {
+  const invalid = (tripProfileId = '') => costingFinding('costing.tripProfileEstimateFactorsInvalid', 'error', 'costingAssumptions', scenarioId, 'tripProfileEstimateFactors', { tripProfileId });
+  if (!Array.isArray(entries)) return [invalid()];
+  const findings: CostingFinding[] = [];
+  const seen = new Set<string>();
+  for (const entry of entries as Array<Partial<TripProfileEstimateFactors> | null>) {
+    if (typeof entry !== 'object' || entry === null || typeof entry.tripProfileId !== 'string' || !entry.tripProfileId.trim()
+      || typeof entry.factors !== 'object' || entry.factors === null || seen.has(entry.tripProfileId)) {
+      findings.push(invalid(typeof entry?.tripProfileId === 'string' ? entry.tripProfileId : ''));
+      continue;
+    }
+    seen.add(entry.tripProfileId);
+    findings.push(...validateEstimateFactors(entry.factors, scenarioId));
+  }
   return findings;
 }
 

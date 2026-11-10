@@ -268,6 +268,8 @@ export interface CostingContextSources {
   listTrips(scenarioId: string, tripProfileId: string): Promise<Trip[]>;
   listPatterns(scenarioId: string): Promise<RoutePattern[]>;
   listBlockingBlocks(blockingScenarioId: string): Promise<BlockingBlock[]>;
+  /** Route names for the implied-service check (Decision 0062). Optional: without it Routes are shown by ID order without names. */
+  listRoutes?(scenarioId: string): Promise<import('../domain/types').Route[]>;
 }
 
 /** Read source contract needed to assemble a calculation without persisting derived costs. */
@@ -310,10 +312,11 @@ export interface CostingCommands {
   /** Never changes the stored estimate factors; `saveEstimateFactors` does. */
   saveAssumptions(scenarioId: string, assumptions: CostingAssumptionsInput): Promise<CostingAssumptions>;
   /**
-   * Saves the typed layover and deadhead factors of an estimated cost basis. Blank rows and rows of days outside the Scenario are dropped.
-   * `assumptionsIfNew` creates the assumptions record when the Scenario has none yet.
+   * Saves the typed layover and deadhead factors of one Trip Profile (Decision 0062). Blank rows and rows of days outside the Scenario are
+   * dropped; all-blank factors are saved as an empty set, so the Profile stops using the Scenario's shared factors. Entries of Trip Profiles
+   * that no longer exist are dropped. `assumptionsIfNew` creates the assumptions record when the Scenario has none yet.
    */
-  saveEstimateFactors(scenarioId: string, factors: CostingEstimateFactors | undefined, assumptionsIfNew: CostingAssumptionsInput): Promise<CostingAssumptions>;
+  saveEstimateFactors(scenarioId: string, tripProfileId: string, factors: CostingEstimateFactors | undefined, assumptionsIfNew: CostingAssumptionsInput): Promise<CostingAssumptions>;
 }
 
 /** Application query surface for the selected Blocking Scenario's derived cost estimate. */

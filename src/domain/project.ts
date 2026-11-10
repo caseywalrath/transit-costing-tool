@@ -23,6 +23,7 @@ import { remapMeasureNodes } from './plannedFrequencies';
 import { createBlockingScenario } from './blocking';
 import { metadata, newId, withUpdatedAt } from './ids';
 import { createStandardServiceDays } from './serviceDays';
+import { remapEstimateFactorDays, remapTripProfileEstimateFactors } from './estimatedCosting';
 
 export function createProject(name: string, now = new Date().toISOString()): Project {
   if (!name.trim()) throw new Error('Project name is required');
@@ -267,7 +268,9 @@ export function duplicateScenario(source: ScenarioRecords, targetName: string, n
       id: newId(),
       scenarioId: scenario.id,
       // The typed estimate factors name service days, which get new identifiers in the copy (Decision 0051).
-      ...(source.costingAssumptions.estimateFactors ? { estimateFactors: { ...source.costingAssumptions.estimateFactors, serviceDays: source.costingAssumptions.estimateFactors.serviceDays.map((row) => ({ ...row, serviceDayId: serviceDayIds.get(row.serviceDayId) ?? row.serviceDayId })) } } : {}),
+      ...(source.costingAssumptions.estimateFactors ? { estimateFactors: remapEstimateFactorDays(source.costingAssumptions.estimateFactors, serviceDayIds) } : {}),
+      // Decision 0062: each Trip Profile's own factors follow it into the copy.
+      ...(source.costingAssumptions.tripProfileEstimateFactors ? { tripProfileEstimateFactors: remapTripProfileEstimateFactors(source.costingAssumptions.tripProfileEstimateFactors, tripProfileIds, serviceDayIds) } : {}),
       ...metadata(now),
     }
     : undefined;

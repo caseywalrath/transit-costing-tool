@@ -135,7 +135,7 @@ describe('backup', () => {
       generationSets: [], trips: [], blocks: [],
     };
     const exported = JSON.parse(exportProjectJson(source));
-    expect(exported.exportSchemaVersion).toBe(10);
+    expect(exported.exportSchemaVersion).toBe(11);
     expect(exported.costingAssumptions).toEqual(source.costingAssumptions);
     expect(importProjectJson(JSON.stringify(exported)).costingAssumptions).toEqual(source.costingAssumptions);
 
@@ -163,7 +163,7 @@ describe('backup', () => {
 
     it('round trips every factor in a version 7 file', () => {
       const payload = exportProjectJson(sourceWith(factors));
-      expect(JSON.parse(payload).exportSchemaVersion).toBe(10);
+      expect(JSON.parse(payload).exportSchemaVersion).toBe(11);
       expect(importProjectJson(payload).costingAssumptions?.[0].estimateFactors).toEqual(factors);
     });
 
@@ -201,6 +201,58 @@ describe('backup', () => {
       expect(rows.map((row) => row.layoverFraction)).toEqual([0.178, undefined]);
       expect(copy.costingAssumptions![0].estimateFactors!.allDays).toEqual(factors.allDays);
       expect(source.costingAssumptions![0].estimateFactors!.serviceDays.map((row) => row.serviceDayId)).toEqual(['d', 'e']);
+    });
+
+    describe('Trip-Profile-owned factors (schema 11, Decision 0062)', () => {
+      const own = [{ tripProfileId: 'tp', factors: { allDays: { layoverFraction: 0.122 }, serviceDays: [{ serviceDayId: 'e', layoverFraction: 0.2 }] } }];
+      const sourceWithOwn = (entries: unknown) => {
+        const source = sourceWith(factors) as unknown as { costingAssumptions: Array<Record<string, unknown>> };
+        source.costingAssumptions[0].tripProfileEstimateFactors = entries;
+        return source as unknown as Parameters<typeof exportProjectJson>[0];
+      };
+
+      it('round trips the entries in a version 11 file, next to the shared factors', () => {
+        const restored = importProjectJson(exportProjectJson(sourceWithOwn(own)));
+        expect(restored.costingAssumptions?.[0].tripProfileEstimateFactors).toEqual(own);
+        expect(restored.costingAssumptions?.[0].estimateFactors).toEqual(factors);
+      });
+
+      it('drops the field from a version 10 file instead of failing', () => {
+        const file = JSON.parse(exportProjectJson(sourceWithOwn(own)));
+        file.exportSchemaVersion = 10;
+        const restored = importProjectJson(JSON.stringify(file));
+        expect('tripProfileEstimateFactors' in restored.costingAssumptions![0]).toBe(false);
+        expect(restored.costingAssumptions?.[0].estimateFactors).toEqual(factors);
+      });
+
+      it.each([
+        ['a non-array', 5, /tripProfileEstimateFactors must be an array/],
+        ['an entry without a Trip profile', [{ factors: { allDays: {}, serviceDays: [] } }], /tripProfileEstimateFactors\[0\]\.tripProfileId must be a non-empty string/],
+        ['a Trip profile of another Scenario', [{ tripProfileId: 'tp2', factors: { allDays: {}, serviceDays: [] } }], /names a Trip profile that is not in this Scenario/],
+        ['an unknown Trip profile', [{ tripProfileId: 'gone', factors: { allDays: {}, serviceDays: [] } }], /names a Trip profile that is not in this Scenario/],
+        ['a Trip profile listed twice', [...own, ...own], /tripProfileEstimateFactors\[1\] repeats Trip profile tp/],
+        ['an invalid layover', [{ tripProfileId: 'tp', factors: { allDays: { layoverFraction: 1 }, serviceDays: [] } }], /tripProfileEstimateFactors\[0\]\.factors allDays\.layoverFraction/],
+        ['a service day of another Scenario', [{ tripProfileId: 'tp', factors: { allDays: {}, serviceDays: [{ serviceDayId: 'x', layoverFraction: 0.1 }] } }], /names a service day that is not in this Scenario/],
+      ])('refuses %s', (_label, entries, message) => {
+        expect(() => importProjectJson(exportProjectJson(sourceWithOwn(entries)))).toThrow(message);
+      });
+
+      it('remaps the Trip Profile and service-day identifiers when imported as a copy and when the Scenario is duplicated', () => {
+        const source = importProjectJson(exportProjectJson(sourceWithOwn(own)));
+        const copy = cloneProjectSnapshot(source, '2026-01-01T00:00:00.000Z');
+        const copiedScenarioId = copy.costingAssumptions![0].scenarioId;
+        const [entry] = copy.costingAssumptions![0].tripProfileEstimateFactors!;
+        expect(entry.tripProfileId).toBe(copy.tripProfiles!.find((profile) => profile.scenarioId === copiedScenarioId)!.id);
+        expect(entry.factors.serviceDays[0].serviceDayId).toBe(copy.serviceDays.find((day) => day.scenarioId === copiedScenarioId && day.kind === 'saturday')!.id);
+        expect(entry.factors.serviceDays[0].layoverFraction).toBe(0.2);
+
+        const records = snapshotForScenario(source, 's')!;
+        const duplicated = duplicateScenario(records, 'Copy', '2026-01-01T00:00:00.000Z');
+        const [duplicatedEntry] = duplicated.costingAssumptions!.tripProfileEstimateFactors!;
+        expect(duplicatedEntry.tripProfileId).toBe(duplicated.tripProfiles![0].id);
+        expect(duplicatedEntry.tripProfileId).not.toBe('tp');
+        expect(duplicatedEntry.factors.serviceDays[0].serviceDayId).toBe(duplicated.serviceDays.find((day) => day.kind === 'saturday')!.id);
+      });
     });
   });
 
@@ -327,7 +379,7 @@ describe('automatic blocking record in backups (schema 8 and 9, Decisions 0055 a
   it('round trips the record, including maxVehicles, in a version 9 file (written as version 9)', () => {
     const file = fileWithRecord(9, (record) => { record.rules.maxVehicles = 12; });
     const exported = JSON.parse(exportProjectJson(importProjectJson(JSON.stringify(file))));
-    expect(exported.exportSchemaVersion).toBe(10);
+    expect(exported.exportSchemaVersion).toBe(11);
     expect(exported.blockingScenarios[0].autoBlocking).toEqual(file.blockingScenarios[0].autoBlocking);
     expect(exported.blockingScenarios[0].autoBlocking.rules.maxVehicles).toBe(12);
   });
@@ -393,7 +445,7 @@ describe('automatic blocking record in backups (schema 8 and 9, Decisions 0055 a
     it('round trips a stored abbreviation, writes it at schema version 10, and omits it when absent', () => {
       const snapshot = snapshotWith(days);
       const exported = JSON.parse(exportProjectJson(snapshot));
-      expect(exported.exportSchemaVersion).toBe(10);
+      expect(exported.exportSchemaVersion).toBe(11);
       expect(exported.serviceDays[0].abbreviation).toBe('WK');
       expect(exported.serviceDays[1]).not.toHaveProperty('abbreviation');
       expect(importProjectJson(JSON.stringify(exported)).serviceDays).toEqual(snapshot.serviceDays);

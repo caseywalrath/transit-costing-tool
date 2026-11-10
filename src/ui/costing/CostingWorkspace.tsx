@@ -18,6 +18,9 @@ import { countAssumptionChanges, countEstimateFactorChanges } from '../../applic
 import { MenuButton, type MenuGroup } from '../MenuButton';
 import { buildCostSummary, costSummaryPartialReasons, type CostSummary } from '../../domain/costSummary';
 import { CostSummaryView } from './CostSummaryView';
+import { estimateFactorsForTripProfile, type EstimateFactorOwner } from '../../domain/estimatedCosting';
+import { CycleCalculator } from './CycleCalculator';
+import { setEstimateFactor } from './EstimateFactorsGrid';
 
 type Props = {
   /** The element in the header's scope bar that receives the scope selectors (UR-5). */
@@ -130,7 +133,8 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
   const [calculating, setCalculating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [rateHistory, setRateHistory] = useState(() => readRateHistory());
-  const [navigationDialog, setNavigationDialog] = useState<{ action: () => void }>();
+  /** `factorsOnly`: the dialog guards a change of cost basis, which leaves unsaved assumptions in place. */
+  const [navigationDialog, setNavigationDialog] = useState<{ action: () => void; factorsOnly?: boolean }>();
   const [summary, setSummary] = useState<CostSummary>();
   const [partialSummary, setPartialSummary] = useState<{ summary: CostSummary; reasons: string[] }>();
   const estimateHeading = useRef<HTMLHeadingElement>(null);
@@ -155,6 +159,19 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
   const years = costingService.listServiceYears(assumptions);
   const selectedYear = years.includes(viewYear) ? viewYear : years[0];
   const selectedYearResult = result?.yearRows.find((row) => row.serviceYear === selectedYear);
+  // Decision 0062: the factors panel edits the factors of the selected cost basis's Trip Profile.
+  const factorProfileId = selectedOption?.tripProfileId;
+  const factorOwner = factorProfileId ? estimateFactorsForTripProfile(persisted, factorProfileId).owner : 'none';
+  const persistedRef = useRef<CostingAssumptions | undefined>(undefined);
+  persistedRef.current = persisted;
+  const factorProfileRef = useRef(factorProfileId);
+  factorProfileRef.current = factorProfileId;
+  useEffect(() => {
+    if (busy) return;
+    const own = factorProfileId ? estimateFactorsForTripProfile(persistedRef.current, factorProfileId).factors : undefined;
+    setSavedFactors(own);
+    setFactors(own);
+  }, [busy, factorProfileId]);
   // The estimate always uses the draft assumptions and the draft factors.
   const calculationInput = useMemo<CostingAssumptionsInput>(() => ({ ...assumptions, ...(factors ? { estimateFactors: factors } : {}) }), [assumptions, factors]);
 
@@ -172,10 +189,9 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
             : optionValue(options.find((option) => option.kind === 'blocked') ?? options[0] ?? { kind: 'estimated', id: '', name: '', tripProfileId: '', tripProfileName: '' }));
         const next = stored ? toInput(stored) : initialAssumptions();
         setPersisted(stored);
+        persistedRef.current = stored;
         setLoadedAssumptions(next);
         setAssumptions(next);
-        setSavedFactors(stored?.estimateFactors);
-        setFactors(stored?.estimateFactors);
         setViewYear(next.baseServiceYear);
       })
       .catch((error) => onErrorRef.current(error, 'Unable to load Costing.'))
@@ -219,6 +235,16 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
   }
 
   function chooseBasis(value: string) {
+    // Unsaved factors belong to one Trip Profile; a basis of another Trip Profile asks to save or discard them first (Decision 0062).
+    const next = basisOptions.find((option) => optionValue(option) === value);
+    if (hasUnsavedFactors && next && next.tripProfileId !== factorProfileId) {
+      setNavigationDialog({ action: () => applyBasis(value), factorsOnly: true });
+      return;
+    }
+    applyBasis(value);
+  }
+
+  function applyBasis(value: string) {
     setBasisValue(value);
     rememberBasis(scenario.id, value);
     window.setTimeout(() => estimateHeading.current?.focus(), 0);
@@ -241,16 +267,24 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
     finally { setSaving(false); }
   }
 
-  /** Saves the typed factors only. A Scenario without an assumptions record gets one from the loaded defaults, never from unsaved edits. */
+  /**
+   * Saves the typed factors of the selected basis's Trip Profile only (Decision 0062). A Scenario without an assumptions record gets one from
+   * the loaded defaults, never from unsaved edits.
+   */
   async function saveFactors(): Promise<boolean> {
-    if (factorCellInvalid) return false;
+    if (factorCellInvalid || !factorProfileId) return false;
     setSaving(true);
     try {
-      const saved = await costingService.saveEstimateFactors(scenario.id, factors, persisted ? toInput(persisted) : loadedAssumptions ?? initialAssumptions());
+      const saved = await costingService.saveEstimateFactors(scenario.id, factorProfileId, factors, persisted ? toInput(persisted) : loadedAssumptions ?? initialAssumptions());
       setPersisted(saved);
+      persistedRef.current = saved;
       if (!persisted) setLoadedAssumptions(toInput(saved));
-      setSavedFactors(saved.estimateFactors);
-      setFactors(saved.estimateFactors);
+      // The planner may have chosen another Trip Profile's basis while the save ran; its grid is then left as it is.
+      if (factorProfileRef.current === factorProfileId) {
+        const own = estimateFactorsForTripProfile(saved, factorProfileId).factors;
+        setSavedFactors(own);
+        setFactors(own);
+      }
       return true;
     } catch (error) { onError(error, 'Unable to save the estimate factors.'); return false; }
     finally { setSaving(false); }
@@ -266,7 +300,7 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
   async function saveAndNavigate() {
     if (!navigationDialog) return;
     const action = navigationDialog.action;
-    if (hasUnsavedAssumptions && !(await save())) return;
+    if (!navigationDialog.factorsOnly && hasUnsavedAssumptions && !(await save())) return;
     if (hasUnsavedFactors && !(await saveFactors())) return;
     setNavigationDialog(undefined);
     action();
@@ -339,8 +373,9 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
         <p className="costing-days">Annual service days: {serviceDays.map((day) => <span key={day.id}><strong>{day.name}</strong> {day.annualServiceDays}</span>)}<span className={annualDays.exceedsMaximum ? 'invalid' : ''}><strong>Total</strong> {annualDays.total} of {annualDays.maximum}</span></p>
         {validation.length > 0 && <div className="costing-alert error" id="costing-assumptions-alert" role="alert">Review the rate, years, horizon, and escalation. The rate year cannot be later than the base service year.</div>}
       </WorkSurface>
-      <WorkSurface title="Estimate factors" ariaLabel="Estimate factors" subtitle="Blank days use All days" footer={hasUnsavedFactors && <SaveBar message={`${plural(factorChangeCount, 'unsaved change')} · the estimate below already includes ${factorChangeCount === 1 ? 'it' : 'them'}`} saveLabel={saving ? 'Saving…' : 'Save factors'} busy={saving} saveDisabled={factorCellInvalid} onSave={() => void saveFactors()} onDiscard={() => setFactors(savedFactors)} />}>
-        <EstimateFactorsGrid days={days} factors={factors} savedFactors={savedFactors} disabled={saving} onChange={setFactors} onInvalidChange={setFactorCellInvalid} />
+      <WorkSurface title="Estimate factors" ariaLabel="Estimate factors" subtitle={factorSubtitle(tripProfileName, factorOwner)} footer={hasUnsavedFactors && <SaveBar message={`${plural(factorChangeCount, 'unsaved change')} · the estimate below already includes ${factorChangeCount === 1 ? 'it' : 'them'}`} saveLabel={saving ? 'Saving…' : 'Save factors'} busy={saving} saveDisabled={factorCellInvalid} onSave={() => void saveFactors()} onDiscard={() => setFactors(savedFactors)} />}>
+        <EstimateFactorsGrid days={days} factors={factors} savedFactors={savedFactors} disabled={saving || !factorProfileId} onChange={setFactors} onInvalidChange={setFactorCellInvalid} />
+        {factorOwner === 'scenario' && <InlineNote>These are the scenario&rsquo;s shared factors. Saving stores factors for this trip profile only.</InlineNote>}
       </WorkSurface>
     </div>
 
@@ -352,6 +387,11 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
       {!result && !calculating && !validation.length && <p className="table-empty">Select a cost basis to calculate an estimate.</p>}
     </WorkSurface>
 
+    {result?.basis === 'estimated' && result.dailyRows.some((row) => row.impliedService?.length) && <WorkSurface title="Cycle calculator" ariaLabel="Cycle calculator" subtitle={tripProfileName ? `Trip profile ${tripProfileName}` : undefined}>
+      <CycleCalculator key={basisValue} result={result} rate={selectedYearResult?.appliedRateUsdPerRevenueHour} disabled={saving || !factorProfileId}
+        onUseLayover={(serviceDayId, fraction) => setFactors((current) => setEstimateFactor(current, serviceDayId, 'layoverFraction', Number(fraction.toFixed(6))))} />
+    </WorkSurface>}
+
     <div className="costing-lower-grid">
       <SupportPanel title="Yearly outlook" ariaLabel="Yearly outlook">
         {result?.yearRows.length ? <div className="table-scroll data-grid costing-outlook-table"><table><thead><tr><th scope="col">Year</th><th scope="col">Applied $ per revenue hour</th><th scope="col">Annual cost</th></tr></thead><tbody>{result.yearRows.map((row) => <tr key={row.serviceYear} className={row.serviceYear === selectedYear ? 'selected-costing-year' : ''}><th scope="row"><button className="link-button" onClick={() => setViewYear(row.serviceYear)}>{row.serviceYear}</button></th><td>{rate(row.appliedRateUsdPerRevenueHour)}</td><td>{money(row.annualCostUsd)}</td></tr>)}</tbody></table></div> : <InlineNote>Appears after you enter an operating cost rate.</InlineNote>}
@@ -359,7 +399,7 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
     </div>
     {partialSummary && <ModalDialog role="alertdialog" labelledBy="cost-summary-partial-title" className="confirm-dialog" onClose={() => setPartialSummary(undefined)}><h2 id="cost-summary-partial-title">This estimate is partial</h2><p>The cost summary will not show that some service is left out:</p><ul>{partialSummary.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul><div className="dialog-actions"><button autoFocus onClick={() => setPartialSummary(undefined)}>Cancel</button><button className="primary" onClick={() => { setSummary(partialSummary.summary); setPartialSummary(undefined); }}>Open summary</button></div></ModalDialog>}
     {summary && <CostSummaryView summary={summary} onClose={() => setSummary(undefined)} />}
-    {navigationDialog && <CostingNavigationDraftDialog saving={saving} saveDisabled={validation.some((finding) => finding.severity === 'error') || factorCellInvalid} onCancel={() => setNavigationDialog(undefined)} onDiscard={() => { const action = navigationDialog.action; setAssumptions(loadedAssumptions ?? assumptions); setFactors(savedFactors); setNavigationDialog(undefined); action(); }} onSave={() => void saveAndNavigate()} />}
+    {navigationDialog && <CostingNavigationDraftDialog factorsOnly={navigationDialog.factorsOnly} saving={saving} saveDisabled={(!navigationDialog.factorsOnly && validation.some((finding) => finding.severity === 'error')) || factorCellInvalid} onCancel={() => setNavigationDialog(undefined)} onDiscard={() => { const action = navigationDialog.action; if (!navigationDialog.factorsOnly) setAssumptions(loadedAssumptions ?? assumptions); setFactors(savedFactors); setNavigationDialog(undefined); action(); }} onSave={() => void saveAndNavigate()} />}
   </div>;
 }
 
@@ -419,6 +459,12 @@ function CostBreakdownTable({ result, selectedYear, totalDays }: { result: Costi
   </table></div>;
 }
 
-function CostingNavigationDraftDialog({ saving, saveDisabled, onCancel, onDiscard, onSave }: { saving: boolean; saveDisabled: boolean; onCancel: () => void; onDiscard: () => void; onSave: () => void }) {
-  return <ModalDialog role="alertdialog" labelledBy="costing-navigation-draft-title" className="confirm-dialog" onClose={onCancel} busy={saving}><h2 id="costing-navigation-draft-title">Save costing changes before leaving?</h2><p>Costing assumptions or estimate factors have unsaved changes.</p><div className="dialog-actions"><button autoFocus disabled={saving} onClick={onCancel}>Cancel</button><button className="danger" disabled={saving} onClick={onDiscard}>Discard</button><button className="primary" disabled={saving || saveDisabled} onClick={onSave}>{saving ? 'Saving…' : 'Save'}</button></div></ModalDialog>;
+/** The Estimate factors subtitle: whose factors the grid holds (Decision 0062). */
+function factorSubtitle(tripProfileName: string | undefined, owner: EstimateFactorOwner): string {
+  const name = tripProfileName ? `Trip profile ${tripProfileName}` : 'No trip profile';
+  return owner === 'scenario' ? `${name} · shared scenario factors` : `${name} · blank days use All days`;
+}
+
+function CostingNavigationDraftDialog({ factorsOnly, saving, saveDisabled, onCancel, onDiscard, onSave }: { factorsOnly?: boolean; saving: boolean; saveDisabled: boolean; onCancel: () => void; onDiscard: () => void; onSave: () => void }) {
+  return <ModalDialog role="alertdialog" labelledBy="costing-navigation-draft-title" className="confirm-dialog" onClose={onCancel} busy={saving}><h2 id="costing-navigation-draft-title">{factorsOnly ? 'Save estimate factors before changing the cost basis?' : 'Save costing changes before leaving?'}</h2><p>{factorsOnly ? 'The estimate factors of this trip profile have unsaved changes. The other cost basis uses another trip profile’s factors.' : 'Costing assumptions or estimate factors have unsaved changes.'}</p><div className="dialog-actions"><button autoFocus disabled={saving} onClick={onCancel}>Cancel</button><button className="danger" disabled={saving} onClick={onDiscard}>Discard</button><button className="primary" disabled={saving || saveDisabled} onClick={onSave}>{saving ? 'Saving…' : 'Save'}</button></div></ModalDialog>;
 }

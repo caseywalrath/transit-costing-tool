@@ -27,7 +27,7 @@ test('round trip', async ({ page }) => {
   const file = await (await download).path();
   const text = readFileSync(file, 'utf8');
   const parsed = JSON.parse(text);
-  expect(parsed.exportSchemaVersion).toBe(10);
+  expect(parsed.exportSchemaVersion).toBe(11);
   const rec = parsed.blockingScenarios.find((s: any) => s.name === name).autoBlocking;
   expect(rec.rules.maxVehicles).toBe(17);
   await page.locator('input[type="file"][accept="application/json,.json"]').setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(text) });

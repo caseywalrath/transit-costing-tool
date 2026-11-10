@@ -8,6 +8,7 @@ import { assertRuntimeGraph } from './runtimePersistence';
 import { assertTripProfileReferences } from '../domain/trips';
 import { sortServiceDays } from '../domain/serviceDays';
 import { orderDirections } from '../domain/directions';
+import { assumptionsAfterTripProfileCopy, assumptionsAfterTripProfileDeletion } from '../domain/estimatedCosting';
 import { assertCostingAssumptions, assertCostingAssumptionsCollection } from './costingPersistence';
 
 /**
@@ -297,18 +298,29 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     this.tripProfiles.set(profile.id, profile);
   }
   async copyTripProfileAtomically(profile: TripProfile, trips: Trip[]): Promise<void> {
-    const previousProfiles = new Map(this.tripProfiles); const previousTrips = new Map(this.trips);
+    const previousProfiles = new Map(this.tripProfiles); const previousTrips = new Map(this.trips); const previousAssumptions = new Map(this.costingAssumptions);
     try {
       if (!profile.name.trim()) throw new Error('Enter a trip profile name.');
       if (inKeyOrder(this.tripProfiles.values()).some((candidate) => candidate.scenarioId === profile.scenarioId && candidate.name.trim().toLowerCase() === profile.name.trim().toLowerCase())) throw new Error('A Trip profile with this name already exists.');
       this.tripProfiles.set(profile.id, profile);
       for (const trip of trips) { if (this.trips.has(trip.id)) throw new Error(`Trip ${trip.id} already exists`); this.trips.set(trip.id, trip); }
+      // Decision 0062: the copy gets the source's own estimate factors.
+      if (profile.sourceTripProfileId) {
+        const assumptions = inKeyOrder(this.costingAssumptions.values()).find((candidate) => candidate.scenarioId === profile.scenarioId);
+        const updated = assumptionsAfterTripProfileCopy(assumptions, profile.sourceTripProfileId, profile.id, profile.createdAt);
+        if (updated) this.costingAssumptions.set(updated.id, updated);
+      }
     }
-    catch (error) { this.tripProfiles = previousProfiles; this.trips = previousTrips; throw error; }
+    catch (error) { this.tripProfiles = previousProfiles; this.trips = previousTrips; this.costingAssumptions = previousAssumptions; throw error; }
   }
   async deleteTripProfile(profileId: string): Promise<void> {
-    const previousProfiles = new Map(this.tripProfiles); const previousBlockingScenarios = new Map(this.blockingScenarios); const previousTrips = new Map(this.trips); const previousBlocks = new Map(this.blocks); const previousUndo = this.tripRegenerationUndo;
+    const previousProfiles = new Map(this.tripProfiles); const previousBlockingScenarios = new Map(this.blockingScenarios); const previousTrips = new Map(this.trips); const previousBlocks = new Map(this.blocks); const previousUndo = this.tripRegenerationUndo; const previousAssumptions = new Map(this.costingAssumptions);
     try {
+      // Decision 0062: the Profile's own estimate factors go with it.
+      const profile = this.tripProfiles.get(profileId);
+      const assumptions = profile && inKeyOrder(this.costingAssumptions.values()).find((candidate) => candidate.scenarioId === profile.scenarioId);
+      const updatedAssumptions = assumptionsAfterTripProfileDeletion(assumptions, profileId, new Date().toISOString());
+      if (updatedAssumptions) this.costingAssumptions.set(updatedAssumptions.id, updatedAssumptions);
       this.tripProfiles.delete(profileId);
       const deletedTripIds = inKeyOrder(this.trips.values()).filter((trip) => trip.tripProfileId === profileId).map((trip) => trip.id);
       this.invalidateRegenerationUndo(deletedTripIds);
@@ -317,7 +329,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
       for (const id of ownedBlockingScenarioIds) this.blockingScenarios.delete(id);
       for (const [id, block] of this.blocks) if (block.tripProfileId === profileId || (block.blockingScenarioId && ownedBlockingScenarioIds.has(block.blockingScenarioId))) this.blocks.delete(id);
     }
-    catch (error) { this.tripProfiles = previousProfiles; this.blockingScenarios = previousBlockingScenarios; this.trips = previousTrips; this.blocks = previousBlocks; this.tripRegenerationUndo = previousUndo; throw error; }
+    catch (error) { this.tripProfiles = previousProfiles; this.blockingScenarios = previousBlockingScenarios; this.trips = previousTrips; this.blocks = previousBlocks; this.tripRegenerationUndo = previousUndo; this.costingAssumptions = previousAssumptions; throw error; }
   }
   async listRuntimeAssignments(scenarioId: string, serviceDayId?: string, patternId?: string): Promise<RuntimeAssignment[]> { return inKeyOrder(this.runtimeAssignments.values()).filter((assignment) => assignment.scenarioId === scenarioId && (!serviceDayId || assignment.serviceDayId === serviceDayId) && (!patternId || assignment.patternId === patternId)); }
   async saveRuntimeAssignment(assignment: RuntimeAssignment): Promise<void> {

@@ -149,30 +149,46 @@ describe('CostingApplicationService', () => {
     it('creates the record from the given assumptions when saving factors for a Scenario that has none, and normalizes them', async () => {
       const repository = memoryRepository();
       const service = new CostingApplicationService(queries(), repository, at);
-      const saved = await service.saveEstimateFactors(scenarioId, { allDays: { layoverFraction: 0.18 }, serviceDays: [{ serviceDayId: 'saturday' }, { serviceDayId: 'weekday', deadheadFraction: 0.05 }] }, input);
+      const saved = await service.saveEstimateFactors(scenarioId, 'p-alpha', { allDays: { layoverFraction: 0.18 }, serviceDays: [{ serviceDayId: 'saturday' }, { serviceDayId: 'weekday', deadheadFraction: 0.05 }] }, input);
       expect(saved).toMatchObject({ scenarioId, currencyCode: 'USD', enteredRate: 100, createdAt: at(), updatedAt: at() });
-      expect(saved.estimateFactors).toEqual({ allDays: { layoverFraction: 0.18 }, serviceDays: [{ serviceDayId: 'weekday', deadheadFraction: 0.05 }] });
+      expect(saved.estimateFactors).toBeUndefined();
+      expect(saved.tripProfileEstimateFactors).toEqual([{ tripProfileId: 'p-alpha', factors: { allDays: { layoverFraction: 0.18 }, serviceDays: [{ serviceDayId: 'weekday', deadheadFraction: 0.05 }] } }]);
     });
 
-    it('changes only the factors and the update time of an existing record, and removes the field when every factor is blank', async () => {
+    it('saves each Trip Profile separately, keeps the shared Scenario factors, and saves all-blank factors as an empty set (Decision 0062)', async () => {
       const repository = memoryRepository();
       const service = new CostingApplicationService(queries(), repository, at);
       const created = await service.saveAssumptions(scenarioId, { ...input, sourceNote: 'kept' });
-      const withFactors = await service.saveEstimateFactors(scenarioId, { allDays: { layoverFraction: 0.2 }, serviceDays: [] }, { ...input, enteredRate: 999 });
-      expect(withFactors).toEqual({ ...created, estimateFactors: { allDays: { layoverFraction: 0.2 }, serviceDays: [] }, updatedAt: at() });
-      const cleared = await service.saveEstimateFactors(scenarioId, { allDays: {}, serviceDays: [{ serviceDayId: 'weekday' }] }, input);
-      expect('estimateFactors' in cleared).toBe(false);
+      const shared = { allDays: { layoverFraction: 0.3 }, serviceDays: [] };
+      await repository.saveCostingAssumptions({ ...created, estimateFactors: shared });
+      const alpha = await service.saveEstimateFactors(scenarioId, 'p-alpha', { allDays: { layoverFraction: 0.2 }, serviceDays: [] }, { ...input, enteredRate: 999 });
+      expect(alpha).toEqual({ ...created, estimateFactors: shared, tripProfileEstimateFactors: [{ tripProfileId: 'p-alpha', factors: { allDays: { layoverFraction: 0.2 }, serviceDays: [] } }], updatedAt: at() });
+      const zeta = await service.saveEstimateFactors(scenarioId, 'p-zeta', { allDays: { layoverFraction: 0.25 }, serviceDays: [] }, input);
+      expect(zeta.tripProfileEstimateFactors?.map((entry) => [entry.tripProfileId, entry.factors.allDays.layoverFraction])).toEqual([['p-alpha', 0.2], ['p-zeta', 0.25]]);
+      const cleared = await service.saveEstimateFactors(scenarioId, 'p-alpha', { allDays: {}, serviceDays: [{ serviceDayId: 'weekday' }] }, input);
       expect(cleared.id).toBe(created.id);
-      expect((await service.saveEstimateFactors(scenarioId, undefined, input)).estimateFactors).toBeUndefined();
+      expect(cleared.tripProfileEstimateFactors?.[0]).toEqual({ tripProfileId: 'p-alpha', factors: { allDays: {}, serviceDays: [] } });
+      expect(cleared.estimateFactors).toEqual(shared);
     });
 
-    it('refuses a factor row of a day outside the Scenario and invalid factors, and writes nothing', async () => {
+    it('drops the entries of Trip Profiles that no longer exist when it saves', async () => {
       const repository = memoryRepository();
       const service = new CostingApplicationService(queries(), repository, at);
-      await expect(service.saveEstimateFactors(scenarioId, { allDays: {}, serviceDays: [{ serviceDayId: 'elsewhere', layoverFraction: 0.1 }] }, input))
+      const created = await service.saveAssumptions(scenarioId, input);
+      await repository.saveCostingAssumptions({ ...created, tripProfileEstimateFactors: [{ tripProfileId: 'gone', factors: { allDays: { layoverFraction: 0.1 }, serviceDays: [] } }] });
+      const saved = await service.saveEstimateFactors(scenarioId, 'p-alpha', { allDays: { layoverFraction: 0.2 }, serviceDays: [] }, input);
+      expect(saved.tripProfileEstimateFactors?.map((entry) => entry.tripProfileId)).toEqual(['p-alpha']);
+    });
+
+    it('refuses a Trip Profile outside the Scenario, a factor row of a day outside the Scenario, and invalid factors, and writes nothing', async () => {
+      const repository = memoryRepository();
+      const service = new CostingApplicationService(queries(), repository, at);
+      await expect(service.saveEstimateFactors(scenarioId, 'elsewhere', { allDays: { layoverFraction: 0.1 }, serviceDays: [] }, input))
+        .rejects.toThrow('The trip profile of the estimate factors is not in this scenario.');
+      await expect(service.saveEstimateFactors(scenarioId, 'p-alpha', { allDays: {}, serviceDays: [{ serviceDayId: 'elsewhere', layoverFraction: 0.1 }] }, input))
         .rejects.toThrow('A service day of the estimate factors is not in this scenario.');
-      await expect(service.saveEstimateFactors(scenarioId, { allDays: { layoverFraction: 1 }, serviceDays: [] }, input)).rejects.toThrow('costing.estimateFactorInvalid');
-      await expect(service.saveEstimateFactors(scenarioId, { allDays: {}, serviceDays: [{ serviceDayId: 'weekday', layoverFraction: 0.1 }, { serviceDayId: 'weekday', layoverFraction: 0.2 }] }, input)).rejects.toThrow('costing.estimateFactorDuplicateDay');
+      await expect(service.saveEstimateFactors(scenarioId, 'p-alpha', { allDays: { layoverFraction: 1 }, serviceDays: [] }, input)).rejects.toThrow('costing.estimateFactorInvalid');
+      await expect(service.saveEstimateFactors(scenarioId, 'p-alpha', { allDays: {}, serviceDays: [{ serviceDayId: 'weekday', layoverFraction: 0.1 }, { serviceDayId: 'weekday', layoverFraction: 0.2 }] }, input)).rejects.toThrow('costing.estimateFactorDuplicateDay');
       expect(repository.saveCostingAssumptions).not.toHaveBeenCalled();
     });
 
@@ -180,10 +196,11 @@ describe('CostingApplicationService', () => {
       const repository = memoryRepository();
       const service = new CostingApplicationService(queries(), repository, at);
       const factors = { allDays: { layoverFraction: 0.2 }, serviceDays: [] };
-      await service.saveEstimateFactors(scenarioId, factors, input);
+      await service.saveEstimateFactors(scenarioId, 'p-alpha', factors, input);
       const resaved = await service.saveAssumptions(scenarioId, { ...input, enteredRate: 120, estimateFactors: { allDays: { layoverFraction: 0.9 }, serviceDays: [] } });
       expect(resaved.enteredRate).toBe(120);
-      expect(resaved.estimateFactors).toEqual(factors);
+      expect(resaved.estimateFactors).toBeUndefined();
+      expect(resaved.tripProfileEstimateFactors).toEqual([{ tripProfileId: 'p-alpha', factors }]);
       const fresh = await new CostingApplicationService(queries(), memoryRepository(), at).saveAssumptions(scenarioId, { ...input, estimateFactors: factors });
       expect(fresh.estimateFactors).toBeUndefined();
     });

@@ -31,6 +31,19 @@
 .costing-results-table tfoot, .costing-outlook-table .selected-costing-year { background: var(--color-sunken); font-weight: var(--font-weight-bold); }
 .costing-results-table tfoot th { background: var(--color-sunken); }
 .costing-lower-grid { display: grid; grid-template-columns: minmax(0, 560px); gap: 14px; min-width: 0; }
+/* Decision 0063: the cycle calculator below the Cost breakdown. */
+.cycle-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-bottom: var(--space-3); }
+.cycle-controls__label { font-size: var(--font-size-label); font-weight: var(--font-weight-semibold); color: var(--color-text-muted); }
+.cycle-round { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-label); white-space: nowrap; }
+.cycle-round input[type='checkbox'] { width: 15px; min-width: 15px; height: 15px; min-height: 15px; margin: 0; padding: 0; }
+.cycle-reset { margin-left: auto; }
+.cycle-table table { min-width: 860px; }
+.cycle-table th, .cycle-table td { vertical-align: middle; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 6px; padding-right: 6px; }
+.cycle-table thead th { white-space: normal; line-height: 1.2; vertical-align: bottom; }
+.cycle-table tbody th[scope='row'], .cycle-table tfoot th[scope='row'] { font-size: var(--font-size-note); }
+.cycle-table tfoot { background: var(--color-sunken); font-weight: var(--font-weight-bold); }
+.cycle-input { box-sizing: border-box; width: 6.5em; text-align: right; font-variant-numeric: tabular-nums; }
+.cycle-solved { display: inline-block; box-sizing: border-box; width: 6.5em; padding: 0 var(--space-2); border-radius: var(--radius-control); background: var(--color-selection); color: var(--color-accent-strong); font-weight: var(--font-weight-bold); line-height: var(--control-height); }
 .costing-lower-grid > section { min-width: 0; }
 .costing-outlook-table table { min-width: 420px; }
 .activity-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px var(--space-3); }

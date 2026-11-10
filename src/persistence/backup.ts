@@ -33,10 +33,11 @@ import { validateBlockingAssignments, validateBlockingBlock } from '../domain/bl
 import { MAX_COSTING_FUTURE_YEARS, MAX_COSTING_YEAR, MIN_COSTING_YEAR, validatePersistedCostingAssumptions } from '../domain/costing';
 import { recoverScenarioCopyNodeReferences } from '../domain/scenarioCopyRecovery';
 import { unifyRouteRuntimeCalculationMethods } from '../domain/runtime';
+import { remapEstimateFactorDays, remapTripProfileEstimateFactors } from '../domain/estimatedCosting';
 
 export const PROJECT_BACKUP_FORMAT = 'transit-costing-tool.project' as const;
 /** Version 10 adds `plannedFrequencies` (Decision 0058); versions 1 to 9 import with no plans. */
-export const PROJECT_BACKUP_SCHEMA_VERSION = 10 as const;
+export const PROJECT_BACKUP_SCHEMA_VERSION = 11 as const;
 export const LEGACY_PROJECT_BACKUP_SCHEMA_VERSION = 1 as const;
 
 /** Decision 0055: shape and rule checks for a stored `autoBlocking` record (backup version 8 and later; `maxVehicles` from version 9, Decision 0056). */
@@ -139,12 +140,34 @@ function validatePlannedFrequencies(values: unknown[], owners: PlannedFrequencyO
   return plans;
 }
 
-function validateCostingAssumptions(values: unknown[], scenarioIds: Set<string>, serviceDays: ServiceDayDefinition[]): CostingAssumptions[] {
+/**
+ * `tripProfiles` are the Trip Profiles of the file. `ownFactorsAllowed` is true for version 11 files, the first that hold Trip-Profile-owned
+ * factors (Decision 0062); an earlier file's `tripProfileEstimateFactors` field is dropped rather than failing the import.
+ */
+function validateCostingAssumptions(values: unknown[], scenarioIds: Set<string>, serviceDays: ServiceDayDefinition[], tripProfiles: TripProfile[], ownFactorsAllowed: boolean): CostingAssumptions[] {
   const ids = new Set<string>();
   const owners = new Set<string>();
   return values.map((value, index) => {
     if (!isRecord(value)) throw new Error(`Invalid project backup: costingAssumptions[${index}] must be an object`);
+    if (!ownFactorsAllowed && value.tripProfileEstimateFactors !== undefined) {
+      const { tripProfileEstimateFactors: _ignored, ...withoutOwnFactors } = value;
+      value = withoutOwnFactors;
+    }
     const assumptions = value as unknown as CostingAssumptions;
+    if (assumptions.tripProfileEstimateFactors !== undefined) {
+      const path = `costingAssumptions[${index}].tripProfileEstimateFactors`;
+      if (!Array.isArray(assumptions.tripProfileEstimateFactors)) throw new Error(`Invalid project backup: ${path} must be an array`);
+      const seen = new Set<string>();
+      assumptions.tripProfileEstimateFactors.forEach((entry: unknown, entryIndex) => {
+        if (!isRecord(entry)) throw new Error(`Invalid project backup: ${path}[${entryIndex}] must be an object`);
+        requiredString(entry.tripProfileId, `${path}[${entryIndex}].tripProfileId`);
+        const profile = tripProfiles.find((candidate) => candidate.id === entry.tripProfileId);
+        if (!profile || profile.scenarioId !== assumptions.scenarioId) throw new Error(`Invalid project backup: ${path}[${entryIndex}].tripProfileId names a Trip profile that is not in this Scenario`);
+        if (seen.has(entry.tripProfileId as string)) throw new Error(`Invalid project backup: ${path}[${entryIndex}] repeats Trip profile ${entry.tripProfileId}`);
+        seen.add(entry.tripProfileId as string);
+        validateEstimateFactors(entry.factors, `${path}[${entryIndex}].factors`, assumptions.scenarioId, serviceDays);
+      });
+    }
     requiredString(assumptions.id, `costingAssumptions[${index}].id`);
     requiredString(assumptions.scenarioId, `costingAssumptions[${index}].scenarioId`);
     if (!scenarioIds.has(assumptions.scenarioId)) throw new Error(`Invalid project backup: costing assumptions ${assumptions.id} references a missing Scenario`);
@@ -171,7 +194,7 @@ function validateCostingAssumptions(values: unknown[], scenarioIds: Set<string>,
     if (assumptions.sourceType !== 'user' && assumptions.sourceType !== 'ntd') throw new Error(`Invalid project backup: costingAssumptions[${index}].sourceType`);
     if (assumptions.sourceNote !== undefined && typeof assumptions.sourceNote !== 'string') throw new Error(`Invalid project backup: costingAssumptions[${index}].sourceNote`);
     if (assumptions.estimateFactors !== undefined) validateEstimateFactors(assumptions.estimateFactors, `costingAssumptions[${index}].estimateFactors`, assumptions.scenarioId, serviceDays);
-    assertMetadata(value, `costingAssumptions[${index}]`);
+    assertMetadata(assumptions as unknown as Record<string, unknown>, `costingAssumptions[${index}]`);
     if (validatePersistedCostingAssumptions(assumptions).some((finding) => finding.severity === 'error')) {
       throw new Error(`Invalid project backup: costingAssumptions[${index}] failed validation`);
     }
@@ -621,7 +644,7 @@ function parseValidatedBackup(payload: string): { snapshot: ProjectSnapshot; rep
     throw new Error('Invalid project backup: malformed JSON');
   }
   if (!isRecord(parsed)) throw new Error('Invalid project backup: root must be an object');
-  if (parsed.format !== PROJECT_BACKUP_FORMAT || ![1, 2, 3, 4, 5, 6, 7, 8, 9, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)) {
+  if (parsed.format !== PROJECT_BACKUP_FORMAT || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)) {
     throw new Error('Unsupported project backup format or schema version');
   }
   requiredString(parsed.exportedAt, 'exportedAt');
@@ -651,23 +674,23 @@ function parseValidatedBackup(payload: string): { snapshot: ProjectSnapshot; rep
   assertRuntimeGraph(runtimeProfiles, runtimeAssignments, patterns, serviceDays);
   // Current authoritative backups omit generationSets. A non-empty collection is
   // still accepted so historical Phase 2 files can be inspected and copied.
-  const suppliedTripProfiles = [4, 5, 6, 7, 8, 9, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTripProfiles(requiredArray(parsed.tripProfiles ?? [], 'tripProfiles'), scenarioIds) : [];
-  const generationSets = [3, 4, 5, 6, 7, 8, 9, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+  const suppliedTripProfiles = [4, 5, 6, 7, 8, 9, 10, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTripProfiles(requiredArray(parsed.tripProfiles ?? [], 'tripProfiles'), scenarioIds) : [];
+  const generationSets = [3, 4, 5, 6, 7, 8, 9, 10, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
     ? (parsed.generationSets === undefined ? [] : validateGenerationSets(requiredArray(parsed.generationSets, 'generationSets'), scenarioIds, routeById, patterns, serviceDays))
     : [];
-  const trips = [3, 4, 5, 6, 7, 8, 9, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTrips(requiredArray(parsed.trips, 'trips'), scenarioIds, routeById, patterns, serviceDays, generationSets, runtimeProfiles) : [];
+  const trips = [3, 4, 5, 6, 7, 8, 9, 10, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTrips(requiredArray(parsed.trips, 'trips'), scenarioIds, routeById, patterns, serviceDays, generationSets, runtimeProfiles) : [];
   const provisionalTripProfiles = suppliedTripProfiles.length ? suppliedTripProfiles : scenarios.map((scenario) => ({ id: newId(), scenarioId: scenario.id, name: 'Default', ...metadata() }));
-  const blockingScenarios = [5, 6, 7, 8, 9, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
-    ? validateBlockingScenarios(requiredArray(parsed.blockingScenarios ?? [], 'blockingScenarios'), scenarioIds, provisionalTripProfiles, [8, 9, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ?{ patterns, nodes, serviceDays } : undefined)
+  const blockingScenarios = [5, 6, 7, 8, 9, 10, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+    ? validateBlockingScenarios(requiredArray(parsed.blockingScenarios ?? [], 'blockingScenarios'), scenarioIds, provisionalTripProfiles, [8, 9, 10, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ?{ patterns, nodes, serviceDays } : undefined)
     : [];
-  const costingAssumptions = [6, 7, 8, 9, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
-    ? validateCostingAssumptions(requiredArray(parsed.costingAssumptions, 'costingAssumptions'), scenarioIds, serviceDays)
+  const costingAssumptions = [6, 7, 8, 9, 10, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+    ? validateCostingAssumptions(requiredArray(parsed.costingAssumptions, 'costingAssumptions'), scenarioIds, serviceDays, provisionalTripProfiles, parsed.exportSchemaVersion === PROJECT_BACKUP_SCHEMA_VERSION)
     : [];
-  const plannedFrequencies = parsed.exportSchemaVersion === PROJECT_BACKUP_SCHEMA_VERSION
+  const plannedFrequencies = [10, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
     ? validatePlannedFrequencies(requiredArray(parsed.plannedFrequencies ?? [], 'plannedFrequencies'), { scenarioIds, routes, serviceDays, directions: directions ?? [], nodes })
     : [];
   // Blocks without a Blocking Scenario are pre-Phase-4 placeholders (version 3 and 4 files hold only those). They are discarded and counted.
-  const blockValues = [3, 4, 5, 6, 7, 8, 9, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? requiredArray(parsed.blocks, 'blocks') : [];
+  const blockValues = [3, 4, 5, 6, 7, 8, 9, 10, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? requiredArray(parsed.blocks, 'blocks') : [];
   const keptBlockEntries = blockValues.map((value, index) => ({ value, index })).filter((entry) => !isPlaceholderBlock(entry.value));
   const validatedBlocks = validateBlocks(keptBlockEntries, scenarioIds, serviceDays, trips, blockingScenarios);
   // Files exported after a Scenario was duplicated by the older code name the source Scenario's Nodes in the copy's Blocks (Decision 0038).
@@ -750,7 +773,9 @@ export function cloneProjectSnapshot(source: ProjectSnapshot, now = new Date().t
     id: newId(),
     scenarioId: scenarioIds.get(assumptions.scenarioId)!,
     // The typed estimate factors name service days, which get new identifiers in the copy (Decision 0051).
-    ...(assumptions.estimateFactors ? { estimateFactors: { ...assumptions.estimateFactors, serviceDays: assumptions.estimateFactors.serviceDays.map((row) => ({ ...row, serviceDayId: serviceDayIds.get(row.serviceDayId) ?? row.serviceDayId })) } } : {}),
+    ...(assumptions.estimateFactors ? { estimateFactors: remapEstimateFactorDays(assumptions.estimateFactors, serviceDayIds) } : {}),
+    // Trip-Profile-owned factors name Trip Profiles and service days, which both get new identifiers (Decision 0062).
+    ...(assumptions.tripProfileEstimateFactors ? { tripProfileEstimateFactors: remapTripProfileEstimateFactors(assumptions.tripProfileEstimateFactors, tripProfileIds, serviceDayIds) } : {}),
     ...metadata(now),
   }));
 

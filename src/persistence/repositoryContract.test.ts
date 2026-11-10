@@ -164,7 +164,7 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       await repository.saveProjectSnapshot(snapshot);
       const backup = new ProjectBackupService((id) => repository.getProjectSnapshot(id), (value) => repository.saveProjectSnapshot(value));
       const payload = await backup.exportProject(snapshot.project.id);
-      expect(JSON.parse(payload).exportSchemaVersion).toBe(10);
+      expect(JSON.parse(payload).exportSchemaVersion).toBe(11);
       const before = JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value);
       await backup.importProject(payload, 'replace');
       expect(JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value)).toBe(before);
@@ -613,6 +613,23 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       expect((await repository.getCostingAssumptions(scenarioId))?.estimateFactors).toEqual(estimateFactors);
       expect((await repository.getScenarioRecords(scenarioId))?.costingAssumptions?.estimateFactors).toEqual(estimateFactors);
       await expect(repository.saveCostingAssumptions({ ...assumptions('first', scenarioId), estimateFactors: { allDays: { layoverFraction: 1 }, serviceDays: [] } })).rejects.toThrow(/Invalid costing assumptions/);
+    });
+
+    it('copies a Trip Profile’s own factors to its copy and removes them with the Profile (Decision 0062)', async () => {
+      const { snapshot, scenarioId, altProfile, defaultProfile } = fixture();
+      await repository.saveProjectSnapshot(snapshot);
+      const own = (layoverFraction: number) => ({ allDays: { layoverFraction }, serviceDays: [] });
+      const later = '2026-10-23T00:00:00.000Z';
+      await repository.saveCostingAssumptions({ ...assumptions('first', scenarioId), tripProfileEstimateFactors: [{ tripProfileId: altProfile.id, factors: own(0.12) }, { tripProfileId: defaultProfile.id, factors: own(0.22) }] });
+      await expect(repository.saveCostingAssumptions({ ...assumptions('first', scenarioId), tripProfileEstimateFactors: [{ tripProfileId: altProfile.id, factors: own(1) }] })).rejects.toThrow(/Invalid costing assumptions/);
+
+      await repository.copyTripProfileAtomically({ id: 'alt-copy', scenarioId, name: 'Alt copy', sourceTripProfileId: altProfile.id, createdAt: later, updatedAt: later }, []);
+      const afterCopy = await repository.getCostingAssumptions(scenarioId);
+      expect(afterCopy?.tripProfileEstimateFactors?.map((entry) => [entry.tripProfileId, entry.factors.allDays.layoverFraction])).toEqual([[altProfile.id, 0.12], [defaultProfile.id, 0.22], ['alt-copy', 0.12]]);
+      expect(afterCopy?.updatedAt).toBe(later);
+
+      await repository.deleteTripProfile(altProfile.id);
+      expect((await repository.getCostingAssumptions(scenarioId))?.tripProfileEstimateFactors?.map((entry) => entry.tripProfileId)).toEqual([defaultProfile.id, 'alt-copy']);
     });
   });
 });

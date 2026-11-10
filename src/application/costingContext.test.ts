@@ -69,7 +69,8 @@ describe('Estimated costing context', () => {
     expect(context.tripProfile.id).toBe('s1-plan-b');
     expect(context.trips.every((item) => item.scenarioId === 's1' && item.tripProfileId === 's1-plan-b')).toBe(true);
     expect(context.trips).toHaveLength(5);
-    expect(reads).toEqual({ listTrips: 1, listPatterns: 0, listBlockingBlocks: 0 });
+    // Decision 0062: the Patterns are read once for the implied-service check.
+    expect(reads).toEqual({ listTrips: 1, listPatterns: 1, listBlockingBlocks: 0 });
   });
 
   it('is undefined for a Trip Profile of another Scenario, an unknown Trip Profile, or an unknown Scenario, and reads no Trips then', async () => {

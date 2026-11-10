@@ -9,7 +9,7 @@ import {
 } from './costing';
 import { sortServiceDays } from './serviceDays';
 import { tripRunTimeSeconds } from './trips';
-import type { CostingEstimateFactors, CostingFactorPair, Scenario, ServiceDayDefinition, Trip, TripProfile } from './types';
+import type { CostingAssumptions, CostingEstimateFactors, CostingFactorPair, Route, RoutePattern, Scenario, ServiceDayDefinition, Trip, TripProfile, TripProfileEstimateFactors } from './types';
 
 /**
  * Estimated cost basis (Decision 0051): Revenue Hours and Platform Hours estimated from the running hours of a Trip Profile's Trips and
@@ -59,7 +59,147 @@ export function normalizeEstimateFactors(factors: CostingEstimateFactors | undef
   return { allDays, serviceDays: rows };
 }
 
-export interface EstimatedCostingContext { scenario: Scenario; serviceDays: ServiceDayDefinition[]; tripProfile: TripProfile; trips: Trip[] }
+/** Where the factors of a Trip Profile come from (Decision 0062): its own entry, the Scenario's shared factors, or nowhere. */
+export type EstimateFactorOwner = 'tripProfile' | 'scenario' | 'none';
+
+/** The factors an estimated cost basis of `tripProfileId` uses. An own entry, even an empty one, replaces the Scenario's shared factors. */
+export function estimateFactorsForTripProfile(
+  assumptions: Pick<CostingAssumptions, 'estimateFactors' | 'tripProfileEstimateFactors'> | undefined,
+  tripProfileId: string,
+): { factors?: CostingEstimateFactors; owner: EstimateFactorOwner } {
+  const own = assumptions?.tripProfileEstimateFactors?.find((entry) => entry.tripProfileId === tripProfileId);
+  if (own) return { factors: own.factors, owner: 'tripProfile' };
+  if (assumptions?.estimateFactors) return { factors: assumptions.estimateFactors, owner: 'scenario' };
+  return { owner: 'none' };
+}
+
+/**
+ * Returns the entries with `tripProfileId` set to `factors` (an empty set when `factors` is undefined, so the Profile no longer falls back to
+ * the Scenario's factors), and drops entries of Trip Profiles not in `tripProfileIds`. Entries keep their order; a new one goes last.
+ */
+export function setTripProfileEstimateFactors(
+  entries: TripProfileEstimateFactors[] | undefined,
+  tripProfileId: string,
+  factors: CostingEstimateFactors | undefined,
+  tripProfileIds: ReadonlySet<string>,
+): TripProfileEstimateFactors[] {
+  const value = factors ?? { allDays: {}, serviceDays: [] };
+  const kept = (entries ?? []).filter((entry) => tripProfileIds.has(entry.tripProfileId));
+  return kept.some((entry) => entry.tripProfileId === tripProfileId)
+    ? kept.map((entry) => entry.tripProfileId === tripProfileId ? { tripProfileId, factors: value } : entry)
+    : [...kept, { tripProfileId, factors: value }];
+}
+
+/**
+ * The assumptions after a Trip Profile copy (Decision 0062): the copy gets the source's own factors. Returns `undefined` when the source has
+ * none, so nothing needs writing and the copy uses the Scenario's shared factors, as the source does.
+ */
+export function assumptionsAfterTripProfileCopy(assumptions: CostingAssumptions | undefined, sourceTripProfileId: string, targetTripProfileId: string, now: string): CostingAssumptions | undefined {
+  const own = assumptions?.tripProfileEstimateFactors?.find((entry) => entry.tripProfileId === sourceTripProfileId);
+  if (!assumptions || !own) return undefined;
+  const others = assumptions.tripProfileEstimateFactors!.filter((entry) => entry.tripProfileId !== targetTripProfileId);
+  return { ...assumptions, tripProfileEstimateFactors: [...others, { tripProfileId: targetTripProfileId, factors: structuredClone(own.factors) }], updatedAt: now };
+}
+
+/** The assumptions after a Trip Profile is deleted, or `undefined` when the Profile had no factors of its own (Decision 0062). */
+export function assumptionsAfterTripProfileDeletion(assumptions: CostingAssumptions | undefined, tripProfileId: string, now: string): CostingAssumptions | undefined {
+  if (!assumptions?.tripProfileEstimateFactors?.some((entry) => entry.tripProfileId === tripProfileId)) return undefined;
+  return { ...assumptions, tripProfileEstimateFactors: assumptions.tripProfileEstimateFactors.filter((entry) => entry.tripProfileId !== tripProfileId), updatedAt: now };
+}
+
+/** The factors with each service-day row renamed through `serviceDayIds`, for Scenario copies and import as a copy. */
+export function remapEstimateFactorDays(factors: CostingEstimateFactors, serviceDayIds: ReadonlyMap<string, string>): CostingEstimateFactors {
+  return { ...factors, serviceDays: factors.serviceDays.map((row) => ({ ...row, serviceDayId: serviceDayIds.get(row.serviceDayId) ?? row.serviceDayId })) };
+}
+
+/** Trip-Profile-owned factors with Trip Profile and service-day IDs renamed, for Scenario copies and import as a copy (Decision 0062). */
+export function remapTripProfileEstimateFactors(entries: TripProfileEstimateFactors[], tripProfileIds: ReadonlyMap<string, string>, serviceDayIds: ReadonlyMap<string, string>): TripProfileEstimateFactors[] {
+  return entries.map((entry) => ({ tripProfileId: tripProfileIds.get(entry.tripProfileId) ?? entry.tripProfileId, factors: remapEstimateFactorDays(entry.factors, serviceDayIds) }));
+}
+
+/** One direction of a Route on one service day, as the implied-service check sees it (Decision 0062). */
+export interface ImpliedDirectionService {
+  /** The Direction ID of the Patterns, or the Pattern ID when a legacy Pattern has no Direction. */
+  directionKey: string;
+  tripCount: number;
+  meanRunSeconds: number;
+  /** The median gap between consecutive first departures of the direction. Undefined with fewer than two distinct departures. */
+  headwaySeconds?: number;
+}
+/** What a layover % implies for one Route on one service day. Derived and never stored. */
+export interface ImpliedRouteService {
+  routeId: string;
+  routeName?: string;
+  directions: ImpliedDirectionService[];
+  /** The mean run time of each direction, added: the running part of one cycle through every direction. */
+  roundTripRunSeconds: number;
+  /** The total run time of the Route's Trips on the day, in hours (Decision 0063). */
+  runningHours: number;
+  /** `roundTripRunSeconds ÷ (1 − layover)`. Undefined without a layover factor. */
+  roundTripWithLayoverSeconds?: number;
+  /** Σ over directions of (mean run ÷ (1 − layover)) ÷ headway. Undefined without a layover factor or a headway in any direction. */
+  impliedVehicles?: number;
+}
+
+function median(values: number[]): number | undefined {
+  if (!values.length) return undefined;
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+/**
+ * The cycle and vehicles a layover factor implies for the Trips of one service day, per Route (Decision 0062). Trips without a usable run
+ * time are left out. Directions are listed in order of their key; Routes in order of name, then ID.
+ */
+export function deriveImpliedService(
+  trips: Trip[],
+  patterns: RoutePattern[],
+  layoverFraction: number | undefined,
+  routes: Route[] = [],
+): ImpliedRouteService[] {
+  const patternById = new Map(patterns.map((pattern) => [pattern.id, pattern]));
+  const routeName = new Map(routes.map((route) => [route.id, route.name]));
+  const byRoute = new Map<string, Map<string, { runs: number[]; departures: number[] }>>();
+  for (const trip of trips) {
+    const run = tripRunTimeSeconds(trip);
+    if (run === undefined) continue;
+    const pattern = patternById.get(trip.patternId);
+    const directionKey = pattern?.directionId ?? trip.patternId;
+    const directions = byRoute.get(trip.routeId) ?? new Map();
+    byRoute.set(trip.routeId, directions);
+    const direction = directions.get(directionKey) ?? { runs: [], departures: [] };
+    directions.set(directionKey, direction);
+    direction.runs.push(run);
+    direction.departures.push([...trip.stopTimes].sort((left, right) => left.sequence - right.sequence)[0].time);
+  }
+  const usableLayover = layoverFraction !== undefined && Number.isFinite(layoverFraction) && layoverFraction >= 0 && layoverFraction < 1 ? layoverFraction : undefined;
+  return [...byRoute.entries()]
+    .map(([routeId, directions]): ImpliedRouteService => {
+      const listed = [...directions.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([directionKey, value]): ImpliedDirectionService => {
+        const departures = [...value.departures].sort((left, right) => left - right);
+        const gaps = departures.slice(1).map((time, index) => time - departures[index]).filter((gap) => gap > 0);
+        const headwaySeconds = median(gaps);
+        return {
+          directionKey, tripCount: value.runs.length, meanRunSeconds: value.runs.reduce((sum, run) => sum + run, 0) / value.runs.length,
+          ...(headwaySeconds !== undefined ? { headwaySeconds } : {}),
+        };
+      });
+      const roundTripRunSeconds = listed.reduce((sum, direction) => sum + direction.meanRunSeconds, 0);
+      const runningHours = listed.reduce((sum, direction) => sum + direction.meanRunSeconds * direction.tripCount, 0) / 3600;
+      const route: ImpliedRouteService = { routeId, ...(routeName.has(routeId) ? { routeName: routeName.get(routeId) } : {}), directions: listed, roundTripRunSeconds, runningHours };
+      if (usableLayover === undefined) return route;
+      route.roundTripWithLayoverSeconds = roundTripRunSeconds / (1 - usableLayover);
+      if (listed.every((direction) => direction.headwaySeconds !== undefined)) {
+        route.impliedVehicles = listed.reduce((sum, direction) => sum + direction.meanRunSeconds / (1 - usableLayover) / direction.headwaySeconds!, 0);
+      }
+      return route;
+    })
+    .sort((left, right) => (left.routeName ?? '').localeCompare(right.routeName ?? '') || left.routeId.localeCompare(right.routeId));
+}
+
+/** `patterns` and `routes` are optional; without patterns, `impliedService` is not derived. */
+export interface EstimatedCostingContext { scenario: Scenario; serviceDays: ServiceDayDefinition[]; tripProfile: TripProfile; trips: Trip[]; patterns?: RoutePattern[]; routes?: Route[] }
 export interface EstimatedCostingInput extends EstimatedCostingContext { assumptions: CostingAssumptionsInput }
 
 export interface EstimatedCostingDailyResult {
@@ -67,6 +207,8 @@ export interface EstimatedCostingDailyResult {
   tripCount: number; tripsWithoutRunTimeCount: number;
   runningHoursPerDay: number; annualRunningHours: number;
   factors: ResolvedDayFactors;
+  /** Decision 0062. Present when the context carries the Patterns. */
+  impliedService?: ImpliedRouteService[];
   revenueHoursPerDay?: number; platformHoursPerDay?: number;
   annualRevenueHours?: number; annualPlatformHours?: number;
   yearCosts: CostingDailyYearResult[]; // empty without a rate or without revenue hours
@@ -139,7 +281,10 @@ export function calculateEstimatedCosting(input: EstimatedCostingInput): Estimat
   const sortedDays = sortServiceDays(serviceDays);
   const perDay = new Map(sortedDays.map((day) => [day.id, { seconds: 0, tripCount: 0, withoutRunTime: 0 }]));
   let tripsWithRunTime = 0;
+  const tripsByDay = new Map<string, Trip[]>();
   for (const trip of trips) {
+    const dayTrips = tripsByDay.get(trip.serviceDayId);
+    if (dayTrips) dayTrips.push(trip); else tripsByDay.set(trip.serviceDayId, [trip]);
     const day = perDay.get(trip.serviceDayId)!;
     day.tripCount += 1;
     const seconds = tripRunTimeSeconds(trip);
@@ -162,6 +307,7 @@ export function calculateEstimatedCosting(input: EstimatedCostingInput): Estimat
       runningHoursPerDay,
       annualRunningHours: runningHoursPerDay * day.annualServiceDays,
       factors,
+      ...(input.patterns ? { impliedService: deriveImpliedService(tripsByDay.get(day.id) ?? [], input.patterns, factors.layoverFraction, input.routes) } : {}),
       yearCosts: [],
     };
     if (quantities.seconds === 0) {
