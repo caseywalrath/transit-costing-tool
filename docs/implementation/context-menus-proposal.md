@@ -1,6 +1,6 @@
 # Context Menus Across the App: Proposal for Review
 
-- Status: Proposal. Not a decision. The user reviews it, and the chosen items become a decision record and an implementation plan.
+- Status: Reviewed. The user accepted every recommendation: see Decision 0066 and `docs/implementation/context-menus-round-1.md`.
 - Date: 2026-11-10
 - Builds on: Decision 0064 item 7 (shared context-menu rules), `src/ui/ContextMenu.tsx`, `src/ui/menuItems.tsx`
 - Evidence: the code as of `c899267` (after PR 52, Decision 0064, and PR 53, Decision 0065). Each entry names the file that holds the existing behavior.
