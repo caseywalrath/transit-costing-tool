@@ -3,7 +3,7 @@
 - Decision: `docs/decisions/0066-context-menus-on-tables-and-scenarios.md`
 - Survey: `docs/implementation/context-menus-proposal.md`
 - Date: 2026-11-10
-- Status: Planned
+- Status: Implemented. See `context-menus-round-1-closeout.md`.
 - Base: `main` at `c899267`
 
 ## Roles

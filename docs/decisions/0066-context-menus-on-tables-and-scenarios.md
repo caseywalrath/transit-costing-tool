@@ -1,6 +1,6 @@
 # Decision 0066: Context Menus on Tables, Blocks and Scenarios, and Copy Table
 
-- Status: Accepted (2026-11-10). Plan: `docs/implementation/context-menus-round-1.md`.
+- Status: Accepted and implemented (2026-11-10). Plan: `docs/implementation/context-menus-round-1.md`. Closeout: `docs/implementation/context-menus-round-1-closeout.md`.
 - Date: 2026-11-10 (the user accepted the recommendations in `docs/implementation/context-menus-proposal.md`)
 - Related: Decision 0064 (project context menu; item 7 sets the shared rules), Decision 0053 (Blocking menus), Decision 0065 (segment distances)
 
