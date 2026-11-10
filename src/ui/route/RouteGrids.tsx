@@ -1,4 +1,4 @@
-// Spreadsheet grids of the Route tab (UR-7b): the Nodes table (Name, Short, Notes) and the Pattern points' Cumulative mi.
+// Spreadsheet grids of the Route tab (UR-7b): the Nodes table (Name, Short, Notes) and the Pattern points' Segment mi (Decision 0065).
 // Type and the points' Node stay native selects; they are grid cells that hand focus to their select, so Tab reaches them.
 import { useEffect, useRef, type RefObject } from 'react';
 import { useGridNavigation } from '../shared/useGridNavigation';
@@ -48,16 +48,23 @@ export function NodesGrid({ nodes, savedNodes, pendingDeletes, saving, errorsFor
   </table></div><p className="grid-message" role="status" aria-live="polite">{grid.message}</p></>;
 }
 
-/** The grid of a Pattern's points: column 0 is the Node select (a control cell) and column 1 is Cumulative mi. */
-export function usePatternPointsGrid(pattern: RoutePattern, onUpdatePoint: (index: number, patch: Partial<RoutePattern['points'][number]>) => void) {
+const round6 = (value: number) => Math.round(value * 1e6) / 1e6;
+
+/**
+ * The grid of a Pattern's points: column 0 is the Node select (a control cell) and column 1 is Segment mi (Decision 0065). The first point has
+ * no segment, so only rows after the first are editable. Setting a segment shifts the later cumulative values.
+ */
+export function usePatternPointsGrid(pattern: RoutePattern, onSetSegment: (segmentIndex: number, miles: number) => void) {
+  const points = pattern.points;
   return useGridNavigation({
     rowCount: pattern.points.length, colCount: 2,
-    isEditable: (_r, c) => c === 1, cellText: (r) => String(pattern.points[r].cumulativeMiles),
+    isEditable: (r, c) => c === 1 && r > 0,
+    cellText: (r) => r === 0 ? '' : String(round6(points[r].cumulativeMiles - points[r - 1].cumulativeMiles)),
     onCommit: (r, _c, value) => {
       if (!value.trim()) return 'A value is required. Zero is valid.';
       const parsed = Number(value);
       if (!Number.isFinite(parsed) || parsed < 0) return 'Enter a non-negative number.';
-      onUpdatePoint(r, { cumulativeMiles: parsed });
+      onSetSegment(r - 1, parsed);
       return undefined;
     },
   });

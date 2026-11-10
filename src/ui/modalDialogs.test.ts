@@ -15,9 +15,9 @@ describe('modal dialogs', () => {
 
   it('are used by the modules that open dialogs', () => {
     const using = Object.keys(uiSources).filter((path) => !path.endsWith('.test.ts') && path !== './ModalDialog.tsx' && /<ModalDialog[\s>]/.test(uiSources[path])).sort();
-    expect(using).toEqual(['./blocking/AutoBlockingDialog.tsx', './blocking/BlockingDayCopyDialog.tsx', './blocking/BlockingWorkspace.tsx', './costing/CostSummaryView.tsx', './costing/CostingWorkspace.tsx', './route/PlannedFrequencyDialogs.tsx', './route/RouteWorkspace.tsx', './shared/dialogs.tsx', './trips/RuntimeEditor.tsx', './trips/dialogs.tsx']);
+    expect(using).toEqual(['./blocking/AutoBlockingDialog.tsx', './blocking/BlockingDayCopyDialog.tsx', './blocking/BlockingWorkspace.tsx', './costing/CostSummaryView.tsx', './costing/CostingWorkspace.tsx', './route/PatternDistanceDialog.tsx', './route/PlannedFrequencyDialogs.tsx', './route/RouteWorkspace.tsx', './shared/dialogs.tsx', './trips/RuntimeEditor.tsx', './trips/dialogs.tsx']);
     const count = (path: string) => (uiSources[path]!.match(/<ModalDialog[\s>]/g) ?? []).length;
-    expect(using.reduce((total, path) => total + count(path), 0)).toBe(33); // The first-time edit added its block review (Change start time). PF5 added the three Planned frequencies dialogs (copy from a day, copy from a scenario, clear). AB4 (Decision 0055) added the Build blocks automatically dialog. UR-6c added the single-trip Change pattern review; S1 added the segment copy and fill dialog; BC4 added the Copy blocks dialog; Decision 0054 added the cost summary and its partial-estimate confirmation.
+    expect(using.reduce((total, path) => total + count(path), 0)).toBe(34); // Decision 0065 added the distance fill and copy dialog. The first-time edit added its block review (Change start time). PF5 added the three Planned frequencies dialogs (copy from a day, copy from a scenario, clear). AB4 (Decision 0055) added the Build blocks automatically dialog. UR-6c added the single-trip Change pattern review; S1 added the segment copy and fill dialog; BC4 added the Copy blocks dialog; Decision 0054 added the cost summary and its partial-estimate confirmation.
   });
 
   it('every ModalDialog is named, by a heading id or a label', () => {

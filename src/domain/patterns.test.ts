@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
-import { duplicatePattern, getSegmentMiles, normalizePattern, reversePattern, validatePattern } from './patterns';
+import { duplicatePattern, getSegmentMiles, normalizePattern, reversePattern, setSegmentMiles, validatePattern } from './patterns';
+import type { RoutePattern } from './types';
 
 const nodes = [
   { id: '1', scenarioId: 's', routeId: 'r', name: 'A', kind: 'terminal' as const, ...metadata() },
@@ -68,5 +69,41 @@ describe('patterns', () => {
     expect(copy.points.map((point) => point.id)).not.toEqual(source.points.map((point) => point.id));
     expect(copy.createdAt).toBe('2026-02-01T00:00:00.000Z');
     expect(copy.updatedAt).toBe('2026-02-01T00:00:00.000Z');
+  });
+});
+
+describe('setSegmentMiles (Decision 0065)', () => {
+  const pattern = (cumulative: number[], ids = cumulative.map((_, index) => `p${index}`)): RoutePattern => ({ id: 'p', scenarioId: 's', routeId: 'r', name: 'P', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', points: cumulative.map((miles, index) => ({ id: ids[index], nodeId: `n${index}`, sequence: index, cumulativeMiles: miles })) });
+  const cumulative = (value: RoutePattern) => value.points.map((point) => point.cumulativeMiles);
+
+  it('sets a segment and shifts every later point by the difference', () => {
+    expect(cumulative(setSegmentMiles(pattern([0, 1.5, 4]), 0, 2))).toEqual([0, 2, 4.5]);
+  });
+
+  it('changes only the last cumulative value when the last segment is set', () => {
+    expect(cumulative(setSegmentMiles(pattern([0, 1.5, 4]), 1, 3))).toEqual([0, 1.5, 4.5]);
+  });
+
+  it('rounds written values to 6 decimal places so later additions stay exact', () => {
+    // Setting segment 0 to 0.3 moves the later points by 0.19999999999999998; the stored values must still be exactly 0.3.
+    const once = setSegmentMiles(pattern([0, 0.1, 0.1]), 0, 0.3);
+    expect(cumulative(once)).toEqual([0, 0.3, 0.3]);
+    expect(cumulative(setSegmentMiles(once, 1, 0.2))).toEqual([0, 0.3, 0.5]);
+  });
+
+  it('throws for an out-of-range segment and for a negative or non-finite miles value', () => {
+    const source = pattern([0, 1.5, 4]);
+    expect(() => setSegmentMiles(source, -1, 1)).toThrow('Segment not found.');
+    expect(() => setSegmentMiles(source, 2, 1)).toThrow('Segment not found.');
+    expect(() => setSegmentMiles(source, 0, -1)).toThrow('Enter a non-negative number.');
+    expect(() => setSegmentMiles(source, 0, Number.NaN)).toThrow('Enter a non-negative number.');
+  });
+
+  it('does not mutate the input pattern and keeps the points in their array order', () => {
+    const source = pattern([0, 1.5, 4], ['a', 'b', 'c']);
+    const next = setSegmentMiles(source, 0, 2);
+    expect(cumulative(source)).toEqual([0, 1.5, 4]);
+    expect(next.points.map((point) => point.id)).toEqual(['a', 'b', 'c']);
+    expect(next.updatedAt).toBe(source.updatedAt);
   });
 });

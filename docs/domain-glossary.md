@@ -46,7 +46,7 @@ One occurrence of a node within a pattern. It contains an order and cumulative d
 
 ### Segment
 
-The directed connection between two adjacent pattern points. Segment distance is the difference between their cumulative mile values. Segment runtime is defined in a runtime band.
+The directed connection between two adjacent pattern points. Segment distance is the difference between their cumulative mile values. The planner enters segment distance; cumulative distance is derived for display (Decision 0065). Segment runtime is defined in a runtime band.
 
 ### Pattern short name
 

@@ -191,7 +191,7 @@ Direction and pattern sequences are normalized deterministically at the domain/a
 
 A route pattern contains ordered pattern points. A pattern point refers to a node but has its own identifier and sequence. Separate pattern-point identifiers allow a loop to visit the same node more than once.
 
-Each pattern point stores cumulative miles from the beginning of the pattern. Segment miles are calculated from adjacent cumulative values.
+Each pattern point stores cumulative miles from the beginning of the pattern. The planner enters segment miles; the application rewrites the cumulative values (Decision 0065). Fill and Copy share segment distances between patterns of one Route; matching is derived and not stored.
 
 Examples of patterns include:
 
@@ -202,7 +202,7 @@ Examples of patterns include:
 - clockwise loop;
 - counterclockwise loop.
 
-Creating a reverse pattern reverses the pattern points and recalculates cumulative miles from the original segment distances. It does not silently create a runtime profile.
+Creating a reverse pattern reverses the pattern points and recalculates cumulative miles from the original segment distances. It does not silently create a runtime profile. (Decision 0065 adds Fill, which can use reverse-direction distances.)
 
 ## Runtime Model
 

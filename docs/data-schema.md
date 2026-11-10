@@ -185,6 +185,8 @@ A Pattern whose last cumulative distance is 0 has no distance entered. It is a v
 
 Reverse-pattern creation reverses point order, creates new pattern-point IDs, and reconstructs cumulative miles from reversed segment distances.
 
+Planners enter segment miles; the stored field remains `cumulativeMiles`, so segment entry does not change storage (Decision 0065).
+
 ## Runtime entities
 
 Runtime entities are not implemented in Phase 1, but their relationships constrain the route-pattern model.
