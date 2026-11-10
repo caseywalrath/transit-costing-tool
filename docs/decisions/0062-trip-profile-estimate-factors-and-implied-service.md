@@ -4,7 +4,7 @@
 - Date: 2026-11-09 (user request, after the Westracks costing review)
 - Supersedes in part: Decision 0051 item 5 (the factors are part of the one Scenario-owned assumptions record, shared by every Trip Profile)
 - Related: Decisions 0027 (cost basis), 0051 (estimated cost basis), 0058 (planned frequencies)
-- Superseded in part by: Decision 0063, for the Implied service panel of item 6 (replaced by the Cycle calculator; the derivation stays)
+- Superseded in part by: Decision 0063, for the Implied service panel of item 6 (replaced by the Vehicle requirement surface; the derivation stays)
 
 ## Context
 

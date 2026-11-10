@@ -35,7 +35,7 @@ type Row = {
 };
 
 /**
- * The cycle calculator (Decision 0063): one row per service day and Route of an estimated cost basis. The running cycle, headway, and
+ * The Vehicle requirement surface (Decision 0063): one row per service day and Route of an estimated cost basis. The running cycle, headway, and
  * layover start from the trips and the day's layover %; one of layover, headway, and vehicles is solved from the others. Typed values
  * stay on this screen until "Use" writes a row's layover % into that day's Estimate factors cell as an unsaved change.
  */

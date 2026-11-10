@@ -22,9 +22,9 @@ async function open(page: Page) {
 
 const factors = (page: Page) => page.getByRole('grid', { name: 'Estimate factors' });
 const factorsPanel = (page: Page) => page.getByRole('region', { name: 'Estimate factors' });
-const calculator = (page: Page) => page.getByRole('region', { name: 'Cycle calculator' });
+const calculator = (page: Page) => page.getByRole('region', { name: 'Vehicle requirement' });
 
-test('the cycle calculator solves vehicles, layover, or headway, and "Use" puts a layover % into the factors grid (Decision 0063)', async ({ page }) => {
+test('the Vehicle requirement surface solves vehicles, layover, or headway, and "Use" puts a layover % into the factors grid (Decision 0063)', async ({ page }) => {
   await open(page);
   await expect(calculator(page).locator('thead th')).toHaveText(['Service day', 'Cycle running, mean (min)', 'Layover %', 'Cycle with layover (min)', 'Headway, median (min)', 'Vehicles', 'Revenue (h/day)', 'Annual cost', 'Use layover']);
   const running = page.getByRole('textbox', { name: 'Weekday cycle running minutes' });
