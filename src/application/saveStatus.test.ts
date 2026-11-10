@@ -322,3 +322,26 @@ describe('every write of the four services publishes through one publisher', () 
     });
   });
 });
+
+describe('deletion review backup status (Decision 0064)', () => {
+  it('reports a backup on this browser only when it is at or after the last change', async () => {
+    let t = '2026-01-01T00:00:00.000Z';
+    const now = () => t;
+    const repository = new InMemoryRouteDefinitionRepository();
+    const backup = new ProjectBackupService((id) => repository.getProjectSnapshot(id), (snapshot) => repository.saveProjectSnapshot(snapshot));
+    const protection = new LocalDataProtectionService({ load: () => ({}), save: () => {} }, undefined, now);
+    const route = new RouteDefinitionService(repository, backup, now, new SaveStatusPublisher(now), protection);
+    const created = await route.createProject('Review status');
+    const projectId = created.project.id;
+
+    expect(await route.getProjectDeletionImpact(projectId)).toMatchObject({ lastChangedAt: '2026-01-01T00:00:00.000Z', backedUpSinceLastChange: false });
+
+    t = '2026-01-02T00:00:00.000Z';
+    await route.exportProject(projectId);
+    expect(await route.getProjectDeletionImpact(projectId)).toMatchObject({ lastChangedAt: '2026-01-01T00:00:00.000Z', backedUpSinceLastChange: true });
+
+    t = '2026-01-03T00:00:00.000Z';
+    await route.renameProject(projectId, 'Renamed');
+    expect(await route.getProjectDeletionImpact(projectId)).toMatchObject({ lastChangedAt: '2026-01-03T00:00:00.000Z', backedUpSinceLastChange: false });
+  });
+});

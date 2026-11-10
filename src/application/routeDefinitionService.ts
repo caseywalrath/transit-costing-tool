@@ -1,6 +1,6 @@
 import { MAX_ANNUAL_SERVICE_DAYS } from '../domain/costing';
 import { metadata, newId, withUpdatedAt } from '../domain/ids';
-import { createProject, createScenarioRecords, duplicateRouteRecords, duplicateScenario, renameProject as renameProjectRecord, type ScenarioRecords } from '../domain/project';
+import { createProject, createScenarioRecords, duplicateRouteRecords, duplicateScenario, projectLastChangedAt, renameProject as renameProjectRecord, type ScenarioRecords } from '../domain/project';
 import { duplicatePattern, getSegmentMiles, normalizePattern, reversePattern, validatePattern } from '../domain/patterns';
 import { createManagedDirections, ensureManagedDirections, oppositeDirectionGroup } from '../domain/directions';
 import { classifyPatternEdit, describePatternPointChange, getPatternServiceImpact, rebalanceRuntimeProfile, rebalanceTripForPattern, reconcileRouteTimetables, resetPatternService, type DirectionOrderConflict, type PatternServiceImpact, type RouteEditClassification, type RouteEditMode } from '../domain/safeRouteEditing';
@@ -105,6 +105,10 @@ export interface ProjectDeletionImpact {
   patternCount: number;
   tripCount: number;
   blockCount: number;
+  /** Latest change to the project's records (Decision 0064). */
+  lastChangedAt: string;
+  /** True when this browser exported a backup of the project at or after `lastChangedAt`. */
+  backedUpSinceLastChange: boolean;
 }
 
 function nonRevenueActivityReferencesAnyNode(activity: BlockActivity, nodeIds: Set<string>): boolean {
@@ -435,7 +439,10 @@ export class RouteDefinitionService {
   async getProjectDeletionImpact(projectId: string): Promise<ProjectDeletionImpact> {
     const snapshot = await this.repository.getProjectSnapshot(projectId);
     if (!snapshot) throw new Error('Project not found.');
-    return { projectId, reviewToken: projectDeletionToken(snapshot), scenarioCount: snapshot.scenarios.length, routeCount: snapshot.routes.length, patternCount: snapshot.patterns.length, tripCount: snapshot.trips.length, blockCount: snapshot.blocks.length };
+    const lastChangedAt = projectLastChangedAt(snapshot);
+    const exportedAt = this.protection?.getLocalDataProtection().projectBackupExportedAt?.[projectId];
+    const backedUpSinceLastChange = exportedAt !== undefined && Date.parse(exportedAt) >= Date.parse(lastChangedAt);
+    return { projectId, reviewToken: projectDeletionToken(snapshot), scenarioCount: snapshot.scenarios.length, routeCount: snapshot.routes.length, patternCount: snapshot.patterns.length, tripCount: snapshot.trips.length, blockCount: snapshot.blocks.length, lastChangedAt, backedUpSinceLastChange };
   }
 
   /** Deletes the Project only if the stored data still matches the review (`getProjectDeletionImpact`) that `reviewToken` came from. */
