@@ -476,11 +476,17 @@ export class RouteDefinitionService {
     return this.saveScenarioRecords(createScenarioRecords(projectId, name, this.now()));
   }
   async renameScenario(records: ScenarioRecords, name: string): Promise<ScenarioRecords> {
+    return this.renameScenarioById(records.scenario.id, name);
+  }
+  async renameScenarioById(scenarioId: string, name: string): Promise<ScenarioRecords> {
     if (!name.trim()) throw new Error('Scenario name is required');
-    return this.updateScenarioRecords(records.scenario.id, (current) => ({ ...current, scenario: withUpdatedAt({ ...current.scenario, name: name.trim() }, this.now()) }));
+    return this.updateScenarioRecords(scenarioId, (current) => ({ ...current, scenario: withUpdatedAt({ ...current.scenario, name: name.trim() }, this.now()) }));
   }
   async duplicateScenario(records: ScenarioRecords, name: string): Promise<ScenarioRecords> {
-    const stored = await this.repository.getScenarioRecords(records.scenario.id);
+    return this.duplicateScenarioById(records.scenario.id, name);
+  }
+  async duplicateScenarioById(scenarioId: string, name: string): Promise<ScenarioRecords> {
+    const stored = await this.repository.getScenarioRecords(scenarioId);
     if (!stored) throw new Error('Scenario not found.');
     return this.saveScenarioRecords(duplicateScenario(stored, name, this.now()));
   }
