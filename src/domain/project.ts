@@ -334,4 +334,37 @@ export function projectSnapshotWithScenario(snapshot: ProjectSnapshot, records: 
   };
 }
 
+/** Latest `updatedAt` of the Project and every record in its snapshot (Decision 0064). Pure; ISO strings compare by `Date.parse`. */
+export function projectLastChangedAt(snapshot: ProjectSnapshot): string {
+  const collections: ReadonlyArray<ReadonlyArray<{ updatedAt: string }>> = [
+    [snapshot.project],
+    snapshot.scenarios,
+    snapshot.serviceDays,
+    snapshot.routes,
+    snapshot.nodes,
+    snapshot.patterns,
+    snapshot.directions ?? [],
+    snapshot.runtimeProfiles,
+    snapshot.runtimeAssignments,
+    snapshot.tripProfiles ?? [],
+    snapshot.blockingScenarios ?? [],
+    snapshot.costingAssumptions ?? [],
+    snapshot.plannedFrequencies ?? [],
+    snapshot.generationSets,
+    snapshot.trips,
+    snapshot.blocks,
+  ];
+  let latest: string | undefined;
+  let latestTime = Number.NEGATIVE_INFINITY;
+  for (const collection of collections) {
+    for (const record of collection) {
+      const time = Date.parse(record.updatedAt);
+      if (Number.isNaN(time) || time <= latestTime) continue;
+      latestTime = time;
+      latest = record.updatedAt;
+    }
+  }
+  return latest ?? snapshot.project.updatedAt;
+}
+
 export { createStandardServiceDays };

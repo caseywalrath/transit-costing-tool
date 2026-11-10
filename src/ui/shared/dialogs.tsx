@@ -2,7 +2,7 @@ import { type FormEvent, useState } from 'react';
 import { ModalDialog } from '../ModalDialog';
 
 export type NameDialog = { title: string; label?: string; initialValue?: string; submitLabel: string; action: (name: string) => Promise<void> | void };
-export type Confirmation = { title: string; text: string; action: () => void; confirmLabel?: string };
+export type Confirmation = { title: string; text: string; action: () => void; confirmLabel?: string; secondary?: { label: string; action: () => void } };
 /** Cancel and Discard, plus Save when the draft can be saved (a new Pattern that is still being built cannot). */
 export function DiscardRouteDraftDialog({ title, onDiscard, onClose, onSave }: { title: string; onDiscard: () => void; onClose: () => void; onSave?: () => void }) {
   return <ModalDialog role="alertdialog" labelledBy="discard-route-draft-title" className="confirm-dialog" onClose={onClose}><h2 id="discard-route-draft-title">{title}</h2><p>These edits have not been saved.</p><div className="dialog-actions"><button autoFocus onClick={onClose}>Cancel</button><button className="danger" onClick={onDiscard}>Discard</button>{onSave && <button className="primary" onClick={onSave}>Save</button>}</div></ModalDialog>;
@@ -20,7 +20,7 @@ export function NameDialogForm({ dialog, onClose }: { dialog: NameDialog; onClos
 }
 
 export function ConfirmDialog({ dialog, onClose }: { dialog: Confirmation; onClose: () => void }) {
-  return <ModalDialog role="alertdialog" labelledBy="confirm-title" className="confirm-dialog" onClose={onClose}><h2 id="confirm-title">{dialog.title}</h2><p>{dialog.text}</p><div><button autoFocus onClick={onClose}>Cancel</button><button className="danger" onClick={() => { dialog.action(); onClose(); }}>{dialog.confirmLabel ?? 'Confirm'}</button></div></ModalDialog>;
+  return <ModalDialog role="alertdialog" labelledBy="confirm-title" className="confirm-dialog" onClose={onClose}><h2 id="confirm-title">{dialog.title}</h2><p>{dialog.text}</p><div><button autoFocus onClick={onClose}>Cancel</button>{dialog.secondary && <button onClick={() => { dialog.secondary!.action(); onClose(); }}>{dialog.secondary.label}</button>}<button className="danger" onClick={() => { dialog.action(); onClose(); }}>{dialog.confirmLabel ?? 'Confirm'}</button></div></ModalDialog>;
 }
 
 /** Cancel and Discard, plus Save when the staged change can be saved. */

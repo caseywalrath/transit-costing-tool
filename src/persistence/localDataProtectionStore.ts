@@ -19,6 +19,13 @@ export class LocalStorageDataProtectionStore implements LocalDataProtectionStore
       const record = value as Record<string, unknown>;
       const state: LocalDataProtection = {};
       if (typeof record.lastBackupExportedAt === 'string' && !Number.isNaN(Date.parse(record.lastBackupExportedAt))) state.lastBackupExportedAt = record.lastBackupExportedAt;
+      if (record.projectBackupExportedAt && typeof record.projectBackupExportedAt === 'object' && !Array.isArray(record.projectBackupExportedAt)) {
+        const kept: Record<string, string> = {};
+        for (const [projectId, exportedAt] of Object.entries(record.projectBackupExportedAt)) {
+          if (projectId !== '' && typeof exportedAt === 'string' && !Number.isNaN(Date.parse(exportedAt))) kept[projectId] = exportedAt;
+        }
+        if (Object.keys(kept).length > 0) state.projectBackupExportedAt = kept;
+      }
       if (ANSWERS.has(record.persistentStorage)) state.persistentStorage = record.persistentStorage as LocalDataProtection['persistentStorage'];
       if (typeof record.persistentStorageCheckedAt === 'string' && !Number.isNaN(Date.parse(record.persistentStorageCheckedAt))) state.persistentStorageCheckedAt = record.persistentStorageCheckedAt;
       return state;

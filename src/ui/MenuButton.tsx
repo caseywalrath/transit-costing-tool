@@ -1,10 +1,9 @@
-import { Fragment, type ReactNode, useEffect, useId, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
+import { ContextMenu } from './ContextMenu';
+import { MenuGroups, moveMenuFocus, type ContextRequest, type MenuGroup, type MenuItem, type MenuSelectEvent } from './menuItems';
 import { rememberDialogInvoker } from './ModalDialog';
 
-/** What an item's `onSelect` can read about the click that chose it (Ctrl or ⌘ held, for example). Choosing by keyboard reports the held keys too. */
-export type MenuSelectEvent = { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean };
-export type MenuItem = { id: string; label: string; onSelect: (event: MenuSelectEvent) => void; disabled?: boolean; title?: string; checked?: boolean; /** With `checked`: `checkbox` for a toggle that is independent of the other items; the default `radio` marks one choice of a group. */ kind?: 'radio' | 'checkbox'; destructive?: boolean; restoreFocus?: boolean; wrapLabel?: boolean; /** Plain text shown under the item and read as its description (for example the time of the last backup). An array shows one line each. */ note?: string | string[] };
-export type MenuGroup = { label?: string; items: MenuItem[] };
+export type { MenuGroup, MenuItem, MenuSelectEvent } from './menuItems';
 
 /** Compact, keyboard-operable action menu used by workspace headers. */
 export function MenuButton({ label, menuLabel, groups, disabled = false, fieldLabel, triggerRef: externalTriggerRef, selectionStyle = 'check', triggerClassName, triggerAriaLabel, triggerContent, menuAlign = 'end', onTriggerModifierClick, fixedMenu = false, triggerTitle }: { label: string; menuLabel: string; groups: MenuGroup[]; disabled?: boolean; fieldLabel?: string; triggerRef?: { current: HTMLButtonElement | null }; selectionStyle?: 'check' | 'highlight'; triggerClassName?: string; triggerAriaLabel?: string; /** Replaces the label text inside the trigger (the header switchers show a caption and a name). */ triggerContent?: ReactNode; /** Which edge of the trigger the menu lines up with. */ menuAlign?: 'start' | 'end'; /** A click on the trigger with Ctrl or ⌘ held runs this and does not open the menu. */ onTriggerModifierClick?: () => void; /** Places the menu by window position, so a scrolling or clipping ancestor (the pinned table headings) cannot cut it off. The menu closes when the window scrolls or resizes. */ fixedMenu?: boolean; /** The trigger's tooltip (an icon-only trigger shows its accessible label instead). */ triggerTitle?: string }) {
@@ -21,13 +20,22 @@ export function MenuButton({ label, menuLabel, groups, disabled = false, fieldLa
   });
   // Focus goes back to the trigger at once, not in a later timer. A timer could fire after the next control had been focused, pull the focus
   // back to this trigger, and make the next ArrowDown open this menu instead of the one the planner (or a test) meant.
-  const dismiss = (returnFocus = true) => { if (returnFocus) triggerRef.current?.focus(); setOpen(false); };
+  const dismiss = (returnFocus = true) => { if (returnFocus) triggerRef.current?.focus(); setOpen(false); setContext(undefined); };
+  // An item's context menu (Decision 0064): open beside the item, or at the pointer. The parent menu stays open under it.
+  const [context, setContext] = useState<ContextRequest & { point: { x: number; y: number } }>();
+  const openContext = ({ item, element, point }: ContextRequest) => { const rect = element.getBoundingClientRect(); setContext({ item, element, point: point ?? { x: rect.right, y: rect.top } }); };
+  const choose = (item: MenuItem, event: MenuSelectEvent) => {
+    // A dialog that the item opens must keep the focus it takes, and return it to this trigger when it closes.
+    rememberDialogInvoker(triggerRef.current);
+    dismiss(false); item.onSelect(event);
+    if (item.restoreFocus !== false) window.setTimeout(() => { const active = document.activeElement; if (!active || active === document.body || rootRef.current?.contains(active)) triggerRef.current?.focus(); });
+  };
   const iconOnly = label === 'Actions';
   const accessibleLabel = triggerAriaLabel ?? (iconOnly ? menuLabel : undefined);
 
   useEffect(() => {
     if (!open) return;
-    const onPointerDown = (event: PointerEvent) => { if (!rootRef.current?.contains(event.target as globalThis.Node)) dismiss(false); };
+    const onPointerDown = (event: PointerEvent) => { const target = event.target as globalThis.Node; if (!rootRef.current?.contains(target) && !(target instanceof Element && target.closest('[data-menu-layer]'))) dismiss(false); };
     const onMove = () => dismiss(false);
     document.addEventListener('pointerdown', onPointerDown);
     if (fixedMenu) { window.addEventListener('scroll', onMove, true); window.addEventListener('resize', onMove); }
@@ -45,26 +53,13 @@ export function MenuButton({ label, menuLabel, groups, disabled = false, fieldLa
       if (event.key === 'Tab' && open) setOpen(false);
     }}>{iconOnly ? <EllipsisIcon /> : <>{triggerContent ?? label}<span aria-hidden="true" className="menu-chevron"> ▾</span></>}</button>
     {open && <div id={menuId} className={menuAlign === 'start' ? 'action-menu action-menu--start' : 'action-menu'} role="menu" aria-label={menuLabel} style={fixedMenu && anchor ? { position: 'fixed', top: anchor.top, left: anchor.left, right: 'auto' } : undefined} onKeyDown={(event) => {
-      const menuItems = [...rootRef.current?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)') ?? []];
-      const current = menuItems.indexOf(document.activeElement as HTMLButtonElement);
       if (event.key === 'Escape') { event.preventDefault(); dismiss(); }
       // Tab leaves the menu: close it and let the browser move on from the trigger (WAI-ARIA menu button pattern).
       if (event.key === 'Tab') { triggerRef.current?.focus(); setOpen(false); }
-      if (event.key === 'Home') { event.preventDefault(); menuItems[0]?.focus(); }
-      if (event.key === 'End') { event.preventDefault(); menuItems.at(-1)?.focus(); }
-      if (event.key === 'ArrowDown') { event.preventDefault(); menuItems[(current + 1 + menuItems.length) % menuItems.length]?.focus(); }
-      if (event.key === 'ArrowUp') { event.preventDefault(); menuItems[(current - 1 + menuItems.length) % menuItems.length]?.focus(); }
-    }}>{groups.map((group, groupIndex) => <div className="action-menu-group" key={`${group.label ?? 'commands'}-${groupIndex}`}>
-      {groupIndex > 0 && <div className="action-menu-separator" role="separator" />}
-      {group.label && <div className="action-menu-label" role="presentation">{group.label}</div>}
-      {group.items.map((item) => { const notes = ([] as string[]).concat(item.note ?? []).filter(Boolean); const noteId = (index: number) => `${menuId}-${item.id}-note${index ? `-${index}` : ''}`; return <Fragment key={item.id}><button type="button" role={item.checked === undefined ? 'menuitem' : item.kind === 'checkbox' ? 'menuitemcheckbox' : 'menuitemradio'} aria-checked={item.checked} aria-describedby={notes.length ? notes.map((_, index) => noteId(index)).join(' ') : undefined} className={[item.destructive && 'subtle-danger', item.checked && selectionStyle === 'highlight' && 'menu-item-selected'].filter(Boolean).join(' ') || undefined} disabled={item.disabled} title={item.title} onClick={(event) => {
-        if (item.disabled) return;
-        // A dialog that the item opens must keep the focus it takes, and return it to this trigger when it closes.
-        rememberDialogInvoker(triggerRef.current);
-        dismiss(false); item.onSelect({ ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey });
-        if (item.restoreFocus !== false) window.setTimeout(() => { const active = document.activeElement; if (!active || active === document.body || rootRef.current?.contains(active)) triggerRef.current?.focus(); });
-      }}>{item.checked && selectionStyle === 'check' && <span className="menu-check" aria-hidden="true">✓</span>}<span className={item.wrapLabel ? 'menu-item-label menu-item-label--wrap' : 'menu-item-label'}>{item.label}</span></button>{notes.map((note, index) => <div className="action-menu-note" role="presentation" id={noteId(index)} key={index}>{note}</div>)}</Fragment>; })}
-    </div>)}</div>}
+      moveMenuFocus(event, rootRef.current);
+    }}><MenuGroups groups={groups} menuId={menuId} selectionStyle={selectionStyle} onChoose={choose} onItemContext={openContext} /></div>}
+    {open && context && <ContextMenu heading={context.item.contextHeading ?? context.item.label} groups={context.item.contextGroups?.() ?? []} point={context.point} onChoose={choose}
+      onClose={(returnFocus) => { const element = context.element; setContext(undefined); if (returnFocus) element.focus(); }} />}
   </div>;
 }
 

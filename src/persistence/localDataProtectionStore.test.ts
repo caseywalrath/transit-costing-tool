@@ -26,4 +26,13 @@ describe('LocalStorageDataProtectionStore', () => {
     expect(() => store.save({ lastBackupExportedAt: at })).not.toThrow();
     expect(new LocalStorageDataProtectionStore(undefined).load()).toEqual({});
   });
+
+  it('keeps only the valid per-project backup times of a stored map', () => {
+    const stored = { projectBackupExportedAt: { good: at, badDate: 'not a date', number: 5 } };
+    expect(new LocalStorageDataProtectionStore(fakeStorage(JSON.stringify(stored))).load()).toEqual({ projectBackupExportedAt: { good: at } });
+  });
+
+  it('reads a stored array as no per-project backup times', () => {
+    expect(new LocalStorageDataProtectionStore(fakeStorage(JSON.stringify({ projectBackupExportedAt: [at] }))).load()).toEqual({});
+  });
 });
