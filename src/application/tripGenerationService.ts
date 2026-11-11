@@ -216,11 +216,12 @@ export class TripGenerationService {
     return this.repository.deleteTripsAtomically.bind(this.repository);
   }
 
-  private async persistRegeneration(beforeTrips: Trip[], afterTrips: Trip[]): Promise<void> {
+  /** Writes Trips and the one-step undo snapshot together (Decision 0070): a regeneration or a pattern change replaces the saved undo. */
+  private async persistWithUndo(beforeTrips: Trip[], afterTrips: Trip[], kind: NonNullable<TripRegenerationUndo['kind']>): Promise<void> {
     if (!this.repository.saveRegeneratedTripsWithUndo) { await this.atomicChanges()(afterTrips); return; }
     const firstTrip = beforeTrips[0];
     if (!firstTrip?.tripProfileId) { await this.atomicChanges()(afterTrips); return; }
-    const snapshot: TripRegenerationUndo = { id: 'last', scenarioId: firstTrip.scenarioId, tripProfileId: firstTrip.tripProfileId, createdAt: this.now(), beforeTrips, afterTrips };
+    const snapshot: TripRegenerationUndo = { id: 'last', scenarioId: firstTrip.scenarioId, tripProfileId: firstTrip.tripProfileId, createdAt: this.now(), beforeTrips, afterTrips, kind };
     await this.repository.saveRegeneratedTripsWithUndo(beforeTrips, afterTrips, snapshot);
   }
 
@@ -372,7 +373,7 @@ export class TripGenerationService {
     const updated = applyPatternChange(trip, target, recalculated, this.now());
     const revision = profile.calculationRevision ?? 0;
     const sourced = { ...updated, provenance: { ...updated.provenance, creationMethod: updated.provenance.creationMethod ?? updated.provenance.kind, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision } } };
-    await this.atomicChanges()([sourced]);
+    await this.persistWithUndo([trip], [sourced], 'patternChange');
     return sourced;
   }
 
@@ -441,7 +442,7 @@ export class TripGenerationService {
     if (current.impact.requiresConfirmation && !confirm) throw new TripRecalculationConfirmationError(current);
     const beforeTrips = (await Promise.all(current.trips.map((trip) => this.repository.getTrip(trip.id)))).filter((trip): trip is Trip => Boolean(trip));
     if (beforeTrips.length !== current.trips.length) throw new Error('A selected Trip changed. Review regeneration again.');
-    await this.persistRegeneration(beforeTrips, current.trips);
+    await this.persistWithUndo(beforeTrips, current.trips, 'regeneration');
     return current;
   }
 
@@ -451,7 +452,7 @@ export class TripGenerationService {
     if (preview.impact.requiresConfirmation && !confirm) throw new TripRecalculationConfirmationError(preview);
     const beforeTrips = (await Promise.all(preview.trips.map((trip) => this.repository.getTrip(trip.id)))).filter((trip): trip is Trip => Boolean(trip));
     if (beforeTrips.length !== preview.trips.length) throw new Error('A selected Trip changed. Review regeneration again.');
-    await this.persistRegeneration(beforeTrips, preview.trips);
+    await this.persistWithUndo(beforeTrips, preview.trips, 'regeneration');
     return preview;
   }
 
@@ -541,7 +542,8 @@ export class TripGenerationService {
       const revision = targetProfile.calculationRevision ?? 0;
       return { ...changed, provenance: { ...changed.provenance, creationMethod: changed.provenance.creationMethod ?? changed.provenance.kind, runtimeProfileId: targetProfile.id, runtimeCalculationRevision: revision, calculationSource: { runtimeProfileId: targetProfile.id, runtimeCalculationRevision: revision } } };
     });
-    await this.atomicChanges()(updated);
+    const befores = updated.map((trip) => currentById.get(trip.id)!);
+    await this.persistWithUndo(befores, updated, 'patternChange');
     return context.preview;
   }
 

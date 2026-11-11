@@ -413,7 +413,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
   async restoreLastTripRegenerationUndo(): Promise<Trip[]> {
     const snapshot = this.tripRegenerationUndo;
     if (!snapshot) throw new Error('There is no regeneration to undo.');
-    if (snapshot.afterTrips.some((trip) => JSON.stringify(this.trips.get(trip.id)) !== JSON.stringify(trip))) { this.tripRegenerationUndo = undefined; throw new Error('The regenerated Trips changed. The undo is no longer available.'); }
+    if (snapshot.afterTrips.some((trip) => JSON.stringify(this.trips.get(trip.id)) !== JSON.stringify(trip))) { this.tripRegenerationUndo = undefined; throw new Error(snapshot.kind === 'patternChange' ? 'The changed Trips were edited again. The undo is no longer available.' : 'The regenerated Trips changed. The undo is no longer available.'); }
     for (const trip of snapshot.beforeTrips) this.trips.set(trip.id, trip);
     this.tripRegenerationUndo = undefined;
     return snapshot.beforeTrips;
