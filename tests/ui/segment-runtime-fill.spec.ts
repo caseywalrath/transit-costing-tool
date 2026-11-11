@@ -58,7 +58,8 @@ test('copy shows an include box for each target, disables the confirm button whe
   const target = dialog.getByRole('checkbox', { name: `Include ${WESTMINSTER_TO_ENGLEWOOD} · Weekday workbook runtimes` });
   await expect(target).toBeFocused();
   await expect(dialog.getByRole('button', { name: 'Replace runtimes' })).toBeEnabled();
-  await expect(dialog.getByText('No band with the same start and end time')).toBeVisible();
+  // Decision 0074: bands pair by overlap. Wagon Road–Evans has more bands than this target pairs one to one, so a shared target band is reported.
+  await expect(dialog.getByText('More than one band would copy into this band')).toBeVisible();
 
   await target.uncheck();
   await expect(dialog.getByText('No runtimes would change.')).toBeVisible();

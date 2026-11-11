@@ -132,9 +132,13 @@ export function RuntimeProfileDialog2({ dialog, candidates, onSubmit, onClose }:
 export function DeleteRuntimeProfileDialog({ profile, profiles, assignmentCount, tripCount, onDelete, onClose }: { profile: RuntimeProfile; profiles: RuntimeProfile[]; assignmentCount: number; tripCount: number; onDelete: (replacementProfileId?: string) => Promise<void>; onClose: () => void }) { const alternatives = profiles.filter((item) => item.id !== profile.id); const [replacement, setReplacement] = useState(alternatives[0]?.id ?? ''); const requiresReplacement = assignmentCount > 0; const blocked = tripCount > 0 || (requiresReplacement && !alternatives.length); return <ModalDialog labelledBy="delete-runtime-profile-title" className="confirm-dialog" onClose={onClose}><h2 id="delete-runtime-profile-title">Delete runtime profile?</h2>{tripCount > 0 ? <p className="field-error">{tripCount} saved trip{tripCount === 1 ? '' : 's'} retain this profile as their run-time source. Delete or recalculate those trips before deleting this profile.</p> : requiresReplacement ? <><p>This profile is assigned to {assignmentCount} service-day pattern combination{assignmentCount === 1 ? '' : 's'}. Select a replacement profile.</p>{alternatives.length > 0 ? <label className="dialog-field">Replacement<select value={replacement} onChange={(event) => setReplacement(event.target.value)}>{alternatives.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : <p className="field-error">Create another profile before deleting this one.</p>}</> : <p>This profile is not assigned to service and is not used by a saved trip.</p>}<div className="dialog-actions"><button onClick={onClose}>Cancel</button><button className="subtle-danger" disabled={blocked} onClick={() => void onDelete(requiresReplacement ? replacement : undefined)}>Delete</button></div></ModalDialog>; }
 const SEGMENT_SKIP_TITLES = {
   ambiguous: 'Segment appears more than once in a pattern',
-  bandMismatch: 'No band with the same start and end time',
+  bandMismatch: 'No band overlaps by more than half',
+  bandShared: 'More than one band would copy into this band',
   unassigned: 'Profile is not assigned to any service day',
   conflict: 'Other patterns disagree',
+  otherServiceDays: 'Profile is assigned to other service days only',
+  noMatchingSegment: 'No segment in common',
+  emptySource: 'Other patterns have :00 for this segment',
 } as const;
 
 /** Decision 0049: preview, then confirm, a copy of this profile's segment runtimes to other patterns or a fill of its `:00` cells from them. */
@@ -169,7 +173,7 @@ export function SegmentRuntimeDialog({ service, mode, profileId, onDone, onClose
   // A band mismatch is reported for each band, so the dialog lists each profile once with its unmatched bands.
   const bandMismatches = new Map<string, SegmentRuntimePreview['skips'][number] & { ranges: string[] }>();
   for (const skip of preview?.skips ?? []) if (skip.reason === 'bandMismatch') { const entry = bandMismatches.get(skip.profileId) ?? { ...skip, ranges: [] }; const range = preview?.bandRanges[skip.bandId ?? '']; if (range && !entry.ranges.includes(range)) entry.ranges.push(range); bandMismatches.set(skip.profileId, entry); }
-  const skipGroups = (['ambiguous', 'bandMismatch', 'unassigned', 'conflict'] as const).map((reason) => ({ reason, skips: reason === 'bandMismatch' ? [...bandMismatches.values()] : (preview?.skips ?? []).filter((skip) => skip.reason === reason) })).filter((group) => group.skips.length);
+  const skipGroups = (['ambiguous', 'bandMismatch', 'unassigned', 'conflict', 'bandShared', 'otherServiceDays', 'noMatchingSegment', 'emptySource'] as const).map((reason) => ({ reason, skips: reason === 'bandMismatch' ? [...bandMismatches.values()] : (preview?.skips ?? []).filter((skip) => skip.reason === reason) })).filter((group) => group.skips.length);
   const skipText = (skip: SegmentRuntimePreview['skips'][number] & { ranges?: string[] }) => {
     const parts = [who(skip.profileId, skip.patternId)];
     if (skip.ranges) parts.push(skip.ranges.join(', '));
@@ -181,7 +185,7 @@ export function SegmentRuntimeDialog({ service, mode, profileId, onDone, onClose
   const title = copy ? 'Copy segments to other patterns' : 'Fill from other patterns';
   return <ModalDialog labelledBy="segment-runtime-title" className="confirm-dialog preview-dialog segment-runtime-dialog" onClose={onClose} busy={busy}>
     <h2 id="segment-runtime-title">{title}</h2>
-    <p>{copy ? "Runtimes for segments shared with other patterns will be replaced with this profile's values, for bands with the same start and end times." : 'Runtimes of :00 in this profile will be filled from other patterns that share the segment, for bands with the same start and end times.'}</p>
+    <p>{copy ? "Runtimes for segments shared with other patterns will be replaced with this profile's values, for each band of the other pattern that overlaps one of this profile's bands by more than half." :'Runtimes of :00 in this profile will be filled from other patterns that share the segment, using the band of each other pattern that overlaps this band by more than half.'}</p>
     {!preview && !error && <p role="status">Loading preview…</p>}
     {preview && <>
       {rows.length > 0 && <div className="preview-times"><table>

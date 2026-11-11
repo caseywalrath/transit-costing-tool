@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { goldenRaw } from '../testSupport/goldenBackup';
 import { metadata } from './ids';
-import { applySegmentRuntimePlan, planCopyToOthers, planFillFromOthers, qualifyingProfiles, segmentKeys } from './segmentRuntimeMatching';
+import { applySegmentRuntimePlan, defaultBandPairs, planCopyToOthers, planFillFromOthers, qualifyingProfiles, segmentKeys } from './segmentRuntimeMatching';
 import type { RoutePattern, RuntimeAssignment, RuntimeProfile } from './types';
 
 const T = metadata('2026-01-01T00:00:00.000Z');
@@ -73,11 +74,22 @@ describe('segment runtime matching', () => {
     expect(new Set(plan.changes.map((change) => change.segmentIndex))).toEqual(new Set([3]));
   });
 
-  it('6. a band that overlaps but is not identical is a band mismatch', () => {
+  it('6. a band is paired with the band that overlaps it most, if by more than half', () => {
+    // [6, 10] overlaps [6, 9] for 3 of its 4 hours, so the two are paired and the five segments are copied.
     const odd = profile('PB', 'B', 7, () => 0, {}, [[4, 6], [6, 9], [10, 18], [18, 22], [22, 26]]);
     const plan = planCopyToOthers(input(profileA, [odd]));
+    expect(plan.changes).toHaveLength(25);
+    expect(plan.changes.filter((change) => change.bandId === 'PB-b1')).toHaveLength(5);
+    expect(plan.skips).toEqual([]);
+  });
+
+  it('6a. a band whose best overlap is not more than half of it is a band mismatch', () => {
+    // [6, 10] overlaps [6, 8] and [8, 18] for 2 hours each, which is not more than half of 4 hours, so it has no partner.
+    const split = profile('PB', 'B', 7, () => 0, {}, [[4, 6], [6, 8], [8, 18], [18, 22], [22, 26]]);
+    const plan = planCopyToOthers(input(profileA, [split]));
+    expect(plan.skips).toEqual([{ profileId: 'PB', patternId: 'B', reason: 'bandMismatch', bandId: 'PA-b1' }]);
     expect(plan.changes).toHaveLength(20);
-    expect(plan.skips.filter((skip) => skip.reason === 'bandMismatch').length).toBeGreaterThan(0);
+    expect(plan.changes.some((change) => change.bandId === 'PB-b1')).toBe(false);
   });
 
   it('6b. fill uses the bands that match even when the open profile has fewer bands', () => {
@@ -85,7 +97,66 @@ describe('segment runtime matching', () => {
     const plan = planFillFromOthers(input(twoBands, [profileA]));
     expect(plan.changes).toHaveLength(10);
     expect(new Set(plan.changes.map((change) => change.bandId))).toEqual(new Set(['PB-b0', 'PB-b1']));
-    expect(plan.skips.filter((skip) => skip.reason === 'bandMismatch').map((skip) => skip.bandId)).toEqual(['PA-b2', 'PA-b3', 'PA-b4']);
+    // Pairing is one-sided (Decision 0074 item 4): the source's bands that have no open band are not reported.
+    expect(plan.skips.filter((skip) => skip.reason === 'bandMismatch')).toEqual([]);
+  });
+
+  it('6c. defaultBandPairs: an identical band wins, a tie or an under-half overlap gives null', () => {
+    const open = profile('PO', 'A', 8, () => 0, {}, [[4, 8], [8, 10]]);
+    const other = profile('PQ', 'B', 7, () => 0, {}, [[4, 6], [6, 8], [8, 10]]);
+    expect(defaultBandPairs(open, [other])).toEqual({ PQ: { 'PO-b0': null, 'PO-b1': 'PQ-b2' } });
+  });
+
+  it('6d. an explicit bandPairs input replaces the default pairing', () => {
+    const plan = planCopyToOthers(input(profileA, [emptyB], { bandPairs: { PB: { 'PA-b0': null, 'PA-b1': null, 'PA-b2': null, 'PA-b3': null, 'PA-b4': null } } }));
+    expect(plan.changes).toEqual([]);
+    expect(plan.skips.filter((skip) => skip.reason === 'bandMismatch')).toHaveLength(5);
+  });
+
+  it('6e. a pair with no shared segment is reported as noMatchingSegment', () => {
+    const C = pattern('C', ['Q', 'R'], 2);
+    const pc = profile('PC', 'C', 1, () => 0);
+    const plan = planCopyToOthers({ ...input(profileA, [pc]), patterns: [A, C], assignments: [assign('PA', 'A'), assign('PC', 'C')] });
+    expect(plan.changes).toEqual([]);
+    expect(plan.skips).toEqual([{ profileId: 'PC', patternId: 'C', reason: 'noMatchingSegment' }]);
+  });
+
+  it('6f. a profile assigned only to other Service days is reported as otherServiceDays', () => {
+    const plan = planCopyToOthers({ ...input(profileA, [emptyB]), assignments: [assign('PA', 'A'), assign('PB', 'B', 'saturday')] });
+    expect(plan.skips).toEqual([{ profileId: 'PB', patternId: 'B', reason: 'otherServiceDays' }]);
+  });
+
+  it('6g. fill reports a cell whose matched sources are all :00 as emptySource', () => {
+    const zeroA = profile('PZ', 'A', 8, () => 0);
+    const plan = planFillFromOthers({ ...input(emptyB, [zeroA]), assignments: [assign('PB', 'B'), assign('PZ', 'A')] });
+    expect(plan.changes).toEqual([]);
+    expect(plan.skips.filter((skip) => skip.reason === 'emptySource')).toHaveLength(25);
+    expect(plan.skips.find((skip) => skip.reason === 'emptySource')).toMatchObject({ profileId: 'PB', bandId: 'PB-b0', segmentIndex: 0 });
+  });
+
+  it('7. golden: a Westminster Weekday profile with every segment at :00 has fill changes', () => {
+    const backup = goldenRaw();
+    const westminster = backup.patterns.find((pattern: RoutePattern) => pattern.name === 'Southbound: Westminster Station to Englewood');
+    const routeProfiles: RuntimeProfile[] = backup.runtimeProfiles.filter((profile: RuntimeProfile) => profile.routeId === westminster.routeId);
+    const open = routeProfiles.find((profile) => profile.patternId === westminster.id && profile.name.startsWith('Weekday'))!;
+    for (const band of open.bands) band.segmentRuntimeSeconds = band.segmentRuntimeSeconds.map(() => 0);
+    const plan = planFillFromOthers({ openProfile: open, patterns: backup.patterns.filter((pattern: RoutePattern) => pattern.routeId === westminster.routeId), profiles: routeProfiles, assignments: backup.runtimeAssignments });
+    expect(plan.changes.length).toBeGreaterThan(0);
+  });
+
+  it('7b. golden: copy never writes one target cell twice, and a target band claimed by two open bands is reported', () => {
+    const backup = goldenRaw();
+    const routeId = backup.patterns[0].routeId;
+    const routeProfiles: RuntimeProfile[] = backup.runtimeProfiles.filter((profile: RuntimeProfile) => profile.routeId === routeId);
+    const patterns = backup.patterns.filter((pattern: RoutePattern) => pattern.routeId === routeId);
+    let shared = 0;
+    for (const open of routeProfiles) {
+      const plan = planCopyToOthers({ openProfile: open, patterns, profiles: routeProfiles, assignments: backup.runtimeAssignments });
+      const cells = plan.changes.map((change) => `${change.profileId}:${change.bandId}:${change.segmentIndex}`);
+      expect(new Set(cells).size).toBe(cells.length);
+      shared += plan.skips.filter((skip) => skip.reason === 'bandShared').length;
+    }
+    expect(shared).toBeGreaterThan(0);
   });
 
   it('7. matches only profiles that share a service day, and reports unassigned profiles', () => {

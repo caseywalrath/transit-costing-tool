@@ -99,6 +99,15 @@ describe('segment runtime copy and fill (service)', () => {
     expect(service.getSegmentRuntimeUndo()).toBeUndefined();
   });
 
+  it('band ranges in the preview show seconds when a band boundary is not a whole minute', async () => {
+    const { service, profiles, stored, setSeconds } = await setup();
+    await setSeconds(0, 600);
+    const current = await stored(0);
+    await service.saveRuntimeProfile({ ...current, bands: current.bands.map((band) => ({ ...band, endTime: 21630 })) });
+    const preview = await service.previewSegmentRuntimeFill(profiles[1].id);
+    expect(preview.bandRanges[current.bands[0].id]).toBe('0:00–6:00:30');
+  });
+
   it('makes undo unavailable after another runtime save', async () => {
     const { service, profiles, setSeconds } = await setup();
     await setSeconds(0, 600);
