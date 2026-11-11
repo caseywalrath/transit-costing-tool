@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { type BlockingCommands, type BlockingQueries } from '../../application/ports';
 import { MenuButton, type MenuGroup } from '../MenuButton';
@@ -26,7 +26,8 @@ import { type PlannedFrequencyService, type PlanComparisonResult } from '../../a
 import { PlanStatusChip } from './PlanStatusChip';
 import { type BuildTripsValues, EMPTY_BUILD_VALUES, type NewRuntimeDialog, TripBlockAssignmentDialog, TripBlockUnassignmentDialog, BuildTripsDrawer, RuntimeProfileDialog2, DeleteRuntimeProfileDialog, DeleteTripsDialog, RuntimeDayCopyDialog, SegmentRuntimeDialog, TripDayCopyDialog, StartTimeChangeDialog } from './dialogs';
 import { BatchPatternChangeDialog, RecalculationDialog as TripRecalculationDialog, type ReviewContext, TripPatternChangeDialog } from './reviewDialogs';
-import { markTrips, NO_MARKS } from './changedTrips';
+import { markStrength, markTrips, NO_MARKS } from './changedTrips';
+import { ChangedTripsBar, revealFirstMarkedRow } from './ChangedTripsBar';
 import { type TripBlockAssignmentDraft, type TripBlockOption, type TripSelectionRequest, formatTripTableClock, ScheduleTable } from './ScheduleTable';
 import { alternatingFrom, combineSelection, invertSelection, tripIdsMatching } from '../../application/tripSelection';
 import { download } from '../shared/download';
@@ -86,6 +87,9 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   const directions = orderDirections(aggregate.directions ?? []);
   // The Trips the last change wrote, marked in the table (Decision 0073). Cleared when the schedule, Route or Scenario changes.
   const [changedMarks, setChangedMarks] = useState(NO_MARKS);
+  // R7 (Decision 0073 item 2): after a change, bring the first marked row into view when none is visible. It runs after the reload and after
+  // the staged-shift scroll restore (two animation frames), so that restore wins whenever it already shows a marked row.
+  const revealedTick = useRef(0);
   const [profiles, setProfiles] = useState<RuntimeProfile[]>([]);
   // What the Runtime section last read: the Route's profiles and the day's assignments (the Trips table shades with them), and the days that share the selected profile.
   const [routeRuntime, setRouteRuntime] = useState<{ profiles: RuntimeProfile[]; assignments: RuntimeAssignment[] }>();
@@ -96,6 +100,13 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   const [deleteProfileOpen, setDeleteProfileOpen] = useState(false);
   const [profileDeletionImpact, setProfileDeletionImpact] = useState<{ assignmentCount: number; tripCount: number; reviewToken: string }>();
   const [trips, setTrips] = useState<Trip[]>([]);
+  const visibleTripIds = useMemo(() => new Set(trips.map((trip) => trip.id)), [trips]);
+  // Once per change, after the reload has drawn the marked rows.
+  useEffect(() => {
+    if (!changedMarks.ids.size || revealedTick.current === changedMarks.tick || ![...changedMarks.ids].some((id) => visibleTripIds.has(id))) return;
+    const timer = window.setTimeout(() => { revealedTick.current = changedMarks.tick; revealFirstMarkedRow(); }, 150);
+    return () => window.clearTimeout(timer);
+  }, [changedMarks, visibleTripIds]);
   /** The saved Trips of the Route on the service day, both directions, for the day line under the Trips table (Decision 0051). */
   const [routeDayTrips, setRouteDayTrips] = useState<Trip[]>([]);
   // The comparison with the plan is read again whenever the trips are loaded, so it follows every trip write (Decision 0058 item 6).
@@ -795,7 +806,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     { id: 'unassign-block', label: 'Unassign…', disabled: unassignDisabled(canUnassignSelected), title: unassignTitle(canUnassignSelected, 'Select at least one assigned trip.'), onSelect: () => openTripBlockAssignment(selectedTripIds, '', 'actions', tripsActionsRef.current, 'unassign') },
     { id: 'delete', label: 'Delete…', destructive: true, disabled: stagedLockDisabled, title: stagedLockTitle, onSelect: () => void requestTripDeletion(selectedTripIds) },
   ];
-  const renderSelectionBar = (compact: boolean) => shiftDrawerOpen ? renderShiftBar(compact) : selectedTripIds.length > 0 ? <SelectionBar compact={compact} count={selectedTripIds.length} noun="trip" ariaLabel="Selected trips" onClear={clearTripSelection}>
+  const renderSelectionBar = (compact: boolean) => shiftDrawerOpen ? renderShiftBar(compact) : selectedTripIds.length === 0 && markStrength(changedMarks) === 'steady' ? <ChangedTripsBar marks={changedMarks} visibleTripIds={visibleTripIds} onSelect={(ids) => requestShiftScopeChange(() => { selectionAnchorId.current = undefined; setSelectedTripIds(ids); })} onClear={() => setChangedMarks(NO_MARKS)} /> : selectedTripIds.length > 0 ?<SelectionBar compact={compact} count={selectedTripIds.length} noun="trip" ariaLabel="Selected trips" onClear={clearTripSelection}>
     {selectionCommands.map((item) => <CommandButton key={item.id} item={item} />)}
   </SelectionBar> : null;
   // A Trip row's context menu (Decision 0066 item 8). A selected row acts on the selection; an unselected row acts on that Trip only and
