@@ -29,7 +29,7 @@ test('selects by pattern, adds a second pattern with Ctrl, inverts, and uses the
 
   await openHeaderMenu(page);
   const labels = await headerMenu(page).getByRole('menuitem').allTextContents();
-  expect(labels.slice(0, 3)).toEqual(['Select all (138)', 'Select none', 'Invert selection']);
+  expect(labels.slice(0, 4)).toEqual(['Select all (138)', 'Select none', 'Invert selection', 'Select alternating']);
   expect(labels.at(-2)).toMatch(/^Not assigned to a block \(\d+\)$/);
   expect(labels.at(-1)).toMatch(/^Run times have changed \(\d+\)$/);
   const patternLabels = labels.filter((label) => /\(\d+\)$/.test(label)).slice(1, -2);
@@ -124,4 +124,41 @@ test('the select menu stays usable from the pinned headings, and a staged Shift 
   await headerMenu(page).getByRole('menuitem', { name: 'Invert selection', exact: true }).click();
   await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
   await expect(selected(page)).toHaveCount(137);
+});
+
+test('select alternating takes the one selected Trip and every second shown Trip below it (Decision 0069)', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openGoldenTrips(page);
+  const rows = grid(page).locator('tbody tr');
+  const alternate = () => headerMenu(page).getByRole('menuitem', { name: 'Select alternating', exact: true });
+
+  // Zero selected: disabled, with the reason as its title.
+  await openHeaderMenu(page);
+  await expect(alternate()).toBeDisabled();
+  await expect(alternate()).toHaveAttribute('title', 'Select one trip to start from.');
+  await page.keyboard.press('Escape');
+  await expect(headerMenu(page)).toHaveCount(0);
+
+  // Two selected: still disabled.
+  await rows.nth(0).locator('input[type="checkbox"]').check();
+  await rows.nth(1).locator('input[type="checkbox"]').check();
+  await expect(selected(page)).toHaveCount(2);
+  await openHeaderMenu(page);
+  await expect(alternate()).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(headerMenu(page)).toHaveCount(0);
+
+  // One selected (the second Trip): enabled. The choice replaces the selection with rows 2, 4, 6 ... (1-based).
+  await rows.nth(0).locator('input[type="checkbox"]').uncheck();
+  await expect(selected(page)).toHaveCount(1);
+  await openHeaderMenu(page);
+  await expect(alternate()).toBeEnabled();
+  await alternate().click();
+  await expect(selected(page)).toHaveCount(Math.floor(138 / 2));
+  await expect(rows.nth(0)).not.toHaveClass(/trip-row-selected/);
+  await expect(rows.nth(1)).toHaveClass(/trip-row-selected/);
+  await expect(rows.nth(2)).not.toHaveClass(/trip-row-selected/);
+  await expect(rows.nth(3)).toHaveClass(/trip-row-selected/);
+  await expect(rows.nth(4)).not.toHaveClass(/trip-row-selected/);
+  await expect(rows.nth(5)).toHaveClass(/trip-row-selected/);
 });

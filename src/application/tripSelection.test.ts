@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { combineSelection, invertSelection, tripIdsMatching } from './tripSelection';
+import { alternatingFrom, combineSelection, invertSelection, tripIdsMatching } from './tripSelection';
 
 const trips = [
   { id: 't1', patternId: 'a' },
@@ -36,6 +36,33 @@ describe('invertSelection', () => {
 
   it('ignores selected ids that are not in allIds', () => {
     expect(invertSelection(['t1', 't2'], ['gone'])).toEqual(['t1', 't2']);
+  });
+});
+
+describe('alternatingFrom', () => {
+  const ids = ['t1', 't2', 't3', 't4', 't5', 't6'];
+
+  it('starts at the first row and takes every second row below it', () => {
+    expect(alternatingFrom(ids, 't1')).toEqual(['t1', 't3', 't5']);
+  });
+
+  it('starts at a middle row and takes no row above it', () => {
+    expect(alternatingFrom(ids, 't3')).toEqual(['t3', 't5']);
+  });
+
+  it('starts at the last row and returns only that row', () => {
+    expect(alternatingFrom(ids, 't6')).toEqual(['t6']);
+  });
+
+  it('handles an odd number of rows and an even number of rows', () => {
+    expect(alternatingFrom(['a', 'b', 'c'], 'a')).toEqual(['a', 'c']);
+    expect(alternatingFrom(['a', 'b', 'c', 'd'], 'a')).toEqual(['a', 'c']);
+    expect(alternatingFrom(['a', 'b', 'c', 'd'], 'b')).toEqual(['b', 'd']);
+  });
+
+  it('returns nothing for an id that is not in allIds', () => {
+    expect(alternatingFrom(ids, 'missing')).toEqual([]);
+    expect(alternatingFrom([], 't1')).toEqual([]);
   });
 });
 

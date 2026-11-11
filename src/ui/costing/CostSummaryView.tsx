@@ -22,7 +22,7 @@ function preparedText(isoDate: string): string {
  */
 export function CostSummaryView({ summary, onClose }: { summary: CostSummary; onClose: () => void }) {
   const totalDays = summary.days.reduce((sum, day) => sum + day.annualServiceDays, 0);
-  return createPortal(<ModalDialog labelledBy="cost-summary-title" className="cost-summary-dialog" onClose={onClose}>
+  return createPortal(<ModalDialog labelledBy="cost-summary-title" className="cost-summary-dialog" onClose={onClose} draggable={false}>
     <div className="cost-summary-toolbar">
       <button type="button" onClick={onClose}>Close</button>
       <button type="button" className="primary" onClick={() => window.print()}>Print or save as PDF</button>

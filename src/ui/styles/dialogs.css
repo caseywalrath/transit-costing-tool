@@ -1,4 +1,8 @@
 .modal-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: var(--space-4); background: var(--color-scrim); z-index: 10; }
+/* Decision 0068: the heading of a movable dialog is its drag handle. Dragging is off at 600 px and narrower. */
+.modal-drag-handle { cursor: move; touch-action: none; }
+.modal-dragging { user-select: none; }
+@media (max-width: 600px) { .modal-drag-handle { cursor: auto; } }
 .confirm-dialog { width: min(460px, 100%); background: var(--color-surface); border: 1px solid var(--color-text-subtle); box-shadow: var(--shadow-popover); padding: 18px; }
 .confirm-dialog p { line-height: 1.45; margin: 10px 0 18px; }
 .copy-scope { margin-bottom: var(--space-3) !important; color: var(--color-text-muted); font-size: var(--font-size-label); }

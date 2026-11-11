@@ -26,7 +26,7 @@ import { type PlannedFrequencyService, type PlanComparisonResult } from '../../a
 import { PlanStatusChip } from './PlanStatusChip';
 import { type BuildTripsValues, EMPTY_BUILD_VALUES, type NewRuntimeDialog, TripBlockAssignmentDialog, TripBlockUnassignmentDialog, BuildTripsDrawer, RuntimeProfileDialog2, DeleteRuntimeProfileDialog, DeleteTripsDialog, RecalculationDialog, RuntimeDayCopyDialog, SegmentRuntimeDialog, TripDayCopyDialog, BatchPatternChangeDialog, TripPatternChangeDialog, StartTimeChangeDialog } from './dialogs';
 import { type TripBlockAssignmentDraft, type TripBlockOption, type TripSelectionRequest, formatTripTableClock, ScheduleTable } from './ScheduleTable';
-import { combineSelection, invertSelection, tripIdsMatching } from '../../application/tripSelection';
+import { alternatingFrom, combineSelection, invertSelection, tripIdsMatching } from '../../application/tripSelection';
 import { download } from '../shared/download';
 import { messages, userMessage } from '../shared/messages';
 import { RouteNavigationDraftDialog, ShiftDiscardDialog } from '../shared/dialogs';
@@ -596,7 +596,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   async function undoRegeneration() {
     setBusy(true);
     try { await tripService.undoLastTripRegeneration(); setSelectedTripIds([]); clearTripShiftHistory(); await loadTrips(); }
-    catch (error) { onError(error, 'Unable to undo the last regeneration.'); await loadTrips(); }
+    catch (error) { onError(error, 'Unable to undo the last change.'); await loadTrips(); }
     finally { setBusy(false); }
   }
   function exportTripsCsv() {
@@ -661,6 +661,15 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
       selectionAnchorId.current = undefined;
       const allIds = trips.map((trip) => trip.id);
       if (!('mode' in request)) {
+        if (request.kind === 'alternate') {
+          // Decision 0069: the one selected Trip and every second shown Trip below it. The starting Trip becomes the Shift-click anchor.
+          setSelectedTripIds((current) => {
+            const alternating = current.length === 1 ? alternatingFrom(allIds, current[0]) : [];
+            selectionAnchorId.current = alternating[0];
+            return alternating;
+          });
+          return;
+        }
         setSelectedTripIds((current) => request.kind === 'all' ? allIds : request.kind === 'none' ? [] : invertSelection(allIds, current));
         return;
       }
@@ -733,7 +742,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   })();
   // The ⋯ menu holds only what is not a selection command: Undo (Decision 0046: listed only while the saved undo applies, never shown disabled for that reason), service-day copy, and CSV export.
   const tripActionsMenu: MenuGroup[] = [
-    ...(applicableRegenerationUndo ? [{ items: [{ id: 'undo-regeneration', label: `Undo last regeneration (${applicableRegenerationUndo.afterTrips.length} trips)`, disabled: busy || tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => void undoRegeneration() }] }] : []),
+    ...(applicableRegenerationUndo ? [{ items: [{ id: 'undo-regeneration', label: `${applicableRegenerationUndo.kind === 'patternChange' ? 'Undo last pattern change' : 'Undo last regeneration'} (${applicableRegenerationUndo.afterTrips.length} trips)`, disabled: busy || tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => void undoRegeneration() }] }] : []),
     { items: [{ id: 'copy-day', label: 'Copy trips from another day…', disabled: tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => setTripCopyOpen(true) }] },
     { items: [{ id: 'export-trips-csv', label: 'Export trips CSV', disabled: !trips.length, onSelect: exportTripsCsv }] },
   ];

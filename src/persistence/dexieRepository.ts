@@ -496,13 +496,14 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
       const currentTrips = await Promise.all(snapshot.afterTrips.map((trip) => this.db.trips.get(trip.id)));
       if (currentTrips.some((trip, index) => !trip || JSON.stringify(trip) !== JSON.stringify(snapshot.afterTrips[index]))) {
         await this.db.tripRegenerationUndo.delete('last');
-        return { stale: true as const, trips: [] as Trip[] };
+        return { stale: true as const, kind: snapshot.kind, trips: [] as Trip[] };
       }
       await this.db.trips.bulkPut(snapshot.beforeTrips);
       await this.db.tripRegenerationUndo.delete('last');
-      return { stale: false as const, trips: snapshot.beforeTrips };
+      return { stale: false as const, kind: snapshot.kind, trips: snapshot.beforeTrips };
     });
-    if (result.stale) throw new Error('The regenerated Trips changed. The undo is no longer available.');
+    // Decision 0070: the refusal names the kind of change that is no longer undoable. An absent kind is a regeneration.
+    if (result.stale) throw new Error(result.kind === 'patternChange' ? 'The changed Trips were edited again. The undo is no longer available.' : 'The regenerated Trips changed. The undo is no longer available.');
     return result.trips;
   }
   async replaceTripsForDayAtomically(preview: TripCopyPreview): Promise<void> {

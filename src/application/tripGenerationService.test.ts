@@ -162,6 +162,58 @@ describe('stale-source checks on Pattern changes and Trips CSV imports, and the 
     });
   });
 
+  describe('undo of a pattern change (Decision 0070)', () => {
+    it('restores a changed Trip with its Pattern, stop times and provenance after one undo', async () => {
+      const { repository, service } = await setup();
+      const original = (await repository.getTrip('out-1'))!;
+      await service.changeTripPattern(await service.previewTripPatternChange('out-1', 'outbound2', 'outbound'));
+      expect(await service.getLastTripRegenerationUndo()).toMatchObject({ kind: 'patternChange', afterTrips: [{ id: 'out-1', patternId: 'outbound2' }] });
+      await service.undoLastTripRegeneration();
+      const restored = (await repository.getTrip('out-1'))!;
+      expect(restored.patternId).toBe(original.patternId);
+      expect(restored.stopTimes).toEqual(original.stopTimes);
+      expect(restored.provenance).toEqual(original.provenance);
+      expect(await service.getLastTripRegenerationUndo()).toBeUndefined();
+    });
+
+    it('restores both Trips after a batch change of two Trips', async () => {
+      const { repository, service } = await setup({ trips: [trip('out-1', outbound), trip('out-2', outbound, 2000), trip('in-1', inbound, 1200)] });
+      const originals = [(await repository.getTrip('out-1'))!, (await repository.getTrip('out-2'))!];
+      await service.applyBatchPatternChange(await service.previewBatchPatternChange({ tripIds: ['out-1', 'out-2'], targetPatternId: 'outbound2' }));
+      expect(await service.getLastTripRegenerationUndo()).toMatchObject({ kind: 'patternChange', beforeTrips: [{ id: 'out-1' }, { id: 'out-2' }], afterTrips: [{ id: 'out-1', patternId: 'outbound2' }, { id: 'out-2', patternId: 'outbound2' }] });
+      await service.undoLastTripRegeneration();
+      expect(await repository.getTrip('out-1')).toEqual(originals[0]);
+      expect(await repository.getTrip('out-2')).toEqual(originals[1]);
+    });
+
+    it('makes the undo unavailable after a later edit of a changed Trip, as for a regeneration', async () => {
+      const { repository, service } = await setup();
+      await service.changeTripPattern(await service.previewTripPatternChange('out-1', 'outbound2', 'outbound'));
+      const changed = (await repository.getTrip('out-1'))!;
+      await repository.saveTrips([{ ...changed, publicLabel: 'edited later' }]);
+      expect(await service.getLastTripRegenerationUndo()).toBeUndefined();
+      await expect(service.undoLastTripRegeneration()).rejects.toThrow('There is no regeneration to undo.');
+    });
+
+    it('replaces a saved regeneration undo with the pattern-change undo', async () => {
+      const { repository, service } = await setup();
+      const regenerated = { ...(await repository.getTrip('in-1'))!, publicLabel: 'regenerated' };
+      await repository.saveRegeneratedTripsWithUndo([(await repository.getTrip('in-1'))!], [regenerated], { id: 'last', scenarioId: 's', tripProfileId: 'trip-profile', createdAt: '2026-09-15T00:00:00.000Z', beforeTrips: [(await repository.getTrip('in-1'))!], afterTrips: [regenerated] });
+      await service.changeTripPattern(await service.previewTripPatternChange('out-1', 'outbound2', 'outbound'));
+      expect(await service.getLastTripRegenerationUndo()).toMatchObject({ kind: 'patternChange', afterTrips: [{ id: 'out-1' }] });
+    });
+
+    it('restores a snapshot saved without a kind as a regeneration', async () => {
+      const { repository, service } = await setup();
+      const before = (await repository.getTrip('out-1'))!;
+      const after = { ...before, publicLabel: 'regenerated' };
+      await repository.saveRegeneratedTripsWithUndo([before], [after], { id: 'last', scenarioId: 's', tripProfileId: 'trip-profile', createdAt: '2026-09-15T00:00:00.000Z', beforeTrips: [before], afterTrips: [after] });
+      expect(await service.getLastTripRegenerationUndo()).not.toHaveProperty('kind');
+      expect(await service.undoLastTripRegeneration()).toEqual([before]);
+      expect(await repository.getTrip('out-1')).toEqual(before);
+    });
+  });
+
   describe('Trips CSV import (I-022, 4-004; I-028, 4-019)', () => {
     const context = { scenarioId: 's', routeId: 'r', serviceDayId: 'weekday', directionId: 'outbound', tripProfileId: 'trip-profile' };
     const row = (patternId: string, first: number, tripId?: string) => ({ ...(tripId ? { tripId } : {}), patternId, stopTimes: [{ patternPointId: `${patternId}-a`, time: first }, { patternPointId: `${patternId}-b`, time: first + 600 }] });
