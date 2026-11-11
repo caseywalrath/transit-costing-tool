@@ -26,7 +26,7 @@ import { type PlannedFrequencyService, type PlanComparisonResult } from '../../a
 import { PlanStatusChip } from './PlanStatusChip';
 import { type BuildTripsValues, EMPTY_BUILD_VALUES, type NewRuntimeDialog, TripBlockAssignmentDialog, TripBlockUnassignmentDialog, BuildTripsDrawer, RuntimeProfileDialog2, DeleteRuntimeProfileDialog, DeleteTripsDialog, RecalculationDialog, RuntimeDayCopyDialog, SegmentRuntimeDialog, TripDayCopyDialog, BatchPatternChangeDialog, TripPatternChangeDialog, StartTimeChangeDialog } from './dialogs';
 import { type TripBlockAssignmentDraft, type TripBlockOption, type TripSelectionRequest, formatTripTableClock, ScheduleTable } from './ScheduleTable';
-import { combineSelection, invertSelection, tripIdsMatching } from '../../application/tripSelection';
+import { alternatingFrom, combineSelection, invertSelection, tripIdsMatching } from '../../application/tripSelection';
 import { download } from '../shared/download';
 import { messages, userMessage } from '../shared/messages';
 import { RouteNavigationDraftDialog, ShiftDiscardDialog } from '../shared/dialogs';
@@ -661,6 +661,15 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
       selectionAnchorId.current = undefined;
       const allIds = trips.map((trip) => trip.id);
       if (!('mode' in request)) {
+        if (request.kind === 'alternate') {
+          // Decision 0069: the one selected Trip and every second shown Trip below it. The starting Trip becomes the Shift-click anchor.
+          setSelectedTripIds((current) => {
+            const alternating = current.length === 1 ? alternatingFrom(allIds, current[0]) : [];
+            selectionAnchorId.current = alternating[0];
+            return alternating;
+          });
+          return;
+        }
         setSelectedTripIds((current) => request.kind === 'all' ? allIds : request.kind === 'none' ? [] : invertSelection(allIds, current));
         return;
       }

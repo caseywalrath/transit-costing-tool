@@ -17,7 +17,7 @@ export type TripBlockAssignmentDraft = { operation: 'assign' | 'unassign'; tripI
 export type TripBlockOption = { id: string; label: string; disabled?: boolean; reason?: string };
 /** A selection change asked for by the header menu or a Pattern chip. The workspace resolves it against the full trip list. */
 export type TripSelectionRequest =
-  | { kind: 'all' | 'none' | 'invert' }
+  | { kind: 'all' | 'none' | 'invert' | 'alternate' }
   | { kind: 'pattern'; patternId: string; mode: SelectionMode }
   | { kind: 'unassigned' | 'runtimeChanged'; mode: SelectionMode };
 
@@ -120,11 +120,14 @@ export function ScheduleTable({ planGaps, trips, previewTrips, stagedShiftSecond
   const modeOf = (event: MenuSelectEvent): SelectionMode => event.ctrlKey || event.metaKey ? 'add' : 'replace';
   const patternCount = (patternId: string) => trips.filter((trip) => trip.patternId === patternId).length;
   const unassignedCount = trips.filter((trip) => !blockAssignments.has(trip.id)).length;
+  // Decision 0069: alternation starts from exactly one shown Trip.
+  const alternateDisabled = selectedIds.length !== 1 || !trips.some((trip) => trip.id === selectedIds[0]);
   const selectMenu: MenuGroup[] = [
     { items: [
       { id: 'all', label: `Select all (${trips.length})`, disabled: !trips.length, onSelect: () => onSelectBy({ kind: 'all' }) },
       { id: 'none', label: 'Select none', disabled: !selectedIds.length, onSelect: () => onSelectBy({ kind: 'none' }) },
       { id: 'invert', label: 'Invert selection', disabled: !trips.length, onSelect: () => onSelectBy({ kind: 'invert' }) },
+      { id: 'alternate', label: 'Select alternating', disabled: alternateDisabled, title: alternateDisabled ? 'Select one trip to start from.' : undefined, onSelect: () => onSelectBy({ kind: 'alternate' }) },
     ] },
     { label: 'By pattern', items: patterns.map((pattern) => ({ id: `pattern-${pattern.id}`, label: `${chipText(pattern)} (${patternCount(pattern.id)})`, title: pattern.name, disabled: !patternCount(pattern.id), onSelect: (event: MenuSelectEvent) => onSelectBy({ kind: 'pattern', patternId: pattern.id, mode: modeOf(event) }) })) },
     { label: 'By status', items: [
