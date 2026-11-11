@@ -5,13 +5,14 @@ import type {
   RuntimeAssignment,
   RuntimeProfile,
   ServiceDayDefinition,
+  ServiceSeconds,
   Trip,
   TripCalculationSource,
   ValidationFinding,
 } from './types';
 import { metadata, newId } from './ids';
 import { isUsablePattern } from './directions';
-import { adjustBlockReferences, type PatternChangePreview, previewPatternChange } from './trips';
+import { adjustBlockReferences, type PatternChangePreview, previewPatternChange, type RecalculationConnection } from './trips';
 
 export type RuntimeCopyMode = 'independent' | 'shared';
 
@@ -38,6 +39,13 @@ export interface BatchPatternChangeRequest {
   targetPatternId: EntityId;
   /** One anchor node for every selected Trip (Decision 0067 item 9). Absent keeps each Trip's first departure. */
   anchorNodeId?: EntityId;
+  /** Trips the planner skips. A skipped Trip is not changed and is not in the undo snapshot (Decision 0071 item 2). */
+  skipTripIds?: EntityId[];
+  /** Overrides `anchorNodeId` for one Trip. '' means the first stop. */
+  anchorNodeIdByTripId?: Record<EntityId, string>;
+  chosenBandIdByTripId?: Record<EntityId, string>;
+  /** A new time at the anchor node for one Trip (Decision 0072 item 2). */
+  anchorTimeByTripId?: Record<EntityId, ServiceSeconds>;
 }
 
 export interface CopySourceSignature {
@@ -102,8 +110,12 @@ export interface BatchPatternChangePreview {
   changes: PatternChangePreview[];
   eligibleTripIds: string[];
   ineligibleTripIds: string[];
+  skippedTripIds: string[];
   affectedBlockIds: string[];
   findings: ValidationFinding[];
+  /** Block connections of the eligible Trips. Filled in by the application (`loadBatchPatternChange`); the domain builder leaves them empty. */
+  connections: RecalculationConnection[];
+  connectionFindings: ValidationFinding[];
 }
 
 function finding(entityType: string, entityId: string, ruleId: string, messageKey: string, field?: string, parameters?: Record<string, string | number>): ValidationFinding {
@@ -338,19 +350,29 @@ export function buildBatchPatternChangePreview(
   const findings = validateBatchPatternChangeRequest(request);
   const changes: PatternChangePreview[] = [];
   const affectedBlockIds = new Set<string>();
+  const skipped = new Set(request.skipTripIds ?? []);
   for (const trip of trips) {
+    // A skipped Trip is left as it is: no calculation, no finding, and no block lookup.
+    if (skipped.has(trip.id)) {
+      changes.push({ tripId: trip.id, sourcePatternId: trip.patternId, targetPatternId: targetPattern.id, oldStopTimes: [...trip.stopTimes], skipped: true });
+      continue;
+    }
     const sourcePattern = sourcePatternsByTripId.get(trip.id);
     if (sourcePattern && (sourcePattern.routeId !== targetPattern.routeId || sourcePattern.directionId !== targetPattern.directionId || trip.routeId !== targetPattern.routeId)) {
       changes.push({ tripId: trip.id, sourcePatternId: trip.patternId, targetPatternId: targetPattern.id, oldStopTimes: [...trip.stopTimes], finding: finding('trip', trip.id, 'trip.patternDirectionMismatch', 'trip.patternDirectionMismatch', 'patternId') });
       continue;
     }
-    const preview = profilesByTripId.get(trip.id) ? previewPatternChange(trip, targetPattern, profilesByTripId.get(trip.id)!, { sourcePattern, anchorNodeId: request.anchorNodeId }) : { tripId: trip.id, sourcePatternId: trip.patternId, targetPatternId: targetPattern.id, oldStopTimes: [...trip.stopTimes], finding: finding('trip', trip.id, 'trip.targetRuntimeUnavailable', 'trip.targetRuntimeUnavailable', 'patternId') };
+    // A per-Trip anchor overrides the shared one. An empty string means the first stop.
+    const perTripAnchor = request.anchorNodeIdByTripId?.[trip.id];
+    const anchorNodeId = perTripAnchor === undefined ? request.anchorNodeId : perTripAnchor || undefined;
+    const preview = profilesByTripId.get(trip.id) ? previewPatternChange(trip, targetPattern, profilesByTripId.get(trip.id)!, { sourcePattern, anchorNodeId, chosenBandId: request.chosenBandIdByTripId?.[trip.id], anchorTime: request.anchorTimeByTripId?.[trip.id] }) : { tripId: trip.id, sourcePatternId: trip.patternId, targetPatternId: targetPattern.id, oldStopTimes: [...trip.stopTimes], finding: finding('trip', trip.id, 'trip.targetRuntimeUnavailable', 'trip.targetRuntimeUnavailable', 'patternId') };
     const blockIds = blocks.filter((block) => block.activities.some((activity) => activity.type === 'revenueTrip' && activity.tripId === trip.id)).map((block) => block.id);
     for (const blockId of blockIds) affectedBlockIds.add(blockId);
     changes.push({ ...preview, affectedBlockIds: blockIds });
   }
-  const eligibleTripIds = changes.filter((change) => !change.finding && Boolean(change.newStopTimes)).map((change) => change.tripId);
-  const ineligibleTripIds = changes.filter((change) => Boolean(change.finding)).map((change) => change.tripId);
+  const eligibleTripIds = changes.filter((change) => !change.skipped && !change.finding && Boolean(change.newStopTimes)).map((change) => change.tripId);
+  const ineligibleTripIds = changes.filter((change) => !change.skipped && Boolean(change.finding)).map((change) => change.tripId);
+  const skippedTripIds = changes.filter((change) => change.skipped).map((change) => change.tripId);
   for (const change of changes) if (change.finding) findings.push(change.finding);
-  return { request, sourceSignature: createBatchPatternChangeSignature(request, trips, targetPattern, assignments, profiles), changes, eligibleTripIds, ineligibleTripIds, affectedBlockIds: [...affectedBlockIds].sort(), findings };
+  return { request, sourceSignature: createBatchPatternChangeSignature(request, trips, targetPattern, assignments, profiles), changes, eligibleTripIds, ineligibleTripIds, skippedTripIds, affectedBlockIds: [...affectedBlockIds].sort(), findings, connections: [], connectionFindings: [] };
 }

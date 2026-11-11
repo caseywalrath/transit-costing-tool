@@ -503,4 +503,39 @@ describe('anchored Change pattern (Decision 0067)', () => {
     expect(await service.listSharedAnchorNodes('t1', 'rev')).toEqual([{ nodeId: 'D', name: 'Harbor' }, { nodeId: 'C', name: 'Transit Center' }, { nodeId: 'B', name: 'Main St' }, { nodeId: 'A', name: 'Central' }]);
     expect(await service.listSharedAnchorNodes('t1', 'loop')).toEqual([{ nodeId: 'A', name: 'Central' }, { nodeId: 'B', name: 'Main St' }, { nodeId: 'C', name: 'Transit Center' }, { nodeId: 'D', name: 'Harbor' }]);
   });
+
+  it('keeps the planner time at the anchor node through review and commit, and rejects a review whose time changed', async () => {
+    const { repository, service } = await setup();
+    const review = await service.previewTripPatternChange('t1', 'short', 'outbound', { anchorNodeId: 'C', anchorTime: 26000 });
+    expect(review.anchorTimeInput).toBe(26000);
+    expect(review.newStopTimes?.map((point) => point.time)).toEqual([25100, 26000, 26300]);
+    await expect(service.changeTripPattern({ ...review, anchorTimeInput: 26700 })).rejects.toThrow('The Pattern change review is out of date');
+    expect((await repository.getTrip('t1'))?.patternId).toBe('full');
+    await service.changeTripPattern(review);
+    expect((await repository.getTrip('t1'))?.stopTimes.map((point) => point.time)).toEqual([25100, 26000, 26300]);
+  });
+
+  it('writes only the Trips that are not skipped, and the undo keeps only them', async () => {
+    // t2's departure gives B at 29200 on the ambiguous Pattern, so it has a finding and cannot be written unless skipped.
+    const { repository, service } = await setup({ trips: [trip('t1', full, [25200, 25800, 26700, 27000]), trip('t2', full, [28600, 29200, 30100, 30400])] });
+    const unskipped = await service.previewBatchPatternChange({ tripIds: ['t1', 't2'], targetPatternId: 'amb', anchorNodeId: 'B' });
+    expect(unskipped.ineligibleTripIds).toEqual(['t2']);
+    await expect(service.applyBatchPatternChange(unskipped)).rejects.toThrow();
+    const preview = await service.previewBatchPatternChange({ tripIds: ['t1', 't2'], targetPatternId: 'amb', anchorNodeId: 'B', skipTripIds: ['t2'] });
+    expect(preview.eligibleTripIds).toEqual(['t1']);
+    expect(preview.skippedTripIds).toEqual(['t2']);
+    const skippedBefore = await repository.getTrip('t2');
+    await service.applyBatchPatternChange(preview);
+    expect(await service.getLastTripRegenerationUndo()).toMatchObject({ kind: 'patternChange', beforeTrips: [{ id: 't1' }], afterTrips: [{ id: 't1', patternId: 'amb' }] });
+    expect(await repository.getTrip('t2')).toEqual(skippedBefore);
+    expect((await repository.getTrip('t1'))?.patternId).toBe('amb');
+  });
+
+  it('refuses a batch apply when every Trip is skipped', async () => {
+    const { repository, service } = await setup();
+    const preview = await service.previewBatchPatternChange({ tripIds: ['t1'], targetPatternId: 'short', anchorNodeId: 'C', skipTripIds: ['t1'] });
+    await expect(service.applyBatchPatternChange(preview)).rejects.toThrow('No trips are ready to change.');
+    expect((await repository.getTrip('t1'))?.patternId).toBe('full');
+    expect(await service.getLastTripRegenerationUndo()).toBeUndefined();
+  });
 });
