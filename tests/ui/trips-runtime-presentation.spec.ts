@@ -216,23 +216,22 @@ test('the Recalculate dialog offers no band picker for a segment-start profile a
   await page.locator('.schedule-table tbody input[type="checkbox"]').first().check();
   await runCommand(page, 'trips.regenerate');
   const dialog = page.getByRole('dialog', { name: 'Regenerate selected trips' });
-  await dialog.getByRole('button', { name: 'Last timepoint', exact: true }).click();
-  const alert = dialog.getByRole('alert');
-  await expect(alert).toContainText('ambiguous');
-  // The candidates are listed, and no band can be chosen for this method.
-  await expect(alert).toContainText('Early');
-  await expect(alert).toContainText('5:55');
-  await expect(alert).toContainText('Late');
-  await expect(alert).toContainText('6:00');
-  await expect(alert).toContainText('cannot be chosen');
-  await expect(dialog.getByLabel('Runtime band')).toHaveCount(0);
-  await expect(dialog.getByRole('button', { name: 'Use selected band' })).toHaveCount(0);
-  // The options that remain work: switch the Trip to its first departure.
-  await alert.getByRole('button', { name: 'Use first departure for this trip' }).click();
-  await expect(dialog.getByRole('button', { name: 'Regenerate trips', exact: true })).toBeEnabled();
+  await dialog.getByRole('button', { name: 'End time', exact: true }).click();
+  // R5 (Decision 0072): the row says that two start times fit, and its Action list offers both, by start time only: a segment-start
+  // profile has no time period to choose (Decision 0031 addendum).
+  await expect(dialog.locator('.trip-review-chip')).toHaveText('Two start times fit');
+  const action = dialog.getByRole('combobox', { name: /^Action for trip/ });
+  await expect(action.locator('option[value="start:21300"]')).toHaveText(/^Start at 5:55 —/);
+  await expect(action.locator('option[value="start:21600"]')).toHaveText(/^Start at 6:00 —/);
+  await expect(action.locator('option[value^="band:"]')).toHaveCount(0);
+  await dialog.getByRole('button', { name: /^Why: Two start times fit/ }).click();
+  await expect(dialog.locator('.trip-review-why p')).toHaveText('Late (from 6:00) saves 5:00 from A to B.');
+  await expect(dialog.getByRole('button', { name: 'Regenerate 0 trips' })).toBeDisabled();
+  await action.selectOption('start:21300');
+  await expect(dialog.getByRole('button', { name: 'Regenerate 1 trip', exact: true })).toBeEnabled();
 });
 
-test('the Recalculate dialog still offers the band picker for a single-band profile', async ({ page }) => {
+test('the Recalculate dialog still offers a time period choice for a single-band profile', async ({ page }) => {
   await createShiftReadySchedule(page, '06:00');
   await runInPage(page, `
     const [profile] = await e.db.runtimeProfiles.toArray();
@@ -248,9 +247,11 @@ test('the Recalculate dialog still offers the band picker for a single-band prof
   await page.locator('.schedule-table tbody input[type="checkbox"]').first().check();
   await runCommand(page, 'trips.regenerate');
   const dialog = page.getByRole('dialog', { name: 'Regenerate selected trips' });
-  await dialog.getByRole('button', { name: 'Last timepoint', exact: true }).click();
-  await expect(dialog.getByLabel('Runtime band')).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Use selected band' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'End time', exact: true }).click();
+  const action = dialog.getByRole('combobox', { name: /^Action for trip/ });
+  await expect(action.locator('option[value^="band:"]')).toHaveText([/^Start at 5:55 \(Early\)/, /^Start at 6:00 \(Late\)/]);
+  await action.selectOption({ index: 1 });
+  await expect(dialog.getByRole('button', { name: 'Regenerate 1 trip', exact: true })).toBeEnabled();
 });
 
 test('the first visit to Trips creates one Default Runtime profile and one assignment per standard Service day, with no error', async ({ page }) => {

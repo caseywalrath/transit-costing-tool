@@ -1,7 +1,8 @@
 import type { TripGenerationRepository } from './ports';
-import type { GenerateTripsPreview, PatternChangePreview, RecalculationPreview } from '../domain/trips';
-import { adjustBlockReferences, AnchorBandChoiceError, applyPatternChange, calculateRecalculationConnections, calculateRecalculationImpact, createAuthoritativeTrip, findExactTripDuplicates, generateAuthoritativeTrips, generateTrips, markTripRecalculated, previewPatternChange, recalculateTripWithAnchor, sharedAnchorNodes, shiftTrips, TripGenerationError, validateGenerateTripsRequest, validateTrip, type RecalculationBandSelection } from '../domain/trips';
-import type { AddTripRequest, Block, BlockingScenario, GenerateTripsRequest, RuntimeAssignment, RuntimeProfile, RoutePattern, Trip, TripGenerationSet, TripProfile, TripRegenerationUndo, TripTableImportRow, ValidationFinding } from '../domain/types';
+import type { GenerateTripsPreview, PatternChangePreview, RecalculationPreview, RecalculationReview, RecalculationReviewInputs, TripReviewRow } from '../domain/trips';
+import { adjustBlockReferences, ANCHOR_DIAGNOSIS_RULE_IDS, AnchorBandChoiceError, applyPatternChange, calculateRecalculationConnections, calculateRecalculationImpact, createAuthoritativeTrip, findExactTripDuplicates, generateAuthoritativeTrips, generateTrips, markTripRecalculated, previewPatternChange, recalculateTripWithAnchor, sharedAnchorNodes, shiftTrips, TripGenerationError, validateGenerateTripsRequest, validateTrip, type RecalculationBandSelection } from '../domain/trips';
+import { diagnoseAnchor, type AnchorDiagnosis } from '../domain/anchorDiagnosis';
+import type { AddTripRequest, Block, BlockingScenario, GenerateTripsRequest, ServiceSeconds, RuntimeAssignment, RuntimeProfile, RoutePattern, Trip, TripGenerationSet, TripProfile, TripRegenerationUndo, TripTableImportRow, ValidationFinding } from '../domain/types';
 import type { TripTableImportPreview } from './ports';
 import { assertReviewCurrent, fingerprint } from './reviewToken';
 import { publishWrites, SaveStatusPublisher } from './saveStatus';
@@ -39,10 +40,13 @@ function hasSameScheduledPoints(trip: Trip, recalculated: Trip): boolean {
 }
 
 /** A single-Trip Pattern change review. `sourceSignature` records what the review read; the commit recomputes it and rejects a mismatch. The anchor and band choice are review inputs (Decision 0067), not stored on the Trip. */
-export interface TripPatternChangeReview extends PatternChangePreview { anchorNodeId?: string; chosenBandId?: string; sourceSignature?: string }
+export interface TripPatternChangeReview extends PatternChangePreview { anchorNodeId?: string; chosenBandId?: string; /** The planner's time at the anchor node. Named apart from `PatternChangePreview.anchorTime`, which is the kept time. */ anchorTimeInput?: ServiceSeconds; sourceSignature?: string }
+
+/** One Trip's result from `recalculateEach`: either a recalculated Trip or a Trip-generation error (Decision 0071). */
+interface RecalculationOutcome { trip: Trip; result?: ReturnType<typeof recalculateTripWithAnchor>; error?: TripGenerationError; profile?: RuntimeProfile; /** The Trip as recalculated: the saved Trip, or with the planner's anchor time at the anchor point. Set once the Pattern is read (Decision 0072). */ seed?: Trip; pattern?: RoutePattern }
 
 /** The review inputs that choose the anchor node and the band (Decision 0067). */
-export interface TripPatternChangeInputs { anchorNodeId?: string; chosenBandId?: string }
+export interface TripPatternChangeInputs { anchorNodeId?: string; chosenBandId?: string; anchorTime?: ServiceSeconds }
 
 /** What a Pattern change review depends on: the Trip, the source Pattern's node ids, the target Pattern's shape, the profile that will calculate it, and the review inputs. */
 function tripPatternChangeSignature(trip: Trip, source: RoutePattern | undefined, target: RoutePattern, assignment: RuntimeAssignment, profile: RuntimeProfile, inputs: TripPatternChangeInputs): string {
@@ -54,6 +58,7 @@ function tripPatternChangeSignature(trip: Trip, source: RoutePattern | undefined
     profile,
     anchorNodeId: inputs.anchorNodeId ?? null,
     chosenBandId: inputs.chosenBandId ?? null,
+    anchorTime: inputs.anchorTime ?? null,
   });
 }
 
@@ -350,11 +355,11 @@ export class TripGenerationService {
     const blocks = await this.repository.listBlocks(trip.serviceDayId);
     const affectedBlockIds = blocks.filter((block) => block.activities.some((activity) => activity.type === 'revenueTrip' && activity.tripId === trip.id)).map((block) => block.id);
     if ((source?.directionId !== undefined && source.directionId !== directionId) || target.directionId !== directionId) return { tripId, sourcePatternId: trip.patternId, targetPatternId, oldStopTimes: [...trip.stopTimes], affectedBlockIds, finding: { ruleId: 'trip.patternDirectionMismatch', severity: 'error', entityType: 'trip', entityId: trip.id, field: 'patternId', messageKey: 'trip.patternDirectionMismatch' } };
-    const inputs: TripPatternChangeInputs = { anchorNodeId: options.anchorNodeId, chosenBandId: options.chosenBandId };
+    const inputs: TripPatternChangeInputs = { anchorNodeId: options.anchorNodeId, chosenBandId: options.chosenBandId, anchorTime: options.anchorTime };
     const { assignment, profile } = await this.resolveAuthoritativeProfile({ scenarioId: trip.scenarioId, serviceDayId: trip.serviceDayId, patternId: targetPatternId });
     const preview = previewPatternChange(trip, target, profile, { sourcePattern: source, ...inputs, now: this.now() });
     // The review records the inputs it was built with, so the commit signature covers them even when the domain returns a finding.
-    return { ...preview, ...(inputs.anchorNodeId === undefined ? {} : { anchorNodeId: inputs.anchorNodeId }), ...(inputs.chosenBandId === undefined ? {} : { chosenBandId: inputs.chosenBandId }), affectedBlockIds, sourceSignature: tripPatternChangeSignature(trip, source, target, assignment, profile, inputs) };
+    return { ...preview, ...(inputs.anchorNodeId === undefined ? {} : { anchorNodeId: inputs.anchorNodeId }), ...(inputs.chosenBandId === undefined ? {} : { chosenBandId: inputs.chosenBandId }), ...(inputs.anchorTime === undefined ? {} : { anchorTimeInput: inputs.anchorTime }), affectedBlockIds, sourceSignature: tripPatternChangeSignature(trip, source, target, assignment, profile, inputs) };
   }
 
   async changeTripPattern(preview: TripPatternChangeReview): Promise<Trip> {
@@ -366,7 +371,7 @@ export class TripGenerationService {
     if (source?.directionId !== undefined && target.directionId !== source.directionId) throw new TripGenerationError([{ ruleId: 'trip.patternDirectionMismatch', severity: 'error', entityType: 'trip', entityId: trip.id, field: 'patternId', messageKey: 'trip.patternDirectionMismatch' }]);
     const { assignment, profile } = await this.resolveAuthoritativeProfile({ scenarioId: trip.scenarioId, serviceDayId: trip.serviceDayId, patternId: target.id });
     // The review was built from the Trip, the source and target Patterns, the target profile, and its anchor and band choice as they were then. Commit only if they still are.
-    const inputs: TripPatternChangeInputs = { anchorNodeId: preview.anchorNodeId, chosenBandId: preview.chosenBandId };
+    const inputs: TripPatternChangeInputs = { anchorNodeId: preview.anchorNodeId, chosenBandId: preview.chosenBandId, anchorTime: preview.anchorTimeInput };
     if (!preview.sourceSignature || preview.sourceSignature !== tripPatternChangeSignature(trip, source, target, assignment, profile, inputs)) throw new TripPatternChangeStalePreviewError();
     // Recalculate with the review's anchor and band against the Trip's current source Pattern. A finding here throws in applyPatternChange.
     const recalculated = previewPatternChange(trip, target, profile, { sourcePattern: source, ...inputs, now: this.now() });
@@ -391,38 +396,59 @@ export class TripGenerationService {
     return sharedAnchorNodes(source, target).map((nodeId) => ({ nodeId, name: names.get(nodeId) ?? nodeId }));
   }
 
+  /**
+   * Recalculates each Trip and keeps one outcome per Trip (Decision 0071). A Trip-generation error, including an anchor band choice, is kept on the
+   * Trip's outcome; any other error is thrown. With `stopAtBandChoice`, the loop ends at the first anchor band choice, so the single-result review
+   * reports exactly what it reported before the outcomes existed.
+   */
+  private async recalculateEach(trips: Trip[], anchorByTripId: Record<string, string>, bandOverrideByTripId: Record<string, string>, anchorTimeByTripId: Record<string, number>, stopAtBandChoice: boolean): Promise<{ sources: unknown[]; outcomes: RecalculationOutcome[] }> {
+    const sources: unknown[] = [];
+    const outcomes: RecalculationOutcome[] = [];
+    // One read of the Pattern, assignment, and profile per Pattern and service day, not per Trip: at 500 Trips the reads one after another
+    // took most of a second (U08, I-096). A failed read fails each of its Trips as before.
+    const resolved = new Map<string, ReturnType<TripGenerationService['resolveAuthoritativeProfile']>>();
+    for (const trip of trips) {
+      let runtimeProfile: RuntimeProfile | undefined;
+      let runtimePattern: RoutePattern | undefined;
+      let runtimeSeed: Trip | undefined;
+      try {
+        const key = JSON.stringify([trip.scenarioId, trip.serviceDayId, trip.patternId]);
+        if (!resolved.has(key)) resolved.set(key, this.resolveAuthoritativeProfile({ scenarioId: trip.scenarioId, serviceDayId: trip.serviceDayId, patternId: trip.patternId }));
+        const resolution = await resolved.get(key)!;
+        const { pattern, profile, assignment } = resolution;
+        runtimeProfile = profile;
+        runtimePattern = pattern;
+        sources.push([trip, pattern, profile, assignment]);
+        // A new anchor time replaces the Trip's time at the anchor point, and the other points are calculated around it, as when adding a Trip.
+        const newAnchorTime = anchorTimeByTripId[trip.id];
+        const anchorPointId = anchorByTripId[trip.id];
+        const seed = newAnchorTime === undefined || !anchorPointId ? trip : { ...trip, stopTimes: trip.stopTimes.map((point) => point.patternPointId === anchorPointId ? { ...point, time: newAnchorTime } : point) };
+        runtimeSeed = seed;
+        const result = recalculateTripWithAnchor(seed, pattern, profile, this.now(), anchorPointId, bandOverrideByTripId[trip.id]);
+        outcomes.push({ trip, result, profile, seed, pattern });
+      } catch (error) {
+        if (!(error instanceof TripGenerationError)) throw error;
+        outcomes.push({ trip, error, profile: runtimeProfile, seed: runtimeSeed, pattern: runtimePattern });
+        if (stopAtBandChoice && error instanceof AnchorBandChoiceError) break;
+      }
+    }
+    return { sources, outcomes };
+  }
+
   async previewRecalculateTrips(tripIds: string[], anchorByTripId: Record<string, string> = {}, bandOverrideByTripId: Record<string, string> = {}, anchorTimeByTripId: Record<string, number> = {}): Promise<RecalculationPreview> {
     const trips = (await Promise.all(tripIds.map((id) => this.repository.getTrip(id)))).filter((trip): trip is Trip => Boolean(trip));
     if (trips.length !== tripIds.length) throw new Error('One or more selected trips are no longer available.');
     const blocksByDay = new Map<string, Block[]>();
     for (const trip of trips) if (!blocksByDay.has(trip.serviceDayId)) blocksByDay.set(trip.serviceDayId, await this.repository.listBlocks(trip.serviceDayId));
     const blocks = [...blocksByDay.values()].flat();
-    const recalculated: Trip[] = [];
-    const bandSelections: RecalculationBandSelection[] = [];
-    const sources: unknown[] = [];
-    const findings: TripGenerationError['findings'] = [];
-    // One read of the Pattern, assignment, and profile per Pattern and service day, not per Trip: at 500 Trips the reads one after another
-    // took most of a second (U08, I-096). A failed read fails each of its Trips as before.
-    const resolved = new Map<string, ReturnType<TripGenerationService['resolveAuthoritativeProfile']>>();
-    for (const trip of trips) {
-      try {
-        const key = JSON.stringify([trip.scenarioId, trip.serviceDayId, trip.patternId]);
-        if (!resolved.has(key)) resolved.set(key, this.resolveAuthoritativeProfile({ scenarioId: trip.scenarioId, serviceDayId: trip.serviceDayId, patternId: trip.patternId }));
-        const { pattern, profile, assignment } = await resolved.get(key)!;
-        sources.push([trip, pattern, profile, assignment]);
-        // A new anchor time replaces the Trip's time at the anchor point, and the other points are calculated around it, as when adding a Trip.
-        const newAnchorTime = anchorTimeByTripId[trip.id];
-        const anchorPointId = anchorByTripId[trip.id];
-        const seed = newAnchorTime === undefined || !anchorPointId ? trip : { ...trip, stopTimes: trip.stopTimes.map((point) => point.patternPointId === anchorPointId ? { ...point, time: newAnchorTime } : point) };
-        const result = recalculateTripWithAnchor(seed, pattern, profile, this.now(), anchorPointId, bandOverrideByTripId[trip.id]);
-        recalculated.push(result.trip);
-        if (result.bandSelection) bandSelections.push(result.bandSelection);
-      } catch (error) {
-        if (!(error instanceof TripGenerationError) || error instanceof AnchorBandChoiceError) throw error;
-        findings.push(...error.findings.map((finding) => ({ ...finding, entityType: 'trip' as const, entityId: trip.id })));
-      }
-    }
+    const { sources, outcomes } = await this.recalculateEach(trips, anchorByTripId, bandOverrideByTripId, anchorTimeByTripId, true);
+    // The first anchor band choice in Trip order is thrown as before; other Trip-generation errors are collected in Trip order.
+    const bandChoice = outcomes.find((outcome) => outcome.error instanceof AnchorBandChoiceError);
+    if (bandChoice) throw bandChoice.error;
+    const findings = outcomes.flatMap((outcome) => outcome.error ? outcome.error.findings.map((finding) => ({ ...finding, entityType: 'trip' as const, entityId: outcome.trip.id })) : []);
     if (findings.length) throw new TripGenerationError(findings);
+    const recalculated = outcomes.flatMap((outcome) => outcome.result ? [outcome.result.trip] : []);
+    const bandSelections: RecalculationBandSelection[] = outcomes.flatMap((outcome) => outcome.result?.bandSelection ? [outcome.result.bandSelection] : []);
     const selectedIds = new Set(tripIds);
     const relevantBlocks = blocks.filter((block) => block.activities.some((activity) => activity.type === 'revenueTrip' && selectedIds.has(activity.tripId)));
     const connectedIds = [...new Set(relevantBlocks.flatMap((block) => block.activities.filter((activity) => activity.type === 'revenueTrip').map((activity) => activity.tripId)))].filter((id) => !selectedIds.has(id));
@@ -439,6 +465,85 @@ export class TripGenerationService {
     const current = await this.previewRecalculateTrips(preview.impact.tripIds, preview.anchorByTripId, preview.bandOverrideByTripId, preview.anchorTimeByTripId);
     if (current.sourceSignature !== preview.sourceSignature) throw new Error('Trips or runtimes changed. Review regeneration again.');
     if (current.findings.some((finding) => finding.severity === 'error')) throw new TripGenerationError(current.findings);
+    if (current.impact.requiresConfirmation && !confirm) throw new TripRecalculationConfirmationError(current);
+    const beforeTrips = (await Promise.all(current.trips.map((trip) => this.repository.getTrip(trip.id)))).filter((trip): trip is Trip => Boolean(trip));
+    if (beforeTrips.length !== current.trips.length) throw new Error('A selected Trip changed. Review regeneration again.');
+    await this.persistWithUndo(beforeTrips, current.trips, 'regeneration');
+    return current;
+  }
+
+  /** Decision 0072 item 2: the diagnosis of a failed anchor, from the seed this review recalculated. Undefined when the failure is not an anchor failure. */
+  private anchorDiagnosisOf(outcome: RecalculationOutcome, anchorPointId: string | undefined): AnchorDiagnosis | undefined {
+    if (!anchorPointId || !outcome.seed || !outcome.pattern || !outcome.profile || !outcome.error) return undefined;
+    if (!outcome.error.findings.some((finding) => ANCHOR_DIAGNOSIS_RULE_IDS.has(finding.ruleId))) return undefined;
+    return diagnoseAnchor(outcome.seed, outcome.pattern, outcome.profile, anchorPointId, this.now());
+  }
+
+  /**
+   * Reviews a recalculation Trip by Trip (Decision 0071). Each requested Trip gets one row: `ready`, `needsChoice` (an anchor band choice the planner can pick),
+   * `error`, or `skipped`. Only a request-level problem (a missing Trip) throws. The result's `trips`, `impact`, `connections`, and `findings` cover the ready Trips.
+   */
+  async reviewRecalculation(tripIds: string[], inputs: RecalculationReviewInputs = {}): Promise<RecalculationReview> {
+    const trips = (await Promise.all(tripIds.map((id) => this.repository.getTrip(id)))).filter((trip): trip is Trip => Boolean(trip));
+    if (trips.length !== tripIds.length) throw new Error('One or more selected trips are no longer available.');
+    const blocksByDay = new Map<string, Block[]>();
+    for (const trip of trips) if (!blocksByDay.has(trip.serviceDayId)) blocksByDay.set(trip.serviceDayId, await this.repository.listBlocks(trip.serviceDayId));
+    const blocks = [...blocksByDay.values()].flat();
+    const anchorByTripId = inputs.anchorByTripId ?? {};
+    const bandOverrideByTripId = inputs.bandOverrideByTripId ?? {};
+    const anchorTimeByTripId = inputs.anchorTimeByTripId ?? {};
+    const skippedIds = new Set(inputs.skipTripIds ?? []);
+    const { sources, outcomes } = await this.recalculateEach(trips.filter((trip) => !skippedIds.has(trip.id)), anchorByTripId, bandOverrideByTripId, anchorTimeByTripId, false);
+    const outcomeByTripId = new Map(outcomes.map((outcome) => [outcome.trip.id, outcome]));
+    const rows: TripReviewRow[] = trips.map((trip): TripReviewRow => {
+      if (skippedIds.has(trip.id)) return { tripId: trip.id, status: 'skipped', findings: [] };
+      const outcome = outcomeByTripId.get(trip.id)!;
+      if (outcome.result) return { tripId: trip.id, status: 'ready', revisedTrip: outcome.result.trip, findings: [], ...(outcome.result.bandSelection ? { bandSelection: outcome.result.bandSelection } : {}) };
+      const error = outcome.error!;
+      const findings = error.findings.map((finding) => ({ ...finding, entityType: 'trip' as const, entityId: trip.id }));
+      const diagnosis = this.anchorDiagnosisOf(outcome, anchorByTripId[trip.id]);
+      if (error instanceof AnchorBandChoiceError) {
+        const bandPickable = outcome.profile !== undefined && (outcome.profile.calculationMethod === undefined || outcome.profile.calculationMethod === 'singleBand');
+        return { tripId: trip.id, status: bandPickable ? 'needsChoice' : 'error', findings, bandChoices: error.choices, bandPickable, ...(diagnosis ? { diagnosis } : {}) };
+      }
+      return { tripId: trip.id, status: 'error', findings, ...(diagnosis ? { diagnosis } : {}) };
+    });
+    const readyIds = new Set(rows.filter((row) => row.status === 'ready').map((row) => row.tripId));
+    const readyTrips = trips.filter((trip) => readyIds.has(trip.id));
+    const revisedTrips = rows.flatMap((row) => row.status === 'ready' && row.revisedTrip ? [row.revisedTrip] : []);
+    const bandSelections = rows.flatMap((row) => row.bandSelection ? [row.bandSelection] : []);
+    const skippedTrips = trips.filter((trip) => skippedIds.has(trip.id));
+    // Skipped and failed Trips stay in the connection check as unchanged neighbors: their saved times are read, and they are not revised.
+    const selectedIds = new Set(tripIds);
+    const relevantBlocks = blocks.filter((block) => block.activities.some((activity) => activity.type === 'revenueTrip' && selectedIds.has(activity.tripId)));
+    const connectedIds = [...new Set(relevantBlocks.flatMap((block) => block.activities.filter((activity) => activity.type === 'revenueTrip').map((activity) => activity.tripId)))].filter((id) => !selectedIds.has(id));
+    const connectedTrips = (await Promise.all(connectedIds.map((id) => this.repository.getTrip(id)))).filter((trip): trip is Trip => Boolean(trip));
+    const connectionTrips = [...trips, ...connectedTrips];
+    const connectionPatternIds = [...new Set(connectionTrips.map((trip) => trip.patternId))];
+    const connectionPatterns = (await Promise.all(connectionPatternIds.map((id) => this.repository.getPattern(id)))).filter((pattern): pattern is RoutePattern => Boolean(pattern));
+    const connectionReview = calculateRecalculationConnections(readyTrips, revisedTrips, connectionTrips, relevantBlocks, connectionPatterns);
+    return {
+      trips: revisedTrips,
+      impact: calculateRecalculationImpact(readyTrips, blocks),
+      connections: connectionReview.connections,
+      findings: connectionReview.findings,
+      bandSelections,
+      anchorByTripId: { ...anchorByTripId },
+      bandOverrideByTripId: { ...bandOverrideByTripId },
+      anchorTimeByTripId: { ...anchorTimeByTripId },
+      // The skipped Trips' stored records are part of the signature: they are neighbors in the connection check, so an edit to one changes the review.
+      sourceSignature: JSON.stringify([sources, blocks, connectedTrips, connectionPatterns, skippedTrips, [...skippedIds].sort(), rows.map((row) => [row.tripId, row.status])]),
+      rows,
+      requestedTripIds: tripIds,
+      inputs: { ...inputs },
+    };
+  }
+
+  /** Writes the ready Trips that are not skipped, with the undo snapshot in one transaction (Decision 0071). Refused when the review is stale or no Trip is ready. */
+  async applyRecalculationReview(review: RecalculationReview, confirm = false): Promise<RecalculationReview> {
+    const current = await this.reviewRecalculation(review.requestedTripIds, review.inputs);
+    if (current.sourceSignature !== review.sourceSignature) throw new Error('Trips or runtimes changed. Review regeneration again.');
+    if (!current.trips.length) throw new Error('No trips are ready to regenerate.');
     if (current.impact.requiresConfirmation && !confirm) throw new TripRecalculationConfirmationError(current);
     const beforeTrips = (await Promise.all(current.trips.map((trip) => this.repository.getTrip(trip.id)))).filter((trip): trip is Trip => Boolean(trip));
     if (beforeTrips.length !== current.trips.length) throw new Error('A selected Trip changed. Review regeneration again.');
@@ -535,7 +640,10 @@ export class TripGenerationService {
     this.assertFreshCopyPreview(preview.sourceSignature.value, context.preview.sourceSignature.value);
     this.assertNoCopyErrors(context.preview.findings);
     const currentById = new Map(context.trips.map((trip) => [trip.id, trip]));
-    const updated = context.preview.changes.map((change) => {
+    // Skipped Trips and Trips with a finding are not written (Decision 0071 item 2). A finding on an unskipped Trip has already refused the apply above.
+    const writable = context.preview.changes.filter((change) => !change.skipped && !change.finding && change.newStopTimes);
+    if (!writable.length) throw new Error('No trips are ready to change.');
+    const updated = writable.map((change) => {
       const trip = currentById.get(change.tripId)!;
       const targetProfile = context.profilesByTripId.get(change.tripId)!;
       const changed = applyPatternChange(trip, context.targetPattern, change, this.now());
@@ -583,10 +691,20 @@ export class TripGenerationService {
     }
     const blocks = records.blocks.filter((block) => trips.some((trip) => trip.serviceDayId === block.serviceDayId));
     const preview = buildBatchPatternChangePreview(request, trips, targetPattern, profilesByTripId, blocks, assignments, [...profilesByTripId.values()], sourcePatternsByTripId);
+    // Block connections of the eligible Trips. The Trips in those Blocks are the neighbors; a skipped or ineligible neighbor keeps its saved times.
+    const eligibleIds = new Set(preview.eligibleTripIds);
+    const newTimesById = new Map(preview.changes.flatMap((change) => change.newStopTimes && eligibleIds.has(change.tripId) ? [[change.tripId, change.newStopTimes] as const] : []));
+    const eligibleOriginals = trips.filter((trip) => eligibleIds.has(trip.id));
+    const eligibleChanged = eligibleOriginals.map((trip) => ({ ...trip, patternId: targetPattern.id, stopTimes: newTimesById.get(trip.id)! }));
+    const blockTripIds = new Set(blocks.filter((block) => block.activities.some((activity) => activity.type === 'revenueTrip' && eligibleIds.has(activity.tripId))).flatMap((block) => block.activities.flatMap((activity) => activity.type === 'revenueTrip' ? [activity.tripId] : [])));
+    const tripsById = new Map(records.trips.map((trip) => [trip.id, trip] as const));
+    for (const trip of trips) tripsById.set(trip.id, trip);
+    const connectionTrips = [...tripsById.values()].filter((trip) => blockTripIds.has(trip.id));
+    const connectionReview = calculateRecalculationConnections(eligibleOriginals, eligibleChanged, connectionTrips, blocks, records.patterns);
     // The domain signature covers the request (which carries anchorNodeId), the Trips, and the target. Add each source Pattern's node ids, so an edit to a source Pattern makes the review stale (Decision 0067 item 8).
     const sourceRows = trips.map((trip) => [trip.id, sourcePatternsByTripId.get(trip.id)?.points.map((point) => [point.id, point.nodeId, point.sequence]) ?? null]).sort((left, right) => String(left[0]).localeCompare(String(right[0])));
     const sourceSignature = { ...preview.sourceSignature, value: JSON.stringify([preview.sourceSignature.value, sourceRows]) };
-    return { preview: { ...preview, sourceSignature, findings: [...findings, ...preview.findings] }, trips, targetPattern, profilesByTripId };
+    return { preview: { ...preview, sourceSignature, findings: [...findings, ...preview.findings], connections: connectionReview.connections, connectionFindings: connectionReview.findings }, trips, targetPattern, profilesByTripId };
   }
 
   async listStaleTrips(serviceDayId: string, tripProfileId?: string): Promise<Trip[]> {
@@ -725,4 +843,4 @@ export class TripShiftStalePreviewError extends Error {
 }
 
 // Keep the historical application surface while exposing the authoritative trip commands.
-export type TripGenerationApplication = Pick<TripGenerationService, 'getGenerationSet' | 'listGenerationSets' | 'previewTripShift' | 'previewStagedTripShift' | 'applyStagedTripShift' | 'previewPatternChange' | 'applyPatternChange' | 'listServiceDayTrips' | 'listRouteDayTrips' | 'resolveRuntimeProfile' | 'previewGenerateTrips' | 'generateTrips' | 'addTrip' | 'previewTripPatternChange' | 'changeTripPattern' | 'listSharedAnchorNodes' | 'previewRecalculateTrips' | 'applyRecalculationPreview' | 'recalculateTrips' | 'getLastTripRegenerationUndo' | 'undoLastTripRegeneration' | 'previewTripTableImport' | 'applyTripTableImport' | 'previewTripDeletion' | 'deleteTrips' | 'listStaleTrips' | 'inspectStaleTrips' | 'listScheduleTrips' | 'listTripProfiles' | 'renameTripProfile' | 'copyTripProfile' | 'previewTripProfileDeletion' | 'deleteTripProfile' | 'previewRuntimeCopy' | 'applyRuntimeCopy' | 'previewTripCopy' | 'applyTripCopy' | 'previewBatchPatternChange' | 'applyBatchPatternChange'>;
+export type TripGenerationApplication = Pick<TripGenerationService, 'getGenerationSet' | 'listGenerationSets' | 'previewTripShift' | 'previewStagedTripShift' | 'applyStagedTripShift' | 'previewPatternChange' | 'applyPatternChange' | 'listServiceDayTrips' | 'listRouteDayTrips' | 'resolveRuntimeProfile' | 'previewGenerateTrips' | 'generateTrips' | 'addTrip' | 'previewTripPatternChange' | 'changeTripPattern' | 'listSharedAnchorNodes' | 'previewRecalculateTrips' | 'applyRecalculationPreview' | 'reviewRecalculation' | 'applyRecalculationReview' | 'recalculateTrips' | 'getLastTripRegenerationUndo' | 'undoLastTripRegeneration' | 'previewTripTableImport' | 'applyTripTableImport' | 'previewTripDeletion' | 'deleteTrips' | 'listStaleTrips' | 'inspectStaleTrips' | 'listScheduleTrips' | 'listTripProfiles' | 'renameTripProfile' | 'copyTripProfile' | 'previewTripProfileDeletion' | 'deleteTripProfile' | 'previewRuntimeCopy' | 'applyRuntimeCopy' | 'previewTripCopy' | 'applyTripCopy' | 'previewBatchPatternChange' | 'applyBatchPatternChange'>;

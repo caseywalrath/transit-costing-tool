@@ -1,19 +1,19 @@
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { formatRuntimeDuration } from '../../domain/runtime';
 import { type RouteDefinitionApplication, type SegmentRuntimePreview } from '../../application/routeDefinitionService';
+import { type BandPairs } from '../../domain/segmentRuntimeMatching';
 import { userFacingError } from '../errorMessages';
 import { ModalDialog } from '../ModalDialog';
 import { type TripGenerationApplication } from '../../application/tripGenerationService';
-import { type BatchPatternChangePreview, type RuntimeCopyPreview, type TripCopyPreview } from '../../domain/serviceDayCopy';
-import { AnchorBandChoiceError, TripGenerationError, type AnchorBandChoice, type RecalculationPreview } from '../../domain/trips';
-import { buildTripsFieldProblems, MAX_TRIPS_PER_GENERATION, parseBuildTripsForm, tripBlockAssignmentImpact, tripBlockUnassignmentImpact, tripRunTimeSeconds } from '../../application/tripsWorkspaceView';
+import { type RuntimeCopyPreview, type TripCopyPreview } from '../../domain/serviceDayCopy';
+import { TripGenerationError, type AnchorBandChoice, type RecalculationPreview } from '../../domain/trips';
+import { buildTripsFieldProblems, MAX_TRIPS_PER_GENERATION, parseBuildTripsForm, tripBlockAssignmentImpact, tripBlockUnassignmentImpact } from '../../application/tripsWorkspaceView';
 import { formatServiceTime } from '../../domain/time';
 import { formatDuration } from '../format';
-import { type BlockingBlock, type Node, type RoutePattern, type RuntimeProfile, type ServiceDayDefinition, type Trip, type ValidationFinding } from '../../domain/types';
+import { type BlockingBlock, type Node, type RoutePattern, type RuntimeProfile, type ServiceDayDefinition } from '../../domain/types';
 import { type TripBlockAssignmentDraft, type TripBlockOption } from './ScheduleTable';
 import { USER_FACING_VALIDATION_MESSAGES, userMessage } from '../shared/messages';
 import { type PlannedFrequencyService, type BuildFromPlanPreview } from '../../application/plannedFrequencyService';
-import { methodLabel } from './RuntimeEditor';
 import { DurationField, ClockField } from '../shared/fields';
 
 export type BuildTripsMode = 'headway' | 'plan';
@@ -71,7 +71,7 @@ const formatPlanHeadway = (seconds: number): string => (seconds % 60 === 0 ? Str
 const tripsText = (count: number) => `${count} trip${count === 1 ? '' : 's'}`;
 const PLAN_MODE_HINT = 'No planned frequencies for this day. Add them on the Route screen.';
 
-export function BuildTripsDrawer({ tripService, plannedFrequencyService, scenarioId, routeId, serviceDayId, tripProfileId, patterns, nodes, profileName, initialValues, onValuesChange, onDone, onClose }: { tripService: TripGenerationApplication; plannedFrequencyService: Pick<PlannedFrequencyService, 'getPlan' | 'previewBuildFromPlan'>; scenarioId: string; routeId: string; serviceDayId: string; tripProfileId: string; patterns: RoutePattern[]; nodes: Node[]; profileName?: string; initialValues: BuildTripsValues; onValuesChange: (values: BuildTripsValues) => void; onDone: () => Promise<void>; onClose: () => void }) {
+export function BuildTripsDrawer({ tripService, plannedFrequencyService, scenarioId, routeId, serviceDayId, tripProfileId, patterns, nodes, profileName, initialValues, onValuesChange, onDone, onClose }: { tripService: TripGenerationApplication; plannedFrequencyService: Pick<PlannedFrequencyService, 'getPlan' | 'previewBuildFromPlan'>; scenarioId: string; routeId: string; serviceDayId: string; tripProfileId: string; patterns: RoutePattern[]; nodes: Node[]; profileName?: string; initialValues: BuildTripsValues; onValuesChange: (values: BuildTripsValues) => void; onDone: (changedTripIds: string[]) => Promise<void>; onClose: () => void }) {
   // The entered values outlive the drawer: closing it asks nothing and reopening it shows them again (Decision 14 of the review). A successful build clears them.
   const [patternId, setPatternId] = useState(patterns.some((pattern) => pattern.id === initialValues.patternId) ? initialValues.patternId : ''); const [firstTrip, setFirstTrip] = useState(initialValues.firstTrip); const [headway, setHeadway] = useState(initialValues.headway); const [tripCount, setTripCount] = useState(initialValues.tripCount); const [lastTrip, setLastTrip] = useState(initialValues.lastTrip);
   const [chosenMode, setMode] = useState<BuildTripsMode>(initialValues.mode); const [skippedPeriodIds, setSkippedPeriodIds] = useState(initialValues.skippedPeriodIds);
@@ -108,7 +108,7 @@ export function BuildTripsDrawer({ tripService, plannedFrequencyService, scenari
       if (planBlocked || !planPreview) { setError(planPreview && !planPreview.patternServesNode ? USER_FACING_VALIDATION_MESSAGES['tripGeneration.anchorNodeNotServed'] : planSlots.length === 0 && planPreview ? 'Select at least one period that still has trips to build.' : 'The planned frequencies are still loading.'); return; }
       const request = { scenarioId, routeId, serviceDayId, patternId, tripProfileId, slots: planSlots, anchorNodeId: planPreview.measureNodeId };
       try {
-        setBusy(true); await tripService.previewGenerateTrips(request); await tripService.generateTrips(request); await onDone();
+        setBusy(true); await tripService.previewGenerateTrips(request); const written = await tripService.generateTrips(request); await onDone(written.trips.map((trip) => trip.id));
       } catch (caught) {
         if (caught instanceof TripGenerationError) setError([...new Set(caught.findings.map((finding) => finding.parameters?.departure !== undefined && finding.field === 'anchorNodeId' ? `${formatServiceTime(Number(finding.parameters.departure))}: ${userMessage(finding)}` : userMessage(finding)))].join(' '));
         else setError(userFacingError(caught, 'Unable to build trips. Check the values and try again.'));
@@ -119,7 +119,7 @@ export function BuildTripsDrawer({ tripService, plannedFrequencyService, scenari
     if (!parsed.ok) { setError(BUILD_TRIPS_FORM_MESSAGES[parsed.reason](parsed.reason === 'tripCountRange' ? parsed.maximum : 0)); return; }
     const request = parsed.request;
     try {
-      setBusy(true); await tripService.previewGenerateTrips(request); await tripService.generateTrips(request); await onDone();
+      setBusy(true); await tripService.previewGenerateTrips(request); const written = await tripService.generateTrips(request); await onDone(written.trips.map((trip) => trip.id));
     } catch (caught) {
       if (caught instanceof TripGenerationError) setError([...new Set(caught.findings.map(userMessage))].join(' '));
       else setError(userFacingError(caught, 'Unable to build trips. Check the values and try again.'));
@@ -132,28 +132,36 @@ export function RuntimeProfileDialog2({ dialog, candidates, onSubmit, onClose }:
 export function DeleteRuntimeProfileDialog({ profile, profiles, assignmentCount, tripCount, onDelete, onClose }: { profile: RuntimeProfile; profiles: RuntimeProfile[]; assignmentCount: number; tripCount: number; onDelete: (replacementProfileId?: string) => Promise<void>; onClose: () => void }) { const alternatives = profiles.filter((item) => item.id !== profile.id); const [replacement, setReplacement] = useState(alternatives[0]?.id ?? ''); const requiresReplacement = assignmentCount > 0; const blocked = tripCount > 0 || (requiresReplacement && !alternatives.length); return <ModalDialog labelledBy="delete-runtime-profile-title" className="confirm-dialog" onClose={onClose}><h2 id="delete-runtime-profile-title">Delete runtime profile?</h2>{tripCount > 0 ? <p className="field-error">{tripCount} saved trip{tripCount === 1 ? '' : 's'} retain this profile as their run-time source. Delete or recalculate those trips before deleting this profile.</p> : requiresReplacement ? <><p>This profile is assigned to {assignmentCount} service-day pattern combination{assignmentCount === 1 ? '' : 's'}. Select a replacement profile.</p>{alternatives.length > 0 ? <label className="dialog-field">Replacement<select value={replacement} onChange={(event) => setReplacement(event.target.value)}>{alternatives.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : <p className="field-error">Create another profile before deleting this one.</p>}</> : <p>This profile is not assigned to service and is not used by a saved trip.</p>}<div className="dialog-actions"><button onClick={onClose}>Cancel</button><button className="subtle-danger" disabled={blocked} onClick={() => void onDelete(requiresReplacement ? replacement : undefined)}>Delete</button></div></ModalDialog>; }
 const SEGMENT_SKIP_TITLES = {
   ambiguous: 'Segment appears more than once in a pattern',
-  bandMismatch: 'No band with the same start and end time',
-  unassigned: 'Profile is not assigned to any service day',
   conflict: 'Other patterns disagree',
+  bandShared: 'More than one period would copy into this period',
 } as const;
 
-/** Decision 0049: preview, then confirm, a copy of this profile's segment runtimes to other patterns or a fill of its `:00` cells from them. */
+const overlapShare = (open: { startTime: number; endTime: number }, other: { startTime: number; endTime: number } | undefined) => other ? Math.max(0, Math.min(open.endTime, other.endTime) - Math.max(open.startTime, other.startTime)) / Math.max(1, open.endTime - open.startTime) : 0;
+const periodText = (band: { label: string; startTime: number; endTime: number }) => `${band.label} · ${formatServiceTime(band.startTime, band.startTime % 60 !== 0)}–${formatServiceTime(band.endTime, band.endTime % 60 !== 0)}`;
+
+/**
+ * Decision 0049 and Decision 0074: preview, then confirm, a copy of this profile's segment runtimes to other patterns or a fill of its `:00`
+ * cells from them. R9: for each other profile with a segment in common, a band map shows which of its time periods each of this profile's
+ * periods pairs with, and the pairing can be changed.
+ */
 export function SegmentRuntimeDialog({ service, mode, profileId, onDone, onClose }: { service: Pick<RouteDefinitionApplication, 'previewSegmentRuntimeCopy' | 'previewSegmentRuntimeFill' | 'applySegmentRuntimePlan'>; mode: 'copy' | 'fill'; profileId: string; onDone: () => void; onClose: () => void }) {
   const copy = mode === 'copy';
   const [excluded, setExcluded] = useState<string[]>([]);
+  const [bandPairs, setBandPairs] = useState<BandPairs>();
   const [preview, setPreview] = useState<SegmentRuntimePreview>();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const defaults = useRef<BandPairs | undefined>(undefined);
   const firstCheckbox = useRef<HTMLInputElement>(null);
   const focused = useRef(false);
   useEffect(() => {
     let current = true;
-    (copy ? service.previewSegmentRuntimeCopy(profileId, excluded) : service.previewSegmentRuntimeFill(profileId))
-      .then((next) => { if (current) { setPreview(next); setError(''); } })
+    (copy ? service.previewSegmentRuntimeCopy(profileId, excluded, bandPairs) : service.previewSegmentRuntimeFill(profileId, bandPairs))
+      .then((next) => { if (current) { defaults.current ??= next.bandPairs; setPreview(next); setError(''); } })
       .catch((reason) => { if (current) setError(userFacingError(reason, 'The runtimes could not be previewed.')); });
     return () => { current = false; };
-  }, [service, copy, profileId, excluded]);
+  }, [service, copy, profileId, excluded, bandPairs]);
   useEffect(() => { if (preview && copy && !focused.current) { focused.current = true; firstCheckbox.current?.focus(); } }, [preview, copy]);
   async function apply() {
     if (!preview) return;
@@ -163,25 +171,27 @@ export function SegmentRuntimeDialog({ service, mode, profileId, onDone, onClose
   const seconds = (value: number) => formatRuntimeDuration(value) || ':00';
   const name = (id: string) => preview?.profileNames[id] ?? 'Profile';
   const pattern = (patternId: string) => preview?.patternNames[patternId] ?? 'Pattern';
+  const patternOf = (id: string) => preview?.patternIdByProfileId[id] ?? '';
   const who = (id: string, patternId: string) => `${pattern(patternId)} · ${name(id)}`;
   const rows = preview ? (copy ? preview.copyCandidates.filter((candidate) => excluded.includes(candidate.profileId) || preview.affectedProfiles.some((item) => item.profileId === candidate.profileId)).map((candidate) => ({ ...candidate, included: !excluded.includes(candidate.profileId) })) : preview.affectedProfiles.map((item) => ({ profileId: item.profileId, patternId: item.patternId, included: true }))) : [];
   const affected = new Map((preview?.affectedProfiles ?? []).map((item) => [item.profileId, item]));
-  // A band mismatch is reported for each band, so the dialog lists each profile once with its unmatched bands.
-  const bandMismatches = new Map<string, SegmentRuntimePreview['skips'][number] & { ranges: string[] }>();
-  for (const skip of preview?.skips ?? []) if (skip.reason === 'bandMismatch') { const entry = bandMismatches.get(skip.profileId) ?? { ...skip, ranges: [] }; const range = preview?.bandRanges[skip.bandId ?? '']; if (range && !entry.ranges.includes(range)) entry.ranges.push(range); bandMismatches.set(skip.profileId, entry); }
-  const skipGroups = (['ambiguous', 'bandMismatch', 'unassigned', 'conflict'] as const).map((reason) => ({ reason, skips: reason === 'bandMismatch' ? [...bandMismatches.values()] : (preview?.skips ?? []).filter((skip) => skip.reason === reason) })).filter((group) => group.skips.length);
-  const skipText = (skip: SegmentRuntimePreview['skips'][number] & { ranges?: string[] }) => {
-    const parts = [who(skip.profileId, skip.patternId)];
-    if (skip.ranges) parts.push(skip.ranges.join(', '));
-    else if (skip.bandId && preview?.bandRanges[skip.bandId]) parts.push(preview.bandRanges[skip.bandId]);
-    if (skip.reason !== 'bandMismatch' && skip.segmentIndex !== undefined) parts.push(preview?.segmentLabels[skip.profileId]?.[skip.segmentIndex] ?? 'Segment');
-    if (skip.candidates) parts.push(skip.candidates.map((candidate) => `${seconds(candidate.seconds)} (${candidate.profileIds.map(name).join(', ')})`).join(' vs '));
+  const skipGroups = (['conflict', 'bandShared', 'ambiguous'] as const).map((reason) => ({ reason, skips: (preview?.skips ?? []).filter((skip) => skip.reason === reason) })).filter((group) => group.skips.length);
+  const skipText = (skip: SegmentRuntimePreview['skips'][number]) => {
+    // This profile's own skips need no name; values are attributed to patterns, whose profiles often share one name.
+    const parts = skip.profileId === profileId ? [] : [who(skip.profileId, skip.patternId)];
+    if (skip.bandId && preview?.bandRanges[skip.bandId]) parts.push(preview.bandRanges[skip.bandId]);
+    if (skip.segmentIndex !== undefined) parts.push(preview?.segmentLabels[skip.profileId]?.[skip.segmentIndex] ?? 'Segment');
+    if (skip.candidates) parts.push(skip.candidates.map((candidate) => `${seconds(candidate.seconds)} (${candidate.profileIds.map((id) => pattern(patternOf(id))).join(', ')})`).join(' vs '));
     return parts.join(' · ');
   };
+  // Profiles that share a segment with this one, and are not left out of a copy.
+  const unshared = new Set((preview?.skips ?? []).filter((skip) => skip.reason === 'noMatchingSegment').map((skip) => skip.profileId));
+  const mapped = preview ? Object.keys(preview.bandPairs).filter((id) => !unshared.has(id) && !excluded.includes(id)) : [];
+  const openBands = preview?.bandsByProfileId[profileId] ?? [];
+  const setPair = (otherId: string, bandId: string, value: string) => { if (preview) setBandPairs({ ...preview.bandPairs, [otherId]: { ...preview.bandPairs[otherId], [bandId]: value || null } }); };
   const title = copy ? 'Copy segments to other patterns' : 'Fill from other patterns';
   return <ModalDialog labelledBy="segment-runtime-title" className="confirm-dialog preview-dialog segment-runtime-dialog" onClose={onClose} busy={busy}>
     <h2 id="segment-runtime-title">{title}</h2>
-    <p>{copy ? "Runtimes for segments shared with other patterns will be replaced with this profile's values, for bands with the same start and end times." : 'Runtimes of :00 in this profile will be filled from other patterns that share the segment, for bands with the same start and end times.'}</p>
     {!preview && !error && <p role="status">Loading preview…</p>}
     {preview && <>
       {rows.length > 0 && <div className="preview-times"><table>
@@ -194,6 +204,25 @@ export function SegmentRuntimeDialog({ service, mode, profileId, onDone, onClose
           </tr>;
         })}</tbody>
       </table></div>}
+      {mapped.map((otherId) => {
+        const otherBands = preview.bandsByProfileId[otherId] ?? [];
+        const label = who(otherId, patternOf(otherId));
+        return <div key={otherId} className="segment-band-map">
+          <table aria-label={`Time periods paired with ${label}`}>
+            <thead><tr><th scope="col">This profile</th><th scope="col">{label}</th><th scope="col">Overlap</th></tr></thead>
+            <tbody>{openBands.map((band) => {
+              const chosen = preview.bandPairs[otherId]?.[band.id] ?? '';
+              const share = Math.round(overlapShare(band, otherBands.find((item) => item.id === chosen)) * 100);
+              const changed = (defaults.current?.[otherId]?.[band.id] ?? '') !== chosen;
+              return <tr key={band.id} className={changed ? 'segment-band-map__changed' : undefined}>
+                <td>{periodText(band)}</td>
+                <td><select aria-label={`${band.label} pairs with, ${label}`} value={chosen} disabled={busy} onChange={(event) => setPair(otherId, band.id, event.target.value)}><option value="">None</option>{otherBands.map((item) => <option key={item.id} value={item.id}>{periodText(item)}</option>)}</select></td>
+                <td className={chosen && share < 50 ? 'segment-band-map__low' : undefined}>{chosen ? `${share}%` : '—'}</td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>;
+      })}
       {preview.changes.length === 0 && <p>No runtimes would change.</p>}
       {preview.changes.length > 0 && <>
         <button type="button" className="disclosure" aria-expanded={detailsOpen} aria-controls="segment-runtime-details" onClick={() => setDetailsOpen((open) => !open)}><span aria-hidden="true" className="disclosure__arrow">{detailsOpen ? '▾' : '▸'}</span>Show cell details</button>
@@ -240,58 +269,6 @@ export function bandChoiceLabel(choice: AnchorBandChoice): string {
   return `${choice.bandLabel}: ${formatServiceTime(choice.departure)} departure (${choice.side ? `${Number((choice.distanceSeconds / 60).toFixed(1))} min ${choice.side === 'before' ? 'before start' : 'after end'} at ${formatServiceTime(choice.side === 'before' ? choice.startTime : choice.endTime)}` : 'within band'})`;
 }
 
-export function RecalculationDialog({ tripService, tripIds, trips, patterns, nodes, runtimeProfiles, onDone, onClose }: { tripService: TripGenerationApplication; tripIds: string[]; trips: Trip[]; patterns: RoutePattern[]; nodes: Node[]; runtimeProfiles: Map<string, RuntimeProfile | undefined>; onDone: () => Promise<void>; onClose: () => void }) {
-  const [anchors, setAnchors] = useState<Record<string, string>>({});
-  const [bulkAnchorChoice, setBulkAnchorChoice] = useState<'first' | 'last' | 'shared' | undefined>('first');
-  const [commonNode, setCommonNodeValue] = useState('');
-  const [bandOverrides, setBandOverrides] = useState<Record<string, string>>({});
-  const [bandChoices, setBandChoices] = useState<AnchorBandChoice[]>([]);
-  const [selectedBandId, setSelectedBandId] = useState('');
-  const [preview, setPreview] = useState<RecalculationPreview>();
-  const [error, setError] = useState('');
-  const [anchorFinding, setAnchorFinding] = useState<ValidationFinding>();
-  const [tripFindings, setTripFindings] = useState<ValidationFinding[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [reviewing, setReviewing] = useState(true);
-  const [reviewRevision, setReviewRevision] = useState(0);
-  // Trips the planner chose to leave out so the valid ones can still regenerate. They are not reviewed and not changed.
-  const [skipped, setSkipped] = useState<ReadonlySet<string>>(() => new Set());
-  const activeIds = useMemo(() => tripIds.filter((id) => !skipped.has(id)), [tripIds, skipped]);
-  useEffect(() => {
-    let live = true;
-    setPreview(undefined); setError(''); setAnchorFinding(undefined); setTripFindings([]); setBandChoices([]); setReviewing(true);
-    void tripService.previewRecalculateTrips(activeIds, anchors, bandOverrides).then((result) => { if (live) { setPreview(result); setTripFindings(result.findings); } }).catch((issue: unknown) => { if (live) { if (issue instanceof TripGenerationError) { setTripFindings(issue.findings.filter((item) => activeIds.includes(item.entityId))); const finding = issue.findings.find((item) => item.ruleId === 'trip.anchorNoRuntime' || item.ruleId === 'trip.anchorAmbiguous' || item.ruleId === 'trip.anchorNearestTie'); setAnchorFinding(finding); if (issue instanceof AnchorBandChoiceError) { setBandChoices(issue.choices); setSelectedBandId(issue.choices[0]?.bandId ?? ''); } if (!finding) setError([...new Set(issue.findings.map(userMessage))].join(' ')); } else setError(userFacingError(issue, 'Unable to review the trips. Close this dialog and try again.')); } }).finally(() => { if (live) setReviewing(false); });
-    return () => { live = false; };
-  }, [tripService, activeIds, anchors, bandOverrides, reviewRevision]);
-  // Lookups by id, so each of up to 500 rows reads its Trip, Pattern, revised times, connection, and findings without a scan (U08).
-  const selected = useMemo(() => { const byId = new Map(trips.map((trip) => [trip.id, trip])); return activeIds.map((id) => byId.get(id)).filter((trip): trip is Trip => Boolean(trip)); }, [trips, activeIds]);
-  const patternById = useMemo(() => new Map(patterns.map((pattern) => [pattern.id, pattern])), [patterns]);
-  const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
-  const revisedById = useMemo(() => new Map((preview?.trips ?? []).map((trip) => [trip.id, trip])), [preview]);
-  const bandSelectionById = useMemo(() => new Map((preview?.bandSelections ?? []).map((item) => [item.tripId, item])), [preview]);
-  const connectionById = useMemo(() => { const byTrip = new Map<string, RecalculationPreview['connections'][number]>(); const gap = (item: RecalculationPreview['connections'][number]) => item.revisedLayoverSeconds ?? item.revisedGapSeconds; for (const item of preview?.connections ?? []) { const current = byTrip.get(item.tripId); if (!current || gap(item) < gap(current)) byTrip.set(item.tripId, item); } return byTrip; }, [preview]);
-  const findingsById = useMemo(() => { const byTrip = new Map<string, ValidationFinding[]>(); for (const item of tripFindings) byTrip.set(item.entityId, [...(byTrip.get(item.entityId) ?? []), item]); return byTrip; }, [tripFindings]);
-  const pointsFor = (trip: Trip) => patternById.get(trip.patternId)?.points ?? [];
-  const pointName = (trip: Trip, pointId: string) => { const point = pointsFor(trip).find((item) => item.id === pointId); const node = point ? nodeById.get(point.nodeId) : undefined; return node?.shortName || node?.name || `Point ${pointsFor(trip).findIndex((item) => item.id === pointId) + 1}`; };
-  const failedTrip = selected.find((trip) => trip.id === anchorFinding?.entityId);
-  const failedPoints = failedTrip ? pointsFor(failedTrip) : [];
-  // Under a segment-start or blended profile a band cannot be chosen (Decision 0031 addendum, user decision of 2026-10-23, Option B): the candidates are only listed.
-  const failedMethod = failedTrip ? runtimeProfiles.get(failedTrip.patternId)?.calculationMethod : undefined;
-  const bandPickable = failedMethod !== 'segmentStart' && failedMethod !== 'blendSegments';
-  const failedAnchorId = failedTrip ? anchors[failedTrip.id] ?? failedPoints[0]?.id : undefined;
-  const failedAnchorTime = failedTrip?.stopTimes.find((point) => point.patternPointId === failedAnchorId)?.time;
-  const failedTripLabel = failedTrip ? `${patterns.find((pattern) => pattern.id === failedTrip.patternId)?.name ?? 'Trip'} departing ${formatServiceTime(failedTrip.stopTimes[0]?.time ?? 0)}` : 'Selected trip';
-  const failedAnchorLabel = failedTrip && failedAnchorId ? failedAnchorId === failedPoints[0]?.id ? 'first departure' : `${pointName(failedTrip, failedAnchorId)} timepoint` : 'timepoint';
-  const commonNodes = selected.length ? pointsFor(selected[0]).filter((point) => selected.every((trip) => pointsFor(trip).some((candidate) => candidate.nodeId === point.nodeId))).map((point) => point.nodeId) : [];
-  const setCommonNode = (nodeId: string) => { if (nodeId) { setBandOverrides({}); setBulkAnchorChoice('shared'); setCommonNodeValue(nodeId); setAnchors(Object.fromEntries(selected.map((trip) => [trip.id, pointsFor(trip).find((point) => point.nodeId === nodeId)?.id ?? '']))); } };
-  const setAll = (kind: 'first' | 'last') => { setBandOverrides({}); setBulkAnchorChoice(kind); setCommonNodeValue(''); setAnchors(Object.fromEntries(selected.map((trip) => { const points = pointsFor(trip); return [trip.id, (kind === 'first' ? points[0] : points[points.length - 1])?.id ?? '']; }))); };
-  const skip = (ids: string[]) => setSkipped((current) => new Set([...current, ...ids]));
-  // A Trip with an error that no anchor or band choice here can fix: the planner may leave it out and regenerate the rest.
-  const unresolvableIds = anchorFinding ? [] : [...new Set(tripFindings.filter((item) => item.severity === 'error').map((item) => item.entityId))].filter((id) => activeIds.includes(id));
-  const anchorHasResolution = Boolean(failedTrip) && ((bandChoices.length > 0 && bandPickable) || failedPoints[0]?.id !== failedAnchorId);
-  async function apply() { if (!preview) return; setBusy(true); setError(''); try { await tripService.applyRecalculationPreview(preview, true); await onDone(); } catch (issue) { setPreview(undefined); setError(userFacingError(issue, 'Unable to regenerate the trips. Review them again, then apply.')); } finally { setBusy(false); } }
-  return <ModalDialog labelledBy="recalculation-title" className="confirm-dialog preview-dialog" onClose={onClose} busy={busy}><h2 id="recalculation-title">Regenerate selected trips</h2><p>Keep one saved timepoint fixed per trip. Changes are new minus current.</p><div className="recalculation-bulk"><span>Set all anchors</span><button type="button" className={bulkAnchorChoice === 'first' ? 'is-selected' : undefined} aria-pressed={bulkAnchorChoice === 'first'} onClick={() => setAll('first')} disabled={busy}>First departure</button><button type="button" className={bulkAnchorChoice === 'last' ? 'is-selected' : undefined} aria-pressed={bulkAnchorChoice === 'last'} onClick={() => setAll('last')} disabled={busy}>Last timepoint</button>{commonNodes.length > 0 && <select aria-label="Set all to a shared timepoint" className={bulkAnchorChoice === 'shared' ? 'is-selected' : undefined} value={commonNode} disabled={busy} onChange={(event) => setCommonNode(event.target.value)}><option value="" disabled>Shared timepoint…</option>{commonNodes.map((nodeId) => { const node = nodes.find((item) => item.id === nodeId); return <option key={nodeId} value={nodeId}>{node?.shortName || node?.name || 'Unnamed point'}</option>; })}</select>}</div><div className="preview-times"><table><thead><tr><th scope="col">Trip</th><th scope="col">Anchor</th><th scope="col">Fixed time</th><th scope="col" className="recalculation-change">First change</th><th scope="col">First: current → new</th><th scope="col" className="recalculation-change">Last change</th><th scope="col">Last: current → new</th><th scope="col" className="recalculation-change">Run time change</th><th scope="col" className="recalculation-change">Layover change</th><th scope="col">Layover: current → new</th></tr></thead><tbody>{selected.map((trip) => { const points = pointsFor(trip); const anchorId = anchors[trip.id] ?? points[0]?.id ?? ''; const oldAnchor = trip.stopTimes.find((point) => point.patternPointId === anchorId); const revised = revisedById.get(trip.id); const fallback = bandSelectionById.get(trip.id); const connection = connectionById.get(trip.id); const rowFindings = findingsById.get(trip.id) ?? []; return <tr key={trip.id} className={rowFindings.some((item) => item.severity === 'error') ? 'runtime-row-error' : rowFindings.length ? 'recalculation-row-warning' : undefined}><td>{patternById.get(trip.patternId)?.name ?? 'Trip'} · {formatServiceTime(trip.stopTimes[0]?.time ?? 0)}{rowFindings.length > 0 && <small className={rowFindings.some((item) => item.severity === 'error') ? 'recalculation-row-error' : 'recalculation-row-warning-note'}>{[...new Set(rowFindings.map(userMessage))].join(' ')}</small>}</td><td><AnchorSelect label={`Anchor for trip at ${formatServiceTime(trip.stopTimes[0]?.time ?? 0)}`} value={anchorId} disabled={busy} choices={() => points.map((point, index) => ({ id: point.id, label: index === 0 ? 'First departure' : index === points.length - 1 ? 'Last timepoint' : pointName(trip, point.id) }))} onChange={(value) => { setBulkAnchorChoice(undefined); setCommonNodeValue(''); setBandOverrides((current) => { const next = { ...current }; delete next[trip.id]; return next; }); setAnchors((current) => ({ ...current, [trip.id]: value })); }} />{fallback && <small className="recalculation-fallback">{fallback.selection === 'manual' ? 'Chosen' : 'Nearest'}: {fallback.bandLabel} · {fallback.side ? `${Number((fallback.distanceSeconds / 60).toFixed(1))} min ${fallback.side === 'before' ? 'before start' : 'after end'}` : 'within band'}</small>}</td><td>{oldAnchor ? formatServiceTime(oldAnchor.time) : '—'}</td><td className="recalculation-change">{formatPreviewTimeChange(trip.stopTimes[0]?.time, revised?.stopTimes[0]?.time)}</td><td>{formatPreviewTime(trip.stopTimes[0]?.time)} → {formatPreviewTime(revised?.stopTimes[0]?.time)}</td><td className="recalculation-change">{formatPreviewTimeChange(trip.stopTimes.at(-1)?.time, revised?.stopTimes.at(-1)?.time)}</td><td>{formatPreviewTime(trip.stopTimes.at(-1)?.time)} → {formatPreviewTime(revised?.stopTimes.at(-1)?.time)}</td><td className="recalculation-change">{formatPreviewTimeChange(tripRunTimeSeconds(trip), revised ? tripRunTimeSeconds(revised) : undefined)}</td><td className="recalculation-change">{formatPreviewTimeChange(connection?.currentLayoverSeconds, connection?.revisedLayoverSeconds)}</td><td>{formatPreviewGap(connection?.currentLayoverSeconds)} → {formatPreviewGap(connection?.revisedLayoverSeconds)}</td></tr>; })}</tbody></table></div>{Boolean(preview?.bandSelections?.length) && <p className="recalculation-fallback-summary">Runtime band selection reviewed for {preview!.bandSelections!.length} trip{preview!.bandSelections!.length === 1 ? '' : 's'}. Review the labeled rows.</p>}{preview?.impact.requiresConfirmation && <p>Recalculation will replace manual times or affect blocks. Review the times above before applying.</p>}{anchorFinding && <div className="field-error" role="alert"><p>{failedTripLabel}: keeping the {failedAnchorLabel}{failedAnchorTime === undefined ? '' : ` at ${formatServiceTime(failedAnchorTime)}`} is {anchorFinding.ruleId === 'trip.anchorAmbiguous' ? 'ambiguous. More than one runtime band yields a valid first departure.' : anchorFinding.ruleId === 'trip.anchorNearestTie' ? 'ambiguous. Two runtime bands are equally close to the calculated departure.' : bandChoices.length ? 'too far from every band for automatic selection. Choose a band below to keep this timepoint fixed.' : 'impossible with the current runtimes. No band can produce a valid departure for this fixed timepoint.'}</p>{bandChoices.length > 0 && !bandPickable ? <><p>The fixed time can be reached from {bandChoices.length === 2 ? 'two first departures' : `${bandChoices.length} first departures`}, and a band cannot be chosen for a {methodLabel(failedMethod)} profile:</p><ul className="recalculation-candidates">{bandChoices.map((choice) => <li key={choice.bandId}>{bandChoiceLabel(choice)}</li>)}</ul><p>Use the first departure for this trip, choose another anchor, or adjust the runtime bands.</p></> : <p>{bandChoices.length ? 'Choose a runtime band below, another anchor, or adjust the runtimes.' : 'Choose another anchor for this trip or adjust the runtime bands.'}</p>}{failedTrip && bandChoices.length > 0 && bandPickable && <div className="recalculation-band-choice"><label>Runtime band<select value={selectedBandId} disabled={busy || reviewing} onChange={(event) => setSelectedBandId(event.target.value)}>{bandChoices.map((choice) => <option key={choice.bandId} value={choice.bandId}>{bandChoiceLabel(choice)}</option>)}</select></label><button type="button" disabled={!selectedBandId || busy || reviewing} onClick={() => setBandOverrides((current) => ({ ...current, [failedTrip.id]: selectedBandId }))}>Use selected band</button></div>}{failedTrip && failedPoints[0]?.id !== failedAnchorId && <button type="button" disabled={busy || reviewing} onClick={() => { setBulkAnchorChoice(undefined); setCommonNodeValue(''); setBandOverrides((current) => { const next = { ...current }; delete next[failedTrip.id]; return next; }); setAnchors((current) => ({ ...current, [failedTrip.id]: failedPoints[0].id })); }}>Use first departure for this trip</button>}</div>}{failedTrip && !anchorHasResolution && <button type="button" disabled={busy || reviewing} onClick={() => skip([failedTrip.id])}>Skip this trip and regenerate the others</button>}{unresolvableIds.length > 0 && <div className="field-error" role="alert"><p>{unresolvableIds.length} trip{unresolvableIds.length === 1 ? ' has' : 's have'} an error that cannot be fixed here. Skip {unresolvableIds.length === 1 ? 'it' : 'them'} to regenerate the other trips.</p><button type="button" disabled={busy || reviewing} onClick={() => skip(unresolvableIds)}>Skip {unresolvableIds.length === 1 ? 'this trip' : `these ${unresolvableIds.length} trips`}</button></div>}{skipped.size > 0 && <p className="recalculation-fallback-summary">{skipped.size} trip{skipped.size === 1 ? '' : 's'} skipped and left unchanged. <button type="button" disabled={busy || reviewing} onClick={() => setSkipped(new Set())}>Include {skipped.size === 1 ? 'it' : 'them'} again</button></p>}{error && <p className="field-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" onClick={onClose} disabled={busy}>Cancel</button>{!preview && (error || anchorFinding) && <button type="button" onClick={() => setReviewRevision((value) => value + 1)} disabled={reviewing || busy}>Review again</button>}<button className="primary" type="button" onClick={() => void apply()} disabled={!preview || !preview.trips.length || preview.findings.some((finding) => finding.severity === 'error') || reviewing || busy}>{busy ? 'Regenerating…' : reviewing ? 'Reviewing…' : 'Regenerate trips'}</button></div></ModalDialog>;
-}
 
 /** Reviews a changed first time that touches a block: which blocks, and the layovers it changes. Shown only when the change has an effect beyond the Trip itself. */
 export function StartTimeChangeDialog({ patternName, fromSeconds, toSeconds, preview, busy, onApply, onClose }: { patternName: string; fromSeconds: number; toSeconds: number; preview: RecalculationPreview; busy: boolean; onApply: () => void; onClose: () => void }) {
@@ -327,64 +304,3 @@ export function TripDayCopyDialog({ tripService, scenarioId, routeId, tripProfil
   return <ModalDialog labelledBy="trip-copy-title" className="confirm-dialog preview-dialog" onClose={onClose} busy={busy}><h2 id="trip-copy-title">Copy trips</h2><p className="copy-scope">To {targetDay.name} · {routeName} · {tripProfileName} · Both directions</p><label className="dialog-field">Source day<select autoFocus value={sourceServiceDayId} disabled={busy} onChange={(event) => { setSourceServiceDayId(event.target.value); setPreview(undefined); setAllowEmptySource(false); setError(''); }}>{sources.map((day) => <option key={day.id} value={day.id}>{day.name}</option>)}</select></label>{preview && <><CopyImpact items={[["Source trips", preview.impact.sourceTripCount], ['Target trips replaced', preview.impact.targetTripsReplaced], ['Trips copied', preview.impact.copiedTripCount], ['Block activities removed', preview.impact.removedBlockActivityCount]]} />{preview.impact.requiresExplicitEmptySourceReview && <label className="clear-target"><input type="checkbox" checked={allowEmptySource} onChange={(event) => setAllowEmptySource(event.target.checked)} /> Clear {targetDay.name} trips</label>}{(preview.impact.manuallyAdjustedTargetTripIds.length > 0 || preview.impact.staleTargetTripIds.length > 0 || preview.impact.affectedBlockIds.length > 0 || preview.impact.missingTargetRuntimeAssignmentPatternIds.length > 0) && <ul className="impact-list">{preview.impact.manuallyAdjustedTargetTripIds.length > 0 && <li>{preview.impact.manuallyAdjustedTargetTripIds.length} manual target trip{preview.impact.manuallyAdjustedTargetTripIds.length === 1 ? '' : 's'} replaced.</li>}{preview.impact.staleTargetTripIds.length > 0 && <li>{preview.impact.staleTargetTripIds.length} stale target source{preview.impact.staleTargetTripIds.length === 1 ? '' : 's'}.</li>}{preview.impact.affectedBlockIds.length > 0 && <li>{preview.impact.affectedBlockIds.length} affected block{preview.impact.affectedBlockIds.length === 1 ? '' : 's'}.</li>}{preview.impact.missingTargetRuntimeAssignmentPatternIds.length > 0 && <li>Missing target runtimes: {preview.impact.missingTargetRuntimeAssignmentPatternIds.map(patternName).join(', ')}.</li>}</ul>}{preview.findings.length > 0 && <p className="field-error" role="alert">{[...new Set(preview.findings.map(userMessage))].join(' ')}</p>}</>}{error && <p className="field-error" role="alert">{error}</p>}<div className="dialog-actions"><button onClick={onClose} disabled={busy}>Cancel</button><button onClick={() => void review()} disabled={!sourceServiceDayId || busy}>{busy ? 'Reviewing…' : allowEmptySource ? 'Review clear' : 'Review copy'}</button>{preview && <button className={preview.impact.requiresExplicitEmptySourceReview ? 'danger' : 'primary'} onClick={() => void apply()} disabled={errors || busy}>{busy ? 'Copying…' : preview.impact.requiresExplicitEmptySourceReview ? 'Clear target trips' : 'Copy trips'}</button>}</div></ModalDialog>;
 }
 
-export function BatchPatternChangeDialog({ tripService, tripIds, patterns, trips, nodes, onDone, onClose, onError }: { tripService: TripGenerationApplication; tripIds: string[]; patterns: RoutePattern[]; trips: Trip[]; nodes: { id: string; name: string }[]; onDone: () => Promise<void>; onClose: () => void; onError: (error: unknown, fallback?: string) => void }) {
-  const [targetPatternId, setTargetPatternId] = useState(patterns[0]?.id ?? ''); const [anchorNodeId, setAnchorNodeId] = useState(''); const [preview, setPreview] = useState<BatchPatternChangePreview>(); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const tripName = (id: string) => patterns.find((pattern) => pattern.id === trips.find((trip) => trip.id === id)?.patternId)?.name || 'Selected trip';
-  // The anchor choices are the target Pattern's nodes, first visit only, in target order (Decision 0067 item 9). A node with no record is listed by its id.
-  const anchorChoices = useMemo(() => { const nameById = new Map(nodes.map((node) => [node.id, node.name])); const seen = new Set<string>(); const choices: { nodeId: string; name: string }[] = []; for (const point of patterns.find((pattern) => pattern.id === targetPatternId)?.points ?? []) if (!seen.has(point.nodeId)) { seen.add(point.nodeId); choices.push({ nodeId: point.nodeId, name: nameById.get(point.nodeId) || point.nodeId }); } return choices; }, [nodes, patterns, targetPatternId]);
-  async function review() { setBusy(true); setError(''); try { setPreview(await tripService.previewBatchPatternChange({ tripIds, targetPatternId, anchorNodeId: anchorNodeId || undefined })); } catch (caught) { setError(userFacingError(caught, 'Unable to review this pattern change. Close this dialog and try again.')); } finally { setBusy(false); } }
-  async function apply() { if (!preview || preview.ineligibleTripIds.length) return; setBusy(true); setError(''); try { await tripService.applyBatchPatternChange(preview); await onDone(); onClose(); } catch (caught) { setError(caught instanceof Error && caught.name === 'ServiceDayCopyStalePreviewError' ? 'Selected trips changed. Review again.' : userFacingError(caught, 'Unable to change patterns. Review the change again, then apply.')); } finally { setBusy(false); } }
-  return <ModalDialog labelledBy="batch-pattern-title" className="confirm-dialog preview-dialog" onClose={onClose} busy={busy}><h2 id="batch-pattern-title">Change selected patterns</h2><label className="dialog-field">Target pattern<select autoFocus value={targetPatternId} disabled={busy} onChange={(event) => { setTargetPatternId(event.target.value); setAnchorNodeId(''); setPreview(undefined); setError(''); }}>{patterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label><label className="dialog-field">Anchor<select value={anchorNodeId} disabled={busy} onChange={(event) => { setAnchorNodeId(event.target.value); setPreview(undefined); setError(''); }}><option value="">First stop</option>{anchorChoices.map((choice) => <option key={choice.nodeId} value={choice.nodeId}>{choice.name}</option>)}</select></label>{preview && <><CopyImpact items={[["Eligible", preview.eligibleTripIds.length], ['Cannot change', preview.ineligibleTripIds.length], ['Affected blocks', preview.affectedBlockIds.length]]} /><ul className="impact-list batch-pattern-results">{preview.changes.map((change) => <li key={change.tripId}>{tripName(change.tripId)}: {change.finding ? userMessage(change.finding) : 'Ready'}</li>)}</ul></>}{error && <p className="field-error" role="alert">{error}</p>}<div className="dialog-actions"><button onClick={onClose} disabled={busy}>Cancel</button><button onClick={() => void review()} disabled={!targetPatternId || busy}>{busy ? 'Reviewing…' : 'Review change'}</button>{preview && <button className="primary" onClick={() => void apply()} disabled={Boolean(preview.ineligibleTripIds.length) || busy}>{busy ? 'Saving…' : 'Change patterns'}</button>}</div></ModalDialog>;
-}
-
-/**
- * Change pattern with one Trip selected. It uses the single-Trip review: the target Pattern, the Trip, and the target runtime profile are
- * previewed and signed (`previewTripPatternChange`), and the change is refused if any of them changed before it is applied.
- */
-export function TripPatternChangeDialog({ tripService, trip, directionId, patterns, onDone, onClose }: { tripService: TripGenerationApplication; trip: Trip; directionId: string; patterns: RoutePattern[]; onDone: () => Promise<void>; onClose: () => void }) {
-  const targets = patterns.filter((pattern) => pattern.id !== trip.patternId);
-  const [targetPatternId, setTargetPatternId] = useState(targets[0]?.id ?? '');
-  // The anchor is a node both Patterns serve; '' is the first stop, which keeps the first departure (Decision 0067).
-  const [anchorNodeId, setAnchorNodeId] = useState('');
-  const [anchorChoices, setAnchorChoices] = useState<{ nodeId: string; name: string }[]>([]);
-  const [chosenBandId, setChosenBandId] = useState('');
-  const [review, setReview] = useState<Awaited<ReturnType<TripGenerationApplication['previewTripPatternChange']>>>();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const currentName = patterns.find((pattern) => pattern.id === trip.patternId)?.name || 'Unnamed pattern';
-  const affectedBlocks = review?.affectedBlockIds?.length ?? 0;
-  useEffect(() => {
-    let live = true;
-    setAnchorChoices([]);
-    // A failed load leaves only First stop; the review still reports any node the Patterns do not share.
-    if (targetPatternId) void tripService.listSharedAnchorNodes(trip.id, targetPatternId).then((choices) => { if (live) setAnchorChoices(choices); }).catch(() => { if (live) setAnchorChoices([]); });
-    return () => { live = false; };
-  }, [tripService, trip.id, targetPatternId]);
-  const blockText = affectedBlocks ? `${affectedBlocks} block${affectedBlocks === 1 ? '' : 's'} will be affected.` : 'No blocks are affected.';
-  // Anchored: the kept time and the signed changes to the first departure and the last time (Decision 0067 item 11). Without an anchor the text is unchanged.
-  const reviewStatus = review?.anchorNodeId
-    ? `Keeps ${anchorChoices.find((choice) => choice.nodeId === review.anchorNodeId)?.name ?? 'the anchor node'} at ${formatPreviewTime(review.anchorTime)}. First departure ${formatPreviewTimeChange(review.oldStopTimes[0]?.time, review.newStopTimes?.[0]?.time)}, last time ${formatPreviewTimeChange(review.oldStopTimes.at(-1)?.time, review.newStopTimes?.at(-1)?.time)}. ${blockText}`
-    : `Ready to change this trip's pattern. ${blockText}`;
-  async function previewChange(anchor = anchorNodeId, band = chosenBandId) {
-    setBusy(true); setError('');
-    try { setReview(await tripService.previewTripPatternChange(trip.id, targetPatternId, directionId, { anchorNodeId: anchor || undefined, chosenBandId: band || undefined })); }
-    catch (caught) { setError(userFacingError(caught, 'Unable to review this pattern change. Close this dialog and try again.')); }
-    finally { setBusy(false); }
-  }
-  async function apply() {
-    if (!review || review.finding) return;
-    setBusy(true); setError('');
-    try { await tripService.changeTripPattern(review); await onDone(); onClose(); }
-    catch (caught) { setError(caught instanceof Error && caught.name === 'TripPatternChangeStalePreviewError' ? 'The trip or pattern changed. Review the change again.' : userFacingError(caught, 'Unable to change the pattern. Review the change again, then apply.')); setReview(undefined); }
-    finally { setBusy(false); }
-  }
-  return <ModalDialog labelledBy="trip-pattern-title" className="confirm-dialog preview-dialog" onClose={onClose} busy={busy}>
-    <h2 id="trip-pattern-title">Change pattern of this trip</h2>
-    <p>{currentName}</p>
-    <label className="dialog-field">Target pattern<select autoFocus value={targetPatternId} disabled={busy} onChange={(event) => { setTargetPatternId(event.target.value); setAnchorNodeId(''); setChosenBandId(''); setReview(undefined); setError(''); }}>{targets.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label>
-    <label className="dialog-field">Anchor<select value={anchorNodeId} disabled={busy} onChange={(event) => { setAnchorNodeId(event.target.value); setChosenBandId(''); setReview(undefined); setError(''); }}><option value="">First stop</option>{anchorChoices.map((choice) => <option key={choice.nodeId} value={choice.nodeId}>{choice.name}</option>)}</select></label>
-    {review && (review.finding ? <p className="field-error" role="alert">{userMessage(review.finding)}</p> : <p role="status">{reviewStatus}</p>)}
-    {review?.finding && review.bandChoices?.length ? <label className="dialog-field">Runtime band<select value={chosenBandId} disabled={busy} onChange={(event) => { setChosenBandId(event.target.value); void previewChange(anchorNodeId, event.target.value); }}><option value="" disabled>Choose a runtime band…</option>{review.bandChoices.map((choice) => <option key={choice.bandId} value={choice.bandId}>{bandChoiceLabel(choice)}</option>)}</select></label> : null}
-    {error && <p className="field-error" role="alert">{error}</p>}
-    <div className="dialog-actions"><button onClick={onClose} disabled={busy}>Cancel</button><button onClick={() => void previewChange()} disabled={!targetPatternId || busy}>{busy && !review ? 'Reviewing…' : 'Review change'}</button>{review && <button className="primary" onClick={() => void apply()} disabled={Boolean(review.finding) || busy}>{busy ? 'Saving…' : 'Change pattern'}</button>}</div>
-  </ModalDialog>;
-}

@@ -89,18 +89,17 @@ test('Change pattern with one trip opens the single-trip review, and with severa
   const boxes = page.locator('.trips-workspace .schedule-table tbody input[type="checkbox"]');
   await boxes.nth(0).check();
   await runCommand(page, 'trips.changePattern');
-  const single = page.getByRole('dialog', { name: 'Change pattern of this trip' });
+  const single = page.getByRole('dialog', { name: 'Change the pattern of this trip' });
   await expect(single).toBeVisible();
-  await expect(single.getByLabel('Target pattern')).toBeVisible();
-  await single.getByRole('button', { name: 'Review change', exact: true }).click();
-  // The review is signed over the trip, the target pattern, and the target profile; it states its result before anything is written.
-  await expect(single.getByRole('status').or(single.getByRole('alert'))).toBeVisible();
+  await expect(single.getByLabel('New pattern')).toBeVisible();
+  // The review is signed over the trip, the target pattern, and the target profile; it shows its result before anything is written (R5: on open).
+  await expect(single.locator('.trip-review-chip')).toBeVisible();
   await single.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(single).toHaveCount(0);
 
   await boxes.nth(1).check();
   await runCommand(page, 'trips.changePattern');
-  await expect(page.getByRole('dialog', { name: 'Change selected patterns' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: /^Change the pattern of \d+ trips$/ })).toBeVisible();
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
 });
 
@@ -115,7 +114,7 @@ test('"Select these trips" selects exactly the trips marked "Run times changed"'
   const boxes = page.locator('.schedule-table tbody input[type="checkbox"]');
   await boxes.first().check();
   await runCommand(page, 'trips.regenerate');
-  await page.getByRole('dialog', { name: 'Regenerate selected trips' }).getByRole('button', { name: 'Regenerate trips', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Regenerate selected trips' }).getByRole('button', { name: /^Regenerate \d+ trips?$/ }).click();
   await expect(page.getByRole('dialog', { name: 'Regenerate selected trips' })).toHaveCount(0);
   await expect(page.locator('.schedule-table tbody tr.trip-row-runtime-changed')).toHaveCount(2);
   await expect(page.getByRole('toolbar', { name: 'Selected trips' })).toHaveCount(0);

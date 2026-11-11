@@ -176,6 +176,22 @@ describe('batch with an anchor', () => {
   });
 });
 
+describe('planner anchor time (Decision 0072 item 2)', () => {
+  it('uses the planner time at the anchor node and calculates the other stops from it', () => {
+    const trip = tripOn('t1', full, 25200, fullProfile());
+    const preview = previewPatternChange(trip, short, shortProfile, { sourcePattern: full, anchorNodeId: 'C', anchorTime: 26000 });
+    expect(preview.anchorTime).toBe(26000);
+    expect(preview.newStopTimes?.find((point) => point.patternPointId === 'short-1')?.time).toBe(26000);
+    expect(times(preview.newStopTimes)).toEqual([25100, 26000, 26300]);
+  });
+
+  it('gives today\'s result when the planner time equals the saved time', () => {
+    const trip = tripOn('t1', full, 25200, fullProfile());
+    const withSaved = previewPatternChange(trip, short, shortProfile, { sourcePattern: full, anchorNodeId: 'C', anchorTime: 26700 });
+    expect(withSaved).toEqual(previewPatternChange(trip, short, shortProfile, { sourcePattern: full, anchorNodeId: 'C' }));
+  });
+});
+
 describe('sharedAnchorNodes', () => {
   it('returns the nodes both Patterns serve, in the target order, once each', () => {
     expect(sharedAnchorNodes(full, short)).toEqual(['B', 'C', 'D']);

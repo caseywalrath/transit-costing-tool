@@ -51,21 +51,22 @@ test('Change pattern anchored at a shared node keeps that node time on the Trip'
   await page.getByRole('checkbox', { name: `Select ${FULL}`, exact: true }).first().check();
   await runCommand(page, 'trips.changePattern');
 
-  const dialog = page.getByRole('dialog', { name: 'Change pattern of this trip' });
+  const dialog = page.getByRole('dialog', { name: 'Change the pattern of this trip' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText(FULL, { exact: true })).toBeVisible();
-  await dialog.getByLabel('Target pattern').selectOption({ label: SHORT });
+  await dialog.getByLabel('New pattern').selectOption({ label: SHORT });
 
-  // The anchor list holds First stop and the nodes both Patterns serve. Wagon Road is served only by the full Pattern.
-  const anchor = dialog.getByLabel('Anchor');
+  // The kept-stop list holds Start and the nodes both Patterns serve. Wagon Road is served only by the full Pattern.
+  const anchor = dialog.getByLabel('Keep the time at');
   await expect(anchor.locator('option', { hasText: ANCHOR })).toHaveCount(1);
   const options = await anchor.locator('option').allTextContents();
-  expect(options[0]).toBe('First stop');
+  expect(options[0]).toBe('Start');
   expect(options).not.toContain('Wagon Road');
   await anchor.selectOption({ label: ANCHOR });
 
-  await dialog.getByRole('button', { name: 'Review change', exact: true }).click();
-  await expect(dialog.getByRole('status')).toContainText(`Keeps ${ANCHOR} at ${clock(golden.keptTime)}.`);
+  // R5: the review table shows the kept stop and time, and the change is ready.
+  await expect(dialog.locator('.trip-review-kept')).toContainText(clock(golden.keptTime));
+  await expect(dialog.locator('.trip-review-chip')).toHaveText('Ready');
   await dialog.getByRole('button', { name: 'Change pattern', exact: true }).click();
   await expect(dialog).toHaveCount(0);
 
@@ -76,17 +77,17 @@ test('Change pattern anchored at a shared node keeps that node time on the Trip'
   expect(saved.provenance.manuallyChangedFields).toContain('patternId');
 });
 
-test('Batch Change pattern lists the target Pattern nodes as anchors, with First stop first', async ({ page }) => {
+test('Batch Change pattern lists the target Pattern nodes as kept stops, with Start first', async ({ page }) => {
   await openGoldenTrips(page);
   await page.getByRole('checkbox', { name: `Select ${FULL}`, exact: true }).first().check();
   await page.getByRole('checkbox', { name: `Select ${FULL}`, exact: true }).nth(1).check();
   await runCommand(page, 'trips.changePattern');
 
-  const dialog = page.getByRole('dialog', { name: 'Change selected patterns' });
+  const dialog = page.getByRole('dialog', { name: /^Change the pattern of \d+ trips$/ });
   await expect(dialog).toBeVisible();
-  await dialog.getByLabel('Target pattern').selectOption({ label: SHORT });
-  const options = await dialog.getByLabel('Anchor').locator('option').allTextContents();
-  expect(options[0]).toBe('First stop');
+  await dialog.getByLabel('New pattern').selectOption({ label: SHORT });
+  const options = await dialog.getByLabel('Keep the time at').locator('option').allTextContents();
+  expect(options[0]).toBe("Start (each trip's first stop)");
   expect(options).toContain(ANCHOR);
   expect(options).not.toContain('Wagon Road');
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();

@@ -31,6 +31,13 @@
 /* The generic `.confirm-dialog > div` rule makes direct child divs right-aligned flex rows; these two are blocks (the U08 note in trips.css). */
 .confirm-dialog.segment-runtime-dialog > div.preview-times, .confirm-dialog.segment-runtime-dialog > div.segment-runtime-skips { display: block; }
 .segment-runtime-dialog .preview-times { overflow-x: auto; }
+/* R9 (Decision 0074): one band map per other profile. */
+.confirm-dialog.segment-runtime-dialog > div.segment-band-map { display: block; margin: var(--space-3) 0; border: 1px solid var(--color-border-soft); overflow-x: auto; }
+.segment-band-map table { width: 100%; border-collapse: collapse; }
+.segment-band-map td { white-space: nowrap; }
+.segment-band-map select { max-width: 100%; }
+.segment-band-map__changed td { background: var(--color-accent-soft); }
+.segment-band-map__low { color: var(--color-warn); font-weight: var(--font-weight-semibold); }
 .segment-runtime-dialog input[type=checkbox] { width: auto; min-height: 0; }
 .segment-runtime-dialog .segment-runtime-skips p { margin: var(--space-3) 0 var(--space-1); }
 .segment-runtime-dialog ul { margin: 0 0 var(--space-3); padding-left: 18px; line-height: 1.45; }
@@ -41,3 +48,24 @@
 .block-copy-dialog .block-copy-routes :is(th, td):first-child { position: static; text-align: left; }
 .block-copy-dialog .block-copy-routes tbody th { background: transparent; }
 .block-copy-dialog th { white-space: normal; }
+
+/* R11 (Decision 0075): Compare patterns. The generic `.confirm-dialog > div` rule makes direct child divs right-aligned flex rows. */
+.confirm-dialog.compare-runtimes-dialog { width: min(1240px, 100%); max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); overflow-y: auto; min-width: 0; }
+.confirm-dialog.compare-runtimes-dialog > div.compare-runtimes-toolbar { justify-content: space-between; align-items: center; margin: var(--space-2) 0; }
+.compare-runtimes-toolbar .segmented { display: inline-flex; }
+.compare-runtimes-toolbar .segmented button[aria-pressed="true"] { background: var(--color-accent-soft); border-color: var(--color-accent); color: var(--color-accent-strong); font-weight: var(--font-weight-semibold); }
+.confirm-dialog.compare-runtimes-dialog > div.compare-runtimes-table { display: block; overflow: auto; max-height: min(60vh, 640px); border: 1px solid var(--color-border); }
+.compare-runtimes-table table { border-collapse: collapse; width: 100%; }
+.compare-runtimes-table th, .compare-runtimes-table td { padding: 4px 8px; border-bottom: 1px solid var(--color-border-soft); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.compare-runtimes-table thead th { position: sticky; top: 0; z-index: 1; background: var(--color-surface-2); font-size: var(--font-size-caption); color: var(--color-text-muted); }
+.compare-runtimes-table td { text-align: center; }
+.compare-runtimes-table tbody th { text-align: left; font-weight: normal; }
+.compare-runtimes-pattern th { background: var(--color-surface-2); font-weight: var(--font-weight-semibold) !important; border-top: 1px solid var(--color-border); }
+.compare-runtimes-diff { background: var(--color-warn-soft); color: var(--color-warn); font-weight: var(--font-weight-semibold); }
+.compare-runtimes-diff button { min-height: 24px; padding: 0 6px; border: 1px solid var(--color-warn-border); background: transparent; color: inherit; font: inherit; }
+.compare-runtimes-diff button[aria-pressed="true"] { outline: 2px solid var(--color-accent); }
+.compare-runtimes-none { color: var(--color-text-subtle); }
+.confirm-dialog.compare-runtimes-dialog > div.compare-runtimes-use { display: block; margin: var(--space-3) 0; padding: var(--space-3); border: 1px solid var(--color-border); border-radius: 6px; }
+.compare-runtimes-use h3 { margin: 0 0 var(--space-2); font-size: var(--font-size-body, 15px); }
+.compare-runtimes-use label { display: block; margin: 2px 0; }
+.compare-runtimes-use input[type=checkbox] { width: auto; min-height: 0; }

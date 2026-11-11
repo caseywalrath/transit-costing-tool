@@ -35,7 +35,7 @@ async function openRegenerateDialog(page: Page, width = 1600) {
   });
   const reviewMs = await page.evaluate(async () => {
     const item = [...document.querySelectorAll('button')].find((element) => element.textContent === 'Regenerate…') as HTMLElement;
-    const ready = () => { const button = [...document.querySelectorAll('button')].find((element) => element.textContent === 'Regenerate trips') as HTMLButtonElement | undefined; return Boolean(button) && !button!.disabled; };
+    const ready = () => { const button = [...document.querySelectorAll('button')].find((element) => /^Regenerate \d+ trips?$/.test(element.textContent ?? '')) as HTMLButtonElement | undefined; return Boolean(button) && !button!.disabled; };
     const started = performance.now();
     item.click();
     while (!ready()) {
@@ -53,13 +53,13 @@ async function openRegenerateDialog(page: Page, width = 1600) {
 test('Regenerate selected on 480 Trips: the review builds one option per anchor, reads the Pattern a handful of times, and applies (I-096)', async ({ page }) => {
   const { dialog, rows, reviewMs, patternReads } = await openRegenerateDialog(page);
   expect(rows).toBe(480);
-  await expect(dialog.locator('tbody select')).toHaveCount(rows);
+  await expect(dialog.locator('tbody .trip-review-kept select')).toHaveCount(rows);
   // One option per closed anchor list; the old dialog held every point of the Pattern in each (14,431 options).
-  expect(await dialog.locator('tbody option').count()).toBe(rows);
+  expect(await dialog.locator('tbody .trip-review-kept option').count()).toBe(rows);
   expect(patternReads).toBeLessThanOrEqual(8);
   expect(reviewMs).toBeLessThanOrEqual(10_000);
   const applyMs = await page.evaluate(async () => {
-    const button = [...document.querySelectorAll('button')].find((element) => element.textContent === 'Regenerate trips') as HTMLButtonElement;
+    const button = [...document.querySelectorAll('button')].find((element) => /^Regenerate \d+ trips?$/.test(element.textContent ?? '')) as HTMLButtonElement;
     const started = performance.now();
     button.click();
     while (document.querySelector('[role=dialog]')) {
@@ -75,7 +75,7 @@ test('Regenerate selected on 480 Trips: the review builds one option per anchor,
 
 test('Regenerate selected at capacity: every Trip keeps its anchor choice, by pointer and by keyboard, and the review uses it (I-096)', async ({ page }) => {
   const { dialog, rows } = await openRegenerateDialog(page);
-  const anchors = dialog.locator('tbody select');
+  const anchors = dialog.locator('tbody .trip-review-kept select');
   for (const index of [0, Math.floor(rows / 2), rows - 1]) {
     const anchor = anchors.nth(index);
     await expect(anchor.locator('option')).toHaveCount(1);
@@ -84,8 +84,8 @@ test('Regenerate selected at capacity: every Trip keeps its anchor choice, by po
     await anchor.click();
     await expect(anchor.locator('option')).toHaveCount(POINTS);
     await page.keyboard.press('Escape');
-    await expect(anchor.locator('option').first()).toHaveText('First departure');
-    await expect(anchor.locator('option').last()).toHaveText('Last timepoint');
+    await expect(anchor.locator('option').first()).toHaveText('Start');
+    await expect(anchor.locator('option').last()).toHaveText('End');
   }
   // Keyboard: focusing the next closed list fills it, and the arrow key moves to the next point.
   const keyboardAnchor = anchors.nth(1);
@@ -96,17 +96,17 @@ test('Regenerate selected at capacity: every Trip keeps its anchor choice, by po
   await expect(keyboardAnchor).toHaveValue(/-1$/);
   await expect(keyboardAnchor.locator('option:checked')).toHaveText('Stop 1');
   // The changed anchor starts a new review; the other lists keep a single option and the dialog can still apply.
-  await expect(dialog.getByRole('button', { name: 'Regenerate trips' })).toBeEnabled({ timeout: 60_000 });
+  await expect(dialog.getByRole('button', { name: /^Regenerate \d+ trips?$/ })).toBeEnabled({ timeout: 60_000 });
   await expect(anchors.nth(2).locator('option')).toHaveCount(1);
   const last = anchors.nth(rows - 1);
-  await last.selectOption({ label: 'Last timepoint' });
+  await last.selectOption({ label: 'End' });
   await expect(last).toHaveValue(new RegExp(`-${POINTS - 1}$`));
-  await expect(dialog.getByRole('button', { name: 'Regenerate trips' })).toBeEnabled({ timeout: 60_000 });
+  await expect(dialog.getByRole('button', { name: /^Regenerate \d+ trips?$/ })).toBeEnabled({ timeout: 60_000 });
   // The bulk choice still reaches every Trip.
-  await dialog.getByRole('button', { name: 'Last timepoint', exact: true }).click();
+  await dialog.getByRole('button', { name: 'End time', exact: true }).click();
   await expect(anchors.nth(0)).toHaveValue(new RegExp(`-${POINTS - 1}$`));
   await expect(anchors.nth(rows - 1)).toHaveValue(new RegExp(`-${POINTS - 1}$`));
-  await expect(dialog.locator('tbody option')).toHaveCount(rows + 4 * (POINTS - 1)); // the four lists opened above
+  await expect(dialog.locator('tbody .trip-review-kept option')).toHaveCount(rows + 4 * (POINTS - 1)); // the four lists opened above
 });
 
 test('Regenerate selected at 1024 px: the dialog fits the window and its table scrolls from its first column (U08 visual check)', async ({ page }) => {
@@ -114,9 +114,9 @@ test('Regenerate selected at 1024 px: the dialog fits the window and its table s
   const box = (await dialog.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(1024);
-  await expect(dialog.getByRole('button', { name: 'Regenerate trips' })).toBeInViewport({ ratio: 1 });
+  await expect(dialog.getByRole('button', { name: /^Regenerate \d+ trips?$/ })).toBeInViewport({ ratio: 1 });
   await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeInViewport({ ratio: 1 });
-  // The table starts at the left edge of its scrolling area, so the Trip and Anchor columns are not cut off.
+  // The table starts at the left edge of its scrolling area, so the Trip and Kept time columns are not cut off.
   const edges = await dialog.locator('.preview-times').evaluate((area) => ({ area: area.getBoundingClientRect().left, table: area.querySelector('table')!.getBoundingClientRect().left, scrolls: area.scrollWidth > area.clientWidth }));
   expect(edges.table).toBeGreaterThanOrEqual(edges.area);
   expect(edges.scrolls).toBe(true);

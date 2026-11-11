@@ -2,7 +2,9 @@ import type { DurationSeconds, EntityId, RoutePattern, RuntimeAssignment, Runtim
 
 /** Decision 0049. Matching is derived from stored profiles and is never stored. */
 export type SegmentKey = string; // `${fromNodeId}>${toNodeId}`
-export type SegmentSkipReason = 'ambiguous' | 'bandMismatch' | 'noMatchingSegment' | 'unassigned' | 'conflict';
+export type SegmentSkipReason = 'ambiguous' | 'bandMismatch' | 'noMatchingSegment' | 'unassigned' | 'conflict' | 'otherServiceDays' | 'emptySource' | 'bandShared';
+/** Decision 0074 item 1. Other profile id to open band id to the paired band of that profile, or `null` for none. */
+export type BandPairs = Record<EntityId /* other profile id */, Record<EntityId /* open band id */, EntityId | null /* other band id, null = none */>>;
 
 export interface SegmentCellChange {
   profileId: EntityId; patternId: EntityId; bandId: EntityId; segmentIndex: number;
@@ -16,7 +18,7 @@ export interface SegmentSkip {
   candidates?: { seconds: DurationSeconds; profileIds: EntityId[] }[];
 }
 export interface SegmentRuntimePlan {
-  mode: 'copyToOthers' | 'fillFromOthers';
+  mode: 'copyToOthers' | 'fillFromOthers' | 'valueCopy';
   sourceProfileId: EntityId; // the open profile in both modes
   changes: SegmentCellChange[];
   skips: SegmentSkip[];
@@ -34,9 +36,13 @@ export interface SegmentRuntimePlanInput {
   assignments: RuntimeAssignment[];
   /** Copy only: profiles left out of the plan. */
   excludedProfileIds?: readonly EntityId[];
+  /** Decision 0074 item 3. Without it the default pairing is used. */
+  bandPairs?: BandPairs;
 }
 
 function orderedPoints(pattern: RoutePattern) { return [...pattern.points].sort((left, right) => left.sequence - right.sequence); }
+
+function orderedBands(profile: RuntimeProfile): RuntimeBand[] { return [...profile.bands].sort((left, right) => left.startTime - right.startTime || left.endTime - right.endTime || left.sequence - right.sequence); }
 
 /** One key per segment, in point order. */
 export function segmentKeys(pattern: RoutePattern): SegmentKey[] {
@@ -59,16 +65,37 @@ function keyIndexes(keys: SegmentKey[]): Map<SegmentKey, number[]> {
 
 function sameBand(left: RuntimeBand, right: RuntimeBand): boolean { return left.startTime === right.startTime && left.endTime === right.endTime; }
 
+/**
+ * Decision 0074 item 1. For each band of `open`, the partner in each other profile is the identical band if there is one; otherwise
+ * the band with the longest overlap, when that overlap is more than half of the open band's length and no other band ties it.
+ */
+export function defaultBandPairs(open: RuntimeProfile, others: RuntimeProfile[]): BandPairs {
+  const pairs: BandPairs = {};
+  for (const other of others) {
+    const row: Record<EntityId, EntityId | null> = {};
+    for (const band of open.bands) {
+      const identical = other.bands.find((candidate) => sameBand(band, candidate));
+      if (identical) { row[band.id] = identical.id; continue; }
+      const overlaps = other.bands.map((candidate) => ({ id: candidate.id, overlap: Math.max(0, Math.min(band.endTime, candidate.endTime) - Math.max(band.startTime, candidate.startTime)) }));
+      const longest = Math.max(0, ...overlaps.map((item) => item.overlap));
+      const leaders = overlaps.filter((item) => item.overlap === longest);
+      row[band.id] = longest * 2 > band.endTime - band.startTime && leaders.length === 1 ? leaders[0].id : null;
+    }
+    pairs[other.id] = row;
+  }
+  return pairs;
+}
+
 interface PairMatch {
   /** Segment index pairs `[open, other]` that match and are not ambiguous. */
   segments: Array<[number, number]>;
-  /** Band pairs `[open, other]` with the same start and end time. */
+  /** Band pairs `[open, other]` from the band pairing. */
   bands: Array<[RuntimeBand, RuntimeBand]>;
   skips: SegmentSkip[];
 }
 
 /** Matches the open profile against one other profile. `skipProfile` names the profile the skips are reported on. */
-function matchPair(open: RuntimeProfile, openPattern: RoutePattern, other: RuntimeProfile, otherPattern: RoutePattern, skipProfile: RuntimeProfile): PairMatch {
+function matchPair(open: RuntimeProfile, openPattern: RoutePattern, other: RuntimeProfile, otherPattern: RoutePattern, skipProfile: RuntimeProfile, bandPairs?: BandPairs, oneTargetPerBand = false): PairMatch {
   const openIndexes = keyIndexes(segmentKeys(openPattern));
   const otherIndexes = keyIndexes(segmentKeys(otherPattern));
   const segments: Array<[number, number]> = [];
@@ -81,20 +108,29 @@ function matchPair(open: RuntimeProfile, openPattern: RoutePattern, other: Runti
   }
   segments.sort((left, right) => left[1] - right[1]);
   const bands: Array<[RuntimeBand, RuntimeBand]> = [];
-  if (segments.length) {
-    const orderedBands = (profile: RuntimeProfile) => [...profile.bands].sort((left, right) => left.startTime - right.startTime || left.endTime - right.endTime || left.sequence - right.sequence);
-    const otherBands = orderedBands(other);
-    const matchedOther = new Set<EntityId>();
+  if (!segments.length) {
+    skips.push({ profileId: skipProfile.id, patternId: skipProfile.patternId, reason: 'noMatchingSegment' });
+  } else {
+    const otherById = new Map(other.bands.map((band) => [band.id, band]));
+    const pairs = (bandPairs ?? defaultBandPairs(open, [other]))[other.id];
     for (const band of orderedBands(open)) {
-      const counterpart = otherBands.find((candidate) => sameBand(band, candidate));
-      if (counterpart) { bands.push([band, counterpart]); matchedOther.add(counterpart.id); } else skips.push({ profileId: skipProfile.id, patternId: skipProfile.patternId, reason: 'bandMismatch', bandId: band.id });
+      const counterpart = otherById.get(pairs?.[band.id] ?? '');
+      if (counterpart) bands.push([band, counterpart]); else skips.push({ profileId: skipProfile.id, patternId: skipProfile.patternId, reason: 'bandMismatch', bandId: band.id });
     }
-    for (const band of otherBands) if (!matchedOther.has(band.id) && !openBandsCover(open, band)) skips.push({ profileId: other.id, patternId: other.patternId, reason: 'bandMismatch', bandId: band.id });
+    // Copy writes into the other band, so two open bands paired with one target band would each write the same cells and the last would win.
+    // Such a target band is left out and reported. Fill reads from the other band, so several open bands may share one source band.
+    if (oneTargetPerBand) {
+      const claims = new Map<EntityId, number>();
+      for (const [, counterpart] of bands) claims.set(counterpart.id, (claims.get(counterpart.id) ?? 0) + 1);
+      const shared = new Set([...claims].filter(([, count]) => count > 1).map(([id]) => id));
+      if (shared.size) {
+        for (let index = bands.length - 1; index >= 0; index -= 1) if (shared.has(bands[index][1].id)) bands.splice(index, 1);
+        for (const id of shared) skips.push({ profileId: other.id, patternId: other.patternId, reason: 'bandShared', bandId: id });
+      }
+    }
   }
   return { segments, bands, skips };
 }
-
-function openBandsCover(open: RuntimeProfile, band: RuntimeBand): boolean { return open.bands.some((candidate) => sameBand(candidate, band)); }
 
 interface Context {
   patternById: Map<EntityId, RoutePattern>;
@@ -135,6 +171,13 @@ function otherPatternProfiles(input: SegmentRuntimePlanInput): RuntimeProfile[] 
   return input.profiles.filter((profile) => profile.id !== input.openProfile.id && profile.routeId === input.openProfile.routeId && profile.scenarioId === input.openProfile.scenarioId && profile.patternId !== input.openProfile.patternId);
 }
 
+/** Decision 0074 item 4: assigned profiles that share no Service day with the open profile. */
+function otherServiceDaySkips(input: SegmentRuntimePlanInput, candidates: RuntimeProfile[], qualifying: RuntimeProfile[]): SegmentSkip[] {
+  const qualifyingIds = new Set(qualifying.map((profile) => profile.id));
+  return candidates.filter((profile) => !qualifyingIds.has(profile.id) && input.assignments.some((assignment) => assignment.runtimeProfileId === profile.id))
+    .map((profile) => ({ profileId: profile.id, patternId: profile.patternId, reason: 'otherServiceDays' as const }));
+}
+
 /** Rules 2 to 9 for "Copy segments to other patterns": the open profile's values replace matching cells of other profiles. */
 export function planCopyToOthers(input: SegmentRuntimePlanInput): SegmentRuntimePlan {
   const { openProfile } = input;
@@ -146,10 +189,12 @@ export function planCopyToOthers(input: SegmentRuntimePlanInput): SegmentRuntime
   const skips: SegmentSkip[] = [];
   if (!openPattern) return finish('copyToOthers', input, changes, skips);
   skips.push(...unassignedSkips(input, others));
-  for (const target of qualifyingProfiles(openProfile, others, input.assignments)) {
+  const qualifying = qualifyingProfiles(openProfile, others, input.assignments);
+  skips.push(...otherServiceDaySkips(input, others, qualifying));
+  for (const target of qualifying) {
     const targetPattern = ctx.patternById.get(target.patternId);
     if (!targetPattern) continue;
-    const match = matchPair(openProfile, openPattern, target, targetPattern, target);
+    const match = matchPair(openProfile, openPattern, target, targetPattern, target, input.bandPairs, true);
     skips.push(...match.skips);
     for (const [openBand, targetBand] of match.bands) {
       for (const [openIndex, targetIndex] of match.segments) {
@@ -174,23 +219,31 @@ export function planFillFromOthers(input: SegmentRuntimePlanInput): SegmentRunti
   const others = otherPatternProfiles(input);
   skips.push(...unassignedSkips(input, others));
   if (!input.assignments.some((assignment) => assignment.runtimeProfileId === openProfile.id)) skips.push({ profileId: openProfile.id, patternId: openProfile.patternId, reason: 'unassigned' });
+  const qualifying = qualifyingProfiles(openProfile, others, input.assignments);
+  skips.push(...otherServiceDaySkips(input, others, qualifying));
   // key `${openBandId}:${openSegmentIndex}` -> value -> source profiles
   const found = new Map<string, { bandId: EntityId; segmentIndex: number; values: Map<DurationSeconds, EntityId[]> }>();
-  for (const source of qualifyingProfiles(openProfile, others, input.assignments)) {
+  // Decision 0074 item 4: open `0` cells whose matched sources all hold `:00`.
+  const zeroSourced = new Map<string, { bandId: EntityId; segmentIndex: number }>();
+  for (const source of qualifying) {
     const sourcePattern = ctx.patternById.get(source.patternId);
     if (!sourcePattern) continue;
-    const match = matchPair(openProfile, openPattern, source, sourcePattern, source);
+    const match = matchPair(openProfile, openPattern, source, sourcePattern, source, input.bandPairs);
     skips.push(...match.skips);
     for (const [openBand, sourceBand] of match.bands) {
       for (const [openIndex, sourceIndex] of match.segments) {
         const seconds = sourceBand.segmentRuntimeSeconds[sourceIndex];
-        if (openBand.segmentRuntimeSeconds[openIndex] !== 0 || !seconds) continue;
+        if (openBand.segmentRuntimeSeconds[openIndex] !== 0) continue;
         const key = `${openBand.id}:${openIndex}`;
+        if (!seconds) { zeroSourced.set(key, { bandId: openBand.id, segmentIndex: openIndex }); continue; }
         const entry = found.get(key) ?? { bandId: openBand.id, segmentIndex: openIndex, values: new Map() };
         entry.values.set(seconds, [...(entry.values.get(seconds) ?? []), source.id]);
         found.set(key, entry);
       }
     }
+  }
+  for (const [key, cell] of zeroSourced) {
+    if (!found.has(key)) skips.push({ profileId: openProfile.id, patternId: openProfile.patternId, reason: 'emptySource', bandId: cell.bandId, segmentIndex: cell.segmentIndex });
   }
   for (const entry of found.values()) {
     if (entry.values.size === 1) {
@@ -204,6 +257,36 @@ export function planFillFromOthers(input: SegmentRuntimePlanInput): SegmentRunti
 }
 
 /** The profiles the plan changes, with new segment arrays. Revisions and timestamps are set by the application layer. */
+/** Decision 0075 item 5: one segment value of one band, copied into chosen bands of other profiles ("Use this value for…"). */
+export interface ValueCopyRequest { sourceProfileId: EntityId; sourceBandId: EntityId; segmentKey: SegmentKey; targets: { profileId: EntityId; bandId: EntityId }[] }
+
+/**
+ * The cells that "Use this value for…" writes. A target whose pattern does not run the segment exactly once, or whose band is gone, is
+ * left out; an equal value is not a change. The source value is read from the stored profile.
+ */
+export function planValueCopy(input: { request: ValueCopyRequest; patterns: RoutePattern[]; profiles: RuntimeProfile[] }): SegmentRuntimePlan {
+  const { request } = input;
+  const profileById = new Map(input.profiles.map((profile) => [profile.id, profile]));
+  const patternById = new Map(input.patterns.map((pattern) => [pattern.id, pattern]));
+  const source = profileById.get(request.sourceProfileId);
+  const empty: SegmentRuntimePlan = { mode: 'valueCopy', sourceProfileId: request.sourceProfileId, changes: [], skips: [], affectedProfiles: [] };
+  if (!source) return empty;
+  const indexIn = (profile: RuntimeProfile) => { const pattern = patternById.get(profile.patternId); const keys = pattern ? segmentKeys(pattern) : []; return keys.filter((key) => key === request.segmentKey).length === 1 ? keys.indexOf(request.segmentKey) : -1; };
+  const sourceIndex = indexIn(source);
+  const value = source.bands.find((band) => band.id === request.sourceBandId)?.segmentRuntimeSeconds[sourceIndex];
+  if (sourceIndex < 0 || value === undefined) return empty;
+  const changes: SegmentCellChange[] = [];
+  for (const target of request.targets) {
+    const profile = profileById.get(target.profileId);
+    if (!profile || profile.id === source.id) continue;
+    const index = indexIn(profile);
+    const previous = profile.bands.find((band) => band.id === target.bandId)?.segmentRuntimeSeconds[index];
+    if (index < 0 || previous === undefined || previous === value) continue;
+    changes.push({ profileId: profile.id, patternId: profile.patternId, bandId: target.bandId, segmentIndex: index, previousSeconds: previous, nextSeconds: value, sourceProfileId: source.id });
+  }
+  return finish('valueCopy', { openProfile: source, patterns: input.patterns, profiles: input.profiles, assignments: [] }, changes, []);
+}
+
 export function applySegmentRuntimePlan(profiles: RuntimeProfile[], plan: SegmentRuntimePlan): RuntimeProfile[] {
   const changedIds = new Set(plan.changes.map((change) => change.profileId));
   return profiles.filter((profile) => changedIds.has(profile.id)).map((profile) => ({

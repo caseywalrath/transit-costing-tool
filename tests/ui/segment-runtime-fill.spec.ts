@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 // Decision 0049: "Copy segments to other patterns…", "Fill from other patterns…", and "Undo last segment copy" in the Runtime actions menu.
 // The golden Weekday profiles of the Southbound patterns overlap: Wagon Road to Evans and Westminster Station to Englewood share five segments,
 // and Wagon Road to Englewood has one all-day band, so its bands never match the others.
@@ -58,7 +60,8 @@ test('copy shows an include box for each target, disables the confirm button whe
   const target = dialog.getByRole('checkbox', { name: `Include ${WESTMINSTER_TO_ENGLEWOOD} · Weekday workbook runtimes` });
   await expect(target).toBeFocused();
   await expect(dialog.getByRole('button', { name: 'Replace runtimes' })).toBeEnabled();
-  await expect(dialog.getByText('No band with the same start and end time')).toBeVisible();
+  // Decision 0074: bands pair by overlap. Wagon Road–Evans has more bands than this target pairs one to one, so a shared target band is reported.
+  await expect(dialog.getByText('More than one period would copy into this period')).toBeVisible();
 
   await target.uncheck();
   await expect(dialog.getByText('No runtimes would change.')).toBeVisible();
@@ -118,4 +121,61 @@ test('the copy dialog has no horizontal page scroll at 390 px wide', async ({ pa
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(390);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('fill shows the time-period pairing for each other pattern, and a pair can be changed (R9)', async ({ page }) => {
+  await openGoldenTrips(page);
+  await setWestminsterShared(page, 0);
+  await openPattern(page, WESTMINSTER_TO_ENGLEWOOD);
+  await openAction(page, 'Fill from other patterns…');
+  const dialog = page.getByRole('dialog', { name: 'Fill from other patterns' });
+  const map = dialog.getByRole('table', { name: new RegExp(`^Time periods paired with ${WAGON_TO_EVANS}`) });
+  await expect(map).toBeVisible();
+  // Golden bands differ by pattern, so every period is paired by overlap, not by identical times.
+  const selects = map.getByRole('combobox');
+  await expect(selects).toHaveCount(await map.locator('tbody tr').count());
+  await expect(map.locator('tbody tr').first().locator('td').nth(2)).toHaveText(/^\d+%$/);
+  // A pair set to None is marked as changed, and the review is rebuilt with it (no overlap to show).
+  await selects.first().selectOption('');
+  await expect(map.locator('tbody tr').first()).toHaveClass(/segment-band-map__changed/);
+  await expect(map.locator('tbody tr').first().locator('td').nth(2)).toHaveText('—');
+  await expect(dialog.getByRole('button', { name: 'Fill runtimes' })).toBeEnabled();
+  await page.keyboard.press('Escape');
+});
+
+test('Compare patterns highlights differences, and Use this value for writes it and can be undone (R11)', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await openGoldenTrips(page);
+  await openPattern(page, WAGON_TO_EVANS);
+  await openAction(page, 'Compare patterns…');
+  const dialog = page.getByRole('dialog', { name: /^Compare runtimes/ });
+  await expect(dialog).toBeVisible();
+  const count = dialog.getByRole('status');
+  await expect(count).toHaveText(/^\d+ differences?$/);
+  const before = Number((await count.textContent())!.split(' ')[0]);
+  expect(before).toBeGreaterThan(0);
+  const source = readFileSync(fileURLToPath(new URL('../../node_modules/axe-core/axe.min.js', import.meta.url)), 'utf8');
+  await page.addScriptTag({ content: source });
+  const violations = await page.evaluate(async () => {
+    const axe = (window as unknown as { axe: { run: (context: unknown, options: unknown) => Promise<{ violations: Array<{ id: string; nodes: Array<{ target: unknown[] }> }> }> } }).axe;
+    const result = await axe.run(document.querySelector('[role=dialog]'), { runOnly: { type: 'rule', values: ['aria-dialog-name', 'label', 'scope-attr-valid', 'color-contrast', 'target-size', 'button-name'] } });
+    return result.violations.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.target.join(' ')).slice(0, 3).join(' | ')}`);
+  });
+  expect(violations).toEqual([]);
+
+  await dialog.locator('.compare-runtimes-diff button').first().click();
+  const use = dialog.getByRole('group', { name: /^Use :\d\d for$/ });
+  await expect(use).toBeVisible();
+  await use.getByRole('button', { name: /^Apply to \d+$/ }).click();
+  await expect(use).toHaveCount(0);
+  // The count is not checked: with periods that do not line up, a copied value can disagree with another period of the source pattern.
+
+  // The By time view lists one row per clock interval.
+  await dialog.getByRole('button', { name: 'By time', exact: true }).click();
+  await expect(dialog.locator('tbody tr').first().locator('th')).toHaveText(/^\d+:\d\d(:\d\d)?–\d+:\d\d(:\d\d)?$/);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+
+  // The write is a segment copy: Undo last segment copy is offered.
+  await runtimes(page).getByRole('button', { name: 'Runtime actions', exact: true }).click();
+  await expect(page.getByRole('menu', { name: 'Runtime actions' }).getByRole('menuitem', { name: 'Undo last segment copy' })).toBeVisible();
 });

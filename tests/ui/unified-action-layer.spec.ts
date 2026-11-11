@@ -63,19 +63,14 @@ test('regeneration preview shows signed time and Run Time changes for each ancho
   await expect(page.locator('.schedule-table tbody input[type="checkbox"]').first()).toBeChecked();
   await runCommand(page, 'trips.regenerate');
   const dialog = page.getByRole('dialog', { name: 'Regenerate selected trips' });
-  await expect(dialog.locator('.preview-times thead th')).toHaveText([
-    'Trip', 'Anchor', 'Fixed time', 'First change', 'First: current → new',
-    'Last change', 'Last: current → new', 'Run time change', 'Layover change', 'Layover: current → new',
-  ]);
-  const cells = dialog.locator('.preview-times tbody tr').first().locator('td');
-  await expect(cells.nth(3)).toHaveText('0:00');
-  await expect(cells.nth(5)).toHaveText('+0:03:30');
-  await expect(cells.nth(7)).toHaveText('+0:03:30');
+  // R5: one review table; each change cell shows the new time and, below it, the change in minutes.
+  await expect(dialog.locator('.preview-times thead th')).toHaveText(['Trip', 'Status', 'Kept time', 'Start', 'End', 'Run time', 'Layover after', 'Action']);
+  const deltas = dialog.locator('.preview-times tbody tr').first().locator('.trip-review-delta');
+  // Start, End, and Run time; the trip is in no block, so Layover after shows a dash without a change line.
+  await expect(deltas).toHaveText(['no change', '+3:30 min', '+3:30 min']);
 
-  await dialog.getByRole('button', { name: 'Last timepoint' }).click();
-  await expect(cells.nth(3)).toHaveText('−0:03:30');
-  await expect(cells.nth(5)).toHaveText('0:00');
-  await expect(cells.nth(7)).toHaveText('+0:03:30');
+  await dialog.getByRole('button', { name: 'End time', exact: true }).click();
+  await expect(deltas).toHaveText(['−3:30 min', 'no change', '+3:30 min']);
 });
 
 test('keeps one regeneration undo through reload and restores the prior trip times', async ({ page }) => {
@@ -90,7 +85,7 @@ test('keeps one regeneration undo through reload and restores the prior trip tim
   await expect(tripCheckbox).toBeChecked();
   await runCommand(page, 'trips.regenerate');
   const dialog = page.getByRole('dialog', { name: 'Regenerate selected trips' });
-  await dialog.getByRole('button', { name: 'Regenerate trips', exact: true }).click();
+  await dialog.getByRole('button', { name: /^Regenerate \d+ trips?$/ }).click();
   await expect(page.locator('.schedule-table')).toContainText('6:10:30');
 
   await page.reload();
@@ -130,7 +125,7 @@ test('Regenerate stays available while an undo is saved, regenerates only the Tr
   await page.locator('.schedule-table tbody input[type="checkbox"]').first().check();
   await expect(regenerate).toBeEnabled();
   await regenerate.click();
-  await page.getByRole('dialog', { name: 'Regenerate selected trips' }).getByRole('button', { name: 'Regenerate trips', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Regenerate selected trips' }).getByRole('button', { name: /^Regenerate \d+ trips?$/ }).click();
   await expect(page.getByRole('dialog', { name: 'Regenerate selected trips' })).toHaveCount(0);
 
   // The undo is offered in Trip actions, and Regenerate… is still in the selection bar; it is disabled only until a Trip with changed
@@ -149,7 +144,7 @@ test('Regenerate stays available while an undo is saved, regenerates only the Tr
   await regenerate.click();
   const dialog = page.getByRole('dialog', { name: 'Regenerate selected trips' });
   await expect(dialog.locator('.preview-times tbody tr')).toHaveCount(2);
-  await dialog.getByRole('button', { name: 'Regenerate trips', exact: true }).click();
+  await dialog.getByRole('button', { name: /^Regenerate \d+ trips?$/ }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByText('Run times have changed')).toHaveCount(0);
 
