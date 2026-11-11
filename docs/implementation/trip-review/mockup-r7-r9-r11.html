@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>Marker, band map, compare</title>
+<!-- Mock-ups for R7 (Decision 0073), R9 (Decision 0074) and R11 (Decision 0075). Static: no script. -->
+<link rel="stylesheet" href="../../../src/ui/styles/tokens.css">
+<style>
+  body { margin: 0; padding: 24px; background: var(--color-canvas); color: var(--color-text); font: 14px/1.4 "Source Sans 3", "Segoe UI", system-ui, sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .note { color: var(--color-text-muted); max-width: 920px; margin: 0 0 18px; }
+  .frame-title { font-weight: 700; margin: 30px 0 8px; }
+  .frame-title small { font-weight: 400; color: var(--color-text-muted); }
+  .surface { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 6px; width: 1100px; max-width: 100%; }
+  .dialog { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; box-shadow: 0 8px 28px rgb(17 35 45 / 18%); width: 760px; max-width: 100%; padding: 18px 20px; }
+  .dialog.wide { width: 1100px; }
+  .dialog h2 { font-size: 18px; margin: 0 0 6px; }
+  .muted { color: var(--color-text-muted); }
+  button, select { font: inherit; }
+  .btn { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: 4px; padding: 3px 10px; color: var(--color-text); }
+  .btn.primary { background: var(--color-accent); border-color: var(--color-accent); color: #fff; font-weight: 600; }
+  .btn.link { border: 0; background: none; color: var(--color-accent); text-decoration: underline; padding: 0; }
+  select { border: 1px solid var(--color-border); border-radius: 4px; padding: 2px 6px; background: var(--color-surface); }
+  table { border-collapse: collapse; width: 100%; }
+  th { background: var(--color-surface-2); text-align: left; font-size: 12px; font-weight: 600; color: var(--color-text-muted); padding: 6px 10px; border-bottom: 1px solid var(--color-border); white-space: nowrap; }
+  td { padding: 6px 10px; border-bottom: 1px solid var(--color-border-soft); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .chip { display: inline-block; border: 1px solid var(--color-pattern-2-border); background: var(--color-pattern-2-bg); color: var(--color-pattern-2-text); border-radius: 4px; padding: 0 5px; font-size: 12px; font-weight: 600; }
+  tr.moved td { background: var(--color-accent-soft); } tr.moved td:first-child { box-shadow: inset 3px 0 0 var(--color-accent); }
+  .statusline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; background: var(--color-accent-soft); border-bottom: 1px solid var(--color-border); }
+  .statusline strong { color: var(--color-accent-strong); }
+  .statusline .sep { flex: 1; }
+  .callouts { max-width: 1100px; margin: 10px 0 0; padding-left: 20px; color: var(--color-text-muted); }
+  .callouts li { margin: 3px 0; }
+  .pairs { border: 1px solid var(--color-border-soft); border-radius: 6px; margin: 10px 0; }
+  .pairs h3 { font-size: 14px; margin: 0; padding: 8px 10px; background: var(--color-surface-2); border-bottom: 1px solid var(--color-border-soft); }
+  .pairs td.overlap { color: var(--color-text-muted); font-size: 12px; }
+  .changed select { border-color: var(--color-accent); background: var(--color-accent-soft); }
+  .none { color: var(--color-warn); }
+  .cmp td.cell { text-align: center; min-width: 64px; }
+  .cmp td.diff { background: var(--color-warn-soft); outline: 1px solid var(--color-warn-border); outline-offset: -1px; font-weight: 600; color: var(--color-warn); }
+  .cmp td.na { color: var(--color-text-subtle); }
+  .cmp tr.pattern-head td { background: var(--color-surface-2); font-weight: 600; border-top: 1px solid var(--color-border); }
+  .cmp td.sel { box-shadow: inset 0 0 0 2px var(--color-accent); }
+  .popover { display: inline-block; margin: 8px 0 0 330px; border: 1px solid var(--color-border); border-radius: 6px; box-shadow: 0 6px 18px rgb(17 35 45 / 14%); background: var(--color-surface); padding: 10px 12px; width: 360px; }
+  .popover h4 { margin: 0 0 6px; font-size: 14px; }
+  .popover label { display: block; margin: 2px 0; }
+  .toolbar { display: flex; gap: 12px; align-items: center; margin: 6px 0 10px; }
+  .seg button { border: 1px solid var(--color-border); background: var(--color-surface); padding: 3px 10px; }
+  .seg button:first-child { border-radius: 4px 0 0 4px; } .seg button:last-child { border-radius: 0 4px 4px 0; border-left: 0; }
+  .seg button[aria-pressed="true"] { background: var(--color-accent-soft); border-color: var(--color-accent); color: var(--color-accent-strong); font-weight: 600; }
+  .legend { font-size: 12px; color: var(--color-text-muted); }
+  .legend span { display: inline-block; width: 12px; height: 12px; vertical-align: -2px; margin: 0 4px 0 10px; background: var(--color-warn-soft); outline: 1px solid var(--color-warn-border); }
+</style>
+</head>
+<body>
+<h1>Mock-ups for R7, R9 and R11</h1>
+<p class="note">One gate for three packages. R7: what you see after a change to many trips (Decision 0073). R9: how Fill and Copy show which time periods were paired (Decision 0074). R11: the compare-patterns view (Decision 0075). Fictional data from the Southbound route.</p>
+
+<!-- ======================= R7 ======================= -->
+<p class="frame-title">R7. After regenerating 46 trips <small>— the status line replaces the selection bar until the next action</small></p>
+<div class="surface">
+  <div class="statusline" role="status"><strong>46 trips changed</strong><span class="muted">· 12 above, 9 below · 2 are not in this view (Inbound)</span><span class="sep"></span><button class="btn">↑ Previous</button><button class="btn">Next ↓</button><button class="btn">Select changed trips</button><button class="btn link">Clear marks</button></div>
+  <table>
+    <thead><tr><th></th><th>Pattern</th><th>Wagon Rd</th><th>Westminster</th><th>Federal-32nd</th><th>Evans</th><th>Run time</th><th>Block</th></tr></thead>
+    <tbody>
+      <tr><td><input type="checkbox"></td><td><span class="chip">WR–EV</span></td><td>7:00</td><td>7:14</td><td>7:31</td><td>7:43</td><td>0:43</td><td>104</td></tr>
+      <tr class="moved"><td><input type="checkbox"></td><td><span class="chip">WR–EV</span></td><td>7:15</td><td>7:29</td><td>7:47</td><td>7:58</td><td>0:43</td><td>108</td></tr>
+      <tr class="moved"><td><input type="checkbox"></td><td><span class="chip">WS–EN</span></td><td>—</td><td>7:32</td><td>7:50</td><td>8:02</td><td>0:44</td><td>112</td></tr>
+      <tr><td><input type="checkbox"></td><td><span class="chip">WR–EV</span></td><td>7:30</td><td>7:44</td><td>8:02</td><td>8:15</td><td>0:45</td><td>115</td></tr>
+      <tr class="moved"><td><input type="checkbox"></td><td><span class="chip">WR–EV</span></td><td>7:45</td><td>7:59</td><td>8:18</td><td>8:31</td><td>0:46</td><td>104</td></tr>
+    </tbody>
+  </table>
+</div>
+<ul class="callouts">
+  <li>Marked rows keep the accent bar and shading of the moved-row marker used on the Route and Blocking tabs. With six or more changed trips there is no flash.</li>
+  <li>"12 above, 9 below" counts marked rows outside the visible part of the table. Next ↓ and ↑ Previous scroll to the next marked row and move keyboard focus to it.</li>
+  <li>Select changed trips turns the marks into a selection, so the usual selection bar takes over (for example, to shift them all again). Clear marks removes the line and the shading.</li>
+  <li>With one to five changed trips there is no status line. The rows flash once, and the first one is scrolled into view.</li>
+</ul>
+
+<!-- ======================= R9 ======================= -->
+<p class="frame-title">R9. Fill from other patterns, with the time-period pairing shown <small>— each time period of this profile and the period of the other pattern it reads from</small></p>
+<div class="dialog">
+  <h2>Fill from other patterns</h2>
+  <p class="muted" style="margin:0 0 6px">Runtimes of :00 in this profile will be filled from other patterns that share the segment. Check which time period each one reads from.</p>
+  <div class="pairs">
+    <h3>From Southbound: Wagon Road to Evans · Weekday workbook runtimes</h3>
+    <table>
+      <thead><tr><th>This profile's time period</th><th>Reads from</th><th>Overlap</th></tr></thead>
+      <tbody>
+        <tr><td>Early · 0:00–6:00:30</td><td><select><option>Early · 0:00–5:47</option></select></td><td class="overlap">96% of this period</td></tr>
+        <tr><td>AM Peak · 6:00:30–10:14:30</td><td><select><option>AM Peak · 5:47–9:58</option></select></td><td class="overlap">94%</td></tr>
+        <tr class="changed"><td>Midday · 10:14:30–18:03:30</td><td><select><option>PM · 17:51–30:00 (you chose)</option></select></td><td class="overlap">2% — check this</td></tr>
+        <tr><td>Evening · 18:03:30–30:00</td><td><select><option>PM · 17:51–30:00</option></select></td><td class="overlap">100%</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pairs">
+    <h3>From Northbound: Evans to Wagon Road · Weekday workbook runtimes</h3>
+    <table><tbody><tr><td colspan="3" class="muted">No segment in common (other direction). Nothing is read from this profile.</td></tr></tbody></table>
+  </div>
+  <p><strong>14 cells</strong> will be filled · <button class="btn link">Show cell details</button></p>
+  <div style="display:flex;justify-content:end;gap:8px"><button class="btn">Cancel</button><button class="btn primary">Fill runtimes</button></div>
+</div>
+<ul class="callouts">
+  <li>Each select lists the other profile's time periods and None. It starts on the period that overlaps most (Decision 0074). A changed pair is highlighted, and an overlap under half reads "check this".</li>
+  <li>Copy segments to other patterns shows the same table the other way round: for each other profile, which of this profile's time periods writes into each of its periods.</li>
+  <li>A profile with no segment in common is listed once, collapsed, so nothing is hidden.</li>
+</ul>
+
+<!-- ======================= R11 ======================= -->
+<p class="frame-title">R11. Compare patterns <small>— stacked view, one difference selected</small></p>
+<div class="dialog wide">
+  <h2>Compare runtimes · Southbound · Weekday</h2>
+  <div class="toolbar"><span class="seg"><button aria-pressed="true">Stacked by pattern</button><button aria-pressed="false">Align by time</button></span><span class="legend"><span></span>differs from another pattern at an overlapping time</span><span style="flex:1"></span><span class="muted">3 differences</span></div>
+  <table class="cmp">
+    <thead><tr><th>Time period</th><th>WR→112</th><th>112→104</th><th>104→WS</th><th>WS→CC</th><th>CC→32</th><th>32→Dec</th><th>Dec→Ala</th><th>Ala→Ev</th><th>Ev→Yale</th><th>Yale→Eng</th></tr></thead>
+    <tbody>
+      <tr class="pattern-head"><td colspan="11"><span class="chip">WR–EV</span> Wagon Road to Evans · Weekday workbook runtimes</td></tr>
+      <tr><td>Early 0:00–5:47</td><td class="cell">:04</td><td class="cell">:03</td><td class="cell">:05</td><td class="cell">:06</td><td class="cell">:07</td><td class="cell">:05</td><td class="cell">:04</td><td class="cell">:05</td><td class="cell na">·</td><td class="cell na">·</td></tr>
+      <tr><td>AM Peak 5:47–9:58</td><td class="cell">:05</td><td class="cell">:04</td><td class="cell">:06</td><td class="cell diff sel">:08</td><td class="cell">:09</td><td class="cell">:06</td><td class="cell">:05</td><td class="cell">:06</td><td class="cell na">·</td><td class="cell na">·</td></tr>
+      <tr class="pattern-head"><td colspan="11"><span class="chip">WS–EN</span> Westminster Station to Englewood · Weekday workbook runtimes</td></tr>
+      <tr><td>Early 0:00–6:00:30</td><td class="cell na">·</td><td class="cell na">·</td><td class="cell na">·</td><td class="cell">:06</td><td class="cell">:07</td><td class="cell">:05</td><td class="cell">:04</td><td class="cell">:05</td><td class="cell">:04</td><td class="cell">:06</td></tr>
+      <tr><td>AM Peak 6:00:30–10:14:30</td><td class="cell na">·</td><td class="cell na">·</td><td class="cell na">·</td><td class="cell diff">:07</td><td class="cell">:09</td><td class="cell">:06</td><td class="cell diff">:06</td><td class="cell">:06</td><td class="cell">:05</td><td class="cell">:07</td></tr>
+    </tbody>
+  </table>
+  <div class="popover" role="dialog" aria-label="Use this value">
+    <h4>WS→CC in AM Peak: :08 (Wagon Road to Evans)</h4>
+    <p class="muted" style="margin:0 0 6px">Use :08 for…</p>
+    <label><input type="checkbox" checked> Westminster Station to Englewood · AM Peak (now :07)</label>
+    <label><input type="checkbox"> Wagon Road to Englewood · All day (now :07)</label>
+    <div style="display:flex;justify-content:end;gap:8px;margin-top:8px"><button class="btn">Cancel</button><button class="btn primary">Review 1 change</button></div>
+  </div>
+</div>
+<ul class="callouts">
+  <li>Columns are every segment the direction's patterns run, in timetable order. "·" means that pattern does not run the segment.</li>
+  <li>A highlighted cell differs from another pattern's value for the same segment at an overlapping time. Clicking it opens "Use this value for…". The write goes through the same preview, save and Undo last segment copy as Copy segments.</li>
+  <li>Align by time switches to one row per clock interval, cut at every pattern's period boundaries. Each cell then lists each pattern's value ("WR–EV :08 · WS–EN :07").</li>
+  <li>Opens from Runtimes actions → Compare patterns…, for the selected route, direction and day.</li>
+</ul>
+</body>
+</html>
