@@ -18,7 +18,7 @@ export interface SegmentSkip {
   candidates?: { seconds: DurationSeconds; profileIds: EntityId[] }[];
 }
 export interface SegmentRuntimePlan {
-  mode: 'copyToOthers' | 'fillFromOthers';
+  mode: 'copyToOthers' | 'fillFromOthers' | 'valueCopy';
   sourceProfileId: EntityId; // the open profile in both modes
   changes: SegmentCellChange[];
   skips: SegmentSkip[];
@@ -257,6 +257,36 @@ export function planFillFromOthers(input: SegmentRuntimePlanInput): SegmentRunti
 }
 
 /** The profiles the plan changes, with new segment arrays. Revisions and timestamps are set by the application layer. */
+/** Decision 0075 item 5: one segment value of one band, copied into chosen bands of other profiles ("Use this value for…"). */
+export interface ValueCopyRequest { sourceProfileId: EntityId; sourceBandId: EntityId; segmentKey: SegmentKey; targets: { profileId: EntityId; bandId: EntityId }[] }
+
+/**
+ * The cells that "Use this value for…" writes. A target whose pattern does not run the segment exactly once, or whose band is gone, is
+ * left out; an equal value is not a change. The source value is read from the stored profile.
+ */
+export function planValueCopy(input: { request: ValueCopyRequest; patterns: RoutePattern[]; profiles: RuntimeProfile[] }): SegmentRuntimePlan {
+  const { request } = input;
+  const profileById = new Map(input.profiles.map((profile) => [profile.id, profile]));
+  const patternById = new Map(input.patterns.map((pattern) => [pattern.id, pattern]));
+  const source = profileById.get(request.sourceProfileId);
+  const empty: SegmentRuntimePlan = { mode: 'valueCopy', sourceProfileId: request.sourceProfileId, changes: [], skips: [], affectedProfiles: [] };
+  if (!source) return empty;
+  const indexIn = (profile: RuntimeProfile) => { const pattern = patternById.get(profile.patternId); const keys = pattern ? segmentKeys(pattern) : []; return keys.filter((key) => key === request.segmentKey).length === 1 ? keys.indexOf(request.segmentKey) : -1; };
+  const sourceIndex = indexIn(source);
+  const value = source.bands.find((band) => band.id === request.sourceBandId)?.segmentRuntimeSeconds[sourceIndex];
+  if (sourceIndex < 0 || value === undefined) return empty;
+  const changes: SegmentCellChange[] = [];
+  for (const target of request.targets) {
+    const profile = profileById.get(target.profileId);
+    if (!profile || profile.id === source.id) continue;
+    const index = indexIn(profile);
+    const previous = profile.bands.find((band) => band.id === target.bandId)?.segmentRuntimeSeconds[index];
+    if (index < 0 || previous === undefined || previous === value) continue;
+    changes.push({ profileId: profile.id, patternId: profile.patternId, bandId: target.bandId, segmentIndex: index, previousSeconds: previous, nextSeconds: value, sourceProfileId: source.id });
+  }
+  return finish('valueCopy', { openProfile: source, patterns: input.patterns, profiles: input.profiles, assignments: [] }, changes, []);
+}
+
 export function applySegmentRuntimePlan(profiles: RuntimeProfile[], plan: SegmentRuntimePlan): RuntimeProfile[] {
   const changedIds = new Set(plan.changes.map((change) => change.profileId));
   return profiles.filter((profile) => changedIds.has(profile.id)).map((profile) => ({

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { goldenRaw } from '../testSupport/goldenBackup';
 import { metadata } from './ids';
-import { applySegmentRuntimePlan, defaultBandPairs, planCopyToOthers, planFillFromOthers, qualifyingProfiles, segmentKeys } from './segmentRuntimeMatching';
+import { applySegmentRuntimePlan, defaultBandPairs, planCopyToOthers, planFillFromOthers, planValueCopy, qualifyingProfiles, segmentKeys } from './segmentRuntimeMatching';
 import type { RoutePattern, RuntimeAssignment, RuntimeProfile } from './types';
 
 const T = metadata('2026-01-01T00:00:00.000Z');
@@ -203,3 +203,20 @@ describe('segment runtime matching', () => {
     expect(planCopyToOthers(input(profileA, [matching])).changes).toEqual([]);
   });
 });
+
+describe('planValueCopy (Decision 0075 item 5)', () => {
+  it('writes one band value of one segment into the chosen target bands only, and skips equal values and targets without the segment', () => {
+    const targetB = profile('PB', 'B', 7, () => 100);
+    const C = pattern('C', ['X', 'Y'], 2);
+    const profileC = profile('PC', 'C', 1, () => 50);
+    // WSTMNST>CCR-FED is segment 3 of A (value 60 * 4 + band) and segment 0 of B.
+    const plan = planValueCopy({ request: { sourceProfileId: 'PA', sourceBandId: 'PA-b1', segmentKey: 'WSTMNST>CCR-FED', targets: [{ profileId: 'PB', bandId: 'PB-b1' }, { profileId: 'PB', bandId: 'PB-b2' }, { profileId: 'PC', bandId: 'PC-b1' }] }, patterns: [A, B, C], profiles: [profileA, targetB, profileC] });
+    expect(plan.mode).toBe('valueCopy');
+    expect(plan.changes).toEqual([
+      { profileId: 'PB', patternId: 'B', bandId: 'PB-b1', segmentIndex: 0, previousSeconds: 100, nextSeconds: 241, sourceProfileId: 'PA' },
+      { profileId: 'PB', patternId: 'B', bandId: 'PB-b2', segmentIndex: 0, previousSeconds: 100, nextSeconds: 241, sourceProfileId: 'PA' },
+    ]);
+    expect(planValueCopy({ request: { sourceProfileId: 'PA', sourceBandId: 'PA-b1', segmentKey: 'WSTMNST>CCR-FED', targets: [{ profileId: 'PB', bandId: 'PB-b1' }] }, patterns: [A, B], profiles: [profileA, profile('PB', 'B', 7, () => 241)] }).changes).toEqual([]);
+  });
+});
+

@@ -6,7 +6,7 @@ import { applySegmentDistancePlan, copyCandidatePatternIds, planDistanceCopy, pl
 import { createManagedDirections, ensureManagedDirections, oppositeDirectionGroup } from '../domain/directions';
 import { classifyPatternEdit, describePatternPointChange, getPatternServiceImpact, rebalanceRuntimeProfile, rebalanceTripForPattern, reconcileRouteTimetables, resetPatternService, type DirectionOrderConflict, type PatternServiceImpact, type RouteEditClassification, type RouteEditMode } from '../domain/safeRouteEditing';
 import { normalizeServiceDayAbbreviation, sortServiceDays, validateServiceDayAbbreviations } from '../domain/serviceDays';
-import { applySegmentRuntimePlan, defaultBandPairs, planCopyToOthers, planFillFromOthers, qualifyingProfiles, type BandPairs, type SegmentRuntimePlan } from '../domain/segmentRuntimeMatching';
+import { applySegmentRuntimePlan, defaultBandPairs, planCopyToOthers, planFillFromOthers, planValueCopy, qualifyingProfiles, type BandPairs, type ValueCopyRequest, type SegmentRuntimePlan } from '../domain/segmentRuntimeMatching';
 import { formatServiceTime } from '../domain/time';
 import { copyRuntimeProfile, normalizeRuntimeProfile, reverseCopyRuntimeProfile, routeRuntimeCalculationMethod, unifyRouteRuntimeCalculationMethods, validateRuntimeProfile, withRuntimeCalculationRevision, RuntimeProfileDeletionError, type RuntimeCalculationMethod } from '../domain/runtime';
 import type { Block, BlockActivity, Node, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, ValidationFinding } from '../domain/types';
@@ -277,6 +277,8 @@ export interface SegmentRuntimePreview extends SegmentRuntimePlan {
   bandsByProfileId: Record<string, { id: string; label: string; startTime: number; endTime: number }[]>;
   /** R9: the Pattern of each of the Route's profiles. */
   patternIdByProfileId: Record<string, string>;
+  /** Decision 0075: the request of a "Use this value for…" preview. */
+  valueCopy?: ValueCopyRequest;
 }
 
 export const SEGMENT_RUNTIME_UNDO_REFUSED = "These runtimes were changed after the copy, so it can't be undone.";
@@ -900,6 +902,15 @@ export class RouteDefinitionService {
     return this.segmentRuntimePreview('fillFromOthers', profileId, [], bandPairs);
   }
 
+  /** What "Use this value for…" would write (Decision 0075 item 5); nothing is written. Applied and undone like a segment copy. */
+  async previewSegmentValueCopy(request: ValueCopyRequest): Promise<SegmentRuntimePreview> {
+    const profile = await this.repository.getRuntimeProfile(request.sourceProfileId);
+    if (!profile) throw new Error('The selected runtime profile is no longer available.');
+    const records = await this.repository.getScenarioRecords(profile.scenarioId);
+    if (!records) throw new Error('The selected scenario is no longer available.');
+    return this.describeSegmentRuntimePlan(records, 'valueCopy', request.sourceProfileId, [], undefined, request);
+  }
+
   private async segmentRuntimePreview(mode: SegmentRuntimePlan['mode'], profileId: string, excludedProfileIds: string[], bandPairs?: BandPairs): Promise<SegmentRuntimePreview> {
     const profile = await this.repository.getRuntimeProfile(profileId);
     if (!profile) throw new Error('The selected runtime profile is no longer available.');
@@ -908,18 +919,19 @@ export class RouteDefinitionService {
     return this.describeSegmentRuntimePlan(records, mode, profileId, excludedProfileIds, bandPairs);
   }
 
-  private planSegmentRuntimes(records: ScenarioRecords, mode: SegmentRuntimePlan['mode'], profileId: string, excludedProfileIds: string[], bandPairs?: BandPairs): { plan: SegmentRuntimePlan; open: RuntimeProfile; routePatterns: RoutePattern[]; routeProfiles: RuntimeProfile[]; bandPairs: BandPairs } {
+  private planSegmentRuntimes(records: ScenarioRecords, mode: SegmentRuntimePlan['mode'], profileId: string, excludedProfileIds: string[], bandPairs?: BandPairs, valueCopy?: ValueCopyRequest): { plan: SegmentRuntimePlan; open: RuntimeProfile; routePatterns: RoutePattern[]; routeProfiles: RuntimeProfile[]; bandPairs: BandPairs } {
     const open = records.runtimeProfiles.find((profile) => profile.id === profileId);
     if (!open) throw new Error('The selected runtime profile is no longer available.');
     const routePatterns = records.patterns.filter((pattern) => pattern.routeId === open.routeId);
     const routeProfiles = records.runtimeProfiles.filter((profile) => profile.routeId === open.routeId);
     const pairs = bandPairs ?? defaultBandPairs(open, qualifyingProfiles(open, routeProfiles, records.runtimeAssignments));
     const input = { openProfile: open, patterns: routePatterns, profiles: routeProfiles, assignments: records.runtimeAssignments, excludedProfileIds, bandPairs: pairs };
-    return { plan: mode === 'copyToOthers' ? planCopyToOthers(input) : planFillFromOthers(input), open, routePatterns, routeProfiles, bandPairs: pairs };
+    const plan = mode === 'valueCopy' ? planValueCopy({ request: valueCopy!, patterns: routePatterns, profiles: routeProfiles }) : mode === 'copyToOthers' ? planCopyToOthers(input) : planFillFromOthers(input);
+    return { plan, open, routePatterns, routeProfiles, bandPairs: pairs };
   }
 
-  private describeSegmentRuntimePlan(records: ScenarioRecords, mode: SegmentRuntimePlan['mode'], profileId: string, excludedProfileIds: string[], bandPairs?: BandPairs): SegmentRuntimePreview {
-    const { plan, open, routePatterns, routeProfiles, bandPairs: pairs } = this.planSegmentRuntimes(records, mode, profileId, excludedProfileIds, bandPairs);
+  private describeSegmentRuntimePlan(records: ScenarioRecords, mode: SegmentRuntimePlan['mode'], profileId: string, excludedProfileIds: string[], bandPairs?: BandPairs, valueCopy?: ValueCopyRequest): SegmentRuntimePreview {
+    const { plan, open, routePatterns, routeProfiles, bandPairs: pairs } = this.planSegmentRuntimes(records, mode, profileId, excludedProfileIds, bandPairs, valueCopy);
     const nodeName = (nodeId: string) => { const node = records.nodes.find((candidate) => candidate.id === nodeId); return node?.shortName || node?.name || 'Unnamed point'; };
     const patternNames: Record<string, string> = {};
     const profileNames: Record<string, string> = {};
@@ -945,7 +957,7 @@ export class RouteDefinitionService {
     const excluded = mode === 'copyToOthers' ? excludedProfileIds : [];
     const others = routeProfiles.filter((profile) => profile.id !== open.id && profile.patternId !== open.patternId);
     const copyCandidates = mode === 'copyToOthers' ? qualifyingProfiles(open, others, records.runtimeAssignments).map((profile) => ({ profileId: profile.id, patternId: profile.patternId, included: !excluded.includes(profile.id) })) : [];
-    return { ...plan, scenarioId: open.scenarioId, routeId: open.routeId, excludedProfileIds: excluded, copyCandidates, patternNames, profileNames, bandRanges, segmentLabels, bandsByProfileId, patternIdByProfileId, staleTripCountByProfileId, bandPairs: pairs };
+    return { ...plan, scenarioId: open.scenarioId, routeId: open.routeId, excludedProfileIds: excluded, copyCandidates, patternNames, profileNames, bandRanges, segmentLabels, bandsByProfileId, patternIdByProfileId, ...(valueCopy ? { valueCopy } : {}), staleTripCountByProfileId, bandPairs: pairs };
   }
 
   /**
@@ -956,7 +968,7 @@ export class RouteDefinitionService {
     if (!preview.changes.length) return;
     let undo: SegmentRuntimeUndo | undefined;
     await this.updateScenarioRecords(preview.scenarioId, (current) => {
-      const { plan } = this.planSegmentRuntimes(current, preview.mode, preview.sourceProfileId, preview.excludedProfileIds, preview.bandPairs);
+      const { plan } = this.planSegmentRuntimes(current, preview.mode, preview.sourceProfileId, preview.excludedProfileIds, preview.bandPairs, preview.valueCopy);
       if (JSON.stringify(plan.changes) !== JSON.stringify(preview.changes)) throw new Error(SEGMENT_RUNTIME_PREVIEW_STALE);
       const now = this.now();
       const before = new Map(current.runtimeProfiles.map((profile) => [profile.id, profile]));
@@ -1451,6 +1463,7 @@ export type RouteDefinitionApplication = Pick<RouteDefinitionService,
   | 'copyRuntimeProfile'
   | 'previewSegmentRuntimeCopy'
   | 'previewSegmentRuntimeFill'
+  | 'previewSegmentValueCopy'
   | 'applySegmentRuntimePlan'
   | 'getSegmentRuntimeUndo'
   | 'undoSegmentRuntimePlan'

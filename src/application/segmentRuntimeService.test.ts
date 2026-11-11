@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ProjectBackupService } from '../persistence/backupRepository';
 import { InMemoryRouteDefinitionRepository } from '../persistence/inMemoryRepository';
 import { metadata } from '../domain/ids';
+import { segmentKeys } from '../domain/segmentRuntimeMatching';
 import type { RuntimeProfile, Trip } from '../domain/types';
 import { addTwoStopPattern, savePatternDraft } from '../testSupport/routeFixtures';
 import { RouteDefinitionService, SEGMENT_RUNTIME_UNDO_REFUSED } from './routeDefinitionService';
@@ -83,6 +84,23 @@ describe('segment runtime copy and fill (service)', () => {
     repository.updateScenarioRecords = (id, change) => read(id, (current) => change({ ...current, runtimeProfiles: current.runtimeProfiles.map((profile) => profile.id === invalid.id ? invalid : profile) }));
     await expect(service.applySegmentRuntimePlan(preview)).rejects.toThrow('Review the runtime profile before saving it.');
     expect((await stored(1)).bands[0].segmentRuntimeSeconds).toEqual([0]);
+  });
+
+  it('Use this value for… writes the chosen cell, and is undone like a segment copy (Decision 0075)', async () => {
+    const { service, aggregate, setSeconds, stored } = await setup();
+    await setSeconds(0, 600);
+    await setSeconds(1, 480);
+    const source = await stored(0);
+    const target = await stored(1);
+    const [segmentKey] = segmentKeys(aggregate.patterns.find((pattern) => pattern.id === source.patternId)!);
+    const preview = await service.previewSegmentValueCopy({ sourceProfileId: source.id, sourceBandId: source.bands[0].id, segmentKey, targets: [{ profileId: target.id, bandId: target.bands[0].id }] });
+    expect(preview.changes).toHaveLength(1);
+    expect(preview.changes[0]).toMatchObject({ previousSeconds: 480, nextSeconds: 600 });
+    await service.applySegmentRuntimePlan(preview);
+    expect((await stored(1)).bands[0].segmentRuntimeSeconds).toEqual([600]);
+    expect(service.getSegmentRuntimeUndo()).toEqual({ routeId: expect.any(String), profileCount: 1 });
+    await service.undoSegmentRuntimePlan();
+    expect((await stored(1)).bands[0].segmentRuntimeSeconds).toEqual([480]);
   });
 
   it('undo restores the previous values and raises the revisions again', async () => {

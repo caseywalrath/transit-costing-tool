@@ -28,6 +28,7 @@ import { type BuildTripsValues, EMPTY_BUILD_VALUES, type NewRuntimeDialog, TripB
 import { BatchPatternChangeDialog, RecalculationDialog as TripRecalculationDialog, type ReviewContext, TripPatternChangeDialog } from './reviewDialogs';
 import { markStrength, markTrips, NO_MARKS } from './changedTrips';
 import { ChangedTripsBar, revealFirstMarkedRow } from './ChangedTripsBar';
+import { CompareRuntimesDialog } from './CompareRuntimesDialog';
 import { type TripBlockAssignmentDraft, type TripBlockOption, type TripSelectionRequest, formatTripTableClock, ScheduleTable } from './ScheduleTable';
 import { alternatingFrom, combineSelection, invertSelection, tripIdsMatching } from '../../application/tripSelection';
 import { download } from '../shared/download';
@@ -160,6 +161,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   const [busy, setBusy] = useState(false);
   const [runtimeCopyOpen, setRuntimeCopyOpen] = useState(false);
   const [segmentRuntimeDialog, setSegmentRuntimeDialog] = useState<'copy' | 'fill'>();
+  const [compareOpen, setCompareOpen] = useState(false);
   const [routeMethodChange, setRouteMethodChange] = useState<{ method: RuntimeCalculationMethod; impact?: { profileCount: number; tripCount: number }; busy: boolean }>();
   const [tripCopyOpen, setTripCopyOpen] = useState(false);
   const [batchPatternChangeOpen, setBatchPatternChangeOpen] = useState(false);
@@ -875,6 +877,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
           { label: 'Other patterns', items: [
             { id: 'copy-segments', label: 'Copy segments to other patterns…', disabled: segmentActionsUnavailable, onSelect: () => requestScopeChange(() => setSegmentRuntimeDialog('copy')) },
             { id: 'fill-segments', label: 'Fill from other patterns…', disabled: segmentActionsUnavailable, onSelect: () => requestScopeChange(() => setSegmentRuntimeDialog('fill')) },
+            { id: 'compare-patterns', label: 'Compare patterns…', disabled: segmentActionsUnavailable, onSelect: () => requestScopeChange(() => setCompareOpen(true)) },
             ...(segmentUndoApplies ? [{ id: 'undo-segments', label: 'Undo last segment copy', disabled: tripProfileBusy, onSelect: () => requestScopeChange(() => void undoSegmentRuntimes()) }] : []),
           ] },
         ]} disabled={loading || tripProfileBusy} triggerRef={runtimeCopyButtonRef} />
@@ -906,6 +909,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     {runtimeLeave && <RouteNavigationDraftDialog title="Save runtime changes before leaving?" text="The runtime profile has unsaved edits." onCancel={() => setRuntimeLeave(undefined)} onDiscard={() => { const { action, leavesContext } = runtimeLeave; setRuntimeLeave(undefined); runtimeEditorRef.current?.discard(); (leavesContext ? requestShiftAndDraftScopeChange : requestShiftScopeChange)(action); }} onSave={() => { const { action, leavesContext } = runtimeLeave; setRuntimeLeave(undefined); saveRuntimeThen(action, leavesContext); }} />}
     {shiftDiscardAction && <ShiftDiscardDialog onDiscard={() => discardStagedShift(shiftDiscardAction)} onCancel={() => setShiftDiscardAction(undefined)} onSave={shiftError ? undefined : () => { const action = shiftDiscardAction; setShiftDiscardAction(undefined); void completeStagedShift().then((saved) => { if (saved) action(); }); }} />}
     {draftTripDiscardAction && <ShiftDiscardDialog title="Discard new trip?" text="The new trip row has not been added. Discard it before leaving this schedule context?" onDiscard={() => { const action = draftTripDiscardAction; setDraftTripDiscardAction(undefined); setDraftTrip(undefined); action(); }} onCancel={() => setDraftTripDiscardAction(undefined)} onSave={draftTrip?.patternId && draftTrip.firstTrip.trim() ? () => { const action = draftTripDiscardAction; setDraftTripDiscardAction(undefined); void saveDraftTrip().then((saved) => { if (saved) action(); }); } : undefined} />}
+    {compareOpen && directions.find((direction) => direction.id === directionId) && <CompareRuntimesDialog service={service} direction={directions.find((direction) => direction.id === directionId)!} serviceDayId={serviceDayId} dayName={selectedDay?.name ?? ''} patterns={aggregate.patterns} profiles={runtimeSource.profiles} assignments={runtimeSource.assignments} nodes={aggregate.nodes} onChanged={onRuntimeChanged} onClose={() => setCompareOpen(false)} />}
     {segmentRuntimeDialog && selectedProfile && <SegmentRuntimeDialog service={service} mode={segmentRuntimeDialog} profileId={selectedProfile.id} onDone={() => { setSegmentRuntimeDialog(undefined); onRuntimeChanged(); }} onClose={() => setSegmentRuntimeDialog(undefined)} />}
     {runtimeDialog && <RuntimeProfileDialog2 dialog={runtimeDialog} candidates={reverseCandidates} onSubmit={submitRuntimeDialog} onClose={() => setRuntimeDialog(undefined)} />}
     {deleteProfileOpen && selectedProfile && profileDeletionImpact && <DeleteRuntimeProfileDialog profile={selectedProfile} profiles={profiles} assignmentCount={profileDeletionImpact.assignmentCount} tripCount={profileDeletionImpact.tripCount} onDelete={deleteProfile} onClose={() => { setDeleteProfileOpen(false); setProfileDeletionImpact(undefined); }} />}
