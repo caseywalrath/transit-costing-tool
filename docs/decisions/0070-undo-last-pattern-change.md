@@ -1,6 +1,6 @@
 # Decision 0070: Undo Last Pattern Change
 
-- Status: Accepted, not implemented
+- Status: Accepted and implemented
 - Date: 2026-11-11 (user request; plan: `docs/implementation/dialogs-selection-undo.md`, package P1)
 - Annotates: Decision 0035 item 3 (one regeneration snapshot) and Decision 0046 item 2 (the undo item)
 - Related: Decision 0067 (anchored pattern change)

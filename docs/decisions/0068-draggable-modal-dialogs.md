@@ -1,6 +1,6 @@
 # Decision 0068: Draggable Modal Dialogs
 
-- Status: Accepted, not implemented
+- Status: Accepted and implemented
 - Date: 2026-11-11 (user request; plan: `docs/implementation/dialogs-selection-undo.md`, package P3)
 - Related: `docs/ui-conventions.md` ("Every modal dialog is built by `ModalDialog`"), Decision 0025 item 9 (focus returns to the invoker)
 
@@ -17,7 +17,7 @@ Modal dialogs open centered over a scrim. A dialog can cover the table rows the 
 5. **Kept on screen.** The offset is limited so the handle stays fully inside the viewport. The limit is applied during the drag, when the window is resized, and when the dialog's size changes (a `ResizeObserver` on the dialog).
 6. **Not remembered.** Every dialog opens centered. The offset is not stored.
 7. **Narrow screens.** At a viewport width of 600 px or less, dragging is off and any offset is cleared.
-8. **Keyboard and focus.** Focus trapping, Escape, and focus return are unchanged. Escape during a drag ends the drag and closes the dialog, as Escape does today. Dragging is optional; no keyboard move is added (WCAG 2.5.7 is met because no task needs dragging).
+8. **Keyboard and focus.** Focus trapping, Escape, and focus return are unchanged. Escape during a drag closes the dialog, as Escape does today, which ends the drag. A busy dialog ignores Escape, as today, and the drag continues until the pointer is released. Dragging is optional; no keyboard move is added (WCAG 2.5.7 is met because no task needs dragging).
 9. **Appearance.** The handle shows `cursor: move` where dragging is on. During a drag, `user-select: none` is set on the dialog. The handle has `touch-action: none`. The scrim is unchanged.
 10. **Nested dialogs.** Each open dialog has its own offset. Only the innermost receives pointer input, because its backdrop covers the rest.
 

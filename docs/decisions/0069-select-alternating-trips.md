@@ -1,6 +1,6 @@
 # Decision 0069: Select Alternating Trips
 
-- Status: Accepted, not implemented
+- Status: Accepted and implemented
 - Date: 2026-11-11 (user request; plan: `docs/implementation/dialogs-selection-undo.md`, package P2)
 - Related: `docs/ui-conventions.md` ("Selecting trips (UR-9, SEL-1 and SEL-2)")
 
