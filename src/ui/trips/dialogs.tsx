@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { formatRuntimeDuration } from '../../domain/runtime';
 import { type RouteDefinitionApplication, type SegmentRuntimePreview } from '../../application/routeDefinitionService';
+import { type BandPairs } from '../../domain/segmentRuntimeMatching';
 import { userFacingError } from '../errorMessages';
 import { ModalDialog } from '../ModalDialog';
 import { type TripGenerationApplication } from '../../application/tripGenerationService';
@@ -131,32 +132,36 @@ export function RuntimeProfileDialog2({ dialog, candidates, onSubmit, onClose }:
 export function DeleteRuntimeProfileDialog({ profile, profiles, assignmentCount, tripCount, onDelete, onClose }: { profile: RuntimeProfile; profiles: RuntimeProfile[]; assignmentCount: number; tripCount: number; onDelete: (replacementProfileId?: string) => Promise<void>; onClose: () => void }) { const alternatives = profiles.filter((item) => item.id !== profile.id); const [replacement, setReplacement] = useState(alternatives[0]?.id ?? ''); const requiresReplacement = assignmentCount > 0; const blocked = tripCount > 0 || (requiresReplacement && !alternatives.length); return <ModalDialog labelledBy="delete-runtime-profile-title" className="confirm-dialog" onClose={onClose}><h2 id="delete-runtime-profile-title">Delete runtime profile?</h2>{tripCount > 0 ? <p className="field-error">{tripCount} saved trip{tripCount === 1 ? '' : 's'} retain this profile as their run-time source. Delete or recalculate those trips before deleting this profile.</p> : requiresReplacement ? <><p>This profile is assigned to {assignmentCount} service-day pattern combination{assignmentCount === 1 ? '' : 's'}. Select a replacement profile.</p>{alternatives.length > 0 ? <label className="dialog-field">Replacement<select value={replacement} onChange={(event) => setReplacement(event.target.value)}>{alternatives.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : <p className="field-error">Create another profile before deleting this one.</p>}</> : <p>This profile is not assigned to service and is not used by a saved trip.</p>}<div className="dialog-actions"><button onClick={onClose}>Cancel</button><button className="subtle-danger" disabled={blocked} onClick={() => void onDelete(requiresReplacement ? replacement : undefined)}>Delete</button></div></ModalDialog>; }
 const SEGMENT_SKIP_TITLES = {
   ambiguous: 'Segment appears more than once in a pattern',
-  bandMismatch: 'No band overlaps by more than half',
-  bandShared: 'More than one band would copy into this band',
-  unassigned: 'Profile is not assigned to any service day',
   conflict: 'Other patterns disagree',
-  otherServiceDays: 'Profile is assigned to other service days only',
-  noMatchingSegment: 'No segment in common',
-  emptySource: 'Other patterns have :00 for this segment',
+  bandShared: 'More than one period would copy into this period',
 } as const;
 
-/** Decision 0049: preview, then confirm, a copy of this profile's segment runtimes to other patterns or a fill of its `:00` cells from them. */
+const overlapShare = (open: { startTime: number; endTime: number }, other: { startTime: number; endTime: number } | undefined) => other ? Math.max(0, Math.min(open.endTime, other.endTime) - Math.max(open.startTime, other.startTime)) / Math.max(1, open.endTime - open.startTime) : 0;
+const periodText = (band: { label: string; startTime: number; endTime: number }) => `${band.label} · ${formatServiceTime(band.startTime, band.startTime % 60 !== 0)}–${formatServiceTime(band.endTime, band.endTime % 60 !== 0)}`;
+
+/**
+ * Decision 0049 and Decision 0074: preview, then confirm, a copy of this profile's segment runtimes to other patterns or a fill of its `:00`
+ * cells from them. R9: for each other profile with a segment in common, a band map shows which of its time periods each of this profile's
+ * periods pairs with, and the pairing can be changed.
+ */
 export function SegmentRuntimeDialog({ service, mode, profileId, onDone, onClose }: { service: Pick<RouteDefinitionApplication, 'previewSegmentRuntimeCopy' | 'previewSegmentRuntimeFill' | 'applySegmentRuntimePlan'>; mode: 'copy' | 'fill'; profileId: string; onDone: () => void; onClose: () => void }) {
   const copy = mode === 'copy';
   const [excluded, setExcluded] = useState<string[]>([]);
+  const [bandPairs, setBandPairs] = useState<BandPairs>();
   const [preview, setPreview] = useState<SegmentRuntimePreview>();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const defaults = useRef<BandPairs | undefined>(undefined);
   const firstCheckbox = useRef<HTMLInputElement>(null);
   const focused = useRef(false);
   useEffect(() => {
     let current = true;
-    (copy ? service.previewSegmentRuntimeCopy(profileId, excluded) : service.previewSegmentRuntimeFill(profileId))
-      .then((next) => { if (current) { setPreview(next); setError(''); } })
+    (copy ? service.previewSegmentRuntimeCopy(profileId, excluded, bandPairs) : service.previewSegmentRuntimeFill(profileId, bandPairs))
+      .then((next) => { if (current) { defaults.current ??= next.bandPairs; setPreview(next); setError(''); } })
       .catch((reason) => { if (current) setError(userFacingError(reason, 'The runtimes could not be previewed.')); });
     return () => { current = false; };
-  }, [service, copy, profileId, excluded]);
+  }, [service, copy, profileId, excluded, bandPairs]);
   useEffect(() => { if (preview && copy && !focused.current) { focused.current = true; firstCheckbox.current?.focus(); } }, [preview, copy]);
   async function apply() {
     if (!preview) return;
@@ -166,25 +171,27 @@ export function SegmentRuntimeDialog({ service, mode, profileId, onDone, onClose
   const seconds = (value: number) => formatRuntimeDuration(value) || ':00';
   const name = (id: string) => preview?.profileNames[id] ?? 'Profile';
   const pattern = (patternId: string) => preview?.patternNames[patternId] ?? 'Pattern';
+  const patternOf = (id: string) => preview?.patternIdByProfileId[id] ?? '';
   const who = (id: string, patternId: string) => `${pattern(patternId)} · ${name(id)}`;
   const rows = preview ? (copy ? preview.copyCandidates.filter((candidate) => excluded.includes(candidate.profileId) || preview.affectedProfiles.some((item) => item.profileId === candidate.profileId)).map((candidate) => ({ ...candidate, included: !excluded.includes(candidate.profileId) })) : preview.affectedProfiles.map((item) => ({ profileId: item.profileId, patternId: item.patternId, included: true }))) : [];
   const affected = new Map((preview?.affectedProfiles ?? []).map((item) => [item.profileId, item]));
-  // A band mismatch is reported for each band, so the dialog lists each profile once with its unmatched bands.
-  const bandMismatches = new Map<string, SegmentRuntimePreview['skips'][number] & { ranges: string[] }>();
-  for (const skip of preview?.skips ?? []) if (skip.reason === 'bandMismatch') { const entry = bandMismatches.get(skip.profileId) ?? { ...skip, ranges: [] }; const range = preview?.bandRanges[skip.bandId ?? '']; if (range && !entry.ranges.includes(range)) entry.ranges.push(range); bandMismatches.set(skip.profileId, entry); }
-  const skipGroups = (['ambiguous', 'bandMismatch', 'unassigned', 'conflict', 'bandShared', 'otherServiceDays', 'noMatchingSegment', 'emptySource'] as const).map((reason) => ({ reason, skips: reason === 'bandMismatch' ? [...bandMismatches.values()] : (preview?.skips ?? []).filter((skip) => skip.reason === reason) })).filter((group) => group.skips.length);
-  const skipText = (skip: SegmentRuntimePreview['skips'][number] & { ranges?: string[] }) => {
-    const parts = [who(skip.profileId, skip.patternId)];
-    if (skip.ranges) parts.push(skip.ranges.join(', '));
-    else if (skip.bandId && preview?.bandRanges[skip.bandId]) parts.push(preview.bandRanges[skip.bandId]);
-    if (skip.reason !== 'bandMismatch' && skip.segmentIndex !== undefined) parts.push(preview?.segmentLabels[skip.profileId]?.[skip.segmentIndex] ?? 'Segment');
-    if (skip.candidates) parts.push(skip.candidates.map((candidate) => `${seconds(candidate.seconds)} (${candidate.profileIds.map(name).join(', ')})`).join(' vs '));
+  const skipGroups = (['conflict', 'bandShared', 'ambiguous'] as const).map((reason) => ({ reason, skips: (preview?.skips ?? []).filter((skip) => skip.reason === reason) })).filter((group) => group.skips.length);
+  const skipText = (skip: SegmentRuntimePreview['skips'][number]) => {
+    // This profile's own skips need no name; values are attributed to patterns, whose profiles often share one name.
+    const parts = skip.profileId === profileId ? [] : [who(skip.profileId, skip.patternId)];
+    if (skip.bandId && preview?.bandRanges[skip.bandId]) parts.push(preview.bandRanges[skip.bandId]);
+    if (skip.segmentIndex !== undefined) parts.push(preview?.segmentLabels[skip.profileId]?.[skip.segmentIndex] ?? 'Segment');
+    if (skip.candidates) parts.push(skip.candidates.map((candidate) => `${seconds(candidate.seconds)} (${candidate.profileIds.map((id) => pattern(patternOf(id))).join(', ')})`).join(' vs '));
     return parts.join(' · ');
   };
+  // Profiles that share a segment with this one, and are not left out of a copy.
+  const unshared = new Set((preview?.skips ?? []).filter((skip) => skip.reason === 'noMatchingSegment').map((skip) => skip.profileId));
+  const mapped = preview ? Object.keys(preview.bandPairs).filter((id) => !unshared.has(id) && !excluded.includes(id)) : [];
+  const openBands = preview?.bandsByProfileId[profileId] ?? [];
+  const setPair = (otherId: string, bandId: string, value: string) => { if (preview) setBandPairs({ ...preview.bandPairs, [otherId]: { ...preview.bandPairs[otherId], [bandId]: value || null } }); };
   const title = copy ? 'Copy segments to other patterns' : 'Fill from other patterns';
   return <ModalDialog labelledBy="segment-runtime-title" className="confirm-dialog preview-dialog segment-runtime-dialog" onClose={onClose} busy={busy}>
     <h2 id="segment-runtime-title">{title}</h2>
-    <p>{copy ? "Runtimes for segments shared with other patterns will be replaced with this profile's values, for each band of the other pattern that overlaps one of this profile's bands by more than half." :'Runtimes of :00 in this profile will be filled from other patterns that share the segment, using the band of each other pattern that overlaps this band by more than half.'}</p>
     {!preview && !error && <p role="status">Loading preview…</p>}
     {preview && <>
       {rows.length > 0 && <div className="preview-times"><table>
@@ -197,6 +204,25 @@ export function SegmentRuntimeDialog({ service, mode, profileId, onDone, onClose
           </tr>;
         })}</tbody>
       </table></div>}
+      {mapped.map((otherId) => {
+        const otherBands = preview.bandsByProfileId[otherId] ?? [];
+        const label = who(otherId, patternOf(otherId));
+        return <div key={otherId} className="segment-band-map">
+          <table aria-label={`Time periods paired with ${label}`}>
+            <thead><tr><th scope="col">This profile</th><th scope="col">{label}</th><th scope="col">Overlap</th></tr></thead>
+            <tbody>{openBands.map((band) => {
+              const chosen = preview.bandPairs[otherId]?.[band.id] ?? '';
+              const share = Math.round(overlapShare(band, otherBands.find((item) => item.id === chosen)) * 100);
+              const changed = (defaults.current?.[otherId]?.[band.id] ?? '') !== chosen;
+              return <tr key={band.id} className={changed ? 'segment-band-map__changed' : undefined}>
+                <td>{periodText(band)}</td>
+                <td><select aria-label={`${band.label} pairs with, ${label}`} value={chosen} disabled={busy} onChange={(event) => setPair(otherId, band.id, event.target.value)}><option value="">None</option>{otherBands.map((item) => <option key={item.id} value={item.id}>{periodText(item)}</option>)}</select></td>
+                <td className={chosen && share < 50 ? 'segment-band-map__low' : undefined}>{chosen ? `${share}%` : '—'}</td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>;
+      })}
       {preview.changes.length === 0 && <p>No runtimes would change.</p>}
       {preview.changes.length > 0 && <>
         <button type="button" className="disclosure" aria-expanded={detailsOpen} aria-controls="segment-runtime-details" onClick={() => setDetailsOpen((open) => !open)}><span aria-hidden="true" className="disclosure__arrow">{detailsOpen ? '▾' : '▸'}</span>Show cell details</button>

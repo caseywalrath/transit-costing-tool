@@ -59,7 +59,7 @@ test('copy shows an include box for each target, disables the confirm button whe
   await expect(target).toBeFocused();
   await expect(dialog.getByRole('button', { name: 'Replace runtimes' })).toBeEnabled();
   // Decision 0074: bands pair by overlap. Wagon Road–Evans has more bands than this target pairs one to one, so a shared target band is reported.
-  await expect(dialog.getByText('More than one band would copy into this band')).toBeVisible();
+  await expect(dialog.getByText('More than one period would copy into this period')).toBeVisible();
 
   await target.uncheck();
   await expect(dialog.getByText('No runtimes would change.')).toBeVisible();
@@ -119,4 +119,24 @@ test('the copy dialog has no horizontal page scroll at 390 px wide', async ({ pa
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(390);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('fill shows the time-period pairing for each other pattern, and a pair can be changed (R9)', async ({ page }) => {
+  await openGoldenTrips(page);
+  await setWestminsterShared(page, 0);
+  await openPattern(page, WESTMINSTER_TO_ENGLEWOOD);
+  await openAction(page, 'Fill from other patterns…');
+  const dialog = page.getByRole('dialog', { name: 'Fill from other patterns' });
+  const map = dialog.getByRole('table', { name: new RegExp(`^Time periods paired with ${WAGON_TO_EVANS}`) });
+  await expect(map).toBeVisible();
+  // Golden bands differ by pattern, so every period is paired by overlap, not by identical times.
+  const selects = map.getByRole('combobox');
+  await expect(selects).toHaveCount(await map.locator('tbody tr').count());
+  await expect(map.locator('tbody tr').first().locator('td').nth(2)).toHaveText(/^\d+%$/);
+  // A pair set to None is marked as changed, and the review is rebuilt with it (no overlap to show).
+  await selects.first().selectOption('');
+  await expect(map.locator('tbody tr').first()).toHaveClass(/segment-band-map__changed/);
+  await expect(map.locator('tbody tr').first().locator('td').nth(2)).toHaveText('—');
+  await expect(dialog.getByRole('button', { name: 'Fill runtimes' })).toBeEnabled();
+  await page.keyboard.press('Escape');
 });

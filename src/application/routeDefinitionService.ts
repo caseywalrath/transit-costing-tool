@@ -273,6 +273,10 @@ export interface SegmentRuntimePreview extends SegmentRuntimePlan {
   staleTripCountByProfileId: Record<string, number>;
   /** Decision 0074 item 3: the band pairs the plan used (given, or the default pairing). */
   bandPairs: BandPairs;
+  /** R9: each band of the Route's profiles, ordered by start within its profile, for the band map. */
+  bandsByProfileId: Record<string, { id: string; label: string; startTime: number; endTime: number }[]>;
+  /** R9: the Pattern of each of the Route's profiles. */
+  patternIdByProfileId: Record<string, string>;
 }
 
 export const SEGMENT_RUNTIME_UNDO_REFUSED = "These runtimes were changed after the copy, so it can't be undone.";
@@ -921,7 +925,11 @@ export class RouteDefinitionService {
     const profileNames: Record<string, string> = {};
     const bandRanges: Record<string, string> = {};
     const segmentLabels: Record<string, string[]> = {};
+    const bandsByProfileId: Record<string, { id: string; label: string; startTime: number; endTime: number }[]> = {};
+    const patternIdByProfileId: Record<string, string> = {};
     for (const profile of routeProfiles) {
+      patternIdByProfileId[profile.id] = profile.patternId;
+      bandsByProfileId[profile.id] = [...profile.bands].sort((left, right) => left.startTime - right.startTime || left.endTime - right.endTime).map((band) => ({ id: band.id, label: band.label, startTime: band.startTime, endTime: band.endTime }));
       const pattern = routePatterns.find((candidate) => candidate.id === profile.patternId);
       profileNames[profile.id] = profile.name;
       if (pattern) {
@@ -937,7 +945,7 @@ export class RouteDefinitionService {
     const excluded = mode === 'copyToOthers' ? excludedProfileIds : [];
     const others = routeProfiles.filter((profile) => profile.id !== open.id && profile.patternId !== open.patternId);
     const copyCandidates = mode === 'copyToOthers' ? qualifyingProfiles(open, others, records.runtimeAssignments).map((profile) => ({ profileId: profile.id, patternId: profile.patternId, included: !excluded.includes(profile.id) })) : [];
-    return { ...plan, scenarioId: open.scenarioId, routeId: open.routeId, excludedProfileIds: excluded, copyCandidates, patternNames, profileNames, bandRanges, segmentLabels, staleTripCountByProfileId, bandPairs: pairs };
+    return { ...plan, scenarioId: open.scenarioId, routeId: open.routeId, excludedProfileIds: excluded, copyCandidates, patternNames, profileNames, bandRanges, segmentLabels, bandsByProfileId, patternIdByProfileId, staleTripCountByProfileId, bandPairs: pairs };
   }
 
   /**
