@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>Trip review mock-up</title>
+<!-- R5 mock-up (Decisions 0071 and 0072). Static: no script. Colours and sizes come from the application's tokens. -->
+<link rel="stylesheet" href="../../../src/ui/styles/tokens.css">
+<style>
+  body { margin: 0; padding: 24px; background: var(--color-canvas); color: var(--color-text); font: 14px/1.4 "Source Sans 3", "Segoe UI", system-ui, sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .note { color: var(--color-text-muted); max-width: 900px; margin: 0 0 20px; }
+  .frame-title { font-weight: 700; margin: 28px 0 8px; }
+  .frame-title small { font-weight: 400; color: var(--color-text-muted); }
+  .dialog { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; box-shadow: 0 8px 28px rgb(17 35 45 / 18%); width: 1080px; max-width: 100%; }
+  .dialog header { padding: 16px 20px 8px; }
+  .dialog h2 { font-size: 18px; margin: 0 0 2px; }
+  .sub { color: var(--color-text-muted); margin: 0; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: end; padding: 8px 20px 12px; border-bottom: 1px solid var(--color-border-soft); }
+  .controls label { display: grid; gap: 2px; font-size: 12px; color: var(--color-text-muted); }
+  select, button { font: inherit; }
+  select { border: 1px solid var(--color-border); border-radius: 4px; padding: 3px 6px; background: var(--color-surface); color: var(--color-text); }
+  .seg button { border: 1px solid var(--color-border); background: var(--color-surface); padding: 3px 10px; }
+  .seg button:first-child { border-radius: 4px 0 0 4px; } .seg button:last-child { border-radius: 0 4px 4px 0; border-left: 0; }
+  .seg button[aria-pressed="true"] { background: var(--color-accent-soft); border-color: var(--color-accent); color: var(--color-accent-strong); font-weight: 600; }
+  .summary { display: flex; gap: 12px; align-items: center; padding: 10px 20px; background: var(--color-surface-2); border-bottom: 1px solid var(--color-border-soft); }
+  .summary strong { font-weight: 600; }
+  .count-ok { color: var(--color-ok); } .count-attn { color: var(--color-danger); }
+  .summary .spacer { flex: 1; }
+  .btn { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: 4px; padding: 4px 12px; color: var(--color-text); }
+  .btn.primary { background: var(--color-accent); border-color: var(--color-accent); color: #fff; font-weight: 600; }
+  .btn.link { border: 0; background: none; color: var(--color-accent); padding: 0; text-decoration: underline; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; }
+  th { position: sticky; top: 0; background: var(--color-surface-2); text-align: left; font-size: 12px; font-weight: 600; color: var(--color-text-muted); padding: 6px 10px; border-bottom: 1px solid var(--color-border); white-space: nowrap; }
+  td { padding: 6px 10px; border-bottom: 1px solid var(--color-border-soft); vertical-align: top; white-space: nowrap; }
+  td.num { font-variant-numeric: tabular-nums; }
+  .delta { display: block; font-size: 12px; color: var(--color-text-muted); }
+  .delta.moved { color: var(--color-accent-strong); font-weight: 600; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 10px; padding: 1px 8px; font-size: 12px; font-weight: 600; border: 1px solid; }
+  .chip.ok { color: var(--color-ok); background: var(--color-ok-soft); border-color: #b9d8c0; }
+  .chip.err { color: var(--color-danger); background: var(--color-danger-soft); border-color: #e7b9b5; }
+  .chip.warn { color: var(--color-warn); background: var(--color-warn-soft); border-color: var(--color-warn-border); }
+  .chip.skip { color: var(--color-text-muted); background: var(--color-sunken); border-color: var(--color-border); }
+  .why { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 4px; border-radius: 50%; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-accent); font-size: 12px; font-weight: 700; vertical-align: middle; }
+  .why[aria-expanded="true"] { background: var(--color-accent); color: #fff; border-color: var(--color-accent); }
+  tr.row-err td { background: color-mix(in srgb, var(--color-danger-soft) 55%, transparent); }
+  tr.row-skip td { color: var(--color-text-subtle); }
+  tr.row-skip td .delta { color: var(--color-text-subtle); }
+  .trip { font-weight: 600; } .trip small { display: block; font-weight: 400; color: var(--color-text-muted); }
+  .pchip { display: inline-block; border: 1px solid var(--color-pattern-2-border); background: var(--color-pattern-2-bg); color: var(--color-pattern-2-text); border-radius: 4px; padding: 0 5px; font-size: 12px; margin-right: 4px; }
+  .action select { min-width: 250px; }
+  .action select.attn { border-color: var(--color-danger); }
+  /* The Why panel, shown open below its row. In the build it is a popover anchored to the ⓘ button. */
+  .panel-row td { background: var(--color-surface); padding: 0 10px 12px; white-space: normal; }
+  .panel { position: relative; margin-left: 140px; max-width: 620px; border: 1px solid var(--color-border); border-radius: 6px; box-shadow: 0 6px 18px rgb(17 35 45 / 14%); padding: 12px 14px; background: var(--color-surface); }
+  .panel::before { content: ""; position: absolute; top: -7px; left: 24px; width: 12px; height: 12px; background: var(--color-surface); border-left: 1px solid var(--color-border); border-top: 1px solid var(--color-border); transform: rotate(45deg); }
+  .panel h3 { font-size: 15px; margin: 0 0 6px; }
+  .panel p { margin: 0 0 8px; }
+  .panel ul { margin: 4px 0 8px; padding-left: 18px; }
+  .panel li { margin: 2px 0; }
+  .panel .hint { color: var(--color-text-muted); font-size: 13px; border-top: 1px solid var(--color-border-soft); padding-top: 8px; margin-top: 4px; }
+  .timeline { font-size: 12px; color: var(--color-text-muted); margin: 6px 0 10px; }
+  .timeline .bar { position: relative; height: 14px; background: var(--color-sunken); border-radius: 3px; margin: 4px 0 2px; }
+  .timeline .reach { position: absolute; top: 0; bottom: 0; background: var(--color-block-0-border); }
+  .timeline .mark { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--color-danger); }
+  .timeline .labels { position: relative; height: 16px; }
+  .timeline .labels span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+  footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--color-border-soft); }
+  footer .left { color: var(--color-text-muted); }
+  footer .right { display: flex; gap: 8px; }
+  .menu { display: inline-block; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface); box-shadow: 0 6px 18px rgb(17 35 45 / 14%); padding: 4px 0; min-width: 320px; }
+  .menu div { padding: 5px 12px; } .menu .sel { background: var(--color-accent-soft); }
+  .menu .sep { border-top: 1px solid var(--color-border-soft); padding: 0; margin: 4px 0; }
+  .menu small { color: var(--color-text-muted); }
+  .callouts { max-width: 1080px; margin: 10px 0 0; padding-left: 20px; color: var(--color-text-muted); }
+  .callouts li { margin: 3px 0; }
+</style>
+</head>
+<body>
+<h1>Trip review: mock-up for R5</h1>
+<p class="note">One review table for Regenerate, Change pattern (several trips), and Change pattern (one trip). Decisions 0071 and 0072. Static mock-up: the panel and the menu are shown open. Times are from a fictional Southbound route.</p>
+
+<!-- ============================ Frame A: Regenerate, with a Why panel open ============================ -->
+<p class="frame-title">A. Regenerate selected trips <small>— 48 trips, 3 need attention, one "Why?" panel open</small></p>
+<div class="dialog" role="dialog" aria-labelledby="a-title">
+  <header><h2 id="a-title">Regenerate selected trips</h2><p class="sub">Each trip keeps one of its times, and its other times are recalculated from the current runtimes.</p></header>
+  <div class="controls">
+    <label>Keep for all trips<span class="seg"><button aria-pressed="true">Start time</button><button aria-pressed="false">End time</button></span></label>
+    <label>…or a stop all trips serve<select><option>Choose a stop…</option></select></label>
+  </div>
+  <div class="summary"><span><strong>48 trips</strong> · <span class="count-ok">45 ready</span> · <span class="count-attn">3 need attention</span></span><span class="spacer"></span><button class="btn">Skip all 3 that need attention</button></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Trip</th><th>Status</th><th>Kept time</th><th>Start</th><th>End</th><th>Run time</th><th>Layover after</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td class="trip"><span class="pchip">WR–EV</span>7:15<small>Block 104</small></td><td><span class="chip ok">Ready</span></td><td class="num">Start · 7:15</td><td class="num">7:15<span class="delta">no change</span></td><td class="num">7:58<span class="delta moved">+2 min</span></td><td class="num">0:43<span class="delta moved">+2 min</span></td><td class="num">0:12<span class="delta moved">−2 min</span></td><td class="action"><select><option>Regenerate</option></select></td></tr>
+      <tr><td class="trip"><span class="pchip">WR–EV</span>7:30<small>Block 108</small></td><td><span class="chip ok">Ready</span></td><td class="num">Start · 7:30</td><td class="num">7:30<span class="delta">no change</span></td><td class="num">8:15<span class="delta moved">+3 min</span></td><td class="num">0:45<span class="delta moved">+3 min</span></td><td class="num">0:08<span class="delta moved">−3 min</span></td><td class="action"><select><option>Regenerate</option></select></td></tr>
+      <tr class="row-err"><td class="trip"><span class="pchip">WS–EN</span>7:48<small>Block 112</small></td><td><span class="chip err">Can't keep 8:16</span><button class="why" aria-expanded="true" aria-label="Why can't this trip keep 8:16?">i</button></td><td class="num">Federal-32nd · 8:16</td><td class="num">7:48<span class="delta">—</span></td><td class="num">8:31<span class="delta">—</span></td><td class="num">—</td><td class="num">—</td><td class="action"><select class="attn"><option>Choose a fix…</option></select></td></tr>
+      <tr class="panel-row"><td colspan="8"><div class="panel" role="dialog" aria-label="Why this trip can't keep 8:16">
+        <h3>This trip can't reach Federal-32nd at exactly 8:16.</h3>
+        <p>Travel times get longer when <strong>AM Peak</strong> starts at <strong>8:00</strong>. A trip that starts at 7:59 reaches Federal-32nd at <strong>8:14</strong>. A trip that starts at 8:00 reaches it at <strong>8:18</strong>. No start time in between lands on 8:16.</p>
+        <div class="timeline" aria-hidden="true">Times a trip can reach Federal-32nd
+          <div class="bar"><span class="reach" style="left:0;width:44%"></span><span class="reach" style="left:62%;right:0"></span><span class="mark" style="left:53%"></span></div>
+          <div class="labels"><span style="left:44%">8:14</span><span style="left:53%;color:var(--color-danger)">8:16</span><span style="left:62%">8:18</span></div>
+        </div>
+        <p><strong>To fix it, choose one in the Action list:</strong></p>
+        <ul>
+          <li>Keep a nearby time, <strong>8:14</strong> or <strong>8:18</strong>. The trip moves 2 minutes either way.</li>
+          <li>Keep the start time (<strong>7:48</strong>) instead. Federal-32nd's time will change.</li>
+          <li>Skip this trip and leave it as it is.</li>
+        </ul>
+        <p class="hint">Or make the jump smaller in Runtimes. In AM Peak, travel takes 1:00 longer from Westminster Station to Clear Creek and 2:00 longer from Clear Creek to Federal-32nd than in Early. <button class="btn link">Open runtimes</button></p>
+      </div></td></tr>
+      <tr class="row-err"><td class="trip"><span class="pchip">WS–EN</span>8:03<small>Block 115</small></td><td><span class="chip err">Two start times fit</span><button class="why" aria-expanded="false" aria-label="Why do two start times fit?">i</button></td><td class="num">Federal-32nd · 8:31</td><td class="num">8:03<span class="delta">—</span></td><td class="num">8:46<span class="delta">—</span></td><td class="num">—</td><td class="num">—</td><td class="action"><select class="attn"><option>Choose a fix…</option></select></td></tr>
+      <tr class="row-err"><td class="trip"><span class="pchip">WR–EN</span>4:40<small>Not in a block</small></td><td><span class="chip err">No runtimes for this day</span><button class="why" aria-expanded="false" aria-label="Why are there no runtimes?">i</button></td><td class="num">Start · 4:40</td><td class="num">4:40<span class="delta">—</span></td><td class="num">5:37<span class="delta">—</span></td><td class="num">—</td><td class="num">—</td><td class="action"><select class="attn"><option>Choose a fix…</option></select></td></tr>
+      <tr><td class="trip"><span class="pchip">WR–EV</span>8:00<small>Block 104</small></td><td><span class="chip warn">Layover too short</span><button class="why" aria-expanded="false" aria-label="Why is the layover too short?">i</button></td><td class="num">Start · 8:00</td><td class="num">8:00<span class="delta">no change</span></td><td class="num">8:51<span class="delta moved">+6 min</span></td><td class="num">0:51<span class="delta moved">+6 min</span></td><td class="num" style="color:var(--color-warn)">−0:01<span class="delta moved">−6 min</span></td><td class="action"><select><option>Regenerate</option></select></td></tr>
+      <tr class="row-skip"><td class="trip"><span class="pchip">WS–EN</span>8:18<small>Block 119</small></td><td><span class="chip skip">Skipped</span></td><td class="num">—</td><td class="num">8:18<span class="delta">unchanged</span></td><td class="num">9:01<span class="delta">unchanged</span></td><td class="num">0:43</td><td class="num">0:10</td><td class="action"><select><option>Skip this trip</option></select></td></tr>
+    </tbody>
+  </table></div>
+  <footer><span class="left">Trips that need attention are not changed until you choose a fix or skip them.</span><span class="right"><button class="btn">Cancel</button><button class="btn primary" disabled style="opacity:.55">Regenerate 45 trips</button></span></footer>
+</div>
+<ul class="callouts">
+  <li>The Status chip says <em>that</em> something is wrong in two to four words. ⓘ opens the "Why?" panel on click or keyboard focus, not on hover alone.</li>
+  <li>The primary button stays disabled while any trip needs attention. "Skip all 3 that need attention" or a fix on each row enables it, and the button then counts the trips it will change.</li>
+  <li>A warning (the yellow "Layover too short") does not block the button.</li>
+  <li>Changes are shown in minutes ("+2 min"), not as before → after pairs. The exact before and after times are in each cell's title.</li>
+</ul>
+
+<!-- ============================ Frame B: Action list ============================ -->
+<p class="frame-title">B. The Action list of the "Can't keep 8:16" row <small>— each option says what it does and what it costs</small></p>
+<div class="menu" role="listbox" aria-label="Action for trip 7:48">
+  <div><strong>Keep Federal-32nd at 8:14 instead</strong> <small>2 min earlier</small></div>
+  <div class="sel"><strong>Keep Federal-32nd at 8:18 instead</strong> <small>2 min later</small></div>
+  <div><strong>Keep the start time (7:48)</strong> <small>Federal-32nd will change</small></div>
+  <div class="sep"></div>
+  <div><strong>Skip this trip</strong> <small>leave it unchanged</small></div>
+</div>
+<ul class="callouts">
+  <li>The order runs from the smallest change to the largest, and Skip is always last.</li>
+  <li>For "Two start times fit", the list reads: "Start at 7:52 (Early)", "Start at 7:55 (AM Peak)", "Keep Federal-32nd at 8:29 instead (2 min earlier)", and so on. For a profile that uses one time period per trip, choosing a start time picks that period.</li>
+  <li>For "No runtimes for this day", the list has only "Skip this trip". The panel says: "This pattern has no runtimes for Weekday. Assign a runtime profile in Runtimes, or skip this trip." with an <strong>Open runtimes</strong> button.</li>
+</ul>
+
+<!-- ============================ Frame C: Change pattern, several trips ============================ -->
+<p class="frame-title">C. Change pattern, several trips <small>— the same table; the controls above it choose the pattern and the stop to keep</small></p>
+<div class="dialog" role="dialog" aria-labelledby="c-title">
+  <header><h2 id="c-title">Change the pattern of 12 trips</h2><p class="sub">Each trip moves to the new pattern and keeps the time you choose. Its other times are recalculated.</p></header>
+  <div class="controls">
+    <label>New pattern<select><option>Southbound: Wagon Road to Englewood</option></select></label>
+    <label>Keep the time at<select><option>Start (each trip's first stop)</option><option>Westminster Station</option><option>Federal-32nd</option></select></label>
+  </div>
+  <div class="summary"><span><strong>12 trips</strong> · <span class="count-ok">11 ready</span> · <span class="count-attn">1 needs attention</span></span><span class="spacer"></span><button class="btn">Skip the 1 that needs attention</button></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Trip</th><th>Status</th><th>Kept time</th><th>Start</th><th>End</th><th>Run time</th><th>Layover after</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td class="trip"><span class="pchip">WS–EN</span>6:48 → <span class="pchip">WR–EN</span><small>Block 102</small></td><td><span class="chip ok">Ready</span></td><td class="num">Westminster · 7:02</td><td class="num">6:41<span class="delta moved">−7 min</span></td><td class="num">7:46<span class="delta">no change</span></td><td class="num">1:05<span class="delta moved">+7 min</span></td><td class="num">0:14<span class="delta">no change</span></td><td class="action"><select><option>Change pattern</option></select></td></tr>
+      <tr class="row-err"><td class="trip"><span class="pchip">WS–EN</span>7:48 → <span class="pchip">WR–EN</span><small>Block 112</small></td><td><span class="chip err">Can't keep 8:02</span><button class="why" aria-expanded="false" aria-label="Why can't this trip keep 8:02?">i</button></td><td class="num">Westminster · 8:02</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="action"><select class="attn"><option>Choose a fix…</option></select></td></tr>
+      <tr><td class="trip"><span class="pchip">WS–EN</span>8:18 → <span class="pchip">WR–EN</span><small>Block 119</small></td><td><span class="chip ok">Ready</span></td><td class="num">Westminster · 8:32</td><td class="num">8:10<span class="delta moved">−8 min</span></td><td class="num">9:16<span class="delta">no change</span></td><td class="num">1:06<span class="delta moved">+8 min</span></td><td class="num">0:09<span class="delta">no change</span></td><td class="action"><select><option>Change pattern</option></select></td></tr>
+    </tbody>
+  </table></div>
+  <footer><span class="left">Trips that need attention are not changed until you choose a fix or skip them.</span><span class="right"><button class="btn">Cancel</button><button class="btn primary" disabled style="opacity:.55">Change 11 trips</button></span></footer>
+</div>
+<ul class="callouts">
+  <li>Each row names the trip by pattern and start time, and shows the new pattern after the arrow. Several trips on one pattern can now be told apart.</li>
+  <li>The Review change button is gone. The table updates when the pattern or the kept stop changes.</li>
+  <li>"Keep the time at" lists only the stops both patterns serve. An Action option can choose a different stop for one trip.</li>
+  <li>For a pattern change, "Keep the start time" reads "Keep the first stop's time".</li>
+</ul>
+
+<!-- ============================ Frame D: Change pattern, one trip ============================ -->
+<p class="frame-title">D. Change pattern, one trip <small>— the same table with one row and no Skip</small></p>
+<div class="dialog" role="dialog" aria-labelledby="d-title" style="width:900px">
+  <header><h2 id="d-title">Change the pattern of this trip</h2><p class="sub"><span class="pchip">WS–EN</span>7:48 · Block 112</p></header>
+  <div class="controls">
+    <label>New pattern<select><option>Southbound: Wagon Road to Englewood</option></select></label>
+    <label>Keep the time at<select><option>Westminster Station</option></select></label>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Status</th><th>Kept time</th><th>Start</th><th>End</th><th>Run time</th><th>Layover after</th><th>Action</th></tr></thead>
+    <tbody><tr class="row-err"><td><span class="chip err">Can't keep 8:02</span><button class="why" aria-expanded="false" aria-label="Why can't this trip keep 8:02?">i</button></td><td class="num">Westminster · 8:02</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="action"><select class="attn"><option>Choose a fix…</option></select></td></tr></tbody>
+  </table></div>
+  <footer><span class="left">2 blocks are affected.</span><span class="right"><button class="btn">Cancel</button><button class="btn primary" disabled style="opacity:.55">Change pattern</button></span></footer>
+</div>
+<ul class="callouts">
+  <li>The Action list has the fixes but no Skip, because cancelling leaves the trip unchanged.</li>
+</ul>
+</body>
+</html>
