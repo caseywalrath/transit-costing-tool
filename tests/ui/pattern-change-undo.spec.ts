@@ -41,10 +41,9 @@ test('Undo last pattern change restores the Trip to its Pattern and first time',
   await page.getByRole('checkbox', { name: `Select ${FULL}`, exact: true }).first().check();
   await runCommand(page, 'trips.changePattern');
 
-  const dialog = page.getByRole('dialog', { name: 'Change pattern of this trip' });
+  const dialog = page.getByRole('dialog', { name: 'Change the pattern of this trip' });
   await expect(dialog).toBeVisible();
-  await dialog.getByLabel('Target pattern').selectOption({ label: SHORT });
-  await dialog.getByRole('button', { name: 'Review change', exact: true }).click();
+  await dialog.getByLabel('New pattern').selectOption({ label: SHORT });
   await dialog.getByRole('button', { name: 'Change pattern', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect((await readTrip(page, golden.tripId)).patternId).toBe(golden.shortId);

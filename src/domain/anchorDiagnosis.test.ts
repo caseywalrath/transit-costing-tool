@@ -44,6 +44,8 @@ describe('diagnoseAnchor', () => {
     const trip = makeTrip(threePoints, [28000, 28720, 29760]);
     const diagnosis = diagnoseAnchor(trip, threePoints, falling, 'p2')!;
     expect(diagnosis).toMatchObject({ kind: 'overlap', earlier: { anchorTime: 29699 }, later: { anchorTime: 29880 } });
+    // 27960 + 1800 (Early throughout) and 28140 + 720 + 900 (second segment in AM Peak) both arrive at 29760.
+    expect(diagnosis.exactDepartures).toEqual([27960, 28140]);
     for (const solution of [diagnosis.earlier!, diagnosis.later!]) expect(recalculateTripWithAnchor(withAnchorTime(trip, 'p2', solution.anchorTime), threePoints, falling, stamp, 'p2').trip.stopTimes[2].time).toBe(solution.anchorTime);
   });
 

@@ -19,6 +19,8 @@ export interface AnchorDiagnosis {
   earlier?: AnchorSolution;
   later?: AnchorSolution;
   boundary?: AnchorBoundary;
+  /** For an overlap: every first departure that reaches the kept time exactly, in time order (Decision 0072 item 12). */
+  exactDepartures?: ServiceSeconds[];
   /** True when recalculating from the Trip's saved first departure gives a valid Trip. */
   firstDepartureWorks: boolean;
 }
@@ -103,5 +105,6 @@ export function diagnoseAnchor(trip: Trip, pattern: RoutePattern, profile: Runti
       }
     }
   }
-  return { anchorPointId, anchorTime, kind, ...(earlier ? { earlier } : {}), ...(later ? { later } : {}), ...(boundary ? { boundary } : {}), firstDepartureWorks };
+  const exactDepartures = kind === 'overlap' ? [...departuresByArrival.get(anchorTime)!].sort((left, right) => left - right) : undefined;
+  return { anchorPointId, anchorTime, kind, ...(exactDepartures ? { exactDepartures } : {}), ...(earlier ? { earlier } : {}), ...(later ? { later } : {}), ...(boundary ? { boundary } : {}), firstDepartureWorks };
 }

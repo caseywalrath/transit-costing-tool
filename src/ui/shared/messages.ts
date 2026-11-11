@@ -1,4 +1,4 @@
-import { formatRuntimeDuration, formatServiceTime } from '../../domain/time';
+import { formatServiceTime } from '../../domain/time';
 import type { AnchorDiagnosis, AnchorSolution } from '../../domain/anchorDiagnosis';
 import { type Node, type Route, type Trip, type ValidationFinding } from '../../domain/types';
 
@@ -91,39 +91,136 @@ function clock(value: number): string {
   return formatServiceTime(value, value % 60 !== 0);
 }
 
-/** A signed difference, shown as the Regenerate review shows it (`formatPreviewTimeChange` in `src/ui/trips/dialogs.tsx`). */
-function signedClock(difference: number): string {
-  const sign = difference > 0 ? '+' : difference < 0 ? '−' : '';
-  // Minutes and seconds, as Decision 0072 shows ("−1:01", "+2:00"): a difference is a duration, not a clock time.
-  const magnitude = Math.abs(difference);
-  return `${sign}${Math.floor(magnitude / 60)}:${String(magnitude % 60).padStart(2, '0')}`;
+/** A duration without a sign: "2 min", or "1:30 min" when it has seconds. */
+function minutesText(seconds: number): string {
+  const magnitude = Math.abs(seconds);
+  return magnitude % 60 === 0 ? `${magnitude / 60} min` : `${Math.floor(magnitude / 60)}:${String(magnitude % 60).padStart(2, '0')} min`;
 }
 
-function solutionText(solution: AnchorSolution): string {
-  return `${clock(solution.anchorTime)} (${signedClock(solution.differenceSeconds)})`;
+/** "2 min earlier" or "1 min later". */
+export function shiftText(difference: number): string {
+  return difference === 0 ? 'no change' : `${minutesText(difference)} ${difference < 0 ? 'earlier' : 'later'}`;
 }
 
 /**
- * One sentence that states why a failed anchor cannot be kept, and the nearest times that can (Decision 0072 item 3). `anchorName` names the
- * timepoint. `segmentLabel` is not used here; `describeAnchorSegmentChanges` uses it for the Details list.
+ * One option of a review row's Action list (Decision 0072 item 8). Ids:
+ * `run`, `keep:<seconds>` (keep the same stop at a nearby time), `keepStart`, `start:<seconds>` (a start time that reaches the kept time),
+ * `band:<bandId>` (a time period for a profile with one period per trip), `skip`.
  */
-export function describeAnchorDiagnosis(diagnosis: AnchorDiagnosis, anchorName: string, segmentLabel: (segmentIndex: number) => string): string {
-  void segmentLabel;
-  const anchor = `Keeping ${anchorName} at ${clock(diagnosis.anchorTime)}`;
-  const solutions = [diagnosis.earlier, diagnosis.later].filter((solution): solution is AnchorSolution => solution !== undefined);
-  if (diagnosis.kind === 'gap' && diagnosis.boundary) {
-    const nearest = solutions.length ? ` Nearest: ${solutions.map(solutionText).join(' or ')}.` : '';
-    return `${anchor} is not possible: runtimes change at ${clock(diagnosis.boundary.time)} (${diagnosis.boundary.fromBand.label} to ${diagnosis.boundary.toBand.label}).${nearest}`;
-  }
-  if (diagnosis.kind === 'overlap') {
-    const because = diagnosis.boundary ? ` because runtimes change at ${clock(diagnosis.boundary.time)}` : '';
-    const nearest = solutions.length ? ` Nearest single solutions: ${solutions.map((solution) => clock(solution.anchorTime)).join(' or ')}.` : '';
-    return `${anchor} is reached from more than one first departure${because}.${nearest}`;
-  }
-  return `${anchor} needs a first departure outside every runtime band.`;
+export interface ProblemAction { id: string; label: string; cost?: string }
+
+/** Decision 0072 items 7 to 11: what a review row shows about a problem. Every fix line matches an action. */
+export interface TripProblemExplanation {
+  chip: string;
+  tone: 'error' | 'warning';
+  headline: string;
+  causes: string[];
+  fixes: string[];
+  /** A Runtimes hint, shown after the fixes with an Open runtimes button. */
+  hint?: string;
+  /** The arrival strip of item 11: reachable times on either side of the kept time. */
+  timeline?: { stopName: string; kept: number; before?: number; after?: number; overlap: boolean };
+  actions: ProblemAction[];
 }
 
-/** The segments whose runtime changes across the band boundary, as `segment: from → to` lines for the Details list (Decision 0072 item 3). */
-export function describeAnchorSegmentChanges(diagnosis: AnchorDiagnosis, segmentLabel: (segmentIndex: number) => string): string[] {
-  return (diagnosis.boundary?.segmentChanges ?? []).map((change) => `${segmentLabel(change.segmentIndex)}: ${formatRuntimeDuration(change.fromSeconds)} → ${formatRuntimeDuration(change.toSeconds)}`);
+export interface TripProblemInput {
+  mode: 'regenerate' | 'patternChange';
+  findings: ValidationFinding[];
+  diagnosis?: AnchorDiagnosis;
+  /** The stop whose time is kept, and whether it is the trip's first stop. */
+  keptStopName: string;
+  keptAtStart: boolean;
+  /** The trip's saved start time. */
+  startTime?: number;
+  bandChoices?: { bandId: string; bandLabel: string; departure: number; distanceSeconds: number }[];
+  bandPickable?: boolean;
+  /** "Westminster Station to Clear Creek" for a segment index of the pattern being calculated. */
+  segmentName: (segmentIndex: number) => string;
+  serviceDayName?: string;
+  /** False in the single-trip dialog, where Cancel leaves the trip unchanged. */
+  allowSkip: boolean;
+}
+
+const ANCHOR_RULE_IDS = new Set(['trip.anchorNoRuntime', 'trip.anchorAmbiguous', 'trip.anchorNearestTie']);
+const RUNTIME_RULE_IDS = new Set(['trip.targetRuntimeUnavailable', 'runtime.noApplicableBand', 'runtime.segmentCountMismatch', 'runtime.noBands']);
+const CHIP_BY_RULE: Record<string, string> = {
+  'trip.targetRuntimeUnavailable': 'No runtimes for this day',
+  'runtime.noApplicableBand': 'Outside time periods',
+  'trip.anchorNodeNotServed': 'Stop not on new pattern',
+  'trip.timeBeforeServiceDay': 'Starts before 0:00',
+  'trip.patternDirectionMismatch': 'Other direction',
+  'trip.departureMissing': 'No start time',
+};
+
+function hintFor(diagnosis: AnchorDiagnosis, segmentName: (segmentIndex: number) => string): string | undefined {
+  const boundary = diagnosis.boundary;
+  if (!boundary?.segmentChanges.length) return undefined;
+  const duration = (seconds: number) => `${Math.floor(Math.abs(seconds) / 60)}:${String(Math.abs(seconds) % 60).padStart(2, '0')}`;
+  const parts = boundary.segmentChanges.map((change) => `${duration(change.toSeconds - change.fromSeconds)} ${change.toSeconds > change.fromSeconds ? 'longer' : 'shorter'} from ${segmentName(change.segmentIndex)}`);
+  const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
+  return `Or make the jump smaller in Runtimes. In ${boundary.toBand.label}, travel takes ${list} than in ${boundary.fromBand.label}.`;
+}
+
+/**
+ * Builds the chip, the Why panel, and the Action list for one review row from fixed templates (Decision 0072 items 7 to 12). A sentence is
+ * included only when the diagnosis holds its data. Returns undefined for a row without findings.
+ */
+export function explainTripProblem(input: TripProblemInput): TripProblemExplanation | undefined {
+  const errors = input.findings.filter((finding) => finding.severity === 'error');
+  const skip: ProblemAction[] = input.allowSkip ? [{ id: 'skip', label: 'Skip this trip', cost: 'leave it unchanged' }] : [];
+  const skipFix = input.allowSkip ? ['Skip this trip and leave it as it is.'] : [];
+  const keepStartLabel = input.mode === 'regenerate' ? `Keep the start time${input.startTime === undefined ? '' : ` (${clock(input.startTime)})`}` : "Keep the first stop's time";
+  const keepStart: ProblemAction[] = input.keptAtStart ? [] : [{ id: 'keepStart', label: keepStartLabel, cost: `${input.keptStopName} will change` }];
+  const keepStartFix = input.keptAtStart ? [] : [`${keepStartLabel} instead. ${input.keptStopName}'s time will change.`];
+  if (!errors.length) {
+    const warning = input.findings[0];
+    if (!warning) return undefined;
+    return { chip: warning.messageKey === 'trip.regenerationBlockOverlap' ? 'Runs into next trip' : 'Check this trip', tone: 'warning', headline: userMessage(warning), causes: [], fixes: ['You can still apply it. Adjust the block afterwards, or keep another time or skip this trip to avoid the overlap.'], actions: [] };
+  }
+  const finding = errors[0];
+  const diagnosis = ANCHOR_RULE_IDS.has(finding.ruleId) ? input.diagnosis : undefined;
+  const stop = input.keptStopName;
+  if (diagnosis) {
+    const kept = clock(diagnosis.anchorTime);
+    const nearby = [diagnosis.earlier, diagnosis.later].filter((solution): solution is AnchorSolution => Boolean(solution)).sort((left, right) => Math.abs(left.differenceSeconds) - Math.abs(right.differenceSeconds));
+    const keepActions: ProblemAction[] = nearby.map((solution) => ({ id: `keep:${solution.anchorTime}`, label: `Keep ${stop} at ${clock(solution.anchorTime)} instead`, cost: shiftText(solution.differenceSeconds) }));
+    const nearbyFix = nearby.length ? [`Keep a nearby time, ${nearby.map((solution) => clock(solution.anchorTime)).join(' or ')}. The trip moves ${[...new Set(nearby.map((solution) => minutesText(solution.differenceSeconds)))].join(' or ')}${nearby.length > 1 && new Set(nearby.map((solution) => Math.abs(solution.differenceSeconds))).size === 1 ? ' either way' : ''}.`] : [];
+    const choiceActions: ProblemAction[] = [];
+    if (diagnosis.kind === 'overlap' && input.bandPickable && input.bandChoices?.length) for (const choice of input.bandChoices) choiceActions.push({ id: `band:${choice.bandId}`, label: `Start at ${clock(choice.departure)} (${choice.bandLabel})`, cost: `${stop} stays ${kept}` });
+    else if (diagnosis.kind === 'overlap' && input.mode === 'regenerate' && diagnosis.exactDepartures) for (const departure of diagnosis.exactDepartures) choiceActions.push({ id: `start:${departure}`, label: `Start at ${clock(departure)}`, cost: `${stop} stays ${kept}` });
+    const hint = hintFor(diagnosis, input.segmentName);
+    const boundaryText = diagnosis.boundary ? `when ${diagnosis.boundary.toBand.label} starts at ${clock(diagnosis.boundary.time)}` : undefined;
+    if (diagnosis.kind === 'gap') {
+      const causes = [
+        boundaryText ? `Travel times get longer ${boundaryText}.` : undefined,
+        diagnosis.earlier && diagnosis.later ? `A trip that starts at ${clock(diagnosis.earlier.firstDeparture)} reaches ${stop} at ${clock(diagnosis.earlier.anchorTime)}. A trip that starts at ${clock(diagnosis.later.firstDeparture)} reaches it at ${clock(diagnosis.later.anchorTime)}. No start time in between lands on ${kept}.` : undefined,
+      ].filter((line): line is string => Boolean(line));
+      return { chip: `Can't keep ${kept}`, tone: 'error', headline: `This trip can't reach ${stop} at exactly ${kept}.`, causes, fixes: [...nearbyFix, ...keepStartFix, ...skipFix], hint, timeline: { stopName: stop, kept: diagnosis.anchorTime, before: diagnosis.earlier?.anchorTime, after: diagnosis.later?.anchorTime, overlap: false }, actions: [...keepActions, ...keepStart, ...skip] };
+    }
+    if (diagnosis.kind === 'overlap') {
+      const starts = choiceActions.map((action) => action.label.replace('Start at ', ''));
+      const causes = [
+        boundaryText ? `Travel times get shorter ${boundaryText}.` : undefined,
+        starts.length ? `A trip that starts at ${starts.join(' and a trip that starts at ')} both reach ${stop} at ${kept}.` : `More than one start time reaches ${stop} at ${kept}.`,
+      ].filter((line): line is string => Boolean(line));
+      const fixes = [...(starts.length ? [`Pick the start time you mean: ${starts.join(' or ')}.`] : []), ...(nearby.length ? [`Keep a nearby time that only one start time reaches: ${nearby.map((solution) => clock(solution.anchorTime)).join(' or ')}.`] : []), ...keepStartFix, ...skipFix];
+      return { chip: 'Two start times fit', tone: 'error', headline: `More than one start time reaches ${stop} at ${kept}.`, causes, fixes, hint, timeline: { stopName: stop, kept: diagnosis.anchorTime, before: diagnosis.earlier?.anchorTime, after: diagnosis.later?.anchorTime, overlap: true }, actions: [...choiceActions, ...keepActions, ...keepStart, ...skip] };
+    }
+    return { chip: 'Outside time periods', tone: 'error', headline: `Keeping ${stop} at ${kept} needs a start time outside your time periods.`, causes: diagnosis.later && !diagnosis.earlier ? [`The earliest a trip can reach ${stop} is ${clock(diagnosis.later.anchorTime)}.`] : diagnosis.earlier && !diagnosis.later ? [`The latest a trip can reach ${stop} is ${clock(diagnosis.earlier.anchorTime)}.`] : [], fixes: [...nearbyFix, ...keepStartFix, ...skipFix], hint: 'Or add a time period in Runtimes that covers this trip.', actions: [...keepActions, ...keepStart, ...skip] };
+  }
+  // A band choice without a diagnosis: one period per trip, the kept time is too far from both periods.
+  if (ANCHOR_RULE_IDS.has(finding.ruleId) && input.bandPickable && input.bandChoices?.length) {
+    const actions = input.bandChoices.map((choice) => ({ id: `band:${choice.bandId}`, label: `Start at ${clock(choice.departure)} (${choice.bandLabel})`, cost: choice.distanceSeconds ? `${minutesText(choice.distanceSeconds)} outside ${choice.bandLabel}` : `uses ${choice.bandLabel} travel times` }));
+    return { chip: 'Choose a time period', tone: 'error', headline: `More than one time period could set this trip's travel times.`, causes: [`Keeping ${stop} needs a start time that falls between two time periods, or in both.`], fixes: ['Pick the time period whose travel times this trip should use.', ...keepStartFix, ...skipFix], actions: [...actions, ...keepStart, ...skip] };
+  }
+  const runtimeProblem = RUNTIME_RULE_IDS.has(finding.ruleId);
+  return {
+    chip: CHIP_BY_RULE[finding.ruleId] ?? "Can't recalculate",
+    tone: 'error',
+    headline: finding.ruleId === 'trip.targetRuntimeUnavailable' && input.serviceDayName ? `This pattern has no runtimes for ${input.serviceDayName}.` : userMessage(finding),
+    causes: [],
+    fixes: [...(runtimeProblem ? ['Assign or extend a runtime profile in Runtimes, then review again.'] : []), ...keepStartFix, ...skipFix],
+    ...(runtimeProblem ? { hint: 'Runtimes are edited in the Runtimes section of this tab.' } : {}),
+    actions: [...keepStart, ...skip],
+  };
 }

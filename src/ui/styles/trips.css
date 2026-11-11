@@ -68,28 +68,63 @@
 .recalculation-bulk select { max-width: 14rem; }
 .recalculation-bulk span { font-weight: var(--font-weight-semibold); margin-right: 0.25rem; }
 .recalculation-bulk .is-selected { background: var(--color-selection); border-color: var(--color-accent); color: var(--color-accent-strong); }
-/* U08: the dialog stays inside the viewport (its 1,300 px table made the backdrop's grid track wider than the screen), and the table area
-   scrolls as a block (the generic dialog flex rule aligned it to the right, so the table's left edge overflowed where it could not be scrolled to). */
-.preview-dialog:has(.recalculation-bulk) { width: min(1320px, 100%); max-width: calc(100vw - 32px); }
-.preview-dialog:has(.recalculation-bulk) .preview-times { display: block; max-height: min(48vh, 480px); }
-.preview-dialog:has(.recalculation-bulk) .preview-times table { min-width: 1300px; }
-.preview-dialog:has(.recalculation-bulk) .preview-times td { white-space: nowrap; }
-.preview-dialog:has(.recalculation-bulk) .preview-times select { max-width: 190px; }
-.preview-dialog:has(.recalculation-bulk) .preview-times .recalculation-change { min-width: 90px; padding-left: var(--space-3); padding-right: 10px; border-left: 1px solid var(--color-border); text-align: right; font-variant-numeric: tabular-nums; }
-.preview-dialog:has(.recalculation-bulk) .preview-times :is(th, td):is(:nth-child(5), :nth-child(7), :nth-child(10)) { padding-left: 10px; padding-right: var(--space-4); }
+/* Trip review (R5, Decisions 0071 and 0072; mock-up docs/implementation/trip-review/). U08 still holds: the dialog stays inside the viewport,
+   and the table area scrolls as a block so its left edge can always be reached. */
+.confirm-dialog.trip-review-dialog { width: min(1180px, 100%); max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); overflow-y: auto; min-width: 0; }
+.confirm-dialog.trip-review-dialog--single { width: min(980px, 100%); }
+/* The generic `.confirm-dialog > div` rule makes direct child divs right-aligned flex rows (dialogs.css); these are laid out here instead. */
+.confirm-dialog.trip-review-dialog > div.preview-times { display: block; max-height: min(52vh, 560px); }
+.confirm-dialog.trip-review-dialog > div.recalculation-bulk, .confirm-dialog.trip-review-dialog > div.trip-review-controls { justify-content: start; }
+.confirm-dialog.trip-review-dialog > div.trip-review-summary { justify-content: space-between; }
+.trip-review-dialog .preview-times table { min-width: 1040px; border-collapse: collapse; }
+.trip-review-dialog--single .preview-times table { min-width: 860px; }
+.trip-review-table th { position: sticky; top: 0; z-index: 1; background: var(--color-surface-2); font-size: var(--font-size-caption); color: var(--color-text-muted); text-align: left; white-space: nowrap; }
+.trip-review-table td { white-space: nowrap; vertical-align: top; }
+.trip-review-table td.num { font-variant-numeric: tabular-nums; }
+.trip-review-delta { display: block; font-size: var(--font-size-caption); color: var(--color-text-muted); }
+.trip-review-delta--moved { color: var(--color-accent-strong); font-weight: var(--font-weight-semibold); }
+.trip-review-trip { font-weight: var(--font-weight-semibold); }
+.trip-review-trip small { display: block; font-weight: normal; color: var(--color-text-muted); font-size: var(--font-size-caption); }
+.trip-review-pattern { display: inline-block; margin-right: var(--space-1); padding: 0 5px; border: 1px solid var(--color-border); border-radius: var(--radius-sm, 4px); background: var(--color-sunken); font-size: var(--font-size-chip, 12px); font-weight: var(--font-weight-semibold); }
+.trip-review-chip { display: inline-block; padding: 1px 8px; border: 1px solid; border-radius: 10px; font-size: var(--font-size-caption); font-weight: var(--font-weight-semibold); }
+.trip-review-chip--ok { color: var(--color-ok); background: var(--color-ok-soft); border-color: currentColor; }
+.trip-review-chip--error { color: var(--color-danger); background: var(--color-danger-soft); border-color: currentColor; }
+.trip-review-chip--warn { color: var(--color-warn); background: var(--color-warn-soft); border-color: var(--color-warn-border); }
+.trip-review-chip--skip { color: var(--color-text-muted); background: var(--color-sunken); border-color: var(--color-border); }
+.trip-review-why-button { display: inline-grid; place-items: center; width: 24px; height: 24px; min-height: 24px; margin-left: var(--space-1); padding: 0; border: 1px solid var(--color-border); border-radius: 50%; background: var(--color-surface); color: var(--color-accent); font-size: var(--font-size-caption); font-weight: var(--font-weight-bold); vertical-align: middle; }
+.trip-review-why-button[aria-expanded="true"] { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-surface); }
+.trip-review-row--attention td { background: color-mix(in srgb, var(--color-danger-soft) 60%, var(--color-surface)); }
+.trip-review-row--skipped td { color: var(--color-text-subtle); }
+.trip-review-table td.trip-review-kept { min-width: 190px; }
+.trip-review-kept select { width: auto; min-width: 0; max-width: 140px; vertical-align: middle; }
+.trip-review-kept-time { display: inline-block; margin-left: var(--space-2); font-variant-numeric: tabular-nums; vertical-align: middle; }
+.trip-review-action select { min-width: 220px; max-width: 320px; }
+.trip-review-action select.trip-review-action--attention { border-color: var(--color-danger); }
+.trip-review-why-row td { padding: 0 var(--space-3) var(--space-3); background: var(--color-surface); white-space: normal; }
+.trip-review-why { max-width: 640px; margin-left: 120px; padding: var(--space-3) 14px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface); box-shadow: 0 6px 18px rgb(17 35 45 / 14%); }
+.trip-review-why h3 { margin: 0 0 6px; font-size: var(--font-size-body, 15px); }
+.trip-review-why p { margin: 0 0 var(--space-2); }
+.trip-review-why ul { margin: var(--space-1) 0 var(--space-2); padding-left: 18px; }
+.trip-review-why__hint { padding-top: var(--space-2); border-top: 1px solid var(--color-border-soft); color: var(--color-text-muted); font-size: var(--font-size-label); }
+.trip-review-why .link-button { padding: 0; border: 0; background: none; color: var(--color-accent); text-decoration: underline; min-height: 0; }
+.trip-review-timeline { margin: var(--space-1) 0 var(--space-3); color: var(--color-text-muted); font-size: var(--font-size-caption); }
+.trip-review-timeline__bar { position: relative; height: 14px; margin: var(--space-1) 0 2px; border-radius: 3px; background: var(--color-sunken); }
+.trip-review-timeline__reach { position: absolute; top: 0; bottom: 0; background: var(--color-block-0-border); }
+.trip-review-timeline__mark { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--color-danger); }
+.trip-review-timeline__labels { position: relative; height: 16px; }
+.trip-review-timeline__labels span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.trip-review-timeline__kept { color: var(--color-danger); }
+.trip-review-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); margin: var(--space-2) 0; padding: var(--space-2) 10px; border: 1px solid var(--color-border-soft); background: var(--color-surface-2); }
+.trip-review-count--ok { color: var(--color-ok); }
+.trip-review-count--attention { color: var(--color-danger); font-weight: var(--font-weight-semibold); }
+.trip-review-controls { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
+.trip-review-footer { align-items: center; }
+.trip-review-footer__note { margin-right: auto; color: var(--color-text-muted); font-size: var(--font-size-label); }
 .recalculation-fallback { display: block; margin-top: var(--space-1); color: var(--color-warn); font-size: var(--font-size-caption); white-space: normal; }
-.recalculation-row-error { display: block; margin-top: var(--space-1); color: var(--color-danger); font-size: var(--font-size-caption); white-space: normal; }
-.recalculation-row-warning td { background: var(--color-warn-soft); }
-.recalculation-row-warning td:first-child { background: var(--color-warn-soft); }
-.recalculation-row-warning-note { display: block; margin-top: var(--space-1); color: var(--color-warn); font-size: var(--font-size-caption); white-space: normal; }
-.confirm-dialog p.recalculation-fallback-summary { margin: 10px 0; padding: var(--space-2) 10px; border: 1px solid var(--color-warn-border); background: var(--color-warn-soft); color: var(--color-warn); font-size: var(--font-size-label); }
 .dialog-form { display: contents; }
 .confirm-dialog > div.field-error[role="alert"], .confirm-dialog > .dialog-form > div.field-error[role="alert"] { display: block; margin: var(--space-3) 0; padding: 9px var(--space-3); border: 1px solid var(--color-danger); background: var(--color-danger-soft); font-size: var(--font-size-label); line-height: 1.4; }
 .confirm-dialog > div.field-error[role="alert"] p, .confirm-dialog > .dialog-form > div.field-error[role="alert"] p { margin: 0 0 6px; }
 .confirm-dialog > div.field-error[role="alert"] button, .confirm-dialog > .dialog-form > div.field-error[role="alert"] button { margin-top: var(--space-1); }
-.recalculation-band-choice { display: flex; align-items: end; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-2) 0; }
-.recalculation-band-choice label { display: grid; gap: var(--space-1); min-width: min(390px, 100%); max-width: 100%; }
-.recalculation-band-choice select { width: 100%; color: var(--color-text); }
 
 /* Trips tab (UR-6c): Runtimes and Trips are work surfaces; the selection bar sits above the table. */
 .work-surface__context { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); min-width: 0; }

@@ -24,7 +24,8 @@ import { type RouteNavigationGuard } from '../shared/types';
 import { type RuntimeEditorHandle, type RuntimeEditorState, RuntimeEditor2, RouteRuntimeMethodDialog } from './RuntimeEditor';
 import { type PlannedFrequencyService, type PlanComparisonResult } from '../../application/plannedFrequencyService';
 import { PlanStatusChip } from './PlanStatusChip';
-import { type BuildTripsValues, EMPTY_BUILD_VALUES, type NewRuntimeDialog, TripBlockAssignmentDialog, TripBlockUnassignmentDialog, BuildTripsDrawer, RuntimeProfileDialog2, DeleteRuntimeProfileDialog, DeleteTripsDialog, RecalculationDialog, RuntimeDayCopyDialog, SegmentRuntimeDialog, TripDayCopyDialog, BatchPatternChangeDialog, TripPatternChangeDialog, StartTimeChangeDialog } from './dialogs';
+import { type BuildTripsValues, EMPTY_BUILD_VALUES, type NewRuntimeDialog, TripBlockAssignmentDialog, TripBlockUnassignmentDialog, BuildTripsDrawer, RuntimeProfileDialog2, DeleteRuntimeProfileDialog, DeleteTripsDialog, RuntimeDayCopyDialog, SegmentRuntimeDialog, TripDayCopyDialog, StartTimeChangeDialog } from './dialogs';
+import { BatchPatternChangeDialog, RecalculationDialog as TripRecalculationDialog, type ReviewContext, TripPatternChangeDialog } from './reviewDialogs';
 import { type TripBlockAssignmentDraft, type TripBlockOption, type TripSelectionRequest, formatTripTableClock, ScheduleTable } from './ScheduleTable';
 import { alternatingFrom, combineSelection, invertSelection, tripIdsMatching } from '../../application/tripSelection';
 import { download } from '../shared/download';
@@ -645,6 +646,12 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   function closeBatchPatternChange() { setBatchPatternChangeOpen(false); window.setTimeout(() => tripsActionsRef.current?.focus()); }
   function closeBuildDrawer() { setBuildOpen(false); window.setTimeout(() => buildTripsButtonRef.current?.focus()); }
   function closeTripPatternChange() { setTripPatternChangeOpen(false); window.setTimeout(() => tripsActionsRef.current?.focus()); }
+  /** Shared by the Regenerate and Change pattern reviews (R5). "Open runtimes" closes the review and opens the Runtimes section. */
+  const reviewContext: ReviewContext = {
+    patterns, nodes: aggregate.nodes, directionName: directions.find((direction) => direction.id === directionId)?.name, serviceDayName: selectedDay?.name,
+    blockLabels: new Map([...tripBlockByTripId].map(([tripId, block]) => [tripId, `Block ${block.label}`])),
+    onOpenRuntimes: () => { setRecalculationTripIds([]); setTripPatternChangeOpen(false); setBatchPatternChangeOpen(false); setRuntimesSectionOpen(true); },
+  };
   /** Opens or closes the Runtimes section and remembers the choice. Closing is refused while the editor has unsaved edits. */
   function setRuntimesSectionOpen(open: boolean) {
     if (!open && (runtimeEditorState.dirty || runtimeEditorState.saving)) return;
@@ -887,11 +894,11 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     {buildOpen && <BuildTripsDrawer tripService={tripService} plannedFrequencyService={plannedFrequencyService} scenarioId={records.scenario.id} routeId={aggregate.route.id} serviceDayId={serviceDayId} tripProfileId={tripProfileId} patterns={patterns} nodes={aggregate.nodes} profileName={selectedProfile?.name} initialValues={buildValues.current} onValuesChange={(values) => { buildValues.current = values; }} onDone={async () => { buildValues.current = EMPTY_BUILD_VALUES; closeBuildDrawer(); clearTripShiftHistory(); await loadTrips(); }} onClose={closeBuildDrawer} />}
     {tripDeletion && <DeleteTripsDialog tripCount={tripDeletion.tripIds.length} affectedBlockCount={tripDeletion.affectedBlockIds.length} onDelete={() => void deleteTrips()} onClose={() => setTripDeletion(undefined)} busy={busy} />}
     {startTimeReview && <StartTimeChangeDialog patternName={startTimeReview.patternName} fromSeconds={startTimeReview.fromSeconds} toSeconds={startTimeReview.toSeconds} preview={startTimeReview.preview} busy={busy} onApply={() => void applyStartTimeChange(startTimeReview.preview)} onClose={() => setStartTimeReview(undefined)} />}
-    {recalculationTripIds.length > 0 && <RecalculationDialog tripService={tripService} tripIds={recalculationTripIds} trips={trips} patterns={aggregate.patterns} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} onDone={finishRecalculation} onClose={() => setRecalculationTripIds([])} />}
+    {recalculationTripIds.length > 0 && <TripRecalculationDialog tripService={tripService} tripIds={recalculationTripIds} trips={trips} context={reviewContext} onDone={finishRecalculation} onClose={() => setRecalculationTripIds([])} />}
     {runtimeCopyOpen && selectedDay && <RuntimeDayCopyDialog tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} routeName={aggregate.route.name || 'Untitled route'} targetDay={selectedDay} days={days} patterns={aggregate.patterns.filter(isUsablePattern)} onDone={completeRuntimeCopy} onClose={closeRuntimeCopy} onError={onError} />}
     {tripCopyOpen && selectedDay && <TripDayCopyDialog tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} tripProfileId={tripProfileId} routeName={aggregate.route.name || 'Untitled route'} tripProfileName={(records.tripProfiles ?? []).find((profile) => profile.id === tripProfileId)?.name || 'trip profile'} targetDay={selectedDay} days={days} patterns={aggregate.patterns} onDone={completeTripCopy} onClose={closeTripCopy} onError={onError} />}
-    {tripPatternChangeOpen && selectedTrips.length === 1 && <TripPatternChangeDialog tripService={tripService} trip={selectedTrips[0]!} directionId={directionId} patterns={patterns} onDone={completeTripCopy} onClose={closeTripPatternChange} />}
-    {batchPatternChangeOpen && <BatchPatternChangeDialog tripService={tripService} tripIds={selectedTripIds} patterns={patterns} trips={trips} nodes={aggregate.nodes} onDone={completeTripCopy} onClose={closeBatchPatternChange} onError={onError} />}
+    {tripPatternChangeOpen && selectedTrips.length === 1 && <TripPatternChangeDialog tripService={tripService} trip={selectedTrips[0]!} directionId={directionId} context={reviewContext} onDone={completeTripCopy} onClose={closeTripPatternChange} />}
+    {batchPatternChangeOpen && <BatchPatternChangeDialog tripService={tripService} tripIds={selectedTripIds} trips={trips} context={reviewContext} onDone={completeTripCopy} onClose={closeBatchPatternChange} />}
   </div>;
 }
 
