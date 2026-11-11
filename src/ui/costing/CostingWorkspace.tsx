@@ -109,6 +109,10 @@ export function sortCostBasisOptions(options: readonly CostBasisOption[], kind: 
 }
 const toBasis = (option: CostBasisOption): CostBasis => option.kind === 'blocked' ? { kind: 'blocked', blockingScenarioId: option.id } : { kind: 'estimated', tripProfileId: option.id };
 /** The cost basis remembered for a Scenario on this device (Decision 0051 item 7). Never in a backup. */
+/** Whether the Vehicle requirement section was left open on this device. Collapsed unless the stored value is exactly `{ "open": true }`. */
+export const VEHICLE_REQUIREMENT_OPEN_PREFERENCE_KEY = 'transit-costing-tool.vehicle-requirement-open.v1';
+function storedVehicleRequirementOpen(): boolean { return readStoredRecord(VEHICLE_REQUIREMENT_OPEN_PREFERENCE_KEY).open === true; }
+function rememberVehicleRequirementOpen(open: boolean) { try { localStorage.setItem(VEHICLE_REQUIREMENT_OPEN_PREFERENCE_KEY, JSON.stringify({ open })); } catch { /* UI preference only. */ } }
 function rememberedBasis(scenarioId: string): string | undefined { return storedText(readStoredRecord(COST_BASIS_PREFERENCE_KEY)[scenarioId]); }
 function rememberBasis(scenarioId: string, value: string) {
   try { localStorage.setItem(COST_BASIS_PREFERENCE_KEY, JSON.stringify({ ...readStoredRecord(COST_BASIS_PREFERENCE_KEY), [scenarioId]: value })); } catch { /* UI preference only. */ }
@@ -120,6 +124,8 @@ function listText(names: string[]): string {
 
 export function CostingWorkspace({ scopeSlot, costingService, scenario, projectName, serviceDays, tripProfiles, onError, onRegisterNavigationGuard }: Props) {
   const [basisOptions, setBasisOptions] = useState<CostBasisOption[]>([]);
+  const [vehicleRequirementOpen, setVehicleRequirementOpen] = useState(storedVehicleRequirementOpen);
+  function setVehicleRequirementSectionOpen(open: boolean) { setVehicleRequirementOpen(open); rememberVehicleRequirementOpen(open); }
   const [basisValue, setBasisValue] = useState('');
   const [assumptions, setAssumptions] = useState<CostingAssumptionsInput>(() => initialAssumptions());
   const [loadedAssumptions, setLoadedAssumptions] = useState<CostingAssumptionsInput>();
@@ -398,7 +404,7 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
       </WorkSurface>
     </div>
 
-    {result?.basis === 'estimated' && result.dailyRows.some((row) => row.impliedService?.length) && <WorkSurface title="Vehicle requirement" ariaLabel="Vehicle requirement" subtitle={tripProfileName ? `Trip profile ${tripProfileName}` : undefined}>
+    {result?.basis === 'estimated' && result.dailyRows.some((row) => row.impliedService?.length) && <WorkSurface title="Vehicle requirement" ariaLabel="Vehicle requirement" collapse={{ open: vehicleRequirementOpen, onToggle: setVehicleRequirementSectionOpen, id: 'vehicle-requirement-body' }} subtitle={tripProfileName ? `Trip profile ${tripProfileName}` : undefined}>
       <CycleCalculator key={basisValue} result={result} rate={selectedYearResult?.appliedRateUsdPerRevenueHour} disabled={saving || !factorProfileId}
         onUseLayover={(serviceDayId, fraction) => setFactors((current) => setEstimateFactor(current, serviceDayId, 'layoverFraction', Number(fraction.toFixed(6))))} />
     </WorkSurface>}
