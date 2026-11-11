@@ -1,6 +1,7 @@
 import type { Block, DurationSeconds, GenerateTripsRequest, RoutePattern, RuntimeBand, RuntimeProfile, ScheduledPoint, ServiceSeconds, Trip, TripGenerationSet, ValidationFinding } from './types';
 import { metadata, newId, withUpdatedAt } from './ids';
 import { propagatePatternTimes, propagatePatternTimesWithBand, resolveSegmentStartBand, selectRuntimeBand } from './runtime';
+import { diagnoseAnchor, type AnchorDiagnosis } from './anchorDiagnosis';
 
 export class TripGenerationError extends Error {
   constructor(readonly findings: ValidationFinding[]) { super(findings.map((item) => item.messageKey).join('; ') || 'Trip generation failed'); this.name = 'TripGenerationError'; }
@@ -249,6 +250,8 @@ export interface TripReviewRow {
   bandChoices?: AnchorBandChoice[];
   bandPickable?: boolean;
   bandSelection?: RecalculationBandSelection;
+  /** Decision 0072. Present for a failed anchor (see `ANCHOR_DIAGNOSIS_RULE_IDS`) with an anchor that is not the first point. */
+  diagnosis?: AnchorDiagnosis;
 }
 export interface RecalculationReviewInputs {
   anchorByTripId?: Record<string, string>;
@@ -526,7 +529,10 @@ export function shiftTrips(trips: Trip[], tripIds: string[], offsetSeconds: Dura
   });
 }
 
-export interface PatternChangePreview { tripId: string; sourcePatternId: string; targetPatternId: string; oldStopTimes: ScheduledPoint[]; newStopTimes?: ScheduledPoint[]; finding?: ValidationFinding; /** Blocks referencing the trip require follow-up validation after a timing/pattern change. */ affectedBlockIds?: string[]; /** The anchor node whose time was kept (Decision 0067). Set whenever an anchor was resolved. */ anchorNodeId?: string; anchorTime?: ServiceSeconds; /** Set on a batch change for a Trip the request skips (Decision 0071 item 2). Such a change has no times and no finding. */ skipped?: true; /** Band choices for a single-band ambiguity. Absent for segment-start and blended profiles, which have no picker. */ bandChoices?: AnchorBandChoice[]; }
+export interface PatternChangePreview { tripId: string; sourcePatternId: string; targetPatternId: string; oldStopTimes: ScheduledPoint[]; newStopTimes?: ScheduledPoint[]; finding?: ValidationFinding; /** Blocks referencing the trip require follow-up validation after a timing/pattern change. */ affectedBlockIds?: string[]; /** The anchor node whose time was kept (Decision 0067). Set whenever an anchor was resolved. */ anchorNodeId?: string; anchorTime?: ServiceSeconds; /** Set on a batch change for a Trip the request skips (Decision 0071 item 2). Such a change has no times and no finding. */ skipped?: true; /** Band choices for a single-band ambiguity. Absent for segment-start and blended profiles, which have no picker. */ bandChoices?: AnchorBandChoice[]; /** Decision 0072. Present for a failed anchor whose finding is in `ANCHOR_DIAGNOSIS_RULE_IDS`. Its `firstDepartureWorks` describes the seed, not the Trip, so a pattern change does not use it. */ diagnosis?: AnchorDiagnosis; }
+
+/** The anchor findings that Decision 0072 explains with `diagnoseAnchor`. Other findings (for example a missing time) get no diagnosis. */
+export const ANCHOR_DIAGNOSIS_RULE_IDS: ReadonlySet<string> = new Set(['trip.anchorNoRuntime', 'trip.anchorAmbiguous', 'trip.anchorNearestTie']);
 
 export interface PatternChangeOptions {
   /** The Pattern the Trip is on now. Required when an anchor node is given. */
@@ -563,6 +569,8 @@ export function previewPatternChange(trip: Trip, targetPattern: RoutePattern, pr
   const base: PatternChangePreview = { tripId: trip.id, sourcePatternId: trip.patternId, targetPatternId: targetPattern.id, oldStopTimes: [...trip.stopTimes], anchorNodeId, anchorTime };
   // Seed as a build does (`generateAuthoritativeTrips`): every point carries the anchor time, then the anchor method calculates the rest.
   const seed: Trip = { ...trip, patternId: targetPattern.id, stopTimes: targetPattern.points.map((point, sequence) => ({ patternPointId: point.id, sequence, time: anchorTime })) };
+  // Decision 0072: a failed anchor carries the diagnosis of the seed, so the planner sees the nearest reachable times and the cause.
+  const diagnose = (finding: ValidationFinding): { diagnosis?: AnchorDiagnosis } => ANCHOR_DIAGNOSIS_RULE_IDS.has(finding.ruleId) ? { diagnosis: diagnoseAnchor(seed, targetPattern, profile, targetPoint.id, now) } : {};
   let newStopTimes: ScheduledPoint[];
   try {
     newStopTimes = recalculateTripWithAnchor(seed, targetPattern, profile, now, targetPoint.id, chosenBandId).trip.stopTimes;
@@ -570,9 +578,9 @@ export function previewPatternChange(trip: Trip, targetPattern: RoutePattern, pr
     if (error instanceof AnchorBandChoiceError) {
       // Segment-start and blended profiles list their candidates in the finding only. The planner cannot pick a band for them (Decision 0067 item 5).
       const pickable = profile.calculationMethod === undefined || profile.calculationMethod === 'singleBand';
-      return { ...base, finding: error.findings[0], ...(pickable ? { bandChoices: error.choices } : {}) };
+      return { ...base, finding: error.findings[0], ...(pickable ? { bandChoices: error.choices } : {}), ...diagnose(error.findings[0]) };
     }
-    if (error instanceof TripGenerationError) return { ...base, finding: error.findings[0] };
+    if (error instanceof TripGenerationError) return { ...base, finding: error.findings[0], ...diagnose(error.findings[0]) };
     throw error;
   }
   const negativeIndex = newStopTimes.findIndex((point) => point.time < 0);

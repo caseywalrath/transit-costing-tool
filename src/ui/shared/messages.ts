@@ -1,4 +1,5 @@
-import { formatServiceTime } from '../../domain/time';
+import { formatRuntimeDuration, formatServiceTime } from '../../domain/time';
+import type { AnchorDiagnosis, AnchorSolution } from '../../domain/anchorDiagnosis';
 import { type Node, type Route, type Trip, type ValidationFinding } from '../../domain/types';
 
 export function messages(findings: ValidationFinding[], entityId: string, field?: string) {
@@ -72,9 +73,57 @@ export const USER_FACING_VALIDATION_MESSAGES: Record<string, string> = {
   'trip.anchorAmbiguous': 'The fixed timepoint can be reached from more than one first departure. Choose another anchor or adjust the runtime bands.',
   'trip.anchorNodeNotServed': 'The anchor stop is not served by both patterns. Choose a stop that both patterns serve.',
   'trip.csvPointSetInvalid': 'Each row must contain exactly the timepoints for its pattern.',
+  'trip.targetRuntimeUnavailable': 'The target pattern has no runtime profile for this service day. Assign one in Runtimes.',
+  'trip.anchorNearestTie': 'Two runtime bands are equally close to the calculated departure. Choose a band or another anchor.',
+  'trip.anchorBandChoiceInvalid': 'The chosen runtime band no longer applies. Review the trip again.',
+  'trip.patternRouteMismatch': 'Choose a pattern on the same route.',
+  'trip.anchorMissing': 'The anchor timepoint is not on this pattern. Choose another anchor.',
+  'trip.anchorTimeMissing': 'This trip has no saved time at the anchor timepoint. Choose another anchor.',
 };
 
 export function userMessage(finding: ValidationFinding) {
   if (finding.messageKey === 'trip.regenerationBlockOverlap') return `Block ${finding.parameters?.blockLabel ?? ''}:${finding.parameters?.precedingTripSelected ? `trip ends after the next departure at ${formatServiceTime(Number(finding.parameters.nextDeparture))}` : `trip departs before the preceding trip ends at ${formatServiceTime(Number(finding.parameters?.precedingEnd))}`}.`;
   return USER_FACING_VALIDATION_MESSAGES[finding.messageKey] ?? 'Review this item and correct it before trying again.';
+}
+
+/** A clock time as the interface shows it: seconds appear only when they are not zero. */
+function clock(value: number): string {
+  return formatServiceTime(value, value % 60 !== 0);
+}
+
+/** A signed difference, shown as the Regenerate review shows it (`formatPreviewTimeChange` in `src/ui/trips/dialogs.tsx`). */
+function signedClock(difference: number): string {
+  const sign = difference > 0 ? '+' : difference < 0 ? '−' : '';
+  // Minutes and seconds, as Decision 0072 shows ("−1:01", "+2:00"): a difference is a duration, not a clock time.
+  const magnitude = Math.abs(difference);
+  return `${sign}${Math.floor(magnitude / 60)}:${String(magnitude % 60).padStart(2, '0')}`;
+}
+
+function solutionText(solution: AnchorSolution): string {
+  return `${clock(solution.anchorTime)} (${signedClock(solution.differenceSeconds)})`;
+}
+
+/**
+ * One sentence that states why a failed anchor cannot be kept, and the nearest times that can (Decision 0072 item 3). `anchorName` names the
+ * timepoint. `segmentLabel` is not used here; `describeAnchorSegmentChanges` uses it for the Details list.
+ */
+export function describeAnchorDiagnosis(diagnosis: AnchorDiagnosis, anchorName: string, segmentLabel: (segmentIndex: number) => string): string {
+  void segmentLabel;
+  const anchor = `Keeping ${anchorName} at ${clock(diagnosis.anchorTime)}`;
+  const solutions = [diagnosis.earlier, diagnosis.later].filter((solution): solution is AnchorSolution => solution !== undefined);
+  if (diagnosis.kind === 'gap' && diagnosis.boundary) {
+    const nearest = solutions.length ? ` Nearest: ${solutions.map(solutionText).join(' or ')}.` : '';
+    return `${anchor} is not possible: runtimes change at ${clock(diagnosis.boundary.time)} (${diagnosis.boundary.fromBand.label} to ${diagnosis.boundary.toBand.label}).${nearest}`;
+  }
+  if (diagnosis.kind === 'overlap') {
+    const because = diagnosis.boundary ? ` because runtimes change at ${clock(diagnosis.boundary.time)}` : '';
+    const nearest = solutions.length ? ` Nearest single solutions: ${solutions.map((solution) => clock(solution.anchorTime)).join(' or ')}.` : '';
+    return `${anchor} is reached from more than one first departure${because}.${nearest}`;
+  }
+  return `${anchor} needs a first departure outside every runtime band.`;
+}
+
+/** The segments whose runtime changes across the band boundary, as `segment: from → to` lines for the Details list (Decision 0072 item 3). */
+export function describeAnchorSegmentChanges(diagnosis: AnchorDiagnosis, segmentLabel: (segmentIndex: number) => string): string[] {
+  return (diagnosis.boundary?.segmentChanges ?? []).map((change) => `${segmentLabel(change.segmentIndex)}: ${formatRuntimeDuration(change.fromSeconds)} → ${formatRuntimeDuration(change.toSeconds)}`);
 }

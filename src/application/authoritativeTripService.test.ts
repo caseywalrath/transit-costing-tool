@@ -358,3 +358,37 @@ describe('authoritative trip workflow', () => {
     expect(ordered.length).toBe(502); expect(ordered[0].stopTimes[0].time).toBe(0); expect(ordered.at(-1)?.stopTimes[0].time).toBeGreaterThanOrEqual(29940);
   });
 });
+
+describe('anchor diagnosis on review rows and pattern changes (Decision 0072 item 2)', () => {
+  // A rising runtime at 8:00 leaves no first departure that reaches 8:16 at the third stop (the gap of `src/domain/anchorDiagnosis.test.ts`).
+  const threeStops = (id: string): RoutePattern => ({ ...metadata(), id, scenarioId: 'scenario', routeId: 'route', name: id, directionId: 'southbound', sequence: 0, points: ['a', 'b', 'c'].map((nodeId, sequence) => ({ id: `${id}-${nodeId}`, nodeId, sequence, cumulativeMiles: sequence })) });
+  const risingProfile = (patternId: string): RuntimeProfile => ({ ...metadata(), id: `rp-${patternId}`, scenarioId: 'scenario', routeId: 'route', patternId, name: 'Rising', calculationMethod: 'segmentStart', bands: [
+    { id: 'am', label: 'AM Peak', sequence: 0, startTime: 0, endTime: 28800, segmentRuntimeSeconds: [600, 900] },
+    { id: 'pm', label: 'PM', sequence: 1, startTime: 28800, endTime: 90000, segmentRuntimeSeconds: [720, 1080] },
+  ] });
+  const assignment = (patternId: string): RuntimeAssignment => ({ ...metadata(), id: `a-${patternId}`, scenarioId: 'scenario', patternId, serviceDayId: 'weekday', runtimeProfileId: `rp-${patternId}` });
+
+  async function gapFixture() {
+    const repository = new AuthoritativeFake([threeStops('src'), threeStops('tgt')], [risingProfile('src'), risingProfile('tgt')]);
+    repository.assignments.push(assignment('src'), assignment('tgt'));
+    const trip = { ...metadata(), id: 'trip-src', scenarioId: 'scenario', routeId: 'route', serviceDayId: 'weekday', tripProfileId: 'trip-profile', patternId: 'src', stopTimes: [28230, 28830, 29760].map((time, sequence) => ({ patternPointId: `src-${'abc'[sequence]}`, sequence, time })), provenance: { kind: 'generated', manuallyChangedFields: [] } } as Trip;
+    await repository.saveTrips([trip]);
+    return { repository, service: new TripGenerationService(repository), trip };
+  }
+
+  it('gives a failed review row the diagnosis of its anchor, and a ready row none', async () => {
+    const { service, trip } = await gapFixture();
+    const review = await service.reviewRecalculation([trip.id], { anchorByTripId: { [trip.id]: 'src-c' } });
+    expect(review.rows[0]).toMatchObject({ status: 'error', diagnosis: { kind: 'gap', anchorTime: 29760, earlier: { anchorTime: 29699 }, later: { anchorTime: 29880 } } });
+    const firstStop = await service.reviewRecalculation([trip.id], { anchorByTripId: { [trip.id]: 'src-a' } });
+    expect(firstStop.rows[0]).toMatchObject({ status: 'ready' });
+    expect(firstStop.rows[0].diagnosis).toBeUndefined();
+  });
+
+  it('gives a single-Trip pattern change that fails at its anchor the diagnosis of the target seed', async () => {
+    const { service, trip } = await gapFixture();
+    const review = await service.previewTripPatternChange(trip.id, 'tgt', 'southbound', { anchorNodeId: 'c' });
+    expect(review.finding?.ruleId).toBe('trip.anchorNoRuntime');
+    expect(review.diagnosis).toMatchObject({ kind: 'gap', anchorTime: 29760, earlier: { anchorTime: 29699 }, later: { anchorTime: 29880 } });
+  });
+});

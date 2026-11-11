@@ -1,6 +1,7 @@
 import type { TripGenerationRepository } from './ports';
 import type { GenerateTripsPreview, PatternChangePreview, RecalculationPreview, RecalculationReview, RecalculationReviewInputs, TripReviewRow } from '../domain/trips';
-import { adjustBlockReferences, AnchorBandChoiceError, applyPatternChange, calculateRecalculationConnections, calculateRecalculationImpact, createAuthoritativeTrip, findExactTripDuplicates, generateAuthoritativeTrips, generateTrips, markTripRecalculated, previewPatternChange, recalculateTripWithAnchor, sharedAnchorNodes, shiftTrips, TripGenerationError, validateGenerateTripsRequest, validateTrip, type RecalculationBandSelection } from '../domain/trips';
+import { adjustBlockReferences, ANCHOR_DIAGNOSIS_RULE_IDS, AnchorBandChoiceError, applyPatternChange, calculateRecalculationConnections, calculateRecalculationImpact, createAuthoritativeTrip, findExactTripDuplicates, generateAuthoritativeTrips, generateTrips, markTripRecalculated, previewPatternChange, recalculateTripWithAnchor, sharedAnchorNodes, shiftTrips, TripGenerationError, validateGenerateTripsRequest, validateTrip, type RecalculationBandSelection } from '../domain/trips';
+import { diagnoseAnchor, type AnchorDiagnosis } from '../domain/anchorDiagnosis';
 import type { AddTripRequest, Block, BlockingScenario, GenerateTripsRequest, ServiceSeconds, RuntimeAssignment, RuntimeProfile, RoutePattern, Trip, TripGenerationSet, TripProfile, TripRegenerationUndo, TripTableImportRow, ValidationFinding } from '../domain/types';
 import type { TripTableImportPreview } from './ports';
 import { assertReviewCurrent, fingerprint } from './reviewToken';
@@ -42,7 +43,7 @@ function hasSameScheduledPoints(trip: Trip, recalculated: Trip): boolean {
 export interface TripPatternChangeReview extends PatternChangePreview { anchorNodeId?: string; chosenBandId?: string; /** The planner's time at the anchor node. Named apart from `PatternChangePreview.anchorTime`, which is the kept time. */ anchorTimeInput?: ServiceSeconds; sourceSignature?: string }
 
 /** One Trip's result from `recalculateEach`: either a recalculated Trip or a Trip-generation error (Decision 0071). */
-interface RecalculationOutcome { trip: Trip; result?: ReturnType<typeof recalculateTripWithAnchor>; error?: TripGenerationError; profile?: RuntimeProfile }
+interface RecalculationOutcome { trip: Trip; result?: ReturnType<typeof recalculateTripWithAnchor>; error?: TripGenerationError; profile?: RuntimeProfile; /** The Trip as recalculated: the saved Trip, or with the planner's anchor time at the anchor point. Set once the Pattern is read (Decision 0072). */ seed?: Trip; pattern?: RoutePattern }
 
 /** The review inputs that choose the anchor node and the band (Decision 0067). */
 export interface TripPatternChangeInputs { anchorNodeId?: string; chosenBandId?: string; anchorTime?: ServiceSeconds }
@@ -408,22 +409,26 @@ export class TripGenerationService {
     const resolved = new Map<string, ReturnType<TripGenerationService['resolveAuthoritativeProfile']>>();
     for (const trip of trips) {
       let runtimeProfile: RuntimeProfile | undefined;
+      let runtimePattern: RoutePattern | undefined;
+      let runtimeSeed: Trip | undefined;
       try {
         const key = JSON.stringify([trip.scenarioId, trip.serviceDayId, trip.patternId]);
         if (!resolved.has(key)) resolved.set(key, this.resolveAuthoritativeProfile({ scenarioId: trip.scenarioId, serviceDayId: trip.serviceDayId, patternId: trip.patternId }));
         const resolution = await resolved.get(key)!;
         const { pattern, profile, assignment } = resolution;
         runtimeProfile = profile;
+        runtimePattern = pattern;
         sources.push([trip, pattern, profile, assignment]);
         // A new anchor time replaces the Trip's time at the anchor point, and the other points are calculated around it, as when adding a Trip.
         const newAnchorTime = anchorTimeByTripId[trip.id];
         const anchorPointId = anchorByTripId[trip.id];
         const seed = newAnchorTime === undefined || !anchorPointId ? trip : { ...trip, stopTimes: trip.stopTimes.map((point) => point.patternPointId === anchorPointId ? { ...point, time: newAnchorTime } : point) };
+        runtimeSeed = seed;
         const result = recalculateTripWithAnchor(seed, pattern, profile, this.now(), anchorPointId, bandOverrideByTripId[trip.id]);
-        outcomes.push({ trip, result, profile });
+        outcomes.push({ trip, result, profile, seed, pattern });
       } catch (error) {
         if (!(error instanceof TripGenerationError)) throw error;
-        outcomes.push({ trip, error, profile: runtimeProfile });
+        outcomes.push({ trip, error, profile: runtimeProfile, seed: runtimeSeed, pattern: runtimePattern });
         if (stopAtBandChoice && error instanceof AnchorBandChoiceError) break;
       }
     }
@@ -467,6 +472,13 @@ export class TripGenerationService {
     return current;
   }
 
+  /** Decision 0072 item 2: the diagnosis of a failed anchor, from the seed this review recalculated. Undefined when the failure is not an anchor failure. */
+  private anchorDiagnosisOf(outcome: RecalculationOutcome, anchorPointId: string | undefined): AnchorDiagnosis | undefined {
+    if (!anchorPointId || !outcome.seed || !outcome.pattern || !outcome.profile || !outcome.error) return undefined;
+    if (!outcome.error.findings.some((finding) => ANCHOR_DIAGNOSIS_RULE_IDS.has(finding.ruleId))) return undefined;
+    return diagnoseAnchor(outcome.seed, outcome.pattern, outcome.profile, anchorPointId, this.now());
+  }
+
   /**
    * Reviews a recalculation Trip by Trip (Decision 0071). Each requested Trip gets one row: `ready`, `needsChoice` (an anchor band choice the planner can pick),
    * `error`, or `skipped`. Only a request-level problem (a missing Trip) throws. The result's `trips`, `impact`, `connections`, and `findings` cover the ready Trips.
@@ -489,11 +501,12 @@ export class TripGenerationService {
       if (outcome.result) return { tripId: trip.id, status: 'ready', revisedTrip: outcome.result.trip, findings: [], ...(outcome.result.bandSelection ? { bandSelection: outcome.result.bandSelection } : {}) };
       const error = outcome.error!;
       const findings = error.findings.map((finding) => ({ ...finding, entityType: 'trip' as const, entityId: trip.id }));
+      const diagnosis = this.anchorDiagnosisOf(outcome, anchorByTripId[trip.id]);
       if (error instanceof AnchorBandChoiceError) {
         const bandPickable = outcome.profile !== undefined && (outcome.profile.calculationMethod === undefined || outcome.profile.calculationMethod === 'singleBand');
-        return { tripId: trip.id, status: bandPickable ? 'needsChoice' : 'error', findings, bandChoices: error.choices, bandPickable };
+        return { tripId: trip.id, status: bandPickable ? 'needsChoice' : 'error', findings, bandChoices: error.choices, bandPickable, ...(diagnosis ? { diagnosis } : {}) };
       }
-      return { tripId: trip.id, status: 'error', findings };
+      return { tripId: trip.id, status: 'error', findings, ...(diagnosis ? { diagnosis } : {}) };
     });
     const readyIds = new Set(rows.filter((row) => row.status === 'ready').map((row) => row.tripId));
     const readyTrips = trips.filter((trip) => readyIds.has(trip.id));
