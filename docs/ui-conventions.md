@@ -30,6 +30,7 @@ This section holds the conventions of the interface revision (packages UR-0 to U
 
 ### Interface text
 
+- No explanatory text by default (user direction, 2026-11-11). Before adding an intro sentence, eyebrow, footnote, caveat, or legend, ask whether it gives the planner information needed to make a decision. Counts, costs of a choice ("2 min later"), and the cause of a problem stay; explanations of how the feature works do not.
 - Interface text uses sentence case with lower-case domain terms mid-label ("Blocking scenario", "Unassigned trips", "Assign block…"). The tab names Route, Trips, Blocking, and Costing stay capitalized. "Profile" is always qualified ("Runtime profile", "Trip profile"). The Costing escalation field is "Inflation rate (%)". The documentation keeps its capitalized domain terms. CSV headers, message keys, `ruleId`s, and the persistence layer's error messages are not interface text and keep their wording.
 
 ### Accessibility
@@ -215,3 +216,11 @@ This section holds the conventions of the interface revision (packages UR-0 to U
 - Trips adds a labeled **Blocking scenario** menu immediately beside its **Trip profile** menu (the label was "Scenario" before review package U07, which the global Scenario selector also uses). It is filtered to that Trip Profile and scopes the Block assignment pill and bulk Actions. **No Blocking Scenario** appears only when no scenario exists or the selected scenario was removed. Changing this selector does not alter Trip editing scope.
 - Block summaries report **Revenue** as Running Time plus usable Layover, while retaining **Running** as the sum of scheduled revenue-Trip durations. The selected-day stat strip shows service quantities without repeating complete/incomplete Block counts; each Block’s own status and findings remain in the Blocks table.
 - All trip time fields, summaries, and previews use shared 24-plus service-time formatting. The schedule never converts after-midnight service to a wrapped clock time.
+
+## Trip review and runtime reconciliation (Decisions 0071 to 0075)
+
+- Regenerate and Change pattern use one review table: Trip, Status chip, Kept time, Start, End, Run time, Layover after, Action. A change cell shows the new value and, below it, the change in minutes; the exact before and after are in its title. An ⓘ button opens a Why panel below the row: a headline, at most one cause line, and Open runtimes when a runtime causes it. The Action select lists fixes with their cost, smallest change first, Skip last. The primary button counts the trips it changes and waits until every flagged trip has a fix or is skipped.
+- Trips written by the last change carry the moved-row marker. Six or more show the status line "N changed · a above · b below" with ↑, ↓, Select, and Clear in the selection-bar slot.
+- Fill and Copy show one pairing table per other profile (this profile's period, the paired period, overlap). A changed pair is shaded; an overlap under half is in the warning colour.
+- Compare patterns: Stacked or By time; differing cells are highlighted, and choosing one offers "Use :MM for" with checkboxes.
+

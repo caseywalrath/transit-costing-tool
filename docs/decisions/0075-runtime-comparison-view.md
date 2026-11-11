@@ -1,6 +1,6 @@
 # Decision 0075: Runtime Comparison and Reconciliation View
 
-- Status: Accepted (not implemented)
+- Status: Accepted and implemented
 - Date: 2026-11-11 (user acceptance of D5 Option A with the Option B toggle; plan: `docs/implementation/trip-review-and-runtime-reconciliation.md`, packages R10 and R11)
 - Related: Decision 0049, Decision 0074
 

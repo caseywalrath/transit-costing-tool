@@ -1,6 +1,6 @@
 # Decision 0071: Per-Trip Review Outcomes, Skip, and One Shared Review
 
-- Status: Accepted (not implemented)
+- Status: Accepted and implemented
 - Date: 2026-11-11 (user acceptance of D1 and D2; plan: `docs/implementation/trip-review-and-runtime-reconciliation.md`, packages R1, R3, R5)
 - Annotates: Decision 0031 (regeneration anchors), Decision 0046 (Regenerate and Undo items), Decision 0067 (anchored pattern change), Decision 0070 (pattern change undo)
 

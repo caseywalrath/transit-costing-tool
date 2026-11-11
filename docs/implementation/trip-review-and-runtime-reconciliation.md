@@ -1,6 +1,6 @@
 # Trip review, changed-trip markers, and runtime reconciliation
 
-- Status: Accepted 2026-11-11. Packages not started.
+- Status: Accepted 2026-11-11. Implemented R1 to R11 on 2026-11-11; R12 closeout recorded at the end of this file.
 - Decisions: 0071 (per-trip outcomes, skip, one review), 0072 (anchor diagnosis), 0073 (changed-trip marker), 0074 (band pairing for segment copy and fill), 0075 (runtime comparison view).
 - Base: `main` at PR #57. Every file, line, and signature below was read at that commit. Line numbers drift as packages land. **Search for the quoted code and do not rely on line numbers alone.**
 

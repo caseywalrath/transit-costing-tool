@@ -1,6 +1,6 @@
 # Decision 0072: Anchor Diagnosis and Ready Fixes
 
-- Status: Accepted (not implemented)
+- Status: Accepted and implemented
 - Date: 2026-11-11 (user request; plan: `docs/implementation/trip-review-and-runtime-reconciliation.md`, packages R2 and R4)
 - Annotates: Decision 0031 and its addendum (anchor solutions, band choice only for one-band-per-trip profiles)
 

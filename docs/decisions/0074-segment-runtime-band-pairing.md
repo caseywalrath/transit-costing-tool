@@ -1,6 +1,6 @@
 # Decision 0074: Band Pairing for Segment Runtime Copy and Fill
 
-- Status: Accepted (not implemented)
+- Status: Accepted and implemented
 - Date: 2026-11-11 (user acceptance of D4 Option C; plan: `docs/implementation/trip-review-and-runtime-reconciliation.md`, packages R8 and R9)
 - Supersedes: Decision 0049, the rule that a band matches only with the same start and end time
 - Related: Decision 0049 (segment runtime copy and fill)

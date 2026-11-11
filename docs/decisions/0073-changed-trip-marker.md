@@ -1,6 +1,6 @@
 # Decision 0073: Changed-Trip Marker
 
-- Status: Accepted (not implemented)
+- Status: Accepted and implemented
 - Date: 2026-11-11 (user acceptance of D3 Option B, with Select changed trips; plan: `docs/implementation/trip-review-and-runtime-reconciliation.md`, packages R6 and R7)
 - Related: the moved-row marker of 2026-10-30 (`row-moved` in `src/ui/styles/tables.css`)
 
