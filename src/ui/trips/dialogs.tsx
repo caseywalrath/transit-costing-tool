@@ -70,7 +70,7 @@ const formatPlanHeadway = (seconds: number): string => (seconds % 60 === 0 ? Str
 const tripsText = (count: number) => `${count} trip${count === 1 ? '' : 's'}`;
 const PLAN_MODE_HINT = 'No planned frequencies for this day. Add them on the Route screen.';
 
-export function BuildTripsDrawer({ tripService, plannedFrequencyService, scenarioId, routeId, serviceDayId, tripProfileId, patterns, nodes, profileName, initialValues, onValuesChange, onDone, onClose }: { tripService: TripGenerationApplication; plannedFrequencyService: Pick<PlannedFrequencyService, 'getPlan' | 'previewBuildFromPlan'>; scenarioId: string; routeId: string; serviceDayId: string; tripProfileId: string; patterns: RoutePattern[]; nodes: Node[]; profileName?: string; initialValues: BuildTripsValues; onValuesChange: (values: BuildTripsValues) => void; onDone: () => Promise<void>; onClose: () => void }) {
+export function BuildTripsDrawer({ tripService, plannedFrequencyService, scenarioId, routeId, serviceDayId, tripProfileId, patterns, nodes, profileName, initialValues, onValuesChange, onDone, onClose }: { tripService: TripGenerationApplication; plannedFrequencyService: Pick<PlannedFrequencyService, 'getPlan' | 'previewBuildFromPlan'>; scenarioId: string; routeId: string; serviceDayId: string; tripProfileId: string; patterns: RoutePattern[]; nodes: Node[]; profileName?: string; initialValues: BuildTripsValues; onValuesChange: (values: BuildTripsValues) => void; onDone: (changedTripIds: string[]) => Promise<void>; onClose: () => void }) {
   // The entered values outlive the drawer: closing it asks nothing and reopening it shows them again (Decision 14 of the review). A successful build clears them.
   const [patternId, setPatternId] = useState(patterns.some((pattern) => pattern.id === initialValues.patternId) ? initialValues.patternId : ''); const [firstTrip, setFirstTrip] = useState(initialValues.firstTrip); const [headway, setHeadway] = useState(initialValues.headway); const [tripCount, setTripCount] = useState(initialValues.tripCount); const [lastTrip, setLastTrip] = useState(initialValues.lastTrip);
   const [chosenMode, setMode] = useState<BuildTripsMode>(initialValues.mode); const [skippedPeriodIds, setSkippedPeriodIds] = useState(initialValues.skippedPeriodIds);
@@ -107,7 +107,7 @@ export function BuildTripsDrawer({ tripService, plannedFrequencyService, scenari
       if (planBlocked || !planPreview) { setError(planPreview && !planPreview.patternServesNode ? USER_FACING_VALIDATION_MESSAGES['tripGeneration.anchorNodeNotServed'] : planSlots.length === 0 && planPreview ? 'Select at least one period that still has trips to build.' : 'The planned frequencies are still loading.'); return; }
       const request = { scenarioId, routeId, serviceDayId, patternId, tripProfileId, slots: planSlots, anchorNodeId: planPreview.measureNodeId };
       try {
-        setBusy(true); await tripService.previewGenerateTrips(request); await tripService.generateTrips(request); await onDone();
+        setBusy(true); await tripService.previewGenerateTrips(request); const written = await tripService.generateTrips(request); await onDone(written.trips.map((trip) => trip.id));
       } catch (caught) {
         if (caught instanceof TripGenerationError) setError([...new Set(caught.findings.map((finding) => finding.parameters?.departure !== undefined && finding.field === 'anchorNodeId' ? `${formatServiceTime(Number(finding.parameters.departure))}: ${userMessage(finding)}` : userMessage(finding)))].join(' '));
         else setError(userFacingError(caught, 'Unable to build trips. Check the values and try again.'));
@@ -118,7 +118,7 @@ export function BuildTripsDrawer({ tripService, plannedFrequencyService, scenari
     if (!parsed.ok) { setError(BUILD_TRIPS_FORM_MESSAGES[parsed.reason](parsed.reason === 'tripCountRange' ? parsed.maximum : 0)); return; }
     const request = parsed.request;
     try {
-      setBusy(true); await tripService.previewGenerateTrips(request); await tripService.generateTrips(request); await onDone();
+      setBusy(true); await tripService.previewGenerateTrips(request); const written = await tripService.generateTrips(request); await onDone(written.trips.map((trip) => trip.id));
     } catch (caught) {
       if (caught instanceof TripGenerationError) setError([...new Set(caught.findings.map(userMessage))].join(' '));
       else setError(userFacingError(caught, 'Unable to build trips. Check the values and try again.'));
