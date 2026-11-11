@@ -70,6 +70,7 @@ export const USER_FACING_VALIDATION_MESSAGES: Record<string, string> = {
   'tripShift.timeBeforeServiceDay': 'A shift would move a trip before 0:00. Use a smaller shift.',
   'trip.anchorNoRuntime': 'The fixed timepoint cannot be reached with the current runtimes. Choose another anchor or adjust the runtime bands.',
   'trip.anchorAmbiguous': 'The fixed timepoint can be reached from more than one first departure. Choose another anchor or adjust the runtime bands.',
+  'trip.anchorNodeNotServed': 'The anchor stop is not served by both patterns. Choose a stop that both patterns serve.',
   'trip.csvPointSetInvalid': 'Each row must contain exactly the timepoints for its pattern.',
 };
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
-import type { Block, RoutePattern, RuntimeAssignment, RuntimeProfile, Trip, TripGenerationSet } from '../domain/types';
+import type { Block, RoutePattern, RuntimeAssignment, RuntimeBand, RuntimeProfile, Trip, TripGenerationSet } from '../domain/types';
 import { TripGenerationService } from './tripGenerationService';
 import type { TripGenerationRepository } from './ports';
 import { InMemoryRouteDefinitionRepository } from '../persistence/inMemoryRepository';
@@ -150,6 +150,14 @@ describe('stale-source checks on Pattern changes and Trips CSV imports, and the 
       const { repository, service } = await setup();
       const { sourceSignature: _signature, ...unsigned } = await service.previewTripPatternChange('out-1', 'outbound2', 'outbound');
       await expect(service.changeTripPattern(unsigned)).rejects.toThrow('The Pattern change review is out of date');
+      expect((await repository.getTrip('out-1'))?.patternId).toBe('outbound');
+    });
+
+    it('rejects a review after a node of the source Pattern changed, even when the target is unchanged', async () => {
+      const { repository, service } = await setup();
+      const review = await service.previewTripPatternChange('out-1', 'outbound2', 'outbound');
+      await repository.saveRouteDefinition({ ...(await repository.getRouteDefinition('r'))!, patterns: [{ ...outbound, points: outbound.points.map((point) => ({ ...point, nodeId: 'outbound-z' })) }, inbound, outbound2] });
+      await expect(service.changeTripPattern(review)).rejects.toThrow('The Pattern change review is out of date');
       expect((await repository.getTrip('out-1'))?.patternId).toBe('outbound');
     });
   });
@@ -349,5 +357,98 @@ describe('Trip deletions carry a required review token', () => {
       await expect(service.deleteTrips(['t1'], other.reviewToken)).rejects.toThrow(stale);
       expect(repository.trips.has('t1')).toBe(true);
     });
+  });
+});
+
+describe('anchored Change pattern (Decision 0067)', () => {
+  const stamp = metadata('2026-09-14T00:00:00.000Z');
+  const nodeNames: Record<string, string> = { A: 'Central', B: 'Main St', C: 'Transit Center', D: 'Harbor' };
+  const pattern = (id: string, nodeIds: string[]): RoutePattern => ({ id, scenarioId: 's', routeId: 'r', name: id, directionId: 'outbound', points: nodeIds.map((nodeId, sequence) => ({ id: `${id}-${sequence}`, nodeId, sequence, cumulativeMiles: sequence })), ...stamp });
+  const band = (id: string, startTime: number, endTime: number, segmentRuntimeSeconds: number[]): RuntimeBand => ({ id, label: id, sequence: 0, startTime, endTime, segmentRuntimeSeconds });
+  const profile = (patternId: string, bands: RuntimeBand[]): RuntimeProfile => ({ id: `${patternId}-profile`, scenarioId: 's', routeId: 'r', patternId, name: 'Runtime', calculationRevision: 4, bands, ...stamp });
+  const trip = (id: string, source: RoutePattern, times: number[]): Trip => ({ id, scenarioId: 's', routeId: 'r', serviceDayId: 'weekday', patternId: source.id, tripProfileId: 'trip-profile', stopTimes: source.points.map((point, sequence) => ({ patternPointId: point.id, sequence, time: times[sequence] })), provenance: { kind: 'manual', creationMethod: 'manual', manuallyChangedFields: [], runtimeProfileId: `${source.id}-profile`, runtimeCalculationRevision: 4, calculationSource: { runtimeProfileId: `${source.id}-profile`, runtimeCalculationRevision: 4 } }, ...stamp });
+  const full = pattern('full', ['A', 'B', 'C', 'D']);
+  const short = pattern('short', ['B', 'C', 'D']);
+  // Same nodes as `full`, with the single-band ambiguity from the domain tests: departures 28600 (am) and 28900 (pm) both give B at 29200.
+  const amb = pattern('amb', ['A', 'B', 'C', 'D']);
+  const loop = pattern('loop', ['A', 'B', 'C', 'B', 'D']);
+  const reversed = pattern('rev', ['D', 'C', 'B', 'A']);
+  const fullBands = [band('all', 0, 90000, [600, 900, 300])];
+  const shortBands = [band('all', 0, 90000, [900, 300])];
+  const ambiguousBands = [band('am', 0, 28800, [600, 900, 300]), band('pm', 28800, 90000, [300, 1080, 360])];
+
+  async function setup(extra: { trips?: Trip[]; patterns?: RoutePattern[] } = {}) {
+    const patterns = extra.patterns ?? [full, short, amb];
+    const repository = new InMemoryRouteDefinitionRepository();
+    await repository.saveProjectSnapshot({
+      project: { id: 'project', name: 'Project', distanceUnit: 'miles', currencyCode: 'USD', ...stamp },
+      scenarios: [{ id: 's', projectId: 'project', name: 'Scenario', ...stamp }],
+      serviceDays: [{ id: 'weekday', scenarioId: 's', kind: 'weekday', name: 'Weekday', annualServiceDays: 260, sequence: 0, ...stamp }],
+      routes: [{ id: 'r', scenarioId: 's', name: 'Route', ...stamp }],
+      nodes: Object.entries(nodeNames).map(([id, name]) => ({ id, scenarioId: 's', routeId: 'r', name, kind: 'timepoint' as const, ...stamp })),
+      patterns,
+      // Each band has one segment per gap between Pattern points, as validation requires.
+      runtimeProfiles: patterns.map((item) => profile(item.id, item.id === 'amb' ? ambiguousBands : item.id === 'short' ? shortBands : item.id === 'full' ? fullBands : [band('all', 0, 90000, item.points.slice(1).map(() => 600))])),
+      runtimeAssignments: patterns.map((item) => ({ id: `wd-${item.id}`, scenarioId: 's', patternId: item.id, serviceDayId: 'weekday', runtimeProfileId: `${item.id}-profile`, ...stamp })),
+      tripProfiles: [{ id: 'trip-profile', scenarioId: 's', name: 'Default', ...stamp }], generationSets: [],
+      trips: extra.trips ?? [trip('t1', full, [25200, 25800, 26700, 27000])], blocks: [],
+    });
+    return { repository, service: new TripGenerationService(repository, () => '2026-09-15T00:00:00.000Z') };
+  }
+
+  it('keeps the anchor node time and calculates the other stops on the target Pattern', async () => {
+    const { repository, service } = await setup();
+    const review = await service.previewTripPatternChange('t1', 'short', 'outbound', { anchorNodeId: 'C' });
+    expect(review.finding).toBeUndefined();
+    expect(review.anchorNodeId).toBe('C');
+    expect(review.newStopTimes?.map((point) => [point.patternPointId, point.time])).toEqual([['short-0', 25800], ['short-1', 26700], ['short-2', 27000]]);
+    const changed = await service.changeTripPattern(review);
+    expect(changed.patternId).toBe('short');
+    expect(changed.stopTimes.find((point) => point.patternPointId === 'short-1')?.time).toBe(26700);
+    expect((await repository.getTrip('t1'))?.stopTimes.map((point) => point.time)).toEqual([25800, 26700, 27000]);
+  });
+
+  it('gives a finding when the anchor node is not served by the source Pattern', async () => {
+    const { repository, service } = await setup({ patterns: [full, short, amb, pattern('far', ['X', 'D'])] });
+    const review = await service.previewTripPatternChange('t1', 'far', 'outbound', { anchorNodeId: 'B' });
+    expect(review.finding?.ruleId).toBe('trip.anchorNodeNotServed');
+    await expect(service.changeTripPattern(review)).rejects.toThrow();
+    expect((await repository.getTrip('t1'))?.patternId).toBe('full');
+  });
+
+  it('rejects a review after a node of the source Pattern changed', async () => {
+    const { repository, service } = await setup();
+    const review = await service.previewTripPatternChange('t1', 'short', 'outbound', { anchorNodeId: 'C' });
+    const route = (await repository.getRouteDefinition('r'))!;
+    await repository.saveRouteDefinition({ ...route, patterns: route.patterns.map((item) => (item.id === 'full' ? { ...item, points: item.points.map((point) => (point.nodeId === 'B' ? { ...point, nodeId: 'B-moved' } : point)) } : item)) });
+    await expect(service.changeTripPattern(review)).rejects.toThrow('The Pattern change review is out of date');
+    expect((await repository.getTrip('t1'))?.patternId).toBe('full');
+  });
+
+  it('rejects a review whose anchor node was altered before the commit', async () => {
+    const { repository, service } = await setup();
+    const review = await service.previewTripPatternChange('t1', 'short', 'outbound', { anchorNodeId: 'C' });
+    await expect(service.changeTripPattern({ ...review, anchorNodeId: 'B' })).rejects.toThrow('The Pattern change review is out of date');
+    expect((await repository.getTrip('t1'))?.patternId).toBe('full');
+  });
+
+  it('lists band choices for an ambiguous anchor, and commits the review with the chosen band', async () => {
+    const { repository, service } = await setup({ trips: [trip('t1', full, [28600, 29200, 30100, 30400])] });
+    const first = await service.previewTripPatternChange('t1', 'amb', 'outbound', { anchorNodeId: 'B' });
+    expect(first.finding?.ruleId).toBe('trip.anchorAmbiguous');
+    expect(first.bandChoices?.map((choice) => choice.bandId)).toEqual(['am', 'pm']);
+    const review = await service.previewTripPatternChange('t1', 'amb', 'outbound', { anchorNodeId: 'B', chosenBandId: 'pm' });
+    expect(review.finding).toBeUndefined();
+    expect(review.chosenBandId).toBe('pm');
+    expect(review.newStopTimes?.map((point) => point.time)).toEqual([28900, 29200, 30280, 30640]);
+    await service.changeTripPattern(review);
+    expect((await repository.getTrip('t1'))?.stopTimes.map((point) => point.time)).toEqual([28900, 29200, 30280, 30640]);
+  });
+
+  it('lists the nodes that both Patterns serve, in the target order, with their names', async () => {
+    const { service } = await setup({ patterns: [full, short, amb, loop, reversed] });
+    expect(await service.listSharedAnchorNodes('t1', 'short')).toEqual([{ nodeId: 'B', name: 'Main St' }, { nodeId: 'C', name: 'Transit Center' }, { nodeId: 'D', name: 'Harbor' }]);
+    expect(await service.listSharedAnchorNodes('t1', 'rev')).toEqual([{ nodeId: 'D', name: 'Harbor' }, { nodeId: 'C', name: 'Transit Center' }, { nodeId: 'B', name: 'Main St' }, { nodeId: 'A', name: 'Central' }]);
+    expect(await service.listSharedAnchorNodes('t1', 'loop')).toEqual([{ nodeId: 'A', name: 'Central' }, { nodeId: 'B', name: 'Main St' }, { nodeId: 'C', name: 'Transit Center' }, { nodeId: 'D', name: 'Harbor' }]);
   });
 });

@@ -504,8 +504,70 @@ export function shiftTrips(trips: Trip[], tripIds: string[], offsetSeconds: Dura
   });
 }
 
-export interface PatternChangePreview { tripId: string; sourcePatternId: string; targetPatternId: string; oldStopTimes: ScheduledPoint[]; newStopTimes?: ScheduledPoint[]; finding?: ValidationFinding; /** Blocks referencing the trip require follow-up validation after a timing/pattern change. */ affectedBlockIds?: string[]; }
-export function previewPatternChange(trip: Trip, targetPattern: RoutePattern, profile: RuntimeProfile): PatternChangePreview {
+export interface PatternChangePreview { tripId: string; sourcePatternId: string; targetPatternId: string; oldStopTimes: ScheduledPoint[]; newStopTimes?: ScheduledPoint[]; finding?: ValidationFinding; /** Blocks referencing the trip require follow-up validation after a timing/pattern change. */ affectedBlockIds?: string[]; /** The anchor node whose time was kept (Decision 0067). Set whenever an anchor was resolved. */ anchorNodeId?: string; anchorTime?: ServiceSeconds; /** Band choices for a single-band ambiguity. Absent for segment-start and blended profiles, which have no picker. */ bandChoices?: AnchorBandChoice[]; }
+
+export interface PatternChangeOptions {
+  /** The Pattern the Trip is on now. Required when an anchor node is given. */
+  sourcePattern?: RoutePattern;
+  /** The node whose time is kept. Absent, or the first stop on both Patterns, gives today's result. */
+  anchorNodeId?: string;
+  /** Resolves a single-band ambiguity (Decision 0031). */
+  chosenBandId?: string;
+  now?: string;
+}
+
+/**
+ * Preview a single-Trip Pattern change. Without an anchor node the Trip keeps its first departure. With one, the anchor node's
+ * saved time at the source Pattern's first visit is kept and every other time is calculated as Regenerate does (Decision 0067).
+ */
+export function previewPatternChange(trip: Trip, targetPattern: RoutePattern, profile: RuntimeProfile, options: PatternChangeOptions = {}): PatternChangePreview {
+  if (options.anchorNodeId === undefined) return previewFirstStopPatternChange(trip, targetPattern, profile);
+  const { sourcePattern, anchorNodeId, chosenBandId, now = new Date().toISOString() } = options;
+  const notServed = (): PatternChangePreview => ({ tripId: trip.id, sourcePatternId: trip.patternId, targetPatternId: targetPattern.id, oldStopTimes: [...trip.stopTimes], finding: tripFinding(trip, 'trip.anchorNodeNotServed', 'trip.anchorNodeNotServed', undefined, { nodeId: anchorNodeId }) });
+  if (!sourcePattern) return notServed();
+  // The first stop on both Patterns is today's anchor. Using today's code path keeps its result exact, including its findings.
+  if (sourcePattern.points[0]?.nodeId === anchorNodeId && targetPattern.points[0]?.nodeId === anchorNodeId) {
+    const firstStop = previewFirstStopPatternChange(trip, targetPattern, profile);
+    return { ...firstStop, anchorNodeId, ...(trip.stopTimes[0] === undefined ? {} : { anchorTime: trip.stopTimes[0].time }) };
+  }
+  const sourcePoint = sourcePattern.points.find((point) => point.nodeId === anchorNodeId);
+  const keptTime = sourcePoint ? trip.stopTimes.find((stop) => stop.patternPointId === sourcePoint.id)?.time : undefined;
+  const targetPoint = targetPattern.points.find((point) => point.nodeId === anchorNodeId);
+  if (keptTime === undefined || !targetPoint) return notServed();
+  const base: PatternChangePreview = { tripId: trip.id, sourcePatternId: trip.patternId, targetPatternId: targetPattern.id, oldStopTimes: [...trip.stopTimes], anchorNodeId, anchorTime: keptTime };
+  // Seed as a build does (`generateAuthoritativeTrips`): every point carries the kept time, then the anchor method calculates the rest.
+  const seed: Trip = { ...trip, patternId: targetPattern.id, stopTimes: targetPattern.points.map((point, sequence) => ({ patternPointId: point.id, sequence, time: keptTime })) };
+  let newStopTimes: ScheduledPoint[];
+  try {
+    newStopTimes = recalculateTripWithAnchor(seed, targetPattern, profile, now, targetPoint.id, chosenBandId).trip.stopTimes;
+  } catch (error) {
+    if (error instanceof AnchorBandChoiceError) {
+      // Segment-start and blended profiles list their candidates in the finding only. The planner cannot pick a band for them (Decision 0067 item 5).
+      const pickable = profile.calculationMethod === undefined || profile.calculationMethod === 'singleBand';
+      return { ...base, finding: error.findings[0], ...(pickable ? { bandChoices: error.choices } : {}) };
+    }
+    if (error instanceof TripGenerationError) return { ...base, finding: error.findings[0] };
+    throw error;
+  }
+  const negativeIndex = newStopTimes.findIndex((point) => point.time < 0);
+  if (negativeIndex >= 0) return { ...base, finding: tripFinding(trip, 'trip.timeBeforeServiceDay', 'trip.timeBeforeServiceDay', 'stopTimes', { sequence: negativeIndex }) };
+  return { ...base, newStopTimes };
+}
+
+/** Node ids that both Patterns serve, in the target's order, each once at its first visit (Decision 0067 item 2). */
+export function sharedAnchorNodes(source: RoutePattern, target: RoutePattern): string[] {
+  const served = new Set(source.points.map((point) => point.nodeId));
+  const seen = new Set<string>();
+  const nodes: string[] = [];
+  for (const point of target.points) {
+    if (!served.has(point.nodeId) || seen.has(point.nodeId)) continue;
+    seen.add(point.nodeId);
+    nodes.push(point.nodeId);
+  }
+  return nodes;
+}
+
+function previewFirstStopPatternChange(trip: Trip, targetPattern: RoutePattern, profile: RuntimeProfile): PatternChangePreview {
   const departure = trip.stopTimes[0]?.time;
   if (departure === undefined) return { tripId: trip.id, sourcePatternId: trip.patternId, targetPatternId: targetPattern.id, oldStopTimes: [...trip.stopTimes], finding: tripFinding(trip, 'trip.departureMissing', 'trip.departureMissing') };
   const propagated = propagatePatternTimes(targetPattern, departure, profile);
