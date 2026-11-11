@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { MenuButton, type MenuGroup } from '../MenuButton';
+import { BrandMark } from './BrandMark';
 import { type HeaderStatus } from './headerStatus';
 
 export type HeaderTab = { id: string; label: string; disabled?: boolean; title?: string };
@@ -7,7 +8,7 @@ export type HeaderTab = { id: string; label: string; disabled?: boolean; title?:
 /** Row 1 of the two-row header (H-B): application name, primary tabs, and the one-line status. */
 function AppBar({ tabs, activeTab, onTab, status }: { tabs: HeaderTab[]; activeTab: string; onTab: (id: string) => void; status: HeaderStatus }) {
   return <header className="app-bar">
-    <div className="app-bar__brand"><span className="app-bar__mark" aria-hidden="true" /><strong>Transit Costing Tool</strong></div>
+    <div className="app-bar__brand"><BrandMark /><strong>Transit Costing Tool</strong></div>
     <nav aria-label="Primary">{tabs.map((tab) => <button key={tab.id} type="button" className={`tab ${activeTab === tab.id ? 'active' : ''}`} aria-current={activeTab === tab.id ? 'page' : undefined} disabled={tab.disabled} title={tab.title} onClick={() => onTab(tab.id)}>{tab.label}</button>)}</nav>
     <span className="app-bar__spacer" />
     <span className={`save-status save-status--${status.kind}`} role="status" aria-live="polite"><span className="save-status__dot" aria-hidden="true" />{status.text}{status.backup && <span className={status.backup.stale ? 'save-status__backup save-status__backup--stale' : 'save-status__backup'}> · {status.backup.text}</span>}</span>
