@@ -39,6 +39,20 @@ const pattern = (id: string, name: string, sequence: number): RoutePattern => ({
 const profile = (id: string, patternId: string, endTime = 10000, calculationRevision = 0): RuntimeProfile => ({ ...metadata(), id, scenarioId: 'scenario', routeId: 'route', patternId, name: 'Default', calculationRevision, bands: [{ id: `${id}-band`, label: 'All day', sequence: 0, startTime: 0, endTime, segmentRuntimeSeconds: [600] }] });
 const request = (patternId: string, firstTrip = 0, lastTrip = 900): GenerateTripsRequest => ({ scenarioId: 'scenario', routeId: 'route', serviceDayId: 'weekday', patternId, firstTrip, headwaySeconds: 300, lastTrip });
 
+/** One Pattern with two runtime bands, so a Trip anchored at its second point can need a band choice (Decision 0071 tests). */
+function bandedReviewFixture() {
+  const p = pattern('p1', 'Southbound 1', 0);
+  const runtime = { ...profile('rp1', 'p1'), bands: [
+    { id: 'early', label: 'Early', sequence: 0, startTime: 0, endTime: 3600, segmentRuntimeSeconds: [180] },
+    { id: 'late', label: 'Late', sequence: 1, startTime: 3600, endTime: 9000, segmentRuntimeSeconds: [300] },
+  ] };
+  const repository = new AuthoritativeFake([p], [runtime]);
+  repository.assignments.push({ ...metadata(), id: 'a1', scenarioId: 'scenario', patternId: 'p1', serviceDayId: 'weekday', runtimeProfileId: 'rp1' });
+  const service = new TripGenerationService(repository);
+  const addAt = (firstTrip: number) => service.addTrip({ scenarioId: 'scenario', routeId: 'route', serviceDayId: 'weekday', patternId: 'p1', directionId: 'southbound', tripProfileId: 'trip-profile', firstTrip }).then((added) => added.trip);
+  return { p, repository, service, addAt };
+}
+
 describe('authoritative trip workflow', () => {
   it('generates additively, interlaces duplicate patterns, and records calculation source', async () => {
     const p1 = pattern('p1', 'Southbound 1', 0); const p2 = pattern('p2', 'Southbound 2', 1);
@@ -257,6 +271,50 @@ describe('authoritative trip workflow', () => {
     expect(reviewed.bandSelections).toMatchObject([{ bandLabel: 'Late', departure: 3540, selection: 'manual' }]);
     const applied = await service.applyRecalculationPreview(reviewed);
     expect(applied.trips[0].stopTimes.map((point) => point.time)).toEqual([3540, 3840]);
+  });
+
+  it('reviews each Trip with its own outcome and applies only the ready Trips (Decision 0071)', async () => {
+    const { p, repository, service, addAt } = bandedReviewFixture();
+    const first = await addAt(1200); const second = await addAt(1500); const ambiguous = await addAt(3500);
+    await repository.saveTrips([{ ...ambiguous, stopTimes: [ambiguous.stopTimes[0], { ...ambiguous.stopTimes[1], time: 3840 }] }]);
+    const review = await service.reviewRecalculation([first.id, ambiguous.id, second.id], { anchorByTripId: { [ambiguous.id]: p.points[1].id } });
+    expect(review.rows.map((row) => [row.tripId, row.status])).toEqual([[first.id, 'ready'], [ambiguous.id, 'needsChoice'], [second.id, 'ready']]);
+    expect(review.rows[1]).toMatchObject({ bandPickable: true });
+    expect(review.rows[1].bandChoices?.length).toBeGreaterThan(0);
+    expect(review.trips.map((trip) => trip.id)).toEqual([first.id, second.id]);
+
+    await service.applyRecalculationReview(review);
+    expect((await repository.getTrip(ambiguous.id))!.stopTimes.map((point) => point.time)).toEqual([3500, 3840]);
+    expect((await service.getLastTripRegenerationUndo())!.afterTrips.map((trip) => trip.id)).toEqual([first.id, second.id]);
+  });
+
+  it('keeps a skipped Trip out of the write and out of the undo snapshot (Decision 0071)', async () => {
+    const { repository, service, addAt } = bandedReviewFixture();
+    const first = await addAt(1200); const second = await addAt(1500);
+    const review = await service.reviewRecalculation([first.id, second.id], { skipTripIds: [first.id] });
+    expect(review.rows.map((row) => [row.tripId, row.status])).toEqual([[first.id, 'skipped'], [second.id, 'ready']]);
+    expect(review.trips.map((trip) => trip.id)).toEqual([second.id]);
+    await service.applyRecalculationReview(review);
+    const undo = await service.getLastTripRegenerationUndo();
+    expect(undo?.afterTrips.map((trip) => trip.id)).toEqual([second.id]);
+    expect(undo?.beforeTrips.map((trip) => trip.id)).toEqual([second.id]);
+    expect(await repository.getTrip(first.id)).toEqual(first);
+  });
+
+  it('refuses an all-skipped review and a review whose Trips changed after review (Decision 0071)', async () => {
+    const { repository, service, addAt } = bandedReviewFixture();
+    const first = await addAt(1200); const second = await addAt(1500);
+    const allSkipped = await service.reviewRecalculation([first.id, second.id], { skipTripIds: [first.id, second.id] });
+    await expect(service.applyRecalculationReview(allSkipped)).rejects.toThrow('No trips are ready to regenerate.');
+
+    const reviewed = await service.reviewRecalculation([first.id, second.id]);
+    await repository.saveTrips([{ ...(await repository.getTrip(first.id))!, updatedAt: '2026-09-14T02:00:00.000Z' }]);
+    await expect(service.applyRecalculationReview(reviewed)).rejects.toThrow('Trips or runtimes changed. Review regeneration again.');
+
+    // A skipped Trip is a neighbor in the connection check, so its stored record is part of the review too.
+    const skipReview = await service.reviewRecalculation([first.id, second.id], { skipTripIds: [first.id] });
+    await repository.saveTrips([{ ...(await repository.getTrip(first.id))!, updatedAt: '2026-09-14T03:00:00.000Z' }]);
+    await expect(service.applyRecalculationReview(skipReview)).rejects.toThrow('Trips or runtimes changed. Review regeneration again.');
   });
 
   it('deletes selected trips and removes their revenue activities from blocks atomically', async () => {

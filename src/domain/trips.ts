@@ -237,6 +237,28 @@ export interface RecalculationPreview {
   sourceSignature?: string;
 }
 
+/** Outcome of one Trip in a recalculation review (Decision 0071). `skipped` means the planner excluded the Trip. */
+export type TripReviewStatus = 'ready' | 'needsChoice' | 'error' | 'skipped';
+export interface TripReviewRow {
+  tripId: string;
+  status: TripReviewStatus;
+  /** Present when status is 'ready'. */
+  revisedTrip?: Trip;
+  findings: ValidationFinding[];
+  /** Present for an AnchorBandChoiceError. The UI offers them as choices only when `bandPickable`. */
+  bandChoices?: AnchorBandChoice[];
+  bandPickable?: boolean;
+  bandSelection?: RecalculationBandSelection;
+}
+export interface RecalculationReviewInputs {
+  anchorByTripId?: Record<string, string>;
+  bandOverrideByTripId?: Record<string, string>;
+  anchorTimeByTripId?: Record<string, ServiceSeconds>;
+  skipTripIds?: string[];
+}
+/** `trips`, `impact`, `connections`, and `findings` cover only the ready, non-skipped Trips. `rows` covers every requested Trip, in request order. */
+export interface RecalculationReview extends RecalculationPreview { rows: TripReviewRow[]; requestedTripIds: string[]; inputs: RecalculationReviewInputs }
+
 export interface RecalculationConnection {
   tripId: string;
   blockId: string;
