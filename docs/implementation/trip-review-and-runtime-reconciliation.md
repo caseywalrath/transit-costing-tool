@@ -395,3 +395,23 @@ Integration review across R1 to R11. Update `architecture_overview.md` (the Trip
 ## Recommended order
 
 R8 (Haiku) → R1, R3 (Haiku) and R2 (Opus) in either order → R4 (Haiku) → G1 → R5 (Opus) → R6 (Haiku) → R7 (Opus) → R10 (Haiku) → R9, R11 (Opus) → R12 (Opus).
+
+## R12 closeout (2026-11-11)
+
+| Package | Commit | Notes |
+| --- | --- | --- |
+| R1 | e0ac0c6 | `stopAtBandChoice` keeps the old error order; skipped Trips are in the signature |
+| R2 | ea9a66d, a4d4eba | Single-departure solutions replace the tie rule; `exactDepartures` added in R5 |
+| R3 | 8950d36 | The batch signature does not cover block neighbours (display only) |
+| R4 | d03fc18 | Sentence templates later replaced by the structured explanation (Decision 0072 items 7 to 12) |
+| R5 | a4d4eba, 0312fcf | Text cut on user direction (Decision 0072, cut of 2026-11-11) |
+| R6 | 681b3ba | |
+| R7 | bfd6703 | |
+| R8 | 30f9bdb | Orchestrator fix: Copy leaves out a target band claimed twice (Decision 0074 item 5) |
+| R9 | 82abf78 | The commit's 8-worker line was wrong; corrected in the R11 commit |
+| R10 | c1f7ad3 | Interval disagreement is derived in the UI |
+| R11 | 302a871 | New plan mode `valueCopy` |
+
+Verification at closeout: `pnpm typecheck` clean; `pnpm test` 84 files, 1355 passed; `pnpm build` ok; full browser suite at four workers: 344 passed, 2 skipped, 1 failed (`blocking-context-menu.spec.ts:64`, untouched by this work; 15 of 15 passed on a rerun at three workers, so a load flake).
+
+Open items: the batch pattern-change signature does not cover block neighbours (R3 note); two golden specs in `segment-runtime-fill.spec.ts` time out at eight workers, before and after this work.
