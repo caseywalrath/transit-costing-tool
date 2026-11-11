@@ -26,6 +26,12 @@ const calculator = (page: Page) => page.getByRole('region', { name: 'Vehicle req
 
 test('the Vehicle requirement surface solves vehicles, layover, or headway, and "Use" puts a layover % into the factors grid (Decision 0063)', async ({ page }) => {
   await open(page);
+  // Collapsed by default, like Runtimes under Trips; the choice is remembered on the device.
+  const toggle = calculator(page).getByRole('button', { name: 'Vehicle requirement' });
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(calculator(page).locator('table')).toHaveCount(0);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
   await expect(calculator(page).locator('thead th')).toHaveText(['Service day', 'Cycle running, mean (min)', 'Layover %', 'Cycle with layover (min)', 'Headway, median (min)', 'Vehicles', 'Revenue (h/day)', 'Annual cost', 'Use layover']);
   const running = page.getByRole('textbox', { name: 'Weekday cycle running minutes' });
   const runningMinutes = Number(await running.inputValue());

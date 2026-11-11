@@ -4,18 +4,21 @@ import type { ReactNode, Ref } from 'react';
  * Level 1: the panel the planner works in. One primary action at most, in `actions`. `titleRef` makes the title focusable by script;
  * `badge` sits beside the title; `context` holds the labelled selectors that set what the panel shows, between the count and the actions.
  */
-export function WorkSurface({ title, titleRef, count, badge, context, subtitle, actions, footer, ariaLabel, className, children }: { title: string; titleRef?: Ref<HTMLHeadingElement>; count?: number; badge?: ReactNode; context?: ReactNode; subtitle?: ReactNode; actions?: ReactNode; footer?: ReactNode; ariaLabel?: string; className?: string; children: ReactNode }) {
+export function WorkSurface({ title, titleRef, count, badge, context, subtitle, actions, footer, ariaLabel, className, collapse, children }: { title: string; titleRef?: Ref<HTMLHeadingElement>; count?: number; badge?: ReactNode; context?: ReactNode; subtitle?: ReactNode; actions?: ReactNode; footer?: ReactNode; ariaLabel?: string; className?: string; /** Makes the surface a disclosure, like Runtimes under Trips. The body is not rendered while closed. */ collapse?: { open: boolean; onToggle: (open: boolean) => void; id: string }; children: ReactNode }) {
+  const open = collapse ? collapse.open : true;
   return <section className={['work-surface', className].filter(Boolean).join(' ')} aria-label={ariaLabel}>
     <header className="work-surface__header">
-      <h2 className="work-surface__title" ref={titleRef} tabIndex={titleRef ? -1 : undefined}>{title}</h2>
+      <h2 className="work-surface__title" ref={titleRef} tabIndex={titleRef ? -1 : undefined}>{collapse
+        ? <button type="button" className="disclosure" aria-expanded={open} aria-controls={collapse.id} onClick={() => collapse.onToggle(!open)}><span aria-hidden="true" className="disclosure__arrow">{open ? '▾' : '▸'}</span>{title}</button>
+        : title}</h2>
       {count !== undefined && <span className="work-surface__count">{count}</span>}
       {badge}
       {context && <div className="work-surface__context">{context}</div>}
       {subtitle && <span className="work-surface__subtitle">{subtitle}</span>}
       {actions && <div className="work-surface__actions">{actions}</div>}
     </header>
-    <div className="work-surface__body">{children}</div>
-    {footer}
+    {open && <div className="work-surface__body" id={collapse?.id}>{children}</div>}
+    {open && footer}
   </section>;
 }
 
