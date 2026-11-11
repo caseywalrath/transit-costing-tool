@@ -104,22 +104,12 @@
 .trip-review-why { max-width: 640px; margin-left: 120px; padding: var(--space-3) 14px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface); box-shadow: 0 6px 18px rgb(17 35 45 / 14%); }
 .trip-review-why h3 { margin: 0 0 6px; font-size: var(--font-size-body, 15px); }
 .trip-review-why p { margin: 0 0 var(--space-2); }
-.trip-review-why ul { margin: var(--space-1) 0 var(--space-2); padding-left: 18px; }
-.trip-review-why__hint { padding-top: var(--space-2); border-top: 1px solid var(--color-border-soft); color: var(--color-text-muted); font-size: var(--font-size-label); }
 .trip-review-why .link-button { padding: 0; border: 0; background: none; color: var(--color-accent); text-decoration: underline; min-height: 0; }
-.trip-review-timeline { margin: var(--space-1) 0 var(--space-3); color: var(--color-text-muted); font-size: var(--font-size-caption); }
-.trip-review-timeline__bar { position: relative; height: 14px; margin: var(--space-1) 0 2px; border-radius: 3px; background: var(--color-sunken); }
-.trip-review-timeline__reach { position: absolute; top: 0; bottom: 0; background: var(--color-block-0-border); }
-.trip-review-timeline__mark { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--color-danger); }
-.trip-review-timeline__labels { position: relative; height: 16px; }
-.trip-review-timeline__labels span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
-.trip-review-timeline__kept { color: var(--color-danger); }
 .trip-review-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); margin: var(--space-2) 0; padding: var(--space-2) 10px; border: 1px solid var(--color-border-soft); background: var(--color-surface-2); }
 .trip-review-count--ok { color: var(--color-ok); }
 .trip-review-count--attention { color: var(--color-danger); font-weight: var(--font-weight-semibold); }
 .trip-review-controls { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
 .trip-review-footer { align-items: center; }
-.trip-review-footer__note { margin-right: auto; color: var(--color-text-muted); font-size: var(--font-size-label); }
 .recalculation-fallback { display: block; margin-top: var(--space-1); color: var(--color-warn); font-size: var(--font-size-caption); white-space: normal; }
 .dialog-form { display: contents; }
 .confirm-dialog > div.field-error[role="alert"], .confirm-dialog > .dialog-form > div.field-error[role="alert"] { display: block; margin: var(--space-3) 0; padding: 9px var(--space-3); border: 1px solid var(--color-danger); background: var(--color-danger-soft); font-size: var(--font-size-label); line-height: 1.4; }

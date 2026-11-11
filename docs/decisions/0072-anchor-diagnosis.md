@@ -36,6 +36,8 @@ The one-sentence messages of item 3 were too long for a table row and too techni
 11. **Timeline (optional in R5).** The panel may show a one-line strip of reachable arrival times at the kept stop, with the gap or the overlap marked.
 12. **Overlap data.** For the overlap template to name both start times ("7:52 and 7:55 both arrive at 8:16"), `diagnoseAnchor` also returns the departures that reach the kept time exactly (`exactDepartures`).
 
+**Cut of 2026-11-11 (user direction: keep only what the planner needs to decide).** The panel's "To fix it" list (it repeated the Action list), the timeline of item 11, the separate Runtimes hint, the dialog intro sentences, the footer notes, and "leave it unchanged" on Skip are removed. The panel holds a headline, at most one cause line that names the runtime jump ("AM Peak (from 8:00) adds 1:00 from A to B, so no start time reaches B between 8:14 and 8:18."), and Open runtimes. Action options keep their cost.
+
 Items 7 to 12 supersede the sentence templates of R4. `describeAnchorDiagnosis` and `describeAnchorSegmentChanges` are replaced by a structured explanation: headline, cause lines, and fixes, each fix carrying the id of its Action option. R5 owns the presentation.
 
 ## Consequences

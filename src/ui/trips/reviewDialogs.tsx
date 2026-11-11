@@ -19,7 +19,7 @@ import { reviewButtonState, type ReviewRowView, TripReviewSummary, TripReviewTab
 
 const clock = (value: number) => formatServiceTime(value, value % 60 !== 0);
 const RUN: ProblemAction = { id: 'run', label: 'run' };
-const SKIP: ProblemAction = { id: 'skip', label: 'Skip this trip', cost: 'leave it unchanged' };
+const SKIP: ProblemAction = { id: 'skip', label: 'Skip this trip' };
 const UNDO: ProblemAction = { id: 'undo', label: 'Undo this fix' };
 
 export interface ReviewContext {
@@ -175,7 +175,6 @@ export function RecalculationDialog({ tripService, tripIds, trips, context, onDo
   }
   return <ModalDialog labelledBy="recalculation-title" className="confirm-dialog preview-dialog trip-review-dialog" onClose={onClose} busy={busy}>
     <h2 id="recalculation-title">Regenerate selected trips</h2>
-    <p>Each trip keeps one of its times, and its other times are recalculated from the current runtimes.</p>
     <div className="recalculation-bulk">
       <span>Keep for all trips</span>
       <button type="button" className={bulk.kind === 'first' ? 'is-selected' : undefined} aria-pressed={bulk.kind === 'first'} onClick={() => setAll({ kind: 'first' })} disabled={busy}>Start time</button>
@@ -184,10 +183,8 @@ export function RecalculationDialog({ tripService, tripIds, trips, context, onDo
     </div>
     <TripReviewSummary rows={rows} busy={busy || reviewing} allowSkip onSkipAttention={() => setSkipped((current) => [...new Set([...current, ...rows.filter((row) => row.status === 'attention').map((row) => row.tripId)])])} />
     <TripReviewTable rows={rows} busy={busy} runLabel="Regenerate" onAction={onAction} onOpenRuntimes={context.onOpenRuntimes} />
-    {review?.impact.requiresConfirmation && <p>Regenerating will replace manual times or affect blocks. Review the times above before applying.</p>}
     {error && <p className="field-error" role="alert">{error}</p>}
     <div className="dialog-actions trip-review-footer">
-      <span className="trip-review-footer__note">{rows.some((row) => row.status === 'attention') ? 'Trips that need attention are not changed until you choose a fix or skip them.' : ''}</span>
       <button type="button" onClick={onClose} disabled={busy}>Cancel</button>
       {!review && error && <button type="button" onClick={() => setRevision((value) => value + 1)} disabled={reviewing || busy}>Review again</button>}
       <button className="primary" type="button" onClick={() => void apply()} disabled={!review || !button.enabled || reviewing || busy}>{primaryLabel('Regenerate', button.count, busy, reviewing, 'Regenerating…')}</button>
@@ -284,7 +281,6 @@ export function BatchPatternChangeDialog({ tripService, tripIds, trips, context,
   }
   return <ModalDialog labelledBy="batch-pattern-title" className="confirm-dialog preview-dialog trip-review-dialog" onClose={onClose} busy={busy}>
     <h2 id="batch-pattern-title">Change the pattern of {tripIds.length} {tripIds.length === 1 ? 'trip' : 'trips'}</h2>
-    <p>Each trip moves to the new pattern and keeps the time you choose. Its other times are recalculated.</p>
     <div className="trip-review-controls">
       <label className="dialog-field">New pattern<select autoFocus value={targetPatternId} disabled={busy} onChange={(event) => { setTargetPatternId(event.target.value); setAnchorNodeId(''); setInputs(NO_INPUTS); }}>{context.patterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label>
       <label className="dialog-field">Keep the time at<select value={anchorNodeId} disabled={busy} onChange={(event) => { setAnchorNodeId(event.target.value); setInputs(NO_INPUTS); }}><option value="">Start (each trip's first stop)</option>{anchorChoices.map((choice) => <option key={choice.nodeId} value={choice.nodeId}>{choice.name}</option>)}</select></label>
@@ -293,7 +289,6 @@ export function BatchPatternChangeDialog({ tripService, tripIds, trips, context,
     <TripReviewTable rows={rows} busy={busy} runLabel="Change pattern" onAction={onAction} onOpenRuntimes={context.onOpenRuntimes} />
     {error && <p className="field-error" role="alert">{error}</p>}
     <div className="dialog-actions trip-review-footer">
-      <span className="trip-review-footer__note">{preview?.affectedBlockIds.length ? `${preview.affectedBlockIds.length} ${preview.affectedBlockIds.length === 1 ? 'block is' : 'blocks are'} affected.` : ''}</span>
       <button type="button" onClick={onClose} disabled={busy}>Cancel</button>
       <button className="primary" type="button" onClick={() => void apply()} disabled={!preview || !button.enabled || reviewing || busy}>{primaryLabel('Change', button.count, busy, reviewing, 'Saving…')}</button>
     </div>
@@ -343,11 +338,10 @@ export function TripPatternChangeDialog({ tripService, trip, directionId, contex
     catch (caught) { setError(caught instanceof Error && caught.name === 'TripPatternChangeStalePreviewError' ? 'The trip or pattern changed. Review the change again.' : userFacingError(caught, 'Unable to change the pattern. Review the change again, then apply.')); setRevision((value) => value + 1); }
     finally { setBusy(false); }
   }
-  const blocks = review?.affectedBlockIds?.length ?? 0;
   const startTime = trip.stopTimes[0]?.time;
   return <ModalDialog labelledBy="trip-pattern-title" className="confirm-dialog preview-dialog trip-review-dialog trip-review-dialog--single" onClose={onClose} busy={busy}>
     <h2 id="trip-pattern-title">Change the pattern of this trip</h2>
-    <p><span className="trip-review-pattern">{names.chip(trip.patternId)}</span><span>{names.patternById.get(trip.patternId)?.name ?? 'Unnamed pattern'}</span>{startTime === undefined ? '' : ` · ${clock(startTime)}`}{context.blockLabels?.get(trip.id) ? ` · ${context.blockLabels.get(trip.id)}` : ''}</p>
+    <p><span>{names.patternById.get(trip.patternId)?.name ?? 'Unnamed pattern'}</span>{startTime === undefined ? '' : ` · ${clock(startTime)}`}{context.blockLabels?.get(trip.id) ? ` · ${context.blockLabels.get(trip.id)}` : ''}</p>
     <div className="trip-review-controls">
       <label className="dialog-field">New pattern<select autoFocus value={targetPatternId} disabled={busy} onChange={(event) => { setTargetPatternId(event.target.value); setAnchorNodeId(''); setInputs(NO_INPUTS); }}>{targets.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label>
       <label className="dialog-field">Keep the time at<select value={anchorNodeId} disabled={busy} onChange={(event) => { setAnchorNodeId(event.target.value); setInputs(NO_INPUTS); }}><option value="">Start</option>{anchorChoices.map((choice) => <option key={choice.nodeId} value={choice.nodeId}>{choice.name}</option>)}</select></label>
@@ -355,7 +349,6 @@ export function TripPatternChangeDialog({ tripService, trip, directionId, contex
     <TripReviewTable rows={rows} busy={busy} runLabel="Change pattern" onAction={(tripId, actionId) => { if (actionId !== 'run') setInputs((current) => patternAction(current, tripId, actionId, rows[0]?.actions.find((action) => action.id === actionId))); }} onOpenRuntimes={context.onOpenRuntimes} />
     {error && <p className="field-error" role="alert">{error}</p>}
     <div className="dialog-actions trip-review-footer">
-      <span className="trip-review-footer__note">{review ? blocks ? `${blocks} ${blocks === 1 ? 'block is' : 'blocks are'} affected.` : 'No blocks are affected.' : ''}</span>
       <button type="button" onClick={onClose} disabled={busy}>Cancel</button>
       <button className="primary" type="button" onClick={() => void apply()} disabled={!review || !button.enabled || reviewing || busy}>{busy ? 'Saving…' : 'Change pattern'}</button>
     </div>

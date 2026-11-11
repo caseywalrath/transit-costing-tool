@@ -42,17 +42,16 @@ test('a trip that cannot keep its time is flagged, explained, and fixed from its
 
   await dialog.getByRole('button', { name: /^Why: Can't keep 6:08/ }).click();
   const why = dialog.locator('.trip-review-why');
-  await expect(why.locator('h3')).toHaveText("This trip can't reach B at exactly 6:08.");
-  await expect(why).toContainText('Travel times get longer when AM Peak starts at 6:00.');
-  await expect(why).toContainText('A trip that starts at 6:00 reaches it at 6:10.');
-  await expect(why).toContainText('In AM Peak, travel takes 5:00 longer from A to B than in Early.');
+  await expect(why.locator('h3')).toHaveText('No trip reaches B at 6:08.');
+  await expect(why.locator('p')).toHaveText('AM Peak (from 6:00) adds 5:00 from A to B, so no start time reaches B between 6:04:59 and 6:10.');
+  await expect(why.getByRole('button', { name: 'Open runtimes' })).toBeVisible();
 
   const action = dialog.getByRole('combobox', { name: 'Action for trip at 5:56' });
   // Smallest change first (2 min later before 3:01 min earlier), Skip last.
-  await expect(action.locator('option:not([disabled])')).toHaveText(['Keep B at 6:10 instead — 2 min later', 'Keep B at 6:04:59 instead — 3:01 min earlier', /^Keep the start time \(5:56\)/, /^Skip this trip/]);
+  await expect(action.locator('option:not([disabled])')).toHaveText(['Keep B at 6:10 instead — 2 min later', 'Keep B at 6:04:59 instead — 3:01 min earlier', /^Keep the start time \(5:56\)/, 'Skip this trip']);
   await action.selectOption('keep:22200');
   await expect(dialog.locator('.trip-review-chip').nth(1)).toHaveText('Ready');
-  await expect(action.locator('option')).toHaveText([/^Keep B at 6:10 instead/, 'Undo this fix', /^Skip this trip/]);
+  await expect(action.locator('option')).toHaveText([/^Keep B at 6:10 instead/, 'Undo this fix', 'Skip this trip']);
   await dialog.getByRole('button', { name: 'Regenerate 4 trips' }).click();
   await expect(dialog).toHaveCount(0);
   expect(await savedTimes(page)).toEqual([[21000, 21300], [21600, 22200], [22200, 22800], [23400, 24000]]);

@@ -38,32 +38,11 @@ function ChangeCell({ current, next, format, unchanged = 'no change' }: { curren
   return <td className="num" title={title}>{format(shown)}<span className={moved ? 'trip-review-delta trip-review-delta--moved' : 'trip-review-delta'}>{difference === undefined ? '—' : moved ? `${difference > 0 ? '+' : '−'}${shiftText(difference).replace(/ (earlier|later)$/, '')}` : unchanged}</span></td>;
 }
 
-function Timeline({ timeline }: { timeline: NonNullable<TripProblemExplanation['timeline']> }) {
-  const points = [timeline.before, timeline.kept, timeline.after].filter((value): value is number => value !== undefined);
-  const low = Math.min(...points) - 120;
-  const high = Math.max(...points) + 120;
-  const at = (value: number) => `${((value - low) / (high - low)) * 100}%`;
-  return <div className="trip-review-timeline" aria-hidden="true">Times a trip can reach {timeline.stopName}
-    <div className="trip-review-timeline__bar">
-      {timeline.before !== undefined && <span className="trip-review-timeline__reach" style={{ left: 0, width: at(timeline.before) }} />}
-      {timeline.after !== undefined && <span className="trip-review-timeline__reach" style={{ left: at(timeline.after), right: 0 }} />}
-      <span className="trip-review-timeline__mark" style={{ left: at(timeline.kept) }} />
-    </div>
-    <div className="trip-review-timeline__labels">
-      {timeline.before !== undefined && <span style={{ left: at(timeline.before) }}>{clock(timeline.before)}</span>}
-      <span className="trip-review-timeline__kept" style={{ left: at(timeline.kept) }}>{clock(timeline.kept)}</span>
-      {timeline.after !== undefined && <span style={{ left: at(timeline.after) }}>{clock(timeline.after)}</span>}
-    </div>
-  </div>;
-}
-
 function WhyPanel({ id, explanation, onOpenRuntimes }: { id: string; explanation: TripProblemExplanation; onOpenRuntimes?: () => void }) {
   return <div id={id} className="trip-review-why" role="region" aria-label={explanation.headline}>
     <h3>{explanation.headline}</h3>
-    {explanation.causes.map((line) => <p key={line}>{line}</p>)}
-    {explanation.timeline && !explanation.timeline.overlap && <Timeline timeline={explanation.timeline} />}
-    {explanation.fixes.length > 0 && <><p><strong>{explanation.actions.length ? 'To fix it, choose one in the Action list:' : 'What you can do:'}</strong></p><ul>{explanation.fixes.map((line) => <li key={line}>{line}</li>)}</ul></>}
-    {explanation.hint && <p className="trip-review-why__hint">{explanation.hint}{onOpenRuntimes && <> <button type="button" className="link-button" onClick={onOpenRuntimes}>Open runtimes</button></>}</p>}
+    {explanation.cause && <p>{explanation.cause}</p>}
+    {explanation.openRuntimes && onOpenRuntimes && <button type="button" className="link-button" onClick={onOpenRuntimes}>Open runtimes</button>}
   </div>;
 }
 

@@ -225,7 +225,7 @@ test('the Recalculate dialog offers no band picker for a segment-start profile a
   await expect(action.locator('option[value="start:21600"]')).toHaveText(/^Start at 6:00 —/);
   await expect(action.locator('option[value^="band:"]')).toHaveCount(0);
   await dialog.getByRole('button', { name: /^Why: Two start times fit/ }).click();
-  await expect(dialog.locator('.trip-review-why')).toContainText('A trip that starts at 5:55 and a trip that starts at 6:00 both reach');
+  await expect(dialog.locator('.trip-review-why p')).toHaveText('Late (from 6:00) saves 5:00 from A to B.');
   await expect(dialog.getByRole('button', { name: 'Regenerate 0 trips' })).toBeDisabled();
   await action.selectOption('start:21300');
   await expect(dialog.getByRole('button', { name: 'Regenerate 1 trip', exact: true })).toBeEnabled();
