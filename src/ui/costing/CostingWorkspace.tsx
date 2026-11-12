@@ -453,7 +453,7 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
     </div>
 
     {result?.basis === 'estimated' && result.dailyRows.some((row) => row.impliedService?.length) && <WorkSurface title="Vehicle requirement" ariaLabel="Vehicle requirement" collapse={{ open: vehicleRequirementOpen, onToggle: setVehicleRequirementSectionOpen, id: 'vehicle-requirement-body' }} subtitle={tripProfileName ? `Trip profile ${tripProfileName}` : undefined}>
-      <CycleCalculator key={basisValue} result={result} rate={selectedYearResult?.appliedRateUsdPerRevenueHour} disabled={saving || !factorProfileId}
+      <CycleCalculator key={basisValue} result={result} rate={selectedYearResult?.appliedRateUsdPerRevenueHour} disabled={saving || !factorProfileId} factorRouteId={factorRouteId}
         onUseLayover={(serviceDayId, fraction) => setFactors((current) => setEstimateFactor(current, serviceDayId, 'layoverFraction', Number(fraction.toFixed(6))))} />
     </WorkSurface>}
 

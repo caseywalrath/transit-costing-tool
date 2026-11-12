@@ -38,7 +38,8 @@ Costing is scenario-wide. The estimated basis sums every Trip of the Trip Profil
    - Duplicating a Route copies its Route entries to the new Route.
    - Scenario duplication and backup import-as-copy remap Trip Profile, Route and service-day IDs.
 5. **Costing screen.** A Route field menu (`MenuButton` with `fieldLabel`, as the Blocking scenario field menu of Decision 0076) in the Estimate factors header has "All routes" (the Trip Profile's factors, as today) followed by each Route. The subtitle produced by `factorSubtitle` ("Trip profile X · shared scenario factors" / "· blank days use All days") is removed. A cell that inherits is visibly distinct from a value entered at the selected level.
-6. **Bases.** Route factors affect the estimated basis only. The blocked basis takes its hours from Block summaries and does not use factors, as today.
+6. **Vehicle requirement (Decision 0063), accepted 2026-11-12.** Each row starts from its Route's resolved layover % (item 2.2) and says whether it comes from the "route" or the "trip profile". "Use" writes only to the level the Route menu shows: with All routes, only on rows whose Route inherits the Trip Profile's layover (a row with its own Route layover is disabled, with a tooltip naming the Route menu); with one Route chosen, only on that Route's rows, and the other rows are dimmed. "Use" never changes the Route menu. Rejected: "Use" writing to the row's Route entry whatever the menu shows, because it creates unsaved edits on a level the grid does not show.
+7. **Bases.** Route factors affect the estimated basis only. The blocked basis takes its hours from Block summaries and does not use factors, as today.
 
 ### 3. Attribution
 

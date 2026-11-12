@@ -111,3 +111,41 @@ test('the Cost Summary shows Cost by route for two Routes', async ({ page }) => 
   await expect(sheet.getByRole('heading', { name: 'Cost by route' })).toBeVisible();
   await expect(sheet).toContainText('Second route');
 });
+
+test('Vehicle requirement starts from each Route’s layover % and Use writes only to the level the Route menu shows', async ({ page }) => {
+  await open(page, true);
+  const grid = factorsPanel(page).getByRole('grid', { name: 'Estimate factors' });
+  await editGridCell(gridCell(grid, 'All days layover percent'), '10');
+  await page.getByRole('button', { name: 'Save factors', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^Sav/ })).toHaveCount(0);
+  await openMenu(page, factorsPanel(page).getByRole('button', { name: 'Route: All routes' }), 'Route');
+  await page.getByRole('menuitemradio', { name: 'Second route' }).click();
+  await editGridCell(gridCell(grid, 'All days layover percent'), '30');
+  await page.getByRole('button', { name: 'Save factors', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^Sav/ })).toHaveCount(0);
+
+  const panel = page.getByRole('region', { name: 'Vehicle requirement' });
+  await panel.getByRole('button', { name: 'Vehicle requirement' }).click();
+  const second = panel.locator('tbody tr').filter({ hasText: 'Second route' }).first();
+  const first = panel.locator('tbody tr').filter({ hasNotText: 'Second route' }).first();
+  await expect(second.getByRole('textbox', { name: /layover percent/ })).toHaveValue('30');
+  await expect(second.locator('.cycle-source')).toHaveText('route');
+  await expect(first.getByRole('textbox', { name: /layover percent/ })).toHaveValue('10');
+  await expect(first.locator('.cycle-source')).toHaveText('trip profile');
+  // With Second route chosen, the other Route's rows are dimmed and cannot write.
+  await expect(first).toHaveClass(/cycle-row--other/);
+  await first.getByRole('textbox', { name: /layover percent/ }).fill('12');
+  await expect(first.getByRole('button', { name: /^Use / })).toBeDisabled();
+  await second.getByRole('textbox', { name: /layover percent/ }).fill('25');
+  await second.getByRole('button', { name: /^Use / }).click();
+  await expect(gridCell(grid, 'Weekday layover percent').or(gridCell(grid, 'Saturday layover percent')).or(gridCell(grid, 'Sunday layover percent')).or(gridCell(grid, 'Holiday layover percent')).filter({ hasText: '25' })).toHaveCount(1);
+
+  // With All routes chosen, a Route with its own layover cannot write to the Trip Profile.
+  await factorsPanel(page).getByRole('button', { name: 'Discard', exact: true }).click();
+  await openMenu(page, factorsPanel(page).getByRole('button', { name: 'Route: Second route' }), 'Route');
+  await page.getByRole('menuitemradio', { name: 'All routes' }).click();
+  await expect(first).not.toHaveClass(/cycle-row--other/);
+  await second.getByRole('textbox', { name: /layover percent/ }).fill('20');
+  await expect(second.getByRole('button', { name: /^Use / })).toBeDisabled();
+  await expect(second.getByRole('button', { name: /^Use / })).toHaveAttribute('title', /own layover %/);
+});

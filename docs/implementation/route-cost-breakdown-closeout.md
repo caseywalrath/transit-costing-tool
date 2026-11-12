@@ -39,6 +39,6 @@
 ## Open points for the user
 
 1. Row order of the Route table: name order (implemented) or by annual cost.
-2. The Vehicle requirement surface still uses the Trip Profile's layover % for its implied-service check, not a Route's own factor. "Use layover" writes to the level the Route menu shows.
+2. Resolved 2026-11-12 (Decision 0077 item 2.6): the Vehicle requirement surface starts each row from its Route's resolved layover %, shows its source, and enables "Use" only where the Estimate factors grid shows the result. Verified: typecheck, unit suite 1420 passed, browser `costing-route-breakdown`, `costing-trip-profile-factors`, `costing-estimated` (15 passed).
 3. A Block whose revenue Trips match no known Route goes to the Unattributed row without a warning.
 4. The Dexie `saveProjectSnapshot` path does not prune Route entries; backup validation already rejects entries naming a missing Route.

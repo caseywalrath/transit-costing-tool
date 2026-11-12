@@ -227,7 +227,14 @@ export interface ImpliedRouteService {
   roundTripWithLayoverSeconds?: number;
   /** Σ over directions of (mean run ÷ (1 − layover)) ÷ headway. Undefined without a layover factor or a headway in any direction. */
   impliedVehicles?: number;
+  /** The layover factor used for this Route (Decision 0077: the Route's resolved factor when the caller gives one per Route). */
+  layoverFraction?: number;
+  /** Where `layoverFraction` came from, when the caller gives a source. */
+  layoverSource?: RouteFactorSource;
 }
+
+/** A layover for every Route, or one per Route with its source (Decision 0077). */
+export type ImpliedLayover = number | undefined | ((routeId: string) => { fraction?: number; source?: RouteFactorSource });
 
 function median(values: number[]): number | undefined {
   if (!values.length) return undefined;
@@ -243,9 +250,11 @@ function median(values: number[]): number | undefined {
 export function deriveImpliedService(
   trips: Trip[],
   patterns: RoutePattern[],
-  layoverFraction: number | undefined,
+  layover: ImpliedLayover,
   routes: Route[] = [],
 ): ImpliedRouteService[] {
+  const usable = (fraction: number | undefined) => fraction !== undefined && Number.isFinite(fraction) && fraction >= 0 && fraction < 1 ? fraction : undefined;
+  const layoverOf = (routeId: string) => typeof layover === 'function' ? layover(routeId) : { fraction: layover };
   const patternById = new Map(patterns.map((pattern) => [pattern.id, pattern]));
   const routeName = new Map(routes.map((route) => [route.id, route.name]));
   const byRoute = new Map<string, Map<string, { runs: number[]; departures: number[] }>>();
@@ -261,7 +270,6 @@ export function deriveImpliedService(
     direction.runs.push(run);
     direction.departures.push([...trip.stopTimes].sort((left, right) => left.sequence - right.sequence)[0].time);
   }
-  const usableLayover = layoverFraction !== undefined && Number.isFinite(layoverFraction) && layoverFraction >= 0 && layoverFraction < 1 ? layoverFraction : undefined;
   return [...byRoute.entries()]
     .map(([routeId, directions]): ImpliedRouteService => {
       const listed = [...directions.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([directionKey, value]): ImpliedDirectionService => {
@@ -276,7 +284,11 @@ export function deriveImpliedService(
       const roundTripRunSeconds = listed.reduce((sum, direction) => sum + direction.meanRunSeconds, 0);
       const runningHours = listed.reduce((sum, direction) => sum + direction.meanRunSeconds * direction.tripCount, 0) / 3600;
       const route: ImpliedRouteService = { routeId, ...(routeName.has(routeId) ? { routeName: routeName.get(routeId) } : {}), directions: listed, roundTripRunSeconds, runningHours };
+      const chosen = layoverOf(routeId);
+      if (chosen.source !== undefined) route.layoverSource = chosen.source;
+      const usableLayover = usable(chosen.fraction);
       if (usableLayover === undefined) return route;
+      route.layoverFraction = usableLayover;
       route.roundTripWithLayoverSeconds = roundTripRunSeconds / (1 - usableLayover);
       if (listed.every((direction) => direction.headwaySeconds !== undefined)) {
         route.impliedVehicles = listed.reduce((sum, direction) => sum + direction.meanRunSeconds / (1 - usableLayover) / direction.headwaySeconds!, 0);
@@ -452,7 +464,11 @@ export function calculateEstimatedCosting(input: EstimatedCostingInput): Estimat
       runningHoursPerDay,
       annualRunningHours: runningHoursPerDay * day.annualServiceDays,
       factors,
-      ...(input.patterns ? { impliedService: deriveImpliedService(tripsByDay.get(day.id) ?? [], input.patterns, factors.layoverFraction, input.routes) } : {}),
+      ...(input.patterns ? { impliedService: deriveImpliedService(tripsByDay.get(day.id) ?? [], input.patterns, (routeId) => {
+        // Decision 0077: each Route's implied service uses that Route's resolved layover, as its cost row does.
+        const resolved = routeRows.find((route) => route.routeId === routeId)?.days[index]?.factors;
+        return resolved ? { fraction: resolved.layoverFraction, source: resolved.layoverSource } : { fraction: factors.layoverFraction, source: factors.layoverSource };
+      }, input.routes) } : {}),
       yearCosts: [],
     };
     // Decision 0077 item 3.5: a day where no Route factor applies keeps the Trip Profile computation unchanged. Otherwise the day is the sum of its Route rows.
