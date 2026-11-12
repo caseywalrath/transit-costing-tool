@@ -1,6 +1,6 @@
 # Decision 0053: Delete Several Blocks at Once, and Place Day-Level Block Commands on the Blocks Surface
 
-- Status: Accepted (user decision of 2026-11-02); implemented, awaiting user acceptance
+- Status: Accepted (user decision of 2026-11-02); implemented, awaiting user acceptance. Item 4 is superseded for the Blocking tab by Decision 0076 (2026-11-12): the Blocking Scenario commands moved from the scope bar to the Blocking scenario field menu.
 - Date: 2026-11-02
 - Extends: Decision 0052 (copy blocks from another day)
 

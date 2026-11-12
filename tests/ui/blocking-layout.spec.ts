@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern } from './support/tripsWorkspace';
-import { runCommand } from './support/ui';
+import { blockingScenarioMenu, runCommand } from './support/ui';
 
 test.setTimeout(120_000);
 test.use({ actionTimeout: 15_000 });
@@ -27,12 +27,11 @@ async function openBlockingWithTrips(page: Page, tripCount: number) {
   await page.getByRole('button', { name: 'Build', exact: true }).click();
   await expect(page.locator('.schedule-table tbody tr')).toHaveCount(tripCount);
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New blocking scenario…', exact: true }).click();
+  await runCommand(page, 'blockingScenario.new');
   const scenarioDialog = page.getByRole('dialog', { name: 'New blocking scenario' });
   await scenarioDialog.getByLabel('Name').fill('Layout');
   await scenarioDialog.getByRole('button', { name: 'Create', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Blocking scenario' })).toHaveValue(/.+/);
+  await expect(blockingScenarioMenu(page)).toHaveAccessibleName('Blocking scenario: Layout');
   await runCommand(page, 'block.new');
   await page.getByRole('dialog', { name: 'New block' }).getByRole('button', { name: 'Create block', exact: true }).click();
   await expect(currentBlock(page).getByText('This empty Block is valid.')).toBeVisible();
@@ -223,18 +222,70 @@ test('the Current block header shows the subtitle, New block, and a menu with Re
   await expect(page.getByRole('menu', { name: 'Current block actions' }).getByRole('menuitem')).toHaveText(['Rename block…', 'Edit notes…', 'Delete block…']);
 });
 
+test('Decision 0076: Blocking summary comes first, holds the scenario menu and Blocks actions, and the scope bar has no Actions menu', async ({ page }) => {
+  await openGoldenBlocking(page);
+  const summary = page.getByRole('region', { name: 'Blocking summary', exact: true });
+  const toggle = summary.getByRole('button', { name: /^Blocking summary · Weekday/ });
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(summary.locator('.work-surface__count')).toHaveText(/^\d+$/);
+  await expect(blockingScenarioMenu(page)).toHaveAccessibleName(/^Blocking scenario: .+/);
+  await expect(summary.getByRole('button', { name: 'Blocks actions', exact: true })).toBeVisible();
+  const scope = page.getByRole('region', { name: 'Scope', exact: true });
+  await expect(scope.getByRole('button', { name: 'Blocking actions', exact: true })).toHaveCount(0);
+  await expect(scope.getByLabel('Blocking scenario', { exact: true })).toHaveCount(0);
+  // The summary sits above Unassigned trips and Current block.
+  const summaryBox = await summary.boundingBox();
+  const gridBox = await page.locator('.blocking-top').boundingBox();
+  expect(summaryBox!.y + summaryBox!.height).toBeLessThanOrEqual(gridBox!.y);
+  // The scenario menu lists the scenarios, then the lifecycle commands, then Export.
+  await openMenuByTrigger(page);
+  const menu = page.getByRole('menu', { name: 'Blocking scenario', exact: true });
+  await expect(menu.getByRole('menuitem')).toHaveText(['New blocking scenario…', 'Auto-blocking…', 'Duplicate blocking scenario…', 'Rename blocking scenario…', 'Delete blocking scenario…', 'Export blocking CSV (ZIP)']);
+  await page.keyboard.press('Escape');
+  await expect(blockingScenarioMenu(page)).toBeFocused();
+});
+
+async function openMenuByTrigger(page: Page) {
+  await blockingScenarioMenu(page).click();
+  await expect(page.getByRole('menu', { name: 'Blocking scenario', exact: true })).toBeVisible();
+}
+
+test('Decision 0076: collapsing Blocking summary keeps its header and one line of figures, and is remembered on this device', async ({ page }) => {
+  await openGoldenBlocking(page);
+  const summary = page.getByRole('region', { name: 'Blocking summary', exact: true });
+  const toggle = summary.getByRole('button', { name: /^Blocking summary · Weekday/ });
+  await expect(summary.locator('.work-surface__subtitle')).toHaveText('Select a block name to open it');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(toggle).toBeFocused();
+  await expect(summary.locator('.blocking-blocks-table')).toHaveCount(0);
+  await expect(blockingScenarioMenu(page)).toBeVisible();
+  await expect(summary.locator('.work-surface__subtitle')).toHaveText(/^Revenue [\d.,]+ h · Platform [\d.,]+ h · Layover [\d.]+% · Deadhead [\d.]+% · Peak pullout \d+$/);
+  expect(await page.evaluate(() => localStorage.getItem('transit-costing-tool.blocking-summary-open.v1'))).toBe('{"open":false}');
+  await page.reload();
+  await page.getByRole('button', { name: 'Blocking', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Blocking summary', exact: true }).getByRole('button', { name: /^Blocking summary · Weekday/ })).toHaveAttribute('aria-expanded', 'false');
+});
+
 test('the day summary is a ten-cell strip above the Blocks table, and the footer counts the blocks', async ({ page }) => {
   await openGoldenBlocking(page);
   const summary = page.getByLabel('Blocking summary');
-  await expect(summary.getByRole('heading', { name: /^Weekday summary · \d+ blocks$/ })).toBeVisible();
   await expect(summary.locator('.stat-strip dt')).toHaveText(['Revenue', 'Running', 'Platform', 'Layover', 'Layover %of revenue hours', 'Deadhead', 'Deadhead %of platform hours', 'Revenue miles', 'Platform miles', 'Peak pulloutvehicles at once']);
   // Figures share one baseline whatever the label height.
   const bottoms = await summary.locator('.stat-strip dd').evaluateAll((cells) => cells.map((cell) => Math.round(cell.getBoundingClientRect().bottom)));
   expect(new Set(bottoms).size).toBe(1);
-  const summaryBox = await summary.boundingBox();
-  const blocksBox = await page.getByLabel('Blocks', { exact: true }).boundingBox();
-  expect(summaryBox!.y + summaryBox!.height).toBeLessThanOrEqual(blocksBox!.y);
-  await expect(page.getByLabel('Blocks', { exact: true }).locator('tfoot')).toContainText(/Total · \d+ blocks/);
+  const stripBox = await summary.locator('.stat-strip').boundingBox();
+  const table = summary.locator('.blocking-blocks-table');
+  const tableBox = await table.boundingBox();
+  expect(stripBox!.y + stripBox!.height).toBeLessThanOrEqual(tableBox!.y);
+  await expect(table.locator('tfoot')).toContainText(/Total · \d+ blocks/);
+  // The golden weekday has more Blocks than fit: the table scrolls inside the surface, with its heading and totals rows still visible.
+  const scroll = await table.evaluate((element) => ({ scroll: element.scrollHeight, client: element.clientHeight }));
+  expect(scroll.scroll).toBeGreaterThan(scroll.client);
+  await table.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  const [head, foot, box] = await Promise.all([table.locator('thead th').first().boundingBox(), table.locator('tfoot th').boundingBox(), table.boundingBox()]);
+  expect(Math.round(head!.y)).toBeGreaterThanOrEqual(Math.round(box!.y));
+  expect(Math.round(foot!.y + foot!.height)).toBeLessThanOrEqual(Math.round(box!.y + box!.height) + 1);
 });
 
 test('at 1440 px the Current block table shows every column without sideways scrolling in side mode', async ({ page }) => {

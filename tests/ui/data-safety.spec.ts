@@ -4,7 +4,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
-import { scopeField } from './support/ui';
+import { region, scopeField } from './support/ui';
 
 test.setTimeout(120_000);
 test.use({ actionTimeout: 15_000 });
@@ -78,7 +78,7 @@ test('after a stale-source refusal Blocking reloads its data and shows the messa
   const currentBlock = page.getByLabel('Current block');
   const blockMenu = currentBlock.locator('.menu-field').filter({ hasText: 'Block' }).getByRole('button').first();
   await expect(blockMenu).toBeVisible({ timeout: 30_000 });
-  await page.getByLabel('Blocks', { exact: true }).locator('.link-button').filter({ hasText: /^26$/ }).click();
+  await region(page, 'blockingSummary').locator('.blocking-blocks-table').locator('.link-button').filter({ hasText: /^26$/ }).click();
   await expect(blockMenu).toContainText('26');
   const shownLabel = '26';
 
@@ -116,7 +116,7 @@ test('a typed Blocking refusal is shown once, as written', async ({ page }) => {
   const currentBlock = page.getByLabel('Current block');
   const blockMenu = currentBlock.locator('.menu-field').filter({ hasText: 'Block' }).getByRole('button').first();
   await expect(blockMenu).toBeVisible({ timeout: 30_000 });
-  await page.getByLabel('Blocks', { exact: true }).locator('.link-button').filter({ hasText: /^26$/ }).click();
+  await region(page, 'blockingSummary').locator('.blocking-blocks-table').locator('.link-button').filter({ hasText: /^26$/ }).click();
   await expect(blockMenu).toContainText('26');
 
   await currentBlock.getByRole('button', { name: 'New block', exact: true }).click();

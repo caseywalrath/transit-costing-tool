@@ -43,7 +43,7 @@ test('the scope row holds each tab\'s selectors', async ({ page }) => {
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await expect.poll(names).toEqual(['Route', '(Day)', '(Direction)']);
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await expect.poll(names).toEqual(['Route', 'Trip profile', 'Blocking scenario', '(Day)']);
+  await expect.poll(names).toEqual(['Route', 'Trip profile', '(Day)']);
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await expect.poll(names).toEqual(['Cost basis', 'Trip profile', 'View year']);
 });

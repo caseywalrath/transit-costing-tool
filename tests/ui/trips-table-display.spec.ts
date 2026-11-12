@@ -99,8 +99,7 @@ test('flags a duplicate departure and warns on both Trips when a Block overlaps 
 
   // Put both 06:00 Trips in one Block. Each arrives at 6:07, after the other departs at 6:00, so both are warned.
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New blocking scenario…', exact: true }).click();
+  await runCommand(page, 'blockingScenario.new');
   await page.getByRole('dialog', { name: 'New blocking scenario' }).getByLabel('Name').fill('Overlap check');
   await page.getByRole('dialog', { name: 'New blocking scenario' }).getByRole('button', { name: 'Create', exact: true }).click();
   const currentBlock = page.getByLabel('Current block');

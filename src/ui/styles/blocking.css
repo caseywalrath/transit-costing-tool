@@ -31,6 +31,23 @@
 .stat-strip dt { color: var(--color-text-muted); font-size: var(--font-size-label); }
 .stat-strip dd { margin: 2px 0 0; margin-top: auto; padding-top: 2px; font-size: var(--font-size-title); font-variant-numeric: tabular-nums; font-weight: var(--font-weight-bold); }
 .stat-strip dt small { display: block; font-weight: var(--font-weight-regular); color: var(--color-text-subtle); font-size: var(--font-size-caption); }
+/* Decision 0076: Blocking summary sits above the editing grid. The stat strip keeps the tinted box of the former support panel. */
+/* The header stays on one line: the subtitle (the collapsed figures line) shrinks and ends in an ellipsis; its full text is the title tooltip. */
+.blocking-summary-surface .work-surface__header { flex-wrap: nowrap; }
+.blocking-summary-surface .work-surface__title { white-space: nowrap; }
+.blocking-summary-surface .work-surface__subtitle { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.blocking-summary-surface:not(:has(.work-surface__body)) .work-surface__header { border-bottom: 0; }
+@media (max-width: 760px) { .blocking-summary-surface .work-surface__header { flex-wrap: wrap; } .blocking-summary-surface .work-surface__subtitle { flex-basis: 100%; order: 10; } }
+.blocking-summary-surface .stat-strip { background: var(--color-surface-2); border: 1px solid var(--color-border-soft); border-radius: var(--radius-panel); padding: var(--inset-tight) var(--space-3); margin-bottom: var(--space-3); }
+.blocking-summary-factors { margin: 0 0 var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-note); }
+.blocking-summary-prerequisite h3 { margin: 0; font-size: var(--font-size-body); }
+.blocking-summary-prerequisite p { margin: 6px 0 0; color: var(--color-text-muted); }
+.blocking-summary-surface .work-surface__subtitle { font-variant-numeric: tabular-nums; }
+/* About ten rows, then the table scrolls inside the surface; the heading row (sticky via tables.css) and the totals row stay visible. */
+.blocking-blocks-table { max-height: 420px; overflow-y: auto; }
+.blocking-blocks-table tfoot th, .blocking-blocks-table tfoot td { position: sticky; top: auto; bottom: 0; z-index: 1; background: var(--color-sunken); }
+.blocking-blocks-table tfoot th:first-child { left: 0; z-index: 2; }
+.blocking-blocks-table thead th:first-child { z-index: 2; }
 .blocking-trips-table table { width: 100%; min-width: 0; table-layout: fixed; }
 .blocking-trips-table .blocking-selection-column { width: 34px; min-width: 34px; padding: var(--space-1) 7px; text-align: center; }
 .blocking-trips-table .blocking-selection-column input { width: 15px; min-height: 15px; vertical-align: middle; }

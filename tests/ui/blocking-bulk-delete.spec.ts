@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { seedSnapshot } from './support/dexieEnv';
 import { goldenRaw } from './support/goldenFixture';
-import { chooseScope, scopeField } from './support/ui';
+import { blockingScenarioMenu, chooseScope, expectBlockingScenarioSelected, openMenu } from './support/ui';
 
 test.setTimeout(90_000);
 
@@ -12,7 +12,7 @@ test('deletes checked blocks, then every block on the day', async ({ page }) => 
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30000 });
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await chooseScope(page, 'Day', { label: 'Saturday' });
-  await expect(scopeField(page, 'Blocking scenario')).toHaveValue(/.+/);
+  await expectBlockingScenarioSelected(page);
 
   const table = page.locator('.blocking-blocks-table');
   const rows = table.locator('tbody tr');
@@ -43,7 +43,8 @@ test('deletes checked blocks, then every block on the day', async ({ page }) => 
   await confirmAll.getByRole('button', { name: `Delete ${before - 2} blocks`, exact: true }).click();
   await expect(table.locator('.table-empty')).toBeVisible();
 
-  // The scope-bar menu holds blocking-scenario commands only.
-  await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
-  await expect(page.getByRole('menuitem', { name: 'Copy blocks from another day…' })).toHaveCount(0);
+  // The Blocking scenario menu holds blocking-scenario commands only.
+  await openMenu(page, blockingScenarioMenu(page), 'Blocking scenario');
+  await expect(page.getByRole('menu', { name: 'Blocking scenario', exact: true }).getByRole('menuitem', { name: 'Copy blocks from another day…' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
 });
