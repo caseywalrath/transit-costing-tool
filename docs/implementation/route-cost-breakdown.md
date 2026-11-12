@@ -229,7 +229,7 @@ The orchestrator designs and builds this package. Requirements:
 6. Expand all and Collapse all: two items in a new Cost breakdown surface Actions menu (`MenuButton` in the WorkSurface header, `triggerAriaLabel="Cost breakdown actions"`), because Decision 0076 item 6 puts commands on a surface's rows in that surface's Actions menu. Do not add them to `costingActionsMenu`: that menu sits in the scope bar and holds page-wide commands. The table's context menu (today `costingActionsMenu`) shows the scope-bar items followed by the two new items in their own group. Not visible buttons.
 7. Unassigned Trips (blocked basis): a muted note within the Route row's first cell, for example "3 unassigned", with the full sentence as accessible text. Not a column.
 8. The Unattributed row: last before Total, labelled "Unattributed (multi-route blocks)", expandable like a Route row. The `costing.multiRouteBlock` finding needs a message in `costingFindingMessage`.
-9. Row order: propose at the gate (name order from the domain, or sort by annual cost); implement the domain order until the user decides.
+9. Row order: by Route name, the domain order (user decision, 2026-11-12).
 
 ### Factor Route selector
 

@@ -18,7 +18,7 @@ Costing is scenario-wide. The estimated basis sums every Trip of the Trip Profil
 3. Expanding or collapsing never changes a column's width or position.
 4. With exactly one Route row, it is expanded by default.
 5. The expanded state is remembered per device and per Scenario. Expand all and Collapse all are items in a new Actions menu in the Cost breakdown header, which holds commands on that surface's rows (Decision 0076 item 6). They are not visible buttons, and they are not added to the scope-bar Costing actions menu.
-6. The year columns are unchanged.
+6. The year columns are unchanged. Route rows are listed by Route name (numeric-aware, case-insensitive); the Unattributed row is last (user decision, 2026-11-12).
 7. A scenario-wide by-service-day view is not part of this decision (backlog: "Costing by service day across routes").
 
 ### 2. Route estimate factors
