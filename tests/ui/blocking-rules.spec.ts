@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { createRouteWithPattern } from './support/tripsWorkspace';
-import { openMenu, runCommand } from './support/ui';
+import { expectBlockingScenarioSelected, openMenu, runCommand } from './support/ui';
 
 const openUnassignedActions = (page: Page) => openMenu(page, page.getByLabel('Unassigned trips').getByRole('button', { name: 'Unassigned trip actions', exact: true }), 'Unassigned trip actions');
 
@@ -18,12 +18,11 @@ async function openBlockingWithTrips(page: Page, tripCount: number) {
   await page.getByRole('button', { name: 'Build', exact: true }).click();
   await expect(page.locator('.schedule-table tbody tr')).toHaveCount(tripCount);
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New blocking scenario…', exact: true }).click();
+  await runCommand(page, 'blockingScenario.new');
   const scenarioDialog = page.getByRole('dialog', { name: 'New blocking scenario' });
   await scenarioDialog.getByLabel('Name').fill('Rules');
   await scenarioDialog.getByRole('button', { name: 'Create', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Blocking scenario' })).toHaveValue(/.+/);
+  await expectBlockingScenarioSelected(page);
 }
 
 async function newBlock(page: Page, name?: string) {

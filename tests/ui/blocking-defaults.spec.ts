@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { goldenRaw } from './support/goldenFixture';
-import { chooseScope, scopeField, scopeText } from './support/ui';
+import { blockingScenarioNames, chooseScope, runCommand, scopeText, selectedBlockingScenarioName } from './support/ui';
 
 test.setTimeout(120_000);
 
@@ -15,8 +15,8 @@ async function open(page: import('@playwright/test').Page, raw: unknown) {
 test('creates a Default blocking scenario when the trip profile has none', async ({ page }) => {
   await open(page, { ...goldenRaw(), generationSets: [], blockingScenarios: [], blocks: [] });
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await expect(scopeField(page, 'Blocking scenario').locator('option:checked')).toHaveText('Default', { timeout: 30_000 });
-  await expect(scopeField(page, 'Blocking scenario').locator('option')).toHaveCount(1);
+  await expect.poll(() => selectedBlockingScenarioName(page), { timeout: 30_000 }).toBe('Default');
+  await expect.poll(async () => (await blockingScenarioNames(page)).length).toBe(1);
   await expect(page.getByRole('heading', { name: 'Create or select a blocking scenario' })).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Unassigned trips' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Unassigned trips' }).locator('tbody tr').first()).toBeVisible();
@@ -27,8 +27,7 @@ test('creates a Default blocking scenario when the trip profile has none', async
 test('Add breaks turns the break rule off without clearing its values', async ({ page }) => {
   await open(page, { ...goldenRaw(), generationSets: [] });
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Auto-blocking…', exact: true }).click();
+  await runCommand(page, 'blockingScenario.autoBlocking');
   const dialog = page.getByRole('dialog', { name: 'Auto-blocking' });
   const toggle = dialog.getByRole('checkbox', { name: 'Add breaks', exact: true });
   await expect(toggle).toBeVisible({ timeout: 30_000 });

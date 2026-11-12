@@ -3,14 +3,13 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
 /** The scope selectors. The names are the revised ones (T1-A); `todayLabel` is the label the control carries now. */
-export type ScopeFieldName = 'Route' | 'Day' | 'Direction' | 'Trip profile' | 'Blocking scenario' | 'Cost basis' | 'View year';
+export type ScopeFieldName = 'Route' | 'Day' | 'Direction' | 'Trip profile' | 'Cost basis' | 'View year';
 
 const scopeFieldToday: Record<ScopeFieldName, string> = {
   Route: 'Route',
   Day: 'Day',
   Direction: 'Direction',
   'Trip profile': 'Trip profile',
-  'Blocking scenario': 'Blocking scenario',
   'Cost basis': 'Cost basis',
   'View year': 'View year',
 };

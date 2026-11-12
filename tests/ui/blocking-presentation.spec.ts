@@ -4,7 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
-import { chooseScope, runCommand, scopeField } from './support/ui';
+import { chooseScope, region, runCommand, scopeField, selectedBlockingScenarioName } from './support/ui';
 
 test.setTimeout(120_000);
 test.use({ actionTimeout: 15_000 });
@@ -19,7 +19,7 @@ async function openBlocking(page: Page, day = 'Weekday') {
   if (day !== 'Weekday') await chooseScope(page, 'Day', { label: day });
 }
 
-const blocksTable = (page: Page) => page.getByLabel('Blocks', { exact: true });
+const blocksTable = (page: Page) => region(page, 'blockingSummary').locator('.blocking-blocks-table');
 const currentBlock = (page: Page) => page.getByLabel('Current block');
 async function selectBlock(page: Page, label: string) {
   await blocksTable(page).locator('.link-button').filter({ hasText: new RegExp(`^${label}$`) }).click();
@@ -117,7 +117,7 @@ test('Delete Blocking Scenario shows its Blocks and activities, and is refused i
   await openBlocking(page);
   const counts = await runInPage(page, "const blocks = await e.db.blocks.toArray(); return { blocks: blocks.length, activities: blocks.reduce((sum, block) => sum + block.activities.length, 0), name: (await e.db.blockingScenarios.toArray())[0].name };");
   const confirm = page.getByRole('alertdialog');
-  const open = async () => { await page.getByRole('button', { name: 'Blocking actions', exact: true }).click(); await page.getByRole('menuitem', { name: 'Delete blocking scenario…', exact: true }).click(); };
+  const open = async () => { await runCommand(page, 'blockingScenario.delete'); };
 
   await open();
   await expect(confirm.getByRole('heading', { name: 'Delete blocking scenario?' })).toBeVisible();
@@ -137,7 +137,7 @@ test('Delete Blocking Scenario shows its Blocks and activities, and is refused i
   await expect(confirm).toHaveCount(0);
   // The deleted scenario and its Blocks are gone; the Trip Profile is left with an empty "Default" blocking scenario.
   await expect.poll(() => runInPage(page, 'return [(await e.db.blockingScenarios.toArray()).map((item) => item.name), await e.db.blocks.count()]')).toEqual([['Default'], 0]);
-  await expect(scopeField(page, 'Blocking scenario').locator('option:checked')).toHaveText('Default');
+  await expect.poll(() => selectedBlockingScenarioName(page)).toBe('Default');
 });
 
 test('the Pattern actions menu offers "Delete pattern…" and its confirmation reads "Delete Pattern"', async ({ page }) => {
@@ -233,5 +233,5 @@ test('the summary shows Layover % and Deadhead % for the day, and the All days v
   const tile = (name: string) => summary.locator('.stat-strip > div').filter({ has: page.locator('dt', { hasText: name }) }).locator('dd');
   await expect(tile('Layover %')).toHaveText('17.8%');
   await expect(tile('Deadhead %')).toHaveText('5.5%');
-  await expect(summary.locator('.support-panel__aside')).toHaveText('All days, weighted by annual service days: layover 18.2% · deadhead 5.6%');
+  await expect(summary.locator('.blocking-summary-factors')).toHaveText('All days, weighted by annual service days: layover 18.2% · deadhead 5.6%');
 });

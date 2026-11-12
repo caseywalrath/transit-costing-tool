@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { seedSnapshot } from './support/dexieEnv';
 import { goldenRaw } from './support/goldenFixture';
-import { chooseScope, openMenu, scopeField } from './support/ui';
+import { chooseScope, expectBlockingScenarioSelected, openMenu } from './support/ui';
 
 test.setTimeout(120_000);
 // A tall viewport keeps the Blocks table in view without scrolling.
@@ -14,7 +14,7 @@ async function openSaturdayBlocking(page: Page) {
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30000 });
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await chooseScope(page, 'Day', { label: 'Saturday' });
-  await expect(scopeField(page, 'Blocking scenario')).toHaveValue(/.+/);
+  await expectBlockingScenarioSelected(page);
   await expect(page.locator('.blocking-blocks-table tbody tr.selected-block-row')).toHaveCount(1);
 }
 
