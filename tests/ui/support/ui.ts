@@ -66,9 +66,10 @@ export async function chooseScenario(page: Page, name: string) {
   await page.getByRole('menu', { name: 'Scenario actions', exact: true }).getByRole('menuitemradio', { name, exact: true }).click();
 }
 
-export type RegionId = 'unassignedTrips' | 'currentBlock' | 'runtimes' | 'trips' | 'blockingControls' | 'routeControls' | 'costingControls';
+export type RegionId = 'blockingSummary' | 'unassignedTrips' | 'currentBlock' | 'runtimes' | 'trips' | 'blockingControls' | 'routeControls' | 'costingControls';
 
 const regionToday: Record<RegionId, string> = {
+  blockingSummary: 'Blocking summary',
   unassignedTrips: 'Unassigned trips',
   currentBlock: 'Current block',
   runtimes: 'Runtimes section',
@@ -77,6 +78,35 @@ const regionToday: Record<RegionId, string> = {
   routeControls: 'Scope',
   costingControls: 'Scope',
 };
+
+/** The Blocking scenario field menu trigger in the Blocking summary header (Decision 0076). Its name is "Blocking scenario: <name>". */
+export const blockingScenarioMenu = (page: Page): Locator => page.locator('[aria-label="Blocking summary"]').getByRole('button', { name: /^Blocking scenario: / });
+
+/** The selected Blocking Scenario's name, read from the field menu trigger; '' when none is selected. */
+export async function selectedBlockingScenarioName(page: Page): Promise<string> {
+  const name = (await blockingScenarioMenu(page).getAttribute('aria-label')) ?? '';
+  return name === 'Blocking scenario: none selected' ? '' : name.replace(/^Blocking scenario: /, '');
+}
+
+/** Waits until a Blocking Scenario is selected (the old `toHaveValue(/.+/)` on the scope-bar select). */
+export async function expectBlockingScenarioSelected(page: Page) {
+  await expect(blockingScenarioMenu(page)).toHaveAccessibleName(/^Blocking scenario: (?!none selected$).+/);
+}
+
+/** Chooses a Blocking Scenario by name from the field menu. */
+export async function chooseBlockingScenario(page: Page, name: string) {
+  await openMenu(page, blockingScenarioMenu(page), 'Blocking scenario');
+  await page.getByRole('menu', { name: 'Blocking scenario', exact: true }).getByRole('menuitemradio', { name, exact: true }).click();
+  await expect(blockingScenarioMenu(page)).toHaveAccessibleName(`Blocking scenario: ${name}`);
+}
+
+/** The names of the listed Blocking Scenarios. Opens the menu, reads it, and closes it with Escape. */
+export async function blockingScenarioNames(page: Page): Promise<string[]> {
+  await openMenu(page, blockingScenarioMenu(page), 'Blocking scenario');
+  const names = await page.getByRole('menu', { name: 'Blocking scenario', exact: true }).getByRole('menuitemradio').allTextContents();
+  await page.keyboard.press('Escape');
+  return names.map((name) => name.trim());
+}
 
 /** The Shift controls (UR-15: a mode of the Trips selection bar, `role="toolbar"`). Only the live copy is visible, so this finds one. */
 export const shiftBar = (page: Page): Locator => page.getByRole('toolbar', { name: 'Shift selected trips', exact: true });
@@ -185,11 +215,14 @@ const commands = {
   'route.duplicate': { menu: 'Route actions', item: 'Duplicate route' },
   'route.exportCsv': { menu: 'Route actions', item: 'Export route CSV (ZIP)' },
   'route.delete': { menu: 'Route actions', item: 'Delete route…' },
-  'blockingScenario.new': { menu: 'Blocking actions', item: 'New blocking scenario…' },
-  'blockingScenario.rename': { menu: 'Blocking actions', item: 'Rename blocking scenario…' },
-  'blockingScenario.duplicate': { menu: 'Blocking actions', item: 'Duplicate blocking scenario…' },
-  'blockingScenario.delete': { menu: 'Blocking actions', item: 'Delete blocking scenario…' },
-  'blockingScenario.exportCsv': { menu: 'Blocking actions', item: 'Export blocking CSV (ZIP)' },
+  // Decision 0076: the Blocking scenario field menu in the Blocking summary header ("Blocking scenario: <name>").
+  'blockingScenario.new': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingSummary', item: 'New blocking scenario…' },
+  'blockingScenario.autoBlocking': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingSummary', item: 'Auto-blocking…' },
+  'blockingScenario.rename': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingSummary', item: 'Rename blocking scenario…' },
+  'blockingScenario.duplicate': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingSummary', item: 'Duplicate blocking scenario…' },
+  'blockingScenario.delete': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingSummary', item: 'Delete blocking scenario…' },
+  'blockingScenario.exportCsv': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingSummary', item: 'Export blocking CSV (ZIP)' },
+  'blocks.copyDay': { menu: 'Blocks actions', within: 'blockingSummary', item: 'Copy blocks from another day…' },
   'block.rename': { menu: 'Current block actions', within: 'currentBlock', item: 'Rename block…' },
   'block.notes': { menu: 'Current block actions', within: 'currentBlock', item: 'Edit notes…' },
   'block.delete': { menu: 'Current block actions', within: 'currentBlock', item: 'Delete block…' },
