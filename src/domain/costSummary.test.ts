@@ -12,7 +12,7 @@ function blocked(overrides: Partial<CostingCalculationResult> = {}): CostingCalc
     yearCosts: [{ serviceYear: 2027, costPerDayUsd: revenue * 100, annualCostUsd: days * revenue * 100 }, { serviceYear: 2028, costPerDayUsd: revenue * 110, annualCostUsd: days * revenue * 110 }],
   });
   return {
-    basis: 'blocked', state: 'complete', sourceRate: 100, sourceRateYear: 2027, annualEscalation: 0.1, eligibleBlockCount: 4, excludedBlockCount: 0, unassignedTripCount: 0,
+    basis: 'blocked', routeRows: [], state: 'complete', sourceRate: 100, sourceRateYear: 2027, annualEscalation: 0.1, eligibleBlockCount: 4, excludedBlockCount: 0, unassignedTripCount: 0,
     findings: [], exclusions: [],
     dailyRows: [day('weekday', 'Weekday', 255, 10, 12), day('saturday', 'Saturday', 52, 5, 6)],
     yearRows: [
@@ -46,7 +46,7 @@ describe('buildCostSummary (Decision 0054)', () => {
 
   it('builds a summary for an estimate without a deadhead %', () => {
     const result: EstimatedCostingCalculationResult = {
-      basis: 'estimated', tripProfileId: 'p', state: 'partial', sourceRate: 100, sourceRateYear: 2027, annualEscalation: 0, tripCount: 3, tripsWithoutRunTimeCount: 1, findings: [],
+      basis: 'estimated', routeRows: [], tripProfileId: 'p', state: 'partial', sourceRate: 100, sourceRateYear: 2027, annualEscalation: 0, tripCount: 3, tripsWithoutRunTimeCount: 1, findings: [],
       dailyRows: [{ serviceDayId: 'weekday', serviceDayName: 'Weekday', serviceDayKind: 'weekday', annualServiceDays: 10, tripCount: 3, tripsWithoutRunTimeCount: 1, runningHoursPerDay: 8, annualRunningHours: 80,
         factors: { layoverFraction: 0.2, layoverSource: 'serviceDay' } as never, revenueHoursPerDay: 10, annualRevenueHours: 100, yearCosts: [{ serviceYear: 2027, costPerDayUsd: 1000, annualCostUsd: 10_000 }] }],
       yearRows: [{ serviceYear: 2027, appliedRateUsdPerRevenueHour: 100, annualRunningHours: 80, annualRevenueHours: 100, annualCostUsd: 10_000 }],

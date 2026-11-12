@@ -74,7 +74,7 @@ describe('CSV serializers', () => {
       estimateFactors: { allDays: { layoverFraction: 0.1823455, deadheadFraction: 0.056 }, serviceDays: [] },
     };
     const estimated: EstimatedCostingCalculationResult = {
-      basis: 'estimated', tripProfileId: profile.id, state: 'partial', sourceRate: 100, sourceRateYear: 2026, annualEscalation: 0.03, tripCount: 5, tripsWithoutRunTimeCount: 1, findings: [],
+      basis: 'estimated', routeRows: [], tripProfileId: profile.id, state: 'partial', sourceRate: 100, sourceRateYear: 2026, annualEscalation: 0.03, tripCount: 5, tripsWithoutRunTimeCount: 1, findings: [],
       dailyRows: [
         { serviceDayId: 'weekday', serviceDayName: 'Weekday', serviceDayKind: 'weekday', annualServiceDays: 255, tripCount: 4, tripsWithoutRunTimeCount: 1, runningHoursPerDay: 8, annualRunningHours: 2040, factors: { layoverFraction: 0.2, layoverSource: 'serviceDay', deadheadFraction: 0.2, deadheadSource: 'allDays' }, revenueHoursPerDay: 10, platformHoursPerDay: 12.5, annualRevenueHours: 2550, annualPlatformHours: 3187.5, yearCosts: [{ serviceYear: 2026, costPerDayUsd: 1000, annualCostUsd: 255000 }] },
         { serviceDayId: 'saturday', serviceDayName: 'Saturday', serviceDayKind: 'saturday', annualServiceDays: 52, tripCount: 1, tripsWithoutRunTimeCount: 0, runningHoursPerDay: 2, annualRunningHours: 104, factors: { layoverFraction: 0.1823455, layoverSource: 'allDays' }, revenueHoursPerDay: 2.5, annualRevenueHours: 130, yearCosts: [{ serviceYear: 2026, costPerDayUsd: 250, annualCostUsd: 13000 }] },
@@ -108,7 +108,7 @@ describe('CSV serializers', () => {
 
     it('leaves the estimate columns blank on a blocked row and writes the kind', () => {
       const blocked: CostingCalculationResult = {
-        basis: 'blocked', state: 'complete', sourceRate: 100, sourceRateYear: 2026, annualEscalation: 0.03, eligibleBlockCount: 1, excludedBlockCount: 0, unassignedTripCount: 0, findings: [],
+        basis: 'blocked', routeRows: [], state: 'complete', sourceRate: 100, sourceRateYear: 2026, annualEscalation: 0.03, eligibleBlockCount: 1, excludedBlockCount: 0, unassignedTripCount: 0, findings: [],
         exclusions: [{ serviceDayId: 'weekday', serviceDayName: 'Weekday', excludedBlockCount: 0, unassignedTripCount: 0, blocks: [] }],
         dailyRows: [{ serviceDayId: 'weekday', serviceDayName: 'Weekday', serviceDayKind: 'weekday', annualServiceDays: 1, eligibleBlockCount: 1, excludedBlockCount: 0, unassignedTripCount: 0, revenueHoursPerDay: 1, platformHoursPerDay: 2, annualRevenueHours: 1, annualPlatformHours: 2, yearCosts: [{ serviceYear: 2026, costPerDayUsd: 100, annualCostUsd: 100 }] }],
         yearRows: [{ serviceYear: 2026, appliedRateUsdPerRevenueHour: 100, annualRevenueHours: 1, annualPlatformHours: 2, annualCostUsd: 100 }],
@@ -136,7 +136,7 @@ describe('CSV serializers', () => {
       baseServiceYear: 2026, futureYearCount: 0, annualEscalation: 0.03,
     };
     const result: CostingCalculationResult = {
-      basis: 'blocked', state: 'partial', sourceRate: 1.00005, sourceRateYear: 2024, annualEscalation: 0.03,
+      basis: 'blocked', routeRows: [], state: 'partial', sourceRate: 1.00005, sourceRateYear: 2024, annualEscalation: 0.03,
       eligibleBlockCount: 2, excludedBlockCount: 1, unassignedTripCount: 2, findings: [],
       exclusions: [
         { serviceDayId: 'weekday', serviceDayName: 'Weekday', excludedBlockCount: 1, unassignedTripCount: 0, blocks: [{ blockId: 'bad-block', blockLabel: '3', reasonCodes: ['block.connectionIncomplete'] }] },
