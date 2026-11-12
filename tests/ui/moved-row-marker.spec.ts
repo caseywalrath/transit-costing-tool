@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern } from './support/tripsWorkspace';
+import { region } from './support/ui';
 
 test.setTimeout(120_000);
 test.use({ actionTimeout: 15_000 });
@@ -32,7 +33,7 @@ test('a trip moved with the arrows stays marked at its new place', async ({ page
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   const block = page.getByLabel('Current block');
-  await page.getByLabel('Blocks', { exact: true }).locator('.link-button').filter({ hasText: /^26$/ }).click();
+  await region(page, 'blockingSummary').locator('.blocking-blocks-table').locator('.link-button').filter({ hasText: /^26$/ }).click();
   await expect(block.locator('.row-moved')).toHaveCount(0);
 
   await block.getByRole('button', { name: 'Move trip 1 down', exact: true }).click();

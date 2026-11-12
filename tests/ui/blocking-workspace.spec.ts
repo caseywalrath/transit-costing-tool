@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { createRouteWithPattern } from './support/tripsWorkspace';
-import { runCommand } from './support/ui';
+import { expectBlockingScenarioSelected, region, runCommand } from './support/ui';
 
 test.setTimeout(60_000);
 
@@ -22,8 +22,7 @@ test('assigns, reassigns, and unassigns Trips from the Trips table by pill and b
   const discardRouteChanges = page.getByRole('button', { name: 'Discard', exact: true });
   // No Route draft is open, so there is nothing to discard. A conditional click here would hide a stray unsaved-Route banner.
   await expect(discardRouteChanges).toHaveCount(0);
-  await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New blocking scenario…', exact: true }).click();
+  await runCommand(page, 'blockingScenario.new');
   await page.getByRole('dialog', { name: 'New blocking scenario' }).getByLabel('Name').fill('Trips assignment');
   await page.getByRole('dialog', { name: 'New blocking scenario' }).getByRole('button', { name: 'Create', exact: true }).click();
   const currentBlock = page.getByLabel('Current block');
@@ -102,19 +101,17 @@ test('creates an empty Blocking Scenario and an empty Block, then exposes its Tr
   // No Route draft is open, so there is nothing to discard. A conditional click here would hide a stray unsaved-Route banner.
   await expect(discardRouteChanges).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Scope' })).toBeVisible();
-  const blockingActions = page.getByRole('button', { name: 'Blocking actions', exact: true });
-  await blockingActions.click();
-  await page.getByRole('menuitem', { name: 'New blocking scenario…', exact: true }).click();
+  await runCommand(page, 'blockingScenario.new');
   const scenarioDialog = page.getByRole('dialog', { name: 'New blocking scenario' });
   await expect(scenarioDialog.getByLabel('Name')).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(scenarioDialog).toBeHidden();
-  await blockingActions.click();
-  await page.getByRole('menuitem', { name: 'New blocking scenario…', exact: true }).click();
+  await runCommand(page, 'blockingScenario.new');
   await scenarioDialog.getByLabel('Name').fill('Base blocks');
   await scenarioDialog.getByRole('button', { name: 'Create', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Blocking scenario' })).toHaveValue(/.+/);
-  await expect(page.getByRole('heading', { name: /^Weekday summary · \d+ blocks?$/ })).toBeVisible();
+  await expectBlockingScenarioSelected(page);
+  await expect(region(page, 'blockingSummary').getByRole('button', { name: /^Blocking summary · Weekday/ })).toBeVisible();
+  await expect(region(page, 'blockingSummary').locator('.work-surface__count')).toHaveText(/^\d+$/);
   const currentBlock = page.getByLabel('Current block');
   await currentBlock.getByRole('button', { name: 'New block', exact: true }).click();
   const blockDialog = page.getByRole('dialog', { name: 'New block' });
@@ -129,10 +126,8 @@ test('creates an empty Blocking Scenario and an empty Block, then exposes its Tr
   await page.getByRole('menuitemradio', { name: 'Block 11', exact: true }).click();
   await expect(currentBlock.getByRole('button', { name: /Block 11/ })).toBeVisible();
   await expect(page.getByText('This empty Block is valid.')).toBeVisible();
-  await blockingActions.click();
-  const exportButton = page.getByRole('menuitem', { name: 'Export blocking CSV (ZIP)', exact: true });
   const download = page.waitForEvent('download');
-  await exportButton.click();
+  await runCommand(page, 'blockingScenario.exportCsv');
   expect((await download).suggestedFilename()).toBe('Base-blocks-csv.zip');
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
@@ -179,8 +174,7 @@ test('shift-click selects inclusive ranges in Unassigned Trips and Current block
   const discardRouteChanges = page.getByRole('button', { name: 'Discard', exact: true });
   // No Route draft is open, so there is nothing to discard. A conditional click here would hide a stray unsaved-Route banner.
   await expect(discardRouteChanges).toHaveCount(0);
-  await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New blocking scenario…', exact: true }).click();
+  await runCommand(page, 'blockingScenario.new');
   const scenarioDialog = page.getByRole('dialog', { name: 'New blocking scenario' });
   await scenarioDialog.getByLabel('Name').fill('Range blocks');
   await scenarioDialog.getByRole('button', { name: 'Create', exact: true }).click();
@@ -243,8 +237,7 @@ test('filters and sorts Unassigned Trips while assignments insert by From Time',
   const discardRouteChanges = page.getByRole('button', { name: 'Discard', exact: true });
   // No Route draft is open, so there is nothing to discard. A conditional click here would hide a stray unsaved-Route banner.
   await expect(discardRouteChanges).toHaveCount(0);
-  await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New blocking scenario…', exact: true }).click();
+  await runCommand(page, 'blockingScenario.new');
   await page.getByRole('dialog', { name: 'New blocking scenario' }).getByLabel('Name').fill('Chronological blocks');
   await page.getByRole('dialog', { name: 'New blocking scenario' }).getByRole('button', { name: 'Create', exact: true }).click();
   const currentBlock = page.getByLabel('Current block');

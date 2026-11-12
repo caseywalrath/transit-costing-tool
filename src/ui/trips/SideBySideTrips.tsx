@@ -43,7 +43,7 @@ export function TripsOrSideBySide({ sideBySide, ...props }: HostProps) {
   return <SideBySideTrips {...shared} control={sideBySide} leftDirectionId={sideBySide.ids[0]} rightDirectionId={sideBySide.ids[1]} />;
 }
 
-type ContainerProps = Omit<WorkspaceProps, 'directionId' | 'pane' | 'sharedControls' | 'blockingScenarioId' | 'onBlockingScenarioChange' | 'onBeforeOpenEdit' | 'onOpenEditChange' | 'yieldToken' | 'sharedSlots' | 'viewOptions' | 'onViewOptionsChange' | 'sideBySideMenu' | 'paneContext'>
+type ContainerProps = Omit<WorkspaceProps, 'directionId' | 'pane' | 'sharedControls' | 'blockingScenarioId' | 'onBlockingScenarioChange' | 'blockingScenarioListVersion' | 'onBlockingScenarioListChanged' | 'onBeforeOpenEdit' | 'onOpenEditChange' | 'yieldToken' | 'sharedSlots' | 'viewOptions' | 'onViewOptionsChange' | 'sideBySideMenu' | 'paneContext'>
   & { leftDirectionId: string; rightDirectionId: string; control: SideBySideControl };
 
 /**
@@ -57,6 +57,8 @@ export function SideBySideTrips({ leftDirectionId, rightDirectionId, control, on
   const registerApp = useRef(onRegisterNavigationGuard);
   registerApp.current = onRegisterNavigationGuard;
   const [blockingScenarioId, setBlockingScenarioId] = useState('');
+  // Counted by the container, so both panes reload the Blocking Scenario list after a New, Duplicate, Rename, or Delete in either pane's shared header.
+  const [blockingScenarioListVersion, setBlockingScenarioListVersion] = useState(0);
   const [viewOptions, setViewOptions] = useState<TripViewOptions>(DEFAULT_VIEW_OPTIONS);
   // Counted by direction, so Switch sides does not look like a request to yield.
   const [yieldTokens, setYieldTokens] = useState<Record<string, number>>({});
@@ -110,6 +112,7 @@ export function SideBySideTrips({ leftDirectionId, rightDirectionId, control, on
   const pane = (side: Side, directionId: string) => <TripsWorkspace {...shared} key={directionId} directionId={directionId} pane={{ side }} sharedControls={side === 'left'}
     sharedSlots={side === 'left' ? { context: contextSlot, actions: actionsSlot } : undefined}
     blockingScenarioId={blockingScenarioId} onBlockingScenarioChange={setBlockingScenarioId}
+    blockingScenarioListVersion={blockingScenarioListVersion} onBlockingScenarioListChanged={() => setBlockingScenarioListVersion((version) => version + 1)}
     viewOptions={viewOptions} onViewOptionsChange={setViewOptions}
     sideBySideMenu={{ checked: true, onToggle: requestClose }} paneContext={picker(side, directionId)}
     onRegisterNavigationGuard={registerFor(directionId)} onBeforeOpenEdit={beforeOpenEdit(directionId)} yieldToken={yieldTokens[directionId] ?? 0} />;

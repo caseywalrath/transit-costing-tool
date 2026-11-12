@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule, openGoldenTrips } from './support/tripsWorkspace';
-import { editGridCell, editRuntimeCell, gridCell, openRuntimes, runCommand, runtimeCell, chooseScope, scopeText, shiftBar } from './support/ui';
+import { chooseBlockingScenario, editGridCell, editRuntimeCell, expectBlockingScenarioSelected, gridCell, openRuntimes, runCommand, runtimeCell, selectedBlockingScenarioName, chooseScope, scopeText, shiftBar } from './support/ui';
 
 test.setTimeout(150_000);
 test.use({ actionTimeout: 15_000 });
@@ -254,7 +254,7 @@ for (const [name, route, blocking] of [
     await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
     await page.getByRole('button', { name: 'Blocking', exact: true }).click();
     await expect(page.getByRole('region', { name: 'Scope' })).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Blocking scenario' })).toHaveValue(/.+/);
+    await expectBlockingScenarioSelected(page);
     await expect(page.locator('.notice')).toHaveCount(0);
   });
 }
@@ -297,21 +297,20 @@ test('the remembered Blocking Scenario survives a Trip Profile change and is res
 
   // Blocking: choose the non-first Scenario, reload, and open Blocking again. It is restored, not replaced by the first one listed.
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  const blockingScenario = page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Blocking scenario' });
   const profileSelect = page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Trip profile' });
   await profileSelect.selectOption({ label: 'Default' });
-  await expect(blockingScenario).toHaveValue(/.+/);
-  const shown = await blockingScenario.locator('option:checked').innerText();
+  await expectBlockingScenarioSelected(page);
+  const shown = await selectedBlockingScenarioName(page);
   const other = shown === 'Second blocks' ? 'Workbook Blocks' : 'Second blocks';
-  await blockingScenario.selectOption({ label: other });
+  await chooseBlockingScenario(page, other);
   await page.reload();
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await expect(blockingScenario.locator('option:checked')).toHaveText(other);
+  await expect.poll(() => selectedBlockingScenarioName(page)).toBe(other);
 
   // The remembered choice for the Default profile is kept while another Trip Profile is used in Blocking.
   await profileSelect.selectOption({ label: 'Alt' });
-  await expect(blockingScenario.locator('option:checked')).toHaveText('Alt blocks');
+  await expect.poll(() => selectedBlockingScenarioName(page)).toBe('Alt blocks');
   await profileSelect.selectOption({ label: 'Default' });
-  await expect(blockingScenario.locator('option:checked')).toHaveText(other);
+  await expect.poll(() => selectedBlockingScenarioName(page)).toBe(other);
   void TRIPS_BLOCKING_KEY;
 });

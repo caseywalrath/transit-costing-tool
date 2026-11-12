@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { seedSnapshot } from './support/dexieEnv';
 import { goldenRaw } from './support/goldenFixture';
-import { scopeField } from './support/ui';
+import { expectBlockingScenarioSelected, region, runCommand, scopeField, selectedBlockingScenarioName } from './support/ui';
 
 test.setTimeout(120_000);
 
@@ -13,10 +13,9 @@ test('builds a blocking scenario automatically and offers it as a blocked cost b
   await page.goto('/');
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await expect(scopeField(page, 'Blocking scenario')).toHaveValue(/.+/);
+  await expectBlockingScenarioSelected(page);
 
-  await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Auto-blocking…', exact: true }).click();
+  await runCommand(page, 'blockingScenario.autoBlocking');
   const dialog = page.getByRole('dialog', { name: 'Auto-blocking' });
   await expect(dialog).toBeVisible({ timeout: 30_000 });
   // A new scenario is the default, named in the Auto 1, Auto 2 sequence; meal and relief text is gone.
@@ -41,10 +40,10 @@ test('builds a blocking scenario automatically and offers it as a blocked cost b
   await expect(page.getByText('Unable to', { exact: false })).toHaveCount(0);
 
   // The new scenario is selected, its day has blocks, and no trip on that day is left unassigned.
-  const selector = scopeField(page, 'Blocking scenario');
-  await expect(selector.locator('option:checked')).toHaveText(name);
-  const summary = page.getByRole('region', { name: 'Blocking summary' });
-  await expect(summary).toContainText(/summary · [1-9]\d* blocks?/);
+  await expect.poll(() => selectedBlockingScenarioName(page)).toBe(name);
+  const summary = region(page, 'blockingSummary');
+  await expect(summary.getByRole('button', { name: /^Blocking summary · Weekday/ })).toBeVisible();
+  await expect(summary.locator('.work-surface__count')).toHaveText(/^[1-9]\d*$/);
   await expect(page.getByRole('button', { name: 'Expand unassigned trips, 0', exact: true })).toBeVisible();
 
   // No build note bar above the Blocking surfaces.
@@ -62,8 +61,7 @@ test('shows peak vehicles and validates the maximum vehicles limit', async ({ pa
   await page.goto('/');
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  await page.getByRole('button', { name: 'Blocking actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Auto-blocking…', exact: true }).click();
+  await runCommand(page, 'blockingScenario.autoBlocking');
   const dialog = page.getByRole('dialog', { name: 'Auto-blocking' });
   await expect(dialog).toBeVisible({ timeout: 30_000 });
   await expect(dialog).toContainText('became ready most recently');
