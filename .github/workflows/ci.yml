@@ -15,6 +15,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Decides whether the browser tests can be skipped. They are skipped only when EVERY changed file is on the documentation list below.
+  # Any other file, including a new or unrecognized one, runs the full suite, so the list never needs upkeep to stay safe. If the changed
+  # files cannot be listed, the suite runs. Jobs that are skipped report success, so the required "Browser tests" check still reports.
+  changes:
+    name: Detect browser-test scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      browser: ${{ steps.scope.outputs.browser }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compare changed files with the documentation list
+        id: scope
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          browser=true
+          if [ -n "$BASE" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null && files=$(git diff --name-only "$BASE" HEAD) && [ -n "$files" ]; then
+            browser=false
+            while IFS= read -r file; do
+              case "$file" in
+                docs/*|*.md|LICENSE|.github/ISSUE_TEMPLATE/*|.github/pull_request_template.md) ;;
+                *) browser=true; echo "Runs the browser tests: $file"; break ;;
+              esac
+            done <<< "$files"
+          fi
+          echo "browser=$browser" >> "$GITHUB_OUTPUT"
+          echo "Browser tests needed: $browser"
+
   verify:
     name: Typecheck, unit tests, build
     runs-on: ubuntu-latest
@@ -44,10 +77,17 @@ jobs:
       - name: Build
         run: pnpm build
 
-  browser:
-    name: Browser tests
+  # The browser suite split into three shards that run at once. These job names are not required checks; "Browser tests" below is.
+  browser-shard:
+    name: Browser tests (shard ${{ matrix.shard }} of 3)
+    needs: changes
+    if: needs.changes.outputs.browser == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,17 +104,46 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # A GitHub runner has no preinstalled Chromium. Do not set PLAYWRIGHT_CHROMIUM_EXECUTABLE here (codex.md).
+      # The browser download is cached by Playwright version. The install step still runs: it restores the system packages and does
+      # nothing for a browser that is already cached. A GitHub runner has no preinstalled Chromium. Do not set
+      # PLAYWRIGHT_CHROMIUM_EXECUTABLE here (codex.md).
+      - name: Read Playwright version
+        id: playwright
+        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Browser tests
-        run: pnpm test:ui
+        run: pnpm test:ui --shard=${{ matrix.shard }}/3
 
       - name: Keep failure screenshots
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: browser-test-results
+          name: browser-test-results-shard-${{ matrix.shard }}
           path: test-results
           retention-days: 7
+
+  # The one required browser check. It passes when every shard passed or the shards were skipped for a documentation-only change, and
+  # fails when a shard failed or was cancelled. Branch protection must require this job, not the shard jobs.
+  browser:
+    name: Browser tests
+    needs: [changes, browser-shard]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check the shards
+        env:
+          RESULT: ${{ needs.browser-shard.result }}
+          CHANGES: ${{ needs.changes.result }}
+        run: |
+          echo "Scope detection: $CHANGES. Shards: $RESULT."
+          [ "$CHANGES" = success ] && { [ "$RESULT" = success ] || [ "$RESULT" = skipped ]; }
