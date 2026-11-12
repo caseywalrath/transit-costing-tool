@@ -98,6 +98,40 @@ test('a Route factor is saved for that Route only, its blank cells inherit, and 
   expect(stored).toEqual([['second-route', 0.3]]);
 });
 
+test('Group by is hidden with one Route (Decision 0078)', async ({ page }) => {
+  await open(page, false);
+  await expect(breakdown(page).locator('.costing-route-toggle')).toHaveCount(1);
+  await expect(breakdown(page).getByRole('button', { name: /^Group by:/ })).toHaveCount(0);
+});
+
+test('Group by Service day nests Routes under each day, keeps column positions and matches the totals (Decision 0078)', async ({ page }) => {
+  await open(page, true);
+  const totalBefore = await breakdown(page).locator('tfoot').textContent();
+  const columns = await headerBoxes(page);
+  await openMenu(page, breakdown(page).getByRole('button', { name: 'Group by: Route' }), 'Group by');
+  await page.getByRole('menuitemradio', { name: 'Service day' }).click();
+  await expect(breakdown(page).getByRole('button', { name: 'Group by: Service day' })).toBeVisible();
+  await expect(breakdown(page).locator('thead th').first()).toHaveText('Service day');
+  expect(await headerBoxes(page)).toEqual(columns);
+  await expect(breakdown(page).locator('tfoot')).toHaveText(totalBefore ?? '');
+
+  const toggles = breakdown(page).locator('.costing-route-toggle');
+  await expect(toggles.first()).toHaveAttribute('aria-label', 'Expand Weekday');
+  await expect(breakdown(page).locator('.costing-route-day-row')).toHaveCount(0);
+  await openMenu(page, breakdown(page).getByRole('button', { name: 'Cost breakdown actions' }), 'Cost breakdown actions');
+  await page.getByRole('menuitem', { name: 'Expand all days' }).click();
+  const weekdayChildren = breakdown(page).locator('tbody').first().locator('.costing-route-day-row');
+  await expect(weekdayChildren).toHaveCount(2);
+  await expect(weekdayChildren.nth(1)).toContainText('Second route');
+  expect(await headerBoxes(page)).toEqual(columns);
+
+  // The grouping is remembered for the Scenario.
+  await page.reload();
+  await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Costing', exact: true }).click();
+  await expect(breakdown(page).getByRole('button', { name: 'Group by: Service day' })).toBeVisible();
+});
+
 test('the Cost Summary shows Cost by route for two Routes', async ({ page }) => {
   await open(page, true);
   const grid = factorsPanel(page).getByRole('grid', { name: 'Estimate factors' });

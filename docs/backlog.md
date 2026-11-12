@@ -9,7 +9,7 @@ Each entry lists the problem, the proposed approach, open choices, and the edge 
 | [Planned frequencies](#planned-frequencies) | Route, Trips, Costing | Implemented 2026-11-05: Decision 0058, `docs/implementation/planned-frequencies-closeout.md` |
 | [Auto-shift to a consistent frequency](#auto-shift-to-a-consistent-frequency) | Trips | Proposed; would use Planned frequencies as its periods |
 | [Per-route cost breakdown and factors](#per-route-cost-breakdown-and-factors) | Costing | Implemented 2026-11-12, awaiting acceptance: Decision 0077, `docs/implementation/route-cost-breakdown-closeout.md` |
-| [Costing by service day across routes](#costing-by-service-day-across-routes) | Costing | Proposed 2026-11-12; follows the per-route breakdown |
+| [Costing by service day across routes](#costing-by-service-day-across-routes) | Costing | Implemented 2026-11-12: Decision 0078 |
 | [Multi-route interlining](#multi-route-interlining) | Blocking, Costing | Proposed 2026-11-12; not needed for the current scenario |
 | [Year-varying service](#year-varying-service) | Scenario, Costing | Idea 2026-11-12; beyond current scope |
 
@@ -200,7 +200,9 @@ Costing is scenario-wide: every Route's Trips (estimated basis) or Blocks (block
 - Proposed: 2026-11-12
 - Area: Costing
 
-The per-route breakdown replaces the by-service-day table. A way to see scenario-wide totals per service day (a grouping toggle, or a summary row set) is decided after the per-route table is in use.
+- Status: Implemented 2026-11-12 (`docs/decisions/0078-cost-breakdown-group-by-service-day.md`).
+
+The per-route breakdown replaces the by-service-day table. A way to see scenario-wide totals per service day (a grouping toggle, or a summary row set) is decided after the per-route table is in use. Decided: a "Group by" field menu in the Cost breakdown header switches between Route and Service day groupings.
 
 ---
 

@@ -75,6 +75,32 @@ export function routeBreakdownRows(result: CostingResult, selectedYear: number):
   return { routes, total };
 }
 
+/** Decision 0078: the Cost breakdown groups by Route (Decision 0077) or by service day. */
+export type BreakdownGrouping = 'route' | 'day';
+
+/** One service-day row grouped by service day (Decision 0078): the scenario's row for that day, then that day's row of each Route. */
+export type DayBreakdownRow = BreakdownRow & { routeRows: Array<BreakdownRow & { unassignedTrips?: number }> };
+
+/**
+ * The service-day rows of the Cost breakdown, in service-day order. A day row is the scenario's figures for that day, the same row as
+ * before Decision 0077; its Route rows are each Route's row for that day, in the Route order of `routeBreakdownRows` (by name,
+ * Unattributed last). The Total row is the same as in the Route grouping.
+ */
+export function dayBreakdownRows(result: CostingResult, selectedYear: number): { days: DayBreakdownRow[]; total: BreakdownRow } {
+  const { rows, total } = breakdownRows(result, selectedYear);
+  const { routes } = routeBreakdownRows(result, selectedYear);
+  const days = rows.map((day): DayBreakdownRow => ({
+    ...day,
+    routeRows: routes.flatMap((route) => {
+      const row = route.dayRows.find((item) => item.key === `${route.key}:${day.key}`);
+      if (!row) return [];
+      const unassigned = result.routeRows.find((item) => (item.routeId ?? 'unattributed') === route.key)?.days.find((item) => item.serviceDayId === day.key)?.unassignedTripCount;
+      return [{ ...row, key: `${day.key}:${route.key}`, name: route.name, ...(result.basis === 'blocked' && unassigned ? { unassignedTrips: unassigned } : {}) }];
+    }),
+  }));
+  return { days, total };
+}
+
 export const BREAKDOWN_COLUMNS =['Service day', 'Days', 'Trips', 'Blocks', 'Daily running (h)', 'Daily revenue (h)', 'Daily platform (h)', 'Daily cost', 'Annual revenue (h)', 'Annual platform (h)', 'Annual cost'];
 
 /**
@@ -82,7 +108,7 @@ export const BREAKDOWN_COLUMNS =['Service day', 'Days', 'Trips', 'Blocks', 'Dail
  * rows, then the Total row. A Route row says "All days" in the Service day cell; a service-day row leaves the Route cell empty. Each
  * cell uses the same formatter and the same dash as the table on the screen, so the copied text shows the values as displayed.
  */
-export function costBreakdownText(result: CostingResult, selectedYear: number, totalDays: number): string[][] {
+export function costBreakdownText(result: CostingResult, selectedYear: number, totalDays: number, grouping: BreakdownGrouping = 'route'): string[][] {
   const { routes, total } = routeBreakdownRows(result, selectedYear);
   const count = (value: number | undefined) => value === undefined ? MISSING : String(value);
   const daily = (value: number | undefined) => value === undefined ? MISSING : dailyHours(value);
@@ -93,6 +119,15 @@ export function costBreakdownText(result: CostingResult, selectedYear: number, t
     String(days), count(row.trips), count(row.blocks),
     ...(withDaily ? [daily(row.running), daily(row.revenue), daily(row.platform), cash(row.dailyCost)] : ['', '', '', '']),
     annual(row.annualRevenue), annual(row.annualPlatform), cash(row.annualCost),
+  ];
+  // Decision 0078 item 4: grouped by service day, each day row (with its daily values) is followed by its Route rows.
+  if (grouping === 'day') return [
+    ['Service day', 'Route', ...BREAKDOWN_COLUMNS.slice(1)],
+    ...dayBreakdownRows(result, selectedYear).days.flatMap((day) => [
+      [day.name, 'All routes', ...values(day, day.days, true)],
+      ...day.routeRows.map((row) => ['', row.name, ...values(row, row.days, true)]),
+    ]),
+    ['Total', '', ...values(total, totalDays, false)],
   ];
   return [
     ['Route', 'Service day', ...BREAKDOWN_COLUMNS.slice(1)],
