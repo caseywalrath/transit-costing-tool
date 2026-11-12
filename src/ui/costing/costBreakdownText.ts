@@ -37,7 +37,48 @@ export function breakdownRows(result: CostingResult, selectedYear: number): { ro
   return { rows, total };
 }
 
-export const BREAKDOWN_COLUMNS = ['Service day', 'Days', 'Trips', 'Blocks', 'Daily running (h)', 'Daily revenue (h)', 'Daily platform (h)', 'Daily cost', 'Annual revenue (h)', 'Annual platform (h)', 'Annual cost'];
+/** The label of the Route row that holds multi-route Blocks (Decision 0077 item 3.2). */
+export const UNATTRIBUTED_ROUTE_NAME = 'Unattributed (multi-route blocks)';
+
+/** One Route row of the Cost breakdown (Decision 0077): the Route's totals, its service-day rows, and its unassigned-trip count. */
+export type RouteBreakdownRow = BreakdownRow & { routeId: string | null; unassignedTrips?: number; days: number; dayRows: BreakdownRow[] };
+
+/**
+ * The Route rows of the Cost breakdown, in the domain's order. A Route row follows the Total row's rules: annual days, trip and block
+ * counts and annual values are sums of its day rows (undefined when any part is); daily values are left blank. A service day on which
+ * the Route has no trips, blocks or unassigned trips is left out of its day rows.
+ */
+export function routeBreakdownRows(result: CostingResult, selectedYear: number): { routes: RouteBreakdownRow[]; total: BreakdownRow } {
+  const { total } = breakdownRows(result, selectedYear);
+  const sum = (values: Array<number | undefined>) => values.every((value) => value !== undefined) ? values.reduce<number>((acc, value) => acc + value!, 0) : undefined;
+  const estimated = result.basis === 'estimated';
+  const routes = result.routeRows.map((route): RouteBreakdownRow => {
+    const active = route.days.filter((day) => (day.tripCount ?? 0) > 0 || (day.blockCount ?? 0) > 0 || (day.unassignedTripCount ?? 0) > 0);
+    const dayRows = active.map((day): BreakdownRow => {
+      const cost = day.yearCosts.find((item) => item.serviceYear === selectedYear);
+      return {
+        key: `${route.routeId ?? 'unattributed'}:${day.serviceDayId}`, name: day.serviceDayName, days: day.annualServiceDays,
+        ...(estimated ? { trips: day.tripCount, running: day.runningHoursPerDay } : { blocks: day.blockCount }),
+        revenue: day.revenueHoursPerDay, platform: day.platformHoursPerDay, dailyCost: cost?.costPerDayUsd,
+        annualRevenue: day.annualRevenueHours, annualPlatform: day.annualPlatformHours, annualCost: cost?.annualCostUsd,
+      };
+    });
+    const unassigned = estimated ? undefined : route.days.reduce((acc, day) => acc + (day.unassignedTripCount ?? 0), 0);
+    return {
+      key: route.routeId ?? 'unattributed', routeId: route.routeId,
+      name: route.routeId === null ? UNATTRIBUTED_ROUTE_NAME : route.routeName || 'Untitled route',
+      days: dayRows.reduce((acc, row) => acc + row.days, 0),
+      ...(estimated ? { trips: sum(dayRows.map((row) => row.trips)) } : { blocks: sum(dayRows.map((row) => row.blocks)) }),
+      annualRevenue: sum(dayRows.map((row) => row.annualRevenue)), annualPlatform: sum(dayRows.map((row) => row.annualPlatform)),
+      annualCost: dayRows.length ? sum(dayRows.map((row) => row.annualCost)) : undefined,
+      ...(unassigned ? { unassignedTrips: unassigned } : {}),
+      dayRows,
+    };
+  });
+  return { routes, total };
+}
+
+export const BREAKDOWN_COLUMNS =['Service day', 'Days', 'Trips', 'Blocks', 'Daily running (h)', 'Daily revenue (h)', 'Daily platform (h)', 'Daily cost', 'Annual revenue (h)', 'Annual platform (h)', 'Annual cost'];
 
 /**
  * The Cost breakdown as cells, header row first, then one row per service day, then the total row (Decision 0066 item 11). Each cell

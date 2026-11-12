@@ -5,7 +5,9 @@ import { ModalDialog } from '../ModalDialog';
 import type { CostingAssumptionsInput } from '../../domain/costing';
 import { DEFAULT_COSTING_ESCALATION } from '../../domain/costing';
 import { formatMoney, MISSING } from '../format';
-import type { CostingAssumptions, CostingEstimateFactors, Scenario, ServiceDayDefinition, TripProfile, ValidationFinding } from '../../domain/types';
+import type { CostingAssumptions, CostingEstimateFactors, Route, Scenario, ServiceDayDefinition, TripProfile, ValidationFinding } from '../../domain/types';
+import { RouteCostTable, useRouteExpansion } from './RouteCostTable';
+import { routeOptionLabel } from '../shell/headerStatus';
 import { sortServiceDays } from '../../domain/serviceDays';
 import { readRateHistory, readStoredRecord, rememberRate, storedText, writeRateHistory } from '../preferences';
 import { RateCombobox } from './RateCombobox';
@@ -18,10 +20,10 @@ import { countAssumptionChanges, countEstimateFactorChanges } from '../../applic
 import { MenuButton, type MenuGroup } from '../MenuButton';
 import { buildCostSummary, costSummaryPartialReasons, type CostSummary } from '../../domain/costSummary';
 import { CostSummaryView } from './CostSummaryView';
-import { estimateFactorsForTripProfile, type EstimateFactorOwner } from '../../domain/estimatedCosting';
+import { estimateFactorsForTripProfile, routeEstimateFactorsForTripProfile } from '../../domain/estimatedCosting';
 import { CycleCalculator } from './CycleCalculator';
 import { setEstimateFactor } from './EstimateFactorsGrid';
-import { annualHours, BREAKDOWN_COLUMNS, breakdownRows, costBreakdownText, dailyHours, money } from './costBreakdownText';
+import { costBreakdownText, money } from './costBreakdownText';
 import { tableToTsv } from '../tableText';
 import { useContextMenu } from '../useContextMenu';
 
@@ -34,6 +36,8 @@ type Props = {
   projectName: string;
   serviceDays: ServiceDayDefinition[];
   tripProfiles: TripProfile[];
+  /** The Scenario's Routes, for the factor Route menu (Decision 0077 item 2.5). */
+  routes: Route[];
   onError: (error: unknown, fallback?: string) => void;
   onRegisterNavigationGuard: (guard: ((action: () => void) => void) | undefined) => void;
 };
@@ -65,6 +69,8 @@ export function costingFindingMessage(finding: ValidationFinding, serviceDayName
     case 'costing.futureYearCountInvalid': return 'Enter the costing horizon as a whole number of years from 0 to 10.';
     case 'costing.projectionYearOutOfRange': return 'The last projected year must not be later than 9999. Lower the first year of service or the costing horizon.';
     case 'costing.annualEscalationInvalid': return 'Enter an inflation rate above −100%.';
+    case 'costing.multiRouteBlock': return `A block of ${day(String(finding.parameters?.serviceDayId ?? ''))} carries trips of more than one route, so its cost is shown as Unattributed. Its hours are included in the total.`;
+    case 'costing.routeEstimateFactorDuplicate': return 'A route has estimate factors stored twice. Reload the page. If this stays, export a backup and import it again.';
     case 'costing.estimateFactorInvalid': case 'costing.estimateFactorDuplicateDay': return 'Enter each estimate factor as a percentage from 0 up to 100, once per service day.';
     default: return 'Review this item and correct it before trying again.';
   }
@@ -122,7 +128,7 @@ function listText(names: string[]): string {
   return names.length <= 2 ? names.join(' and ') : `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`;
 }
 
-export function CostingWorkspace({ scopeSlot, costingService, scenario, projectName, serviceDays, tripProfiles, onError, onRegisterNavigationGuard }: Props) {
+export function CostingWorkspace({ scopeSlot, costingService, scenario, projectName, serviceDays, tripProfiles, routes, onError, onRegisterNavigationGuard }: Props) {
   const [basisOptions, setBasisOptions] = useState<CostBasisOption[]>([]);
   const [vehicleRequirementOpen, setVehicleRequirementOpen] = useState(storedVehicleRequirementOpen);
   function setVehicleRequirementSectionOpen(open: boolean) { setVehicleRequirementOpen(open); rememberVehicleRequirementOpen(open); }
@@ -140,7 +146,7 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
   const [saving, setSaving] = useState(false);
   const [rateHistory, setRateHistory] = useState(() => readRateHistory());
   /** `factorsOnly`: the dialog guards a change of cost basis, which leaves unsaved assumptions in place. */
-  const [navigationDialog, setNavigationDialog] = useState<{ action: () => void; factorsOnly?: boolean }>();
+  const [navigationDialog, setNavigationDialog] = useState<{ action: () => void; factorsOnly?: 'basis' | 'route' }>();
   const [summary, setSummary] = useState<CostSummary>();
   const [partialSummary, setPartialSummary] = useState<{ summary: CostSummary; reasons: string[] }>();
   /** The outcome of the last Copy cost breakdown; it describes the table of `result` and `selectedYear`, so either change clears it. */
@@ -172,18 +178,32 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
   // Decision 0062: the factors panel edits the factors of the selected cost basis's Trip Profile.
   const factorProfileId = selectedOption?.tripProfileId;
   const factorOwner = factorProfileId ? estimateFactorsForTripProfile(persisted, factorProfileId).owner : 'none';
+  // Decision 0077 item 2.5: the level the factors grid edits. '' is All routes (the Trip Profile's factors); otherwise a Route ID.
+  const [factorRouteChoice, setFactorRouteChoice] = useState('');
+  const factorRouteId = routes.some((route) => route.id === factorRouteChoice) ? factorRouteChoice : '';
+  const factorRoute = routes.find((route) => route.id === factorRouteId);
   const persistedRef = useRef<CostingAssumptions | undefined>(undefined);
   persistedRef.current = persisted;
-  const factorProfileRef = useRef(factorProfileId);
-  factorProfileRef.current = factorProfileId;
+  const factorLevelRef = useRef({ profileId: factorProfileId, routeId: factorRouteId });
+  factorLevelRef.current = { profileId: factorProfileId, routeId: factorRouteId };
+  /** The saved factors of one level: the Trip Profile's resolved factors, or one Route's own entry. */
+  const savedFactorsOf = (record: CostingAssumptions | undefined, profileId: string | undefined, routeId: string) => !profileId ? undefined
+    : routeId ? routeEstimateFactorsForTripProfile(record, profileId).find((entry) => entry.routeId === routeId)?.factors
+      : estimateFactorsForTripProfile(record, profileId).factors;
   useEffect(() => {
     if (busy) return;
-    const own = factorProfileId ? estimateFactorsForTripProfile(persistedRef.current, factorProfileId).factors : undefined;
+    const own = savedFactorsOf(persistedRef.current, factorProfileId, factorRouteId);
     setSavedFactors(own);
     setFactors(own);
-  }, [busy, factorProfileId]);
-  // The estimate always uses the draft assumptions and the draft factors.
-  const calculationInput = useMemo<CostingAssumptionsInput>(() => ({ ...assumptions, ...(factors ? { estimateFactors: factors } : {}) }), [assumptions, factors]);
+  }, [busy, factorProfileId, factorRouteId]);
+  // The Trip Profile's saved factors, which a Route's blank cells inherit.
+  const profileFactors = useMemo(() => factorProfileId ? estimateFactorsForTripProfile(persisted, factorProfileId).factors : undefined, [persisted, factorProfileId]);
+  // The estimate always uses the draft assumptions and the draft factors of the level being edited.
+  const calculationInput = useMemo<CostingAssumptionsInput>(() => {
+    if (!factorRouteId) return { ...assumptions, ...(factors ? { estimateFactors: factors } : {}), ...(factorProfileId ? { routeEstimateFactors: routeEstimateFactorsForTripProfile(persisted, factorProfileId) } : {}) };
+    const saved = factorProfileId ? routeEstimateFactorsForTripProfile(persisted, factorProfileId).filter((entry) => entry.routeId !== factorRouteId) : [];
+    return { ...assumptions, ...(profileFactors ? { estimateFactors: profileFactors } : {}), routeEstimateFactors: factors ? [...saved, { routeId: factorRouteId, factors }] : saved };
+  }, [assumptions, factors, factorProfileId, factorRouteId, persisted, profileFactors]);
 
   useEffect(() => {
     let current = true;
@@ -222,6 +242,7 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
   }, [calculationInput, basisValue, basisOptions, costingService, scenario.id, validation]);
 
   useEffect(() => { setBreakdownCopy(undefined); }, [result, selectedYear]);
+  const routeExpansion = useRouteExpansion(scenario.id, (result?.routeRows ?? []).map((route) => route.routeId ?? 'unattributed'));
 
   useEffect(() => {
     const guard = (action: () => void) => {
@@ -250,10 +271,17 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
     // Unsaved factors belong to one Trip Profile; a basis of another Trip Profile asks to save or discard them first (Decision 0062).
     const next = basisOptions.find((option) => optionValue(option) === value);
     if (hasUnsavedFactors && next && next.tripProfileId !== factorProfileId) {
-      setNavigationDialog({ action: () => applyBasis(value), factorsOnly: true });
+      setNavigationDialog({ action: () => applyBasis(value), factorsOnly: 'basis' });
       return;
     }
     applyBasis(value);
+  }
+
+  /** Decision 0077 item 2.5 and RC4: unsaved factors belong to one level; another Route asks to save or discard them first. */
+  function chooseFactorRoute(routeId: string) {
+    if (routeId === factorRouteId) return;
+    if (hasUnsavedFactors) { setNavigationDialog({ action: () => setFactorRouteChoice(routeId), factorsOnly: 'route' }); return; }
+    setFactorRouteChoice(routeId);
   }
 
   function applyBasis(value: string) {
@@ -286,14 +314,19 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
   async function saveFactors(): Promise<boolean> {
     if (factorCellInvalid || !factorProfileId) return false;
     setSaving(true);
+    const routeId = factorRouteId;
     try {
-      const saved = await costingService.saveEstimateFactors(scenario.id, factorProfileId, factors, persisted ? toInput(persisted) : loadedAssumptions ?? initialAssumptions());
+      const assumptionsIfNew = persisted ? toInput(persisted) : loadedAssumptions ?? initialAssumptions();
+      // Decision 0077 item 2.3: a Route level writes only that Route's entry; an entry left without values is removed.
+      const saved = routeId
+        ? await costingService.saveRouteEstimateFactors(scenario.id, factorProfileId, routeId, factors, assumptionsIfNew)
+        : await costingService.saveEstimateFactors(scenario.id, factorProfileId, factors, assumptionsIfNew);
       setPersisted(saved);
       persistedRef.current = saved;
       if (!persisted) setLoadedAssumptions(toInput(saved));
-      // The planner may have chosen another Trip Profile's basis while the save ran; its grid is then left as it is.
-      if (factorProfileRef.current === factorProfileId) {
-        const own = estimateFactorsForTripProfile(saved, factorProfileId).factors;
+      // The planner may have chosen another Trip Profile's basis or another Route while the save ran; that grid is then left as it is.
+      if (factorLevelRef.current.profileId === factorProfileId && factorLevelRef.current.routeId === routeId) {
+        const own = savedFactorsOf(saved, factorProfileId, routeId);
         setSavedFactors(own);
         setFactors(own);
       }
@@ -361,6 +394,18 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
     { id: 'copy', label: 'Copy cost breakdown', disabled: !result || !result.dailyRows.length, onSelect: () => void copyBreakdown() },
     { id: 'csv', label: 'Export costing CSV', disabled: saving || !result, onSelect: () => { void exportCsv(); } },
   ] }];
+  // Decision 0076 item 6: commands on the Cost breakdown's rows sit in that surface's own Actions menu (Decision 0077 item 1.5).
+  const hasRouteRows = !!result?.routeRows.length;
+  const breakdownActionsMenu: MenuGroup[] = [{ items: [
+    { id: 'expand-all', label: 'Expand all routes', disabled: !hasRouteRows || routeExpansion.allExpanded, onSelect: routeExpansion.expandAll },
+    { id: 'collapse-all', label: 'Collapse all routes', disabled: !hasRouteRows || routeExpansion.noneExpanded, onSelect: routeExpansion.collapseAll },
+  ] }];
+  const factorRouteMenu: MenuGroup[] = [{ items: [
+    { id: 'all-routes', label: 'All routes', checked: !factorRouteId, onSelect: () => chooseFactorRoute('') },
+    ...[...routes].sort((a, b) => routeOptionLabel(a, routes).localeCompare(routeOptionLabel(b, routes), undefined, { numeric: true, sensitivity: 'base' }))
+      .map((route) => ({ id: `route-${route.id}`, label: routeOptionLabel(route, routes), checked: route.id === factorRouteId, onSelect: () => chooseFactorRoute(route.id) })),
+  ] }];
+  const factorRouteName = factorRoute ? routeOptionLabel(factorRoute, routes) : 'All routes';
 
   const annualDays = costingService.summarizeServiceDays(serviceDays);
   const blockedOptions = sortCostBasisOptions(basisOptions, 'blocked');
@@ -398,9 +443,12 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
         <p className="costing-days">Annual service days: {serviceDays.map((day) => <span key={day.id}><strong>{day.name}</strong> {day.annualServiceDays}</span>)}<span className={annualDays.exceedsMaximum ? 'invalid' : ''}><strong>Total</strong> {annualDays.total} of {annualDays.maximum}</span></p>
         {validation.length > 0 && <div className="costing-alert error" id="costing-assumptions-alert" role="alert">Review the rate, years, horizon, and escalation. The rate year cannot be later than the base service year.</div>}
       </WorkSurface>
-      <WorkSurface title="Estimate factors" ariaLabel="Estimate factors" subtitle={factorSubtitle(tripProfileName, factorOwner)} footer={hasUnsavedFactors && <SaveBar message={`${plural(factorChangeCount, 'unsaved change')} · the estimate below already includes ${factorChangeCount === 1 ? 'it' : 'them'}`} saveLabel={saving ? 'Saving…' : 'Save factors'} busy={saving} saveDisabled={factorCellInvalid} onSave={() => void saveFactors()} onDiscard={() => setFactors(savedFactors)} />}>
-        <EstimateFactorsGrid days={days} factors={factors} savedFactors={savedFactors} disabled={saving || !factorProfileId} onChange={setFactors} onInvalidChange={setFactorCellInvalid} />
-        {factorOwner === 'scenario' && <InlineNote>These are the scenario&rsquo;s shared factors. Saving stores factors for this trip profile only.</InlineNote>}
+      <WorkSurface title="Estimate factors" ariaLabel="Estimate factors"
+        context={<MenuButton fieldLabel="Route" label={factorRouteName} triggerAriaLabel={`Route: ${factorRouteName}`} menuLabel="Route" groups={factorRouteMenu} disabled={saving || !factorProfileId} selectionStyle="highlight" menuAlign="start" />}
+        footer={hasUnsavedFactors && <SaveBar message={`${plural(factorChangeCount, 'unsaved change')} · the estimate below already includes ${factorChangeCount === 1 ? 'it' : 'them'}`} saveLabel={saving ? 'Saving…' : 'Save factors'} busy={saving} saveDisabled={factorCellInvalid} onSave={() => void saveFactors()} onDiscard={() => setFactors(savedFactors)} />}>
+        <EstimateFactorsGrid key={factorRouteId} days={days} factors={factors} savedFactors={savedFactors} inherited={factorRouteId ? profileFactors : undefined} disabled={saving || !factorProfileId} onChange={setFactors} onInvalidChange={setFactorCellInvalid} />
+        {factorRouteId && <InlineNote>Blank cells use the trip profile&rsquo;s factors, shown in grey. Saving stores factors for this route and trip profile only.</InlineNote>}
+        {!factorRouteId && factorOwner === 'scenario' && <InlineNote>These are the scenario&rsquo;s shared factors. Saving stores factors for this trip profile only.</InlineNote>}
       </WorkSurface>
     </div>
 
@@ -409,11 +457,12 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
         onUseLayover={(serviceDayId, fraction) => setFactors((current) => setEstimateFactor(current, serviceDayId, 'layoverFraction', Number(fraction.toFixed(6))))} />
     </WorkSurface>}
 
-    <WorkSurface title={`Cost breakdown · ${selectedYear}`} titleRef={estimateHeading} ariaLabel="Cost breakdown" badge={badge} subtitle={subtitle}>
+    <WorkSurface title={`Cost breakdown · ${selectedYear}`} titleRef={estimateHeading} ariaLabel="Cost breakdown" badge={badge} subtitle={subtitle}
+      actions={<MenuButton label="Actions" triggerAriaLabel="Cost breakdown actions" menuLabel="Cost breakdown actions" groups={breakdownActionsMenu} disabled={!hasRouteRows} />}>
       {result?.state === 'noEstimate' && <InlineNote kind="warn" live>{noEstimateText(result, tripProfileName)}</InlineNote>}
       {result?.state === 'invalid' && <div className="costing-alert error" role="alert"><p>The estimate cannot be calculated until the listed input or source-data problems are corrected.</p><ul>{result.findings.filter((finding) => finding.severity === 'error').map((finding, index) => <li key={`${finding.messageKey}-${finding.entityId}-${index}`}>{costingFindingMessage(finding, (id) => serviceDays.find((day) => day.id === id)?.name)}</li>)}</ul></div>}
-      {result && result.dailyRows.length > 0 && <CostBreakdownTable result={result} selectedYear={selectedYear} totalDays={annualDays.total}
-        menuTarget={contextMenu.target(() => ({ heading: `Cost breakdown · ${selectedYear}`, groups: costingActionsMenu }))} />}
+      {result && result.dailyRows.length > 0 && <RouteCostTable result={result} selectedYear={selectedYear} totalDays={annualDays.total} expansion={routeExpansion}
+        menuTarget={contextMenu.target(() => ({ heading: `Cost breakdown · ${selectedYear}`, groups: [...costingActionsMenu, ...breakdownActionsMenu] }))} />}
       {breakdownCopy && <InlineNote kind={breakdownCopy.kind} live>{breakdownCopy.text}</InlineNote>}
       {!result && calculating && <p className="table-empty" role="status">Calculating estimate…</p>}
       {!result && !calculating && !validation.length && <p className="table-empty">Select a cost basis to calculate an estimate.</p>}
@@ -439,28 +488,9 @@ function noEstimateText(result: CostingResult, tripProfileName: string | undefin
   return `Enter a layover % for ${listText(missing)} or for All days to estimate revenue hours. Running hours are shown below.`;
 }
 
-type ContextTarget = ReturnType<ReturnType<typeof useContextMenu>['target']>;
-
-function CostBreakdownTable({ result, selectedYear, totalDays, menuTarget }: { result: CostingResult; selectedYear: number; totalDays: number; menuTarget: ContextTarget }) {
-  const { rows, total } = breakdownRows(result, selectedYear);
-  const count = (value: number | undefined) => value === undefined ? MISSING : String(value);
-  const daily = (value: number | undefined) => value === undefined ? MISSING : dailyHours(value);
-  const annual = (value: number | undefined) => value === undefined ? MISSING : annualHours(value);
-  const cash = (value: number | undefined) => value === undefined ? MISSING : money(value);
-  return <div className="table-scroll data-grid costing-results-table" {...menuTarget}><table>
-    <colgroup><col className="costing-col-day" /><col className="costing-col-count" /><col className="costing-col-count" /><col className="costing-col-count" />{Array.from({ length: 3 }, (_, index) => <col key={index} className="costing-col-hours" />)}<col className="costing-col-money" /><col className="costing-col-hours" /><col className="costing-col-hours" /><col className="costing-col-total" /></colgroup>
-    <thead><tr>{BREAKDOWN_COLUMNS.map((name) => <th key={name} scope="col">{name}</th>)}</tr></thead>
-    <tbody>{rows.map((row) => <tr key={row.key}><th scope="row">{row.name}</th><td>{row.days}</td><td>{count(row.trips)}</td><td>{count(row.blocks)}</td><td>{daily(row.running)}</td><td>{daily(row.revenue)}</td><td>{daily(row.platform)}</td><td>{cash(row.dailyCost)}</td><td>{annual(row.annualRevenue)}</td><td>{annual(row.annualPlatform)}</td><td>{cash(row.annualCost)}</td></tr>)}</tbody>
-    <tfoot><tr><th scope="row">Total</th><td>{totalDays}</td><td>{count(total.trips)}</td><td>{count(total.blocks)}</td><td></td><td></td><td></td><td></td><td>{annual(total.annualRevenue)}</td><td>{annual(total.annualPlatform)}</td><td>{cash(total.annualCost)}</td></tr></tfoot>
-  </table></div>;
-}
-
-/** The Estimate factors subtitle: whose factors the grid holds (Decision 0062). */
-function factorSubtitle(tripProfileName: string | undefined, owner: EstimateFactorOwner): string {
-  const name = tripProfileName ? `Trip profile ${tripProfileName}` : 'No trip profile';
-  return owner === 'scenario' ? `${name} · shared scenario factors` : `${name} · blank days use All days`;
-}
-
-function CostingNavigationDraftDialog({ factorsOnly, saving, saveDisabled, onCancel, onDiscard, onSave }: { factorsOnly?: boolean; saving: boolean; saveDisabled: boolean; onCancel: () => void; onDiscard: () => void; onSave: () => void }) {
-  return <ModalDialog role="alertdialog" labelledBy="costing-navigation-draft-title" className="confirm-dialog" onClose={onCancel} busy={saving}><h2 id="costing-navigation-draft-title">{factorsOnly ? 'Save estimate factors before changing the cost basis?' : 'Save costing changes before leaving?'}</h2><p>{factorsOnly ? 'The estimate factors of this trip profile have unsaved changes. The other cost basis uses another trip profile’s factors.' : 'Costing assumptions or estimate factors have unsaved changes.'}</p><div className="dialog-actions"><button autoFocus disabled={saving} onClick={onCancel}>Cancel</button><button className="danger" disabled={saving} onClick={onDiscard}>Discard</button><button className="primary" disabled={saving || saveDisabled} onClick={onSave}>{saving ? 'Saving…' : 'Save'}</button></div></ModalDialog>;
+function CostingNavigationDraftDialog({ factorsOnly, saving, saveDisabled, onCancel, onDiscard, onSave }: { factorsOnly?: 'basis' | 'route'; saving: boolean; saveDisabled: boolean; onCancel: () => void; onDiscard: () => void; onSave: () => void }) {
+  const title = factorsOnly === 'route' ? 'Save estimate factors before changing the route?' : factorsOnly ? 'Save estimate factors before changing the cost basis?' : 'Save costing changes before leaving?';
+  const text = factorsOnly === 'route' ? 'The estimate factors shown have unsaved changes. The other choice in the Route menu has its own factors.'
+    : factorsOnly ? 'The estimate factors of this trip profile have unsaved changes. The other cost basis uses another trip profile’s factors.' : 'Costing assumptions or estimate factors have unsaved changes.';
+  return <ModalDialog role="alertdialog" labelledBy="costing-navigation-draft-title" className="confirm-dialog" onClose={onCancel} busy={saving}><h2 id="costing-navigation-draft-title">{title}</h2><p>{text}</p><div className="dialog-actions"><button autoFocus disabled={saving} onClick={onCancel}>Cancel</button><button className="danger" disabled={saving} onClick={onDiscard}>Discard</button><button className="primary" disabled={saving || saveDisabled} onClick={onSave}>{saving ? 'Saving…' : 'Save'}</button></div></ModalDialog>;
 }
