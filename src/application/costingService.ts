@@ -39,7 +39,7 @@ export class CostingApplicationService implements CostingQueries, CostingCommand
     const existing = await this.assumptionsRepository.getCostingAssumptions(scenarioId);
     const timestamp = this.now();
     // The typed estimate factors are saved only by `saveEstimateFactors`; whatever the caller holds for them is ignored here.
-    const { estimateFactors: _ignored, ...fields } = input;
+    const { estimateFactors: _ignored, routeEstimateFactors: _ignoredRoutes, ...fields } = input;
     const assumptions: CostingAssumptions = existing
       ? { ...existing, ...fields, scenarioId, currencyCode: 'USD' as const, updatedAt: timestamp }
       : { id: newId(), scenarioId, currencyCode: 'USD' as const, ...fields, ...metadata(timestamp) };
@@ -67,7 +67,7 @@ export class CostingApplicationService implements CostingQueries, CostingCommand
     if (existing) {
       assumptions = { ...existing, tripProfileEstimateFactors, updatedAt: timestamp };
     } else {
-      const { estimateFactors: _ignored, ...fields } = assumptionsIfNew;
+      const { estimateFactors: _ignored, routeEstimateFactors: _ignoredRoutes, ...fields } = assumptionsIfNew;
       assumptions = { id: newId(), scenarioId, currencyCode: 'USD' as const, ...fields, tripProfileEstimateFactors, ...metadata(timestamp) };
     }
     await this.assumptionsRepository.saveCostingAssumptions(assumptions);

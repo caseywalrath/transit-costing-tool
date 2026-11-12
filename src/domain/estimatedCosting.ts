@@ -9,7 +9,7 @@ import {
 } from './costing';
 import { sortServiceDays } from './serviceDays';
 import { tripRunTimeSeconds } from './trips';
-import type { CostingAssumptions, CostingEstimateFactors, CostingFactorPair, Route, RoutePattern, Scenario, ServiceDayDefinition, Trip, TripProfile, TripProfileEstimateFactors } from './types';
+import type { CostingAssumptions, CostingEstimateFactors, CostingFactorPair, Route, RouteEstimateFactors, RoutePattern, Scenario, ServiceDayDefinition, Trip, TripProfile, TripProfileEstimateFactors } from './types';
 
 /**
  * Estimated cost basis (Decision 0051): Revenue Hours and Platform Hours estimated from the running hours of a Trip Profile's Trips and
@@ -32,6 +32,30 @@ export function resolveDayFactors(factors: CostingEstimateFactors | undefined, s
   else if (factors?.allDays?.layoverFraction !== undefined) { resolved.layoverFraction = factors.allDays.layoverFraction; resolved.layoverSource = 'allDays'; }
   if (row?.deadheadFraction !== undefined) { resolved.deadheadFraction = row.deadheadFraction; resolved.deadheadSource = 'serviceDay'; }
   else if (factors?.allDays?.deadheadFraction !== undefined) { resolved.deadheadFraction = factors.allDays.deadheadFraction; resolved.deadheadSource = 'allDays'; }
+  return resolved;
+}
+
+/** Decision 0077. Where a Route factor comes from: the Route's day row, the Route's All days row, or the Trip Profile's resolution. */
+export type RouteFactorSource = 'routeServiceDay' | 'routeAllDays' | CostingFactorSource;
+export interface ResolvedRouteDayFactors {
+  layoverFraction?: number; layoverSource?: RouteFactorSource;
+  deadheadFraction?: number; deadheadSource?: RouteFactorSource;
+}
+
+const routeFactorSource = (source: CostingFactorSource): RouteFactorSource => (source === 'serviceDay' ? 'routeServiceDay' : 'routeAllDays');
+
+/**
+ * Decision 0077 item 2.2. Each factor independently: the Route's day row, else the Route's All days row, else `profileFactors` resolved by
+ * `resolveDayFactors`. `routeFactors` undefined means the Route has no entry.
+ */
+export function resolveRouteDayFactors(routeFactors: CostingEstimateFactors | undefined, profileFactors: CostingEstimateFactors | undefined, serviceDayId: string): ResolvedRouteDayFactors {
+  const fromRoute = resolveDayFactors(routeFactors, serviceDayId);
+  const fromProfile = resolveDayFactors(profileFactors, serviceDayId);
+  const resolved: ResolvedRouteDayFactors = {};
+  if (fromRoute.layoverSource) { resolved.layoverFraction = fromRoute.layoverFraction; resolved.layoverSource = routeFactorSource(fromRoute.layoverSource); }
+  else if (fromProfile.layoverSource) { resolved.layoverFraction = fromProfile.layoverFraction; resolved.layoverSource = fromProfile.layoverSource; }
+  if (fromRoute.deadheadSource) { resolved.deadheadFraction = fromRoute.deadheadFraction; resolved.deadheadSource = routeFactorSource(fromRoute.deadheadSource); }
+  else if (fromProfile.deadheadSource) { resolved.deadheadFraction = fromProfile.deadheadFraction; resolved.deadheadSource = fromProfile.deadheadSource; }
   return resolved;
 }
 
@@ -90,21 +114,74 @@ export function setTripProfileEstimateFactors(
     : [...kept, { tripProfileId, factors: value }];
 }
 
+/** Decision 0077. The Route factors of one Trip Profile, in stored order, for the calculation input. */
+export function routeEstimateFactorsForTripProfile(assumptions: Pick<CostingAssumptions, 'routeEstimateFactors'> | undefined, tripProfileId: string): { routeId: string; factors: CostingEstimateFactors }[] {
+  return (assumptions?.routeEstimateFactors ?? [])
+    .filter((entry) => entry.tripProfileId === tripProfileId)
+    .map((entry) => ({ routeId: entry.routeId, factors: entry.factors }));
+}
+
 /**
- * The assumptions after a Trip Profile copy (Decision 0062): the copy gets the source's own factors. Returns `undefined` when the source has
- * none, so nothing needs writing and the copy uses the Scenario's shared factors, as the source does.
+ * Decision 0077. Sets the entry of one Trip Profile × Route pair, and drops entries of Trip Profiles or Routes not in the sets. An undefined
+ * `factors` removes the pair's entry, so the Route inherits again. A new entry goes last.
+ */
+export function setRouteEstimateFactors(
+  entries: RouteEstimateFactors[] | undefined,
+  tripProfileId: string,
+  routeId: string,
+  factors: CostingEstimateFactors | undefined,
+  tripProfileIds: ReadonlySet<string>,
+  routeIds: ReadonlySet<string>,
+): RouteEstimateFactors[] {
+  const kept = (entries ?? []).filter((entry) => tripProfileIds.has(entry.tripProfileId) && routeIds.has(entry.routeId));
+  const isPair = (entry: RouteEstimateFactors) => entry.tripProfileId === tripProfileId && entry.routeId === routeId;
+  if (factors === undefined) return kept.filter((entry) => !isPair(entry));
+  const next: RouteEstimateFactors = { tripProfileId, routeId, factors };
+  return kept.some(isPair) ? kept.map((entry) => (isPair(entry) ? next : entry)) : [...kept, next];
+}
+
+/**
+ * The assumptions after a Trip Profile copy (Decision 0062, extended by Decision 0077): the copy gets the source's own factors and a clone of
+ * each of the source's Route entries. Returns `undefined` when the source has neither, so nothing needs writing and the copy uses the
+ * Scenario's shared factors, as the source does.
  */
 export function assumptionsAfterTripProfileCopy(assumptions: CostingAssumptions | undefined, sourceTripProfileId: string, targetTripProfileId: string, now: string): CostingAssumptions | undefined {
   const own = assumptions?.tripProfileEstimateFactors?.find((entry) => entry.tripProfileId === sourceTripProfileId);
-  if (!assumptions || !own) return undefined;
-  const others = assumptions.tripProfileEstimateFactors!.filter((entry) => entry.tripProfileId !== targetTripProfileId);
-  return { ...assumptions, tripProfileEstimateFactors: [...others, { tripProfileId: targetTripProfileId, factors: structuredClone(own.factors) }], updatedAt: now };
+  const routeEntries = (assumptions?.routeEstimateFactors ?? []).filter((entry) => entry.tripProfileId === sourceTripProfileId);
+  if (!assumptions || (!own && routeEntries.length === 0)) return undefined;
+  const next: CostingAssumptions = { ...assumptions, updatedAt: now };
+  if (own) {
+    const others = (assumptions.tripProfileEstimateFactors ?? []).filter((entry) => entry.tripProfileId !== targetTripProfileId);
+    next.tripProfileEstimateFactors = [...others, { tripProfileId: targetTripProfileId, factors: structuredClone(own.factors) }];
+  }
+  if (routeEntries.length > 0) {
+    const others = (assumptions.routeEstimateFactors ?? []).filter((entry) => entry.tripProfileId !== targetTripProfileId);
+    next.routeEstimateFactors = [...others, ...routeEntries.map((entry) => ({ tripProfileId: targetTripProfileId, routeId: entry.routeId, factors: structuredClone(entry.factors) }))];
+  }
+  return next;
 }
 
-/** The assumptions after a Trip Profile is deleted, or `undefined` when the Profile had no factors of its own (Decision 0062). */
+/**
+ * The assumptions after a Trip Profile is deleted (Decision 0062, extended by Decision 0077 to its Route entries), or `undefined` when the
+ * Profile had neither.
+ */
 export function assumptionsAfterTripProfileDeletion(assumptions: CostingAssumptions | undefined, tripProfileId: string, now: string): CostingAssumptions | undefined {
-  if (!assumptions?.tripProfileEstimateFactors?.some((entry) => entry.tripProfileId === tripProfileId)) return undefined;
-  return { ...assumptions, tripProfileEstimateFactors: assumptions.tripProfileEstimateFactors.filter((entry) => entry.tripProfileId !== tripProfileId), updatedAt: now };
+  const hasOwn = assumptions?.tripProfileEstimateFactors?.some((entry) => entry.tripProfileId === tripProfileId) ?? false;
+  const hasRoute = assumptions?.routeEstimateFactors?.some((entry) => entry.tripProfileId === tripProfileId) ?? false;
+  if (!assumptions || (!hasOwn && !hasRoute)) return undefined;
+  return {
+    ...assumptions,
+    ...(hasOwn ? { tripProfileEstimateFactors: assumptions.tripProfileEstimateFactors!.filter((entry) => entry.tripProfileId !== tripProfileId) } : {}),
+    ...(hasRoute ? { routeEstimateFactors: assumptions.routeEstimateFactors!.filter((entry) => entry.tripProfileId !== tripProfileId) } : {}),
+    updatedAt: now,
+  };
+}
+
+/** Decision 0077. The assumptions after Route deletion: entries of Routes not in `routeIds` (the Routes that remain) are dropped. `undefined` when nothing changes. */
+export function assumptionsAfterRouteDeletion(assumptions: CostingAssumptions | undefined, routeIds: ReadonlySet<string>, now: string): CostingAssumptions | undefined {
+  const entries = assumptions?.routeEstimateFactors;
+  if (!assumptions || !entries?.some((entry) => !routeIds.has(entry.routeId))) return undefined;
+  return { ...assumptions, routeEstimateFactors: entries.filter((entry) => routeIds.has(entry.routeId)), updatedAt: now };
 }
 
 /** The factors with each service-day row renamed through `serviceDayIds`, for Scenario copies and import as a copy. */
@@ -115,6 +192,15 @@ export function remapEstimateFactorDays(factors: CostingEstimateFactors, service
 /** Trip-Profile-owned factors with Trip Profile and service-day IDs renamed, for Scenario copies and import as a copy (Decision 0062). */
 export function remapTripProfileEstimateFactors(entries: TripProfileEstimateFactors[], tripProfileIds: ReadonlyMap<string, string>, serviceDayIds: ReadonlyMap<string, string>): TripProfileEstimateFactors[] {
   return entries.map((entry) => ({ tripProfileId: tripProfileIds.get(entry.tripProfileId) ?? entry.tripProfileId, factors: remapEstimateFactorDays(entry.factors, serviceDayIds) }));
+}
+
+/** Decision 0077. Route factors with Trip Profile, Route and service-day IDs renamed, for Scenario copies and import as a copy. */
+export function remapRouteEstimateFactors(entries: RouteEstimateFactors[], tripProfileIds: ReadonlyMap<string, string>, routeIds: ReadonlyMap<string, string>, serviceDayIds: ReadonlyMap<string, string>): RouteEstimateFactors[] {
+  return entries.map((entry) => ({
+    tripProfileId: tripProfileIds.get(entry.tripProfileId) ?? entry.tripProfileId,
+    routeId: routeIds.get(entry.routeId) ?? entry.routeId,
+    factors: remapEstimateFactorDays(entry.factors, serviceDayIds),
+  }));
 }
 
 /** One direction of a Route on one service day, as the implied-service check sees it (Decision 0062). */

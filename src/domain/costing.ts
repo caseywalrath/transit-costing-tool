@@ -20,6 +20,8 @@ export interface CostingAssumptionsInput {
   annualEscalation: number;
   /** Decision 0051. Used only by an estimated cost basis. */
   estimateFactors?: CostingEstimateFactors;
+  /** Decision 0077. The selected Trip Profile's Route factors (draft or saved). Used only by an estimated cost basis. */
+  routeEstimateFactors?: { routeId: string; factors: CostingEstimateFactors }[];
 }
 
 export interface CostingCalculationContext {
@@ -185,6 +187,19 @@ export function validateCostingAssumptions(assumptions: CostingAssumptionsInput,
   if (assumptions.estimateFactors !== undefined) findings.push(...validateEstimateFactors(assumptions.estimateFactors, scenarioId));
   const owned = (assumptions as { tripProfileEstimateFactors?: unknown }).tripProfileEstimateFactors;
   if (owned !== undefined) findings.push(...validateTripProfileEstimateFactors(owned, scenarioId));
+  if (assumptions.routeEstimateFactors !== undefined) {
+    // Decision 0077: each Route entry holds valid factors, and each Route appears at most once per Trip Profile. A stored record carries
+    // entries of several Trip Profiles; a calculation input carries one Profile's entries, without `tripProfileId`.
+    const seenRoutes = new Set<string>();
+    for (const entry of assumptions.routeEstimateFactors) {
+      const key = `${(entry as { tripProfileId?: string }).tripProfileId ?? ''}\u0000${entry.routeId}`;
+      if (seenRoutes.has(key)) {
+        findings.push(costingFinding('costing.routeEstimateFactorDuplicate', 'error', 'costingAssumptions', scenarioId, 'routeEstimateFactors', { routeId: entry.routeId }));
+      }
+      seenRoutes.add(key);
+      findings.push(...validateEstimateFactors(entry.factors, scenarioId));
+    }
+  }
   return findings;
 }
 
