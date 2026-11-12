@@ -45,6 +45,14 @@ export function CostSummaryView({ summary, onClose }: { summary: CostSummary; on
           <tfoot><tr><th scope="row">Total</th><td>{totalDays}</td><td></td><td>{annual(summary.annualRevenueHours)}</td><td>{money(summary.firstYearCostUsd)}</td></tr></tfoot>
         </table>
       </section>
+      {summary.routes.length >= 2 && <section aria-labelledby="cost-summary-routes">
+        <h3 id="cost-summary-routes" className="cost-summary-section">Cost by route</h3>
+        <table className="cost-summary-table">
+          <thead><tr><th scope="col">Route</th><th scope="col">Annual revenue (h)</th><th scope="col">{summary.firstYear} annual cost</th><th scope="col">Share</th></tr></thead>
+          <tbody>{summary.routes.map((route) => <tr key={route.routeId ?? 'unattributed'}><th scope="row">{route.name}</th><td>{annual(route.annualRevenueHours)}</td><td>{money(route.firstYearCostUsd)}</td><td>{formatPercent(route.shareOfFirstYearCost === undefined ? undefined : route.shareOfFirstYearCost * 100)}</td></tr>)}</tbody>
+          <tfoot><tr><th scope="row">Total</th><td>{annual(summary.annualRevenueHours)}</td><td>{money(summary.firstYearCostUsd)}</td><td></td></tr></tfoot>
+        </table>
+      </section>}
       <section aria-labelledby="cost-summary-years">
         <h3 id="cost-summary-years" className="cost-summary-section">Cost by year</h3>
         <table className="cost-summary-table">

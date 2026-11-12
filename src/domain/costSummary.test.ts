@@ -55,4 +55,32 @@ describe('buildCostSummary (Decision 0054)', () => {
     expect(summary.futureYearCount).toBe(0);
     expect(costSummaryPartialReasons(result)).toEqual(['1 trip without a run time is not counted.']);
   });
+
+  describe('Cost by route (Decision 0077 item 4)', () => {
+    const routeDay = (serviceDayId: string, serviceDayName: string, annualServiceDays: number, revenuePerDay: number, cost2027: number): CostingCalculationResult['routeRows'][number]['days'][number] => ({
+      serviceDayId, serviceDayName, annualServiceDays, revenueHoursPerDay: revenuePerDay, annualRevenueHours: annualServiceDays * revenuePerDay,
+      yearCosts: [{ serviceYear: 2027, costPerDayUsd: cost2027 / annualServiceDays, annualCostUsd: cost2027 }],
+    });
+
+    it('builds one row per Route, shares of the first-year cost that add to 1, and names the Unattributed row', () => {
+      const result = blocked({ routeRows: [
+        { routeId: 'alpha', routeName: 'Alpha', days: [routeDay('weekday', 'Weekday', 255, 10, 255_000)] },
+        { routeId: null, days: [routeDay('saturday', 'Saturday', 52, 5, 26_000)] },
+      ] });
+      const summary = buildCostSummary(result, heading)!;
+      expect(summary.routes).toEqual([
+        { routeId: 'alpha', name: 'Alpha', annualRevenueHours: 2550, firstYearCostUsd: 255_000, shareOfFirstYearCost: 255_000 / 281_000 },
+        { routeId: null, name: 'Unattributed (multi-route blocks)', annualRevenueHours: 260, firstYearCostUsd: 26_000, shareOfFirstYearCost: 26_000 / 281_000 },
+      ]);
+      expect(summary.routes.reduce((total, route) => total + route.shareOfFirstYearCost!, 0)).toBeCloseTo(1, 9);
+      expect(summary.days).toHaveLength(2);
+    });
+
+    it('leaves a Route figure out when a day has no first-year cost, and reports no Routes without Route rows', () => {
+      const result = blocked({ routeRows: [{ routeId: 'alpha', routeName: 'Alpha', days: [{ ...routeDay('weekday', 'Weekday', 255, 10, 255_000), yearCosts: [] }] }] });
+      const [route] = buildCostSummary(result, heading)!.routes;
+      expect(route).toEqual({ routeId: 'alpha', name: 'Alpha', annualRevenueHours: 2550 });
+      expect(buildCostSummary(blocked(), heading)!.routes).toEqual([]);
+    });
+  });
 });

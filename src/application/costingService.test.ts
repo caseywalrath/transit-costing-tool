@@ -66,7 +66,7 @@ describe('CostingApplicationService', () => {
     expect(result?.basis).toBe('blocked');
     expect(result?.state).toBe('noEstimate');
     expect(result?.noEstimateReason).toBe('noEligibleBlocks');
-    expect(files?.map((file) => file.suffix)).toEqual(['costing-assumptions', 'costing-results', 'costing-exclusions']);
+    expect(files?.map((file) => file.suffix)).toEqual(['costing-assumptions', 'costing-results', 'costing-exclusions', 'costing-routes']);
     expect(files?.[1].contents).toContain('noEstimate');
   });
 
@@ -141,7 +141,7 @@ describe('CostingApplicationService', () => {
       const service = new CostingApplicationService(queries());
       const estimateFactors = { allDays: { layoverFraction: 0.2, deadheadFraction: 0.2 }, serviceDays: [] };
       const files = await service.exportEstimateCsv({ scenarioId, basis: { kind: 'estimated', tripProfileId: 'p-alpha' }, assumptions: { ...input, estimateFactors } });
-      expect(files?.map((file) => file.suffix)).toEqual(['costing-assumptions', 'costing-results', 'costing-exclusions']);
+      expect(files?.map((file) => file.suffix)).toEqual(['costing-assumptions', 'costing-results', 'costing-exclusions', 'costing-routes']);
       expect(files?.[0].contents).toContain(',estimated,');
       expect(files?.[1].contents).toContain('10.0000');
       expect(await service.exportEstimateCsv({ scenarioId, basis: { kind: 'estimated', tripProfileId: 'p-zeta' }, assumptions: input })).toBeUndefined();

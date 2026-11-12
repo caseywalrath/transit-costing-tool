@@ -1,4 +1,5 @@
 import type { CostingResult } from '../../application/ports';
+import { UNATTRIBUTED_ROUTE_NAME } from '../../domain/costSummary';
 import { formatHours, formatMoney, MISSING } from '../format';
 
 export const dailyHours = (value: number) => formatHours(value, 'daily');
@@ -36,9 +37,6 @@ export function breakdownRows(result: CostingResult, selectedYear: number): { ro
   };
   return { rows, total };
 }
-
-/** The label of the Route row that holds multi-route Blocks (Decision 0077 item 3.2). */
-export const UNATTRIBUTED_ROUTE_NAME = 'Unattributed (multi-route blocks)';
 
 /** One Route row of the Cost breakdown (Decision 0077): the Route's totals, its service-day rows, and its unassigned-trip count. */
 export type RouteBreakdownRow = BreakdownRow & { routeId: string | null; unassignedTrips?: number; days: number; dayRows: BreakdownRow[] };
@@ -80,18 +78,28 @@ export function routeBreakdownRows(result: CostingResult, selectedYear: number):
 export const BREAKDOWN_COLUMNS =['Service day', 'Days', 'Trips', 'Blocks', 'Daily running (h)', 'Daily revenue (h)', 'Daily platform (h)', 'Daily cost', 'Annual revenue (h)', 'Annual platform (h)', 'Annual cost'];
 
 /**
- * The Cost breakdown as cells, header row first, then one row per service day, then the total row (Decision 0066 item 11). Each cell
- * uses the same formatter and the same dash as the table on the screen, so the copied text shows the values as displayed.
+ * The Cost breakdown as cells (Decision 0066 item 11, Decision 0077 item 4): the header, then each Route row followed by its service-day
+ * rows, then the Total row. A Route row says "All days" in the Service day cell; a service-day row leaves the Route cell empty. Each
+ * cell uses the same formatter and the same dash as the table on the screen, so the copied text shows the values as displayed.
  */
 export function costBreakdownText(result: CostingResult, selectedYear: number, totalDays: number): string[][] {
-  const { rows, total } = breakdownRows(result, selectedYear);
+  const { routes, total } = routeBreakdownRows(result, selectedYear);
   const count = (value: number | undefined) => value === undefined ? MISSING : String(value);
   const daily = (value: number | undefined) => value === undefined ? MISSING : dailyHours(value);
   const annual = (value: number | undefined) => value === undefined ? MISSING : annualHours(value);
   const cash = (value: number | undefined) => value === undefined ? MISSING : money(value);
+  /** The cells after the first two, in `BREAKDOWN_COLUMNS` order. A Route or Total row leaves the four daily cells blank, as on the screen. */
+  const values = (row: BreakdownRow, days: number, withDaily: boolean): string[] => [
+    String(days), count(row.trips), count(row.blocks),
+    ...(withDaily ? [daily(row.running), daily(row.revenue), daily(row.platform), cash(row.dailyCost)] : ['', '', '', '']),
+    annual(row.annualRevenue), annual(row.annualPlatform), cash(row.annualCost),
+  ];
   return [
-    [...BREAKDOWN_COLUMNS],
-    ...rows.map((row) => [row.name, String(row.days), count(row.trips), count(row.blocks), daily(row.running), daily(row.revenue), daily(row.platform), cash(row.dailyCost), annual(row.annualRevenue), annual(row.annualPlatform), cash(row.annualCost)]),
-    ['Total', String(totalDays), count(total.trips), count(total.blocks), '', '', '', '', annual(total.annualRevenue), annual(total.annualPlatform), cash(total.annualCost)],
+    ['Route', 'Service day', ...BREAKDOWN_COLUMNS.slice(1)],
+    ...routes.flatMap((route) => [
+      [route.name, 'All days', ...values(route, route.days, false)],
+      ...route.dayRows.map((row) => ['', row.name, ...values(row, row.days, true)]),
+    ]),
+    ['Total', '', ...values(total, totalDays, false)],
   ];
 }

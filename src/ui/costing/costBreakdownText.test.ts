@@ -58,40 +58,51 @@ function estimatedResult() {
 }
 
 describe('costBreakdownText', () => {
-  it('builds the header, one row per service day and the total row for a blocked result', () => {
+  it('builds the header, a Route row with its service-day rows, and the total row for a blocked result', () => {
     const result = blockedResult();
     const cells = costBreakdownText(result, 2026, 364);
-    expect(cells[0]).toEqual(BREAKDOWN_COLUMNS);
-    expect(cells).toHaveLength(result.dailyRows.length + 2);
-    const weekday = cells.find((row) => row[0] === 'Weekday');
+    expect(cells[0]).toEqual(['Route', 'Service day', ...BREAKDOWN_COLUMNS.slice(1)]);
+    // One Route row, then one row per service day of each Route, then the total row.
+    const routeDayCount = result.routeRows.reduce((count, route) => count + route.days.length, 0);
+    expect(cells).toHaveLength(result.routeRows.length + routeDayCount + 2);
+    // The Route row says "All days" and leaves the four daily cells blank.
+    const routeRow = cells[1]!;
+    expect(routeRow[0]).toBe('Untitled route');
+    expect(routeRow[1]).toBe('All days');
+    expect(routeRow[2]).toBe(String(result.routeRows[0]!.days.reduce((total, day) => total + day.annualServiceDays, 0)));
+    expect(routeRow.slice(5, 9)).toEqual(['', '', '', '']);
+    const weekday = cells.find((row) => row[1] === 'Weekday');
     expect(weekday).toBeDefined();
+    // A service-day row leaves the Route cell empty.
+    expect(weekday![0]).toBe('');
     // A blocked basis has no trip count, so the Trips cell is a dash, and the block count is shown.
-    expect(weekday![1]).toBe('260');
-    expect(weekday![2]).toBe('—');
-    expect(weekday![3]).toBe(String(result.dailyRows.find((row) => row.serviceDayName === 'Weekday')!.eligibleBlockCount));
+    expect(weekday![2]).toBe('260');
+    expect(weekday![3]).toBe('—');
+    expect(weekday![4]).toBe(String(result.dailyRows.find((row) => row.serviceDayName === 'Weekday')!.eligibleBlockCount));
     // A blocked basis has no running hours (a dash), but it has revenue hours.
-    expect(weekday![4]).toBe('—');
-    expect(weekday![5]).toMatch(/^\d[\d,]*\.\d{2}$/);
-    expect(weekday![7]).toMatch(/^\$[\d,]+$/);
+    expect(weekday![5]).toBe('—');
+    expect(weekday![6]).toMatch(/^\d[\d,]*\.\d{2}$/);
+    expect(weekday![8]).toMatch(/^\$[\d,]+$/);
     const total = cells.at(-1)!;
     expect(total[0]).toBe('Total');
-    expect(total[1]).toBe('364');
+    expect(total[1]).toBe('');
+    expect(total[2]).toBe('364');
     // The daily columns of the total row are blank, as on the screen.
-    expect(total.slice(4, 8)).toEqual(['', '', '', '']);
-    expect(total[10]).toMatch(/^\$[\d,]+$/);
+    expect(total.slice(5, 9)).toEqual(['', '', '', '']);
+    expect(total[11]).toMatch(/^\$[\d,]+$/);
   });
 
   it('shows the trip count and a dash for the block count for an estimated result', () => {
     const result = estimatedResult();
     const cells = costBreakdownText(result, 2026, 364);
-    expect(cells[0]).toEqual(BREAKDOWN_COLUMNS);
-    expect(cells).toHaveLength(result.dailyRows.length + 2);
-    const weekday = cells.find((row) => row[0] === 'Weekday')!;
-    expect(weekday[2]).toBe('1');
-    expect(weekday[3]).toBe('—');
-    expect(weekday[4]).toBe('8.00');
+    expect(cells[0]).toEqual(['Route', 'Service day', ...BREAKDOWN_COLUMNS.slice(1)]);
+    expect(cells).toHaveLength(result.routeRows.length + result.routeRows.reduce((count, route) => count + route.days.length, 0) + 2);
+    const weekday = cells.find((row) => row[1] === 'Weekday')!;
+    expect(weekday[3]).toBe('1');
+    expect(weekday[4]).toBe('—');
+    expect(weekday[5]).toBe('8.00');
     const total = cells.at(-1)!;
-    expect(total[2]).toBe(String(result.tripCount));
-    expect(total[3]).toBe('—');
+    expect(total[3]).toBe(String(result.tripCount));
+    expect(total[4]).toBe('—');
   });
 });

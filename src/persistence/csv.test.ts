@@ -125,6 +125,32 @@ describe('CSV serializers', () => {
       const rows = costingCsvFiles(scenario, { kind: 'estimated', tripProfile: profile }, assumptions, noRate)[1].contents.trim().split('\r\n');
       expect(rows.at(-1)).toBe('total,project,scenario,Alt,,,profile,Alt B,estimated,noEstimate,rateMissing,,,,,,,,5,1,,2144.0000,,,,,,,2680.0000,,,,,Quantities are rounded independently from unrounded service-day values; no cost rate is available.');
     });
+
+    it('writes the Route file: a row per Route service day, a total row per Route, and the Unattributed row last (Decision 0077 item 4)', () => {
+      const routed: EstimatedCostingCalculationResult = {
+        ...estimated,
+        routeRows: [
+          { routeId: 'a', routeName: 'Alpha, East', days: [
+            { serviceDayId: 'weekday', serviceDayName: 'Weekday', annualServiceDays: 255, tripCount: 4, runningHoursPerDay: 8, revenueHoursPerDay: 10, platformHoursPerDay: 12.5, annualRevenueHours: 2550, annualPlatformHours: 3187.5, yearCosts: [{ serviceYear: 2026, costPerDayUsd: 1000, annualCostUsd: 255000 }] },
+            { serviceDayId: 'saturday', serviceDayName: 'Saturday', annualServiceDays: 52, tripCount: 1, runningHoursPerDay: 2, revenueHoursPerDay: 2.5, platformHoursPerDay: 2.5, annualRevenueHours: 130, annualPlatformHours: 130, yearCosts: [{ serviceYear: 2026, costPerDayUsd: 250, annualCostUsd: 13000 }] },
+          ] },
+          { routeId: null, days: [
+            { serviceDayId: 'weekday', serviceDayName: 'Weekday', annualServiceDays: 255, tripCount: 1, runningHoursPerDay: 1, revenueHoursPerDay: 1, platformHoursPerDay: 1, annualRevenueHours: 255, annualPlatformHours: 255, yearCosts: [{ serviceYear: 2026, costPerDayUsd: 100, annualCostUsd: 25500 }] },
+            { serviceDayId: 'saturday', serviceDayName: 'Saturday', annualServiceDays: 52, tripCount: 0, runningHoursPerDay: 0, revenueHoursPerDay: 0, platformHoursPerDay: 0, annualRevenueHours: 0, annualPlatformHours: 0, yearCosts: [{ serviceYear: 2026, costPerDayUsd: 0, annualCostUsd: 0 }] },
+          ] },
+        ],
+      };
+      const file = costingCsvFiles(scenario, { kind: 'estimated', tripProfile: profile }, assumptions, routed)[3];
+      expect(file.suffix).toBe('costing-routes');
+      const rows = file.contents.trim().split('\r\n');
+      expect(rows[0]).toBe('projectId,scenarioId,scenarioName,blockingScenarioId,blockingScenarioName,tripProfileId,tripProfileName,routeId,routeName,rowType,serviceDayId,serviceDayName,annualServiceDays,tripCount,blockCount,unassignedTripCount,runningHoursPerDay,revenueHoursPerDay,platformHoursPerDay,annualRevenueHours,annualPlatformHours,firstYear,firstYearAnnualCostUsd');
+      expect(rows).toHaveLength(7);
+      expect(rows.filter((row) => row.includes(',routeTotal,'))).toHaveLength(2);
+      expect(rows[1]).toContain(',a,"Alpha, East",routeDay,weekday,Weekday,255,4,,,8.0000,10.0000,12.5000,2550.0000,3187.5000,2026,255000.00');
+      expect(rows[3]).toContain(',a,"Alpha, East",routeTotal,,,307,5,,,,,,2680.0000,3317.5000,2026,268000.00');
+      // The Unattributed row has an empty routeId and the label as its name.
+      expect(rows[6]).toContain('Alt B,,Unattributed (multi-route blocks),routeTotal,,,307,1,');
+    });
   });
 
   it('exports all service-day/year rows, independently rounded totals, and exclusions in one ZIP', async () => {
@@ -149,7 +175,7 @@ describe('CSV serializers', () => {
       yearRows: [{ serviceYear: 2026, appliedRateUsdPerRevenueHour: 1.00005, annualRevenueHours: 0.01, annualPlatformHours: 0.01, annualCostUsd: 0.01 }],
     };
     const files = costingCsvFiles(scenario, { kind: 'blocked', blockingScenario, tripProfile: profile }, assumptions, result);
-    expect(files.map((file) => file.suffix)).toEqual(['costing-assumptions', 'costing-results', 'costing-exclusions']);
+    expect(files.map((file) => file.suffix)).toEqual(['costing-assumptions', 'costing-results', 'costing-exclusions', 'costing-routes']);
     const rows = files[1].contents.trim().split('\r\n');
     expect(rows[0]).toContain('appliedRateUsdPerRevenueHour');
     expect(rows).toHaveLength(4);
@@ -166,6 +192,7 @@ describe('CSV serializers', () => {
     expect(archiveText).toContain('costing-assumptions.csv');
     expect(archiveText).toContain('costing-results.csv');
     expect(archiveText).toContain('costing-exclusions.csv');
+    expect(archiveText).toContain('costing-routes.csv');
     expect([...bytes.slice(-22, -18)]).toEqual([0x50, 0x4b, 0x05, 0x06]);
   });
 });
