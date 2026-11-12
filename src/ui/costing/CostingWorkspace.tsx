@@ -6,7 +6,7 @@ import type { CostingAssumptionsInput } from '../../domain/costing';
 import { DEFAULT_COSTING_ESCALATION } from '../../domain/costing';
 import { formatMoney, MISSING } from '../format';
 import type { CostingAssumptions, CostingEstimateFactors, Route, Scenario, ServiceDayDefinition, TripProfile, ValidationFinding } from '../../domain/types';
-import { RouteCostTable, useRouteExpansion } from './RouteCostTable';
+import { DAY_EXPANDED_PREFERENCE_KEY, ROUTE_EXPANDED_PREFERENCE_KEY, RouteCostTable, useBreakdownGrouping, useRouteExpansion } from './RouteCostTable';
 import { routeOptionLabel } from '../shell/headerStatus';
 import { sortServiceDays } from '../../domain/serviceDays';
 import { readRateHistory, readStoredRecord, rememberRate, storedText, writeRateHistory } from '../preferences';
@@ -23,7 +23,7 @@ import { CostSummaryView } from './CostSummaryView';
 import { estimateFactorsForTripProfile, routeEstimateFactorsForTripProfile } from '../../domain/estimatedCosting';
 import { CycleCalculator } from './CycleCalculator';
 import { setEstimateFactor } from './EstimateFactorsGrid';
-import { costBreakdownText, money } from './costBreakdownText';
+import { costBreakdownText, money, type BreakdownGrouping } from './costBreakdownText';
 import { tableToTsv } from '../tableText';
 import { useContextMenu } from '../useContextMenu';
 
@@ -242,7 +242,13 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
   }, [calculationInput, basisValue, basisOptions, costingService, scenario.id, validation]);
 
   useEffect(() => { setBreakdownCopy(undefined); }, [result, selectedYear]);
-  const routeExpansion = useRouteExpansion(scenario.id, (result?.routeRows ?? []).map((route) => route.routeId ?? 'unattributed'));
+  // Decision 0078: grouping by service day needs two or more Route rows; with one, the Route grouping shows the same rows.
+  const [storedGrouping, setGrouping] = useBreakdownGrouping(scenario.id);
+  const canGroupByDay = (result?.routeRows.length ?? 0) > 1;
+  const grouping: BreakdownGrouping = canGroupByDay ? storedGrouping : 'route';
+  const routeExpansion = useRouteExpansion(scenario.id, grouping === 'day'
+    ? (result?.dailyRows ?? []).map((row) => row.serviceDayId)
+    : (result?.routeRows ?? []).map((route) => route.routeId ?? 'unattributed'), grouping === 'day' ? DAY_EXPANDED_PREFERENCE_KEY : ROUTE_EXPANDED_PREFERENCE_KEY);
 
   useEffect(() => {
     const guard = (action: () => void) => {
@@ -377,7 +383,7 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
   /** Copies the Cost breakdown as tab-separated text (Decision 0066 item 11). A failed write changes only the status line. */
   async function copyBreakdown() {
     if (!result) return;
-    const text = tableToTsv(costBreakdownText(result, selectedYear, costingService.summarizeServiceDays(serviceDays).total));
+    const text = tableToTsv(costBreakdownText(result, selectedYear, costingService.summarizeServiceDays(serviceDays).total, grouping));
     try {
       await navigator.clipboard.writeText(text);
       setBreakdownCopy({ kind: 'ok', text: `Copied the cost breakdown for ${selectedYear}.` });
@@ -396,9 +402,16 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
   ] }];
   // Decision 0076 item 6: commands on the Cost breakdown's rows sit in that surface's own Actions menu (Decision 0077 item 1.5).
   const hasRouteRows = !!result?.routeRows.length;
+  const groupNoun = grouping === 'day' ? 'days' : 'routes';
   const breakdownActionsMenu: MenuGroup[] = [{ items: [
-    { id: 'expand-all', label: 'Expand all routes', disabled: !hasRouteRows || routeExpansion.allExpanded, onSelect: routeExpansion.expandAll },
-    { id: 'collapse-all', label: 'Collapse all routes', disabled: !hasRouteRows || routeExpansion.noneExpanded, onSelect: routeExpansion.collapseAll },
+    { id: 'expand-all', label: `Expand all ${groupNoun}`, disabled: !hasRouteRows || routeExpansion.allExpanded, onSelect: routeExpansion.expandAll },
+    { id: 'collapse-all', label: `Collapse all ${groupNoun}`, disabled: !hasRouteRows || routeExpansion.noneExpanded, onSelect: routeExpansion.collapseAll },
+  ] }];
+  // Decision 0078 item 2: the grouping is a persistent view choice, so it is a field menu, not an Actions command (Decision 0076 item 6).
+  const groupingName = grouping === 'day' ? 'Service day' : 'Route';
+  const groupingMenu: MenuGroup[] = [{ items: [
+    { id: 'group-route', label: 'Route', checked: grouping === 'route', onSelect: () => setGrouping('route') },
+    { id: 'group-day', label: 'Service day', checked: grouping === 'day', onSelect: () => setGrouping('day') },
   ] }];
   const factorRouteMenu: MenuGroup[] = [{ items: [
     { id: 'all-routes', label: 'All routes', checked: !factorRouteId, onSelect: () => chooseFactorRoute('') },
@@ -458,10 +471,11 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
     </WorkSurface>}
 
     <WorkSurface title={`Cost breakdown · ${selectedYear}`} titleRef={estimateHeading} ariaLabel="Cost breakdown" badge={badge} subtitle={subtitle}
+      context={canGroupByDay ? <MenuButton fieldLabel="Group by" label={groupingName} triggerAriaLabel={`Group by: ${groupingName}`} menuLabel="Group by" groups={groupingMenu} selectionStyle="highlight" menuAlign="start" /> : undefined}
       actions={<MenuButton label="Actions" triggerAriaLabel="Cost breakdown actions" menuLabel="Cost breakdown actions" groups={breakdownActionsMenu} disabled={!hasRouteRows} />}>
       {result?.state === 'noEstimate' && <InlineNote kind="warn" live>{noEstimateText(result, tripProfileName)}</InlineNote>}
       {result?.state === 'invalid' && <div className="costing-alert error" role="alert"><p>The estimate cannot be calculated until the listed input or source-data problems are corrected.</p><ul>{result.findings.filter((finding) => finding.severity === 'error').map((finding, index) => <li key={`${finding.messageKey}-${finding.entityId}-${index}`}>{costingFindingMessage(finding, (id) => serviceDays.find((day) => day.id === id)?.name)}</li>)}</ul></div>}
-      {result && result.dailyRows.length > 0 && <RouteCostTable result={result} selectedYear={selectedYear} totalDays={annualDays.total} expansion={routeExpansion}
+      {result && result.dailyRows.length > 0 && <RouteCostTable result={result} selectedYear={selectedYear} totalDays={annualDays.total} expansion={routeExpansion} grouping={grouping}
         menuTarget={contextMenu.target(() => ({ heading: `Cost breakdown · ${selectedYear}`, groups: [...costingActionsMenu, ...breakdownActionsMenu] }))} />}
       {breakdownCopy && <InlineNote kind={breakdownCopy.kind} live>{breakdownCopy.text}</InlineNote>}
       {!result && calculating && <p className="table-empty" role="status">Calculating estimate…</p>}

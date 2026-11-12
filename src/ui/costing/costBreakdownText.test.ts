@@ -105,4 +105,22 @@ describe('costBreakdownText', () => {
     expect(total[3]).toBe(String(result.tripCount));
     expect(total[4]).toBe('—');
   });
+
+  it('groups by service day: each day row has its daily values and is followed by its Route rows (Decision 0078)', () => {
+    const result = estimatedResult();
+    const byRoute = costBreakdownText(result, 2026, 364);
+    const cells = costBreakdownText(result, 2026, 364, 'day');
+    expect(cells[0]).toEqual(['Service day', 'Route', ...BREAKDOWN_COLUMNS.slice(1)]);
+    // Header, then per service day a day row and one Route row (one Route here), then Total.
+    expect(cells).toHaveLength(2 + result.dailyRows.length * 2);
+    const weekday = cells.find((row) => row[0] === 'Weekday')!;
+    expect(weekday[1]).toBe('All routes');
+    expect(weekday[5]).toBe('8.00');
+    // The day row's values equal the Route grouping's single Route on that day.
+    const routeWeekday = byRoute.find((row) => row[1] === 'Weekday')!;
+    expect(weekday.slice(2)).toEqual(routeWeekday.slice(2));
+    const child = cells[cells.indexOf(weekday) + 1]!;
+    expect(child.slice(0, 2)).toEqual(['', 'Untitled route']);
+    expect(cells.at(-1)).toEqual(byRoute.at(-1));
+  });
 });

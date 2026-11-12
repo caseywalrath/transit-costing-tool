@@ -47,6 +47,7 @@
 .costing-route-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .costing-route-note { flex: none; margin-left: auto; color: var(--color-warn); font-size: var(--font-size-caption); font-weight: var(--font-weight-regular); }
 .costing-route-day { display: block; padding-left: 26px; overflow: hidden; text-overflow: ellipsis; color: var(--color-text-muted); }
+.costing-route-cell.costing-route-day { display: flex; }
 .costing-route-day-row th, .costing-route-day-row td { font-weight: var(--font-weight-regular); }
 .costing-lower-grid { display: grid; grid-template-columns: minmax(0, 560px); gap: 14px; min-width: 0; }
 /* Decision 0063: the Vehicle requirement surface above the Cost breakdown. */
