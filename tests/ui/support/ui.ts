@@ -221,6 +221,11 @@ const commands = {
   'blockingScenario.duplicate': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingSummary', item: 'Duplicate blocking scenario…' },
   'blockingScenario.delete': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingSummary', item: 'Delete blocking scenario…' },
   'blockingScenario.exportCsv': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingSummary', item: 'Export blocking CSV (ZIP)' },
+  // Decision 0076 item 10: the same lifecycle items on the Trips Blocking scenario field menu (no `within`: the trigger is unique on the Trips tab).
+  'tripsBlockingScenario.new': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, item: 'New blocking scenario…' },
+  'tripsBlockingScenario.duplicate': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, item: 'Duplicate blocking scenario…' },
+  'tripsBlockingScenario.rename': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, item: 'Rename blocking scenario…' },
+  'tripsBlockingScenario.delete': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, item: 'Delete blocking scenario…' },
   'blocks.copyDay': { menu: 'Blocks actions', within: 'blockingSummary', item: 'Copy blocks from another day…' },
   'block.rename': { menu: 'Current block actions', within: 'currentBlock', item: 'Rename block…' },
   'block.notes': { menu: 'Current block actions', within: 'currentBlock', item: 'Edit notes…' },
