@@ -184,7 +184,7 @@ test('every dialog opened from the screens has an accessible name, and the axe d
   expect(await axeViolations(page)).toEqual([]);
   // The estimated cost basis: the Estimate factors grid and the Cost breakdown (Decision 0051).
   await chooseCostBasis(page, 'Estimated from running time', 'Default');
-  await expect(page.locator('.costing-results-table tbody tr').first().locator('td').nth(2)).toHaveText('—');
+  await expect(page.locator('.costing-results-table tbody tr.costing-route-day-row').first().locator('td').nth(2)).toHaveText('—');
   expect(await axeViolations(page)).toEqual([]);
 });
 

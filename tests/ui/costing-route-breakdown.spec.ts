@@ -74,18 +74,20 @@ test('a Route factor is saved for that Route only, its blank cells inherit, and 
   await editGridCell(gridCell(grid, 'All days layover percent'), '10');
   await page.getByRole('button', { name: 'Save factors', exact: true }).click();
   await expect(page.getByRole('button', { name: /^Sav/ })).toHaveCount(0);
-  const totalBefore = await breakdown(page).locator('tfoot td').last().textContent();
+  // Annual revenue hours of the Total row (the eighth value cell); the fixture has no rate, so costs are dashes.
+  const totalBefore = await breakdown(page).locator('tfoot td').nth(7).textContent();
+  expect(totalBefore).not.toBe('—');
 
   await openMenu(page, factorsPanel(page).getByRole('button', { name: 'Route: All routes' }), 'Route');
-  await page.getByRole('menuitem', { name: 'Second route' }).click();
+  await page.getByRole('menuitemradio', { name: 'Second route' }).click();
   await expect(factorsPanel(page).getByRole('button', { name: 'Route: Second route' })).toBeVisible();
   // Inherited from the Trip Profile: a placeholder, not a value.
   await expect(gridCell(grid, 'All days layover percent').locator('.grid-cell__placeholder')).toHaveText('10');
   await editGridCell(gridCell(grid, 'All days layover percent'), '30');
-  await expect(breakdown(page).locator('tfoot td').last()).not.toHaveText(totalBefore ?? '');
+  await expect(breakdown(page).locator('tfoot td').nth(7)).not.toHaveText(totalBefore ?? '');
 
   await openMenu(page, factorsPanel(page).getByRole('button', { name: 'Route: Second route' }), 'Route');
-  await page.getByRole('menuitem', { name: 'All routes' }).click();
+  await page.getByRole('menuitemradio', { name: 'All routes' }).click();
   const dialog = page.getByRole('alertdialog');
   await expect(dialog).toContainText('Save estimate factors before changing the route?');
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();

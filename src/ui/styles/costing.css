@@ -32,11 +32,12 @@
 .costing-results-table tfoot th { background: var(--color-sunken); }
 /* Decision 0077. The Cost breakdown by Route: a wider first column for the toggle, the Route name and the unassigned note. Every Route row
    reserves the toggle slot, and day rows indent inside the first cell only, so expanding never moves a column. */
+.costing-route-table table { min-width: 940px; }
 .costing-route-table .costing-col-day { width: 17%; }
 .costing-route-table .costing-col-hours { width: 8.5%; }
 .costing-route-table .costing-col-money { width: 10%; }
 .costing-route-table .costing-col-total { width: 12%; }
-.costing-route-table tbody th[scope='row'], .costing-route-table tfoot th[scope='row'] { text-align: left; }
+.costing-route-table thead th:first-child, .costing-route-table tbody th[scope='row'], .costing-route-table tfoot th[scope='row'] { text-align: left; }
 .costing-route-table tbody + tbody { border-top: 1px solid var(--color-border-soft); }
 .costing-route-row th, .costing-route-row td { font-weight: var(--font-weight-semibold); }
 .costing-route-cell { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }

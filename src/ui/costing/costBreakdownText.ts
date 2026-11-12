@@ -45,16 +45,15 @@ export type RouteBreakdownRow = BreakdownRow & { routeId: string | null; unassig
 
 /**
  * The Route rows of the Cost breakdown, in the domain's order. A Route row follows the Total row's rules: annual days, trip and block
- * counts and annual values are sums of its day rows (undefined when any part is); daily values are left blank. A service day on which
- * the Route has no trips, blocks or unassigned trips is left out of its day rows.
+ * counts and annual values are sums of its day rows (undefined when any part is); daily values are left blank. Every service day is a
+ * day row, as in the Total, so a single Route's rows match the scenario's service-day rows.
  */
 export function routeBreakdownRows(result: CostingResult, selectedYear: number): { routes: RouteBreakdownRow[]; total: BreakdownRow } {
   const { total } = breakdownRows(result, selectedYear);
   const sum = (values: Array<number | undefined>) => values.every((value) => value !== undefined) ? values.reduce<number>((acc, value) => acc + value!, 0) : undefined;
   const estimated = result.basis === 'estimated';
   const routes = result.routeRows.map((route): RouteBreakdownRow => {
-    const active = route.days.filter((day) => (day.tripCount ?? 0) > 0 || (day.blockCount ?? 0) > 0 || (day.unassignedTripCount ?? 0) > 0);
-    const dayRows = active.map((day): BreakdownRow => {
+    const dayRows = route.days.map((day): BreakdownRow => {
       const cost = day.yearCosts.find((item) => item.serviceYear === selectedYear);
       return {
         key: `${route.routeId ?? 'unattributed'}:${day.serviceDayId}`, name: day.serviceDayName, days: day.annualServiceDays,

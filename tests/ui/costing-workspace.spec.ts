@@ -15,7 +15,7 @@ test('Costing workspace displays a partial estimate, supports year selection, an
   await expect(page.getByRole('heading', { name: 'Cost Breakdown' })).toBeVisible();
   await expect(page.getByText('Partial estimate')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Exclusions' })).toHaveCount(0);
-  await expect(page.locator('.costing-results-table thead th')).toHaveText(['Service day', 'Days', 'Trips', 'Blocks', 'Daily running (h)', 'Daily revenue (h)', 'Daily platform (h)', 'Daily cost', 'Annual revenue (h)', 'Annual platform (h)', 'Annual cost']);
+  await expect(page.locator('.costing-results-table thead th')).toHaveText(['Route', 'Days', 'Trips', 'Blocks', 'Daily running (h)', 'Daily revenue (h)', 'Daily platform (h)', 'Daily cost', 'Annual revenue (h)', 'Annual platform (h)', 'Annual cost']);
   await expect(page.locator('.costing-results-table tfoot').getByRole('cell', { name: '$40,170' })).toBeVisible();
   await scopeField(page, 'View year').selectOption('2027');
   await expect(page.getByRole('heading', { name: 'Cost Breakdown' })).toBeVisible();
@@ -23,7 +23,7 @@ test('Costing workspace displays a partial estimate, supports year selection, an
   await expect(page.getByText('Service quantities remain constant; only the rate changes.')).toHaveCount(0);
   // F3, F6 (UR-3): annual hours and annual cost are whole numbers; daily hours have two decimals; the hourly rate shows cents.
   expect(await page.locator('.costing-results-table tfoot').allInnerTexts()).not.toEqual(expect.arrayContaining([expect.stringMatching(/\d+\.\d+/)]));
-  for (const text of await page.locator('.costing-results-table tbody tr td:nth-child(7)').allInnerTexts()) expect(text).toMatch(/^[\d,]+\.\d{2}$/);
+  for (const text of await page.locator('.costing-results-table tbody tr.costing-route-day-row td:nth-child(7)').allInnerTexts()) expect(text).toMatch(/^[\d,]+\.\d{2}$/);
 
   await page.setViewportSize({ width: 1440, height: 900 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
@@ -183,7 +183,7 @@ test.describe('Costing estimate display (U06 criteria 2 to 5)', () => {
     await expect(page.getByText('Calculating estimate…')).toBeVisible();
     await expect(page.getByText('Select a cost basis to calculate an estimate.')).toHaveCount(0);
     await page.evaluate(() => { (window as unknown as { __hold: { release: boolean } }).__hold.release = true; });
-    await expect(page.locator('.costing-results-table tbody tr')).toHaveCount(4);
+    await expect(page.locator('.costing-results-table tbody tr.costing-route-day-row')).toHaveCount(4);
     await expect(page.getByText('Calculating estimate…')).toHaveCount(0);
   });
 
@@ -202,7 +202,7 @@ test.describe('Costing estimate display (U06 criteria 2 to 5)', () => {
     for (const index of [3, 4, 5, 6]) await expect(cells.nth(index)).toHaveText('');
     await expect(cells.nth(7)).toHaveText('260');
     await expect(cells.nth(9)).toHaveText('$40,170');
-    const row = page.locator('.costing-results-table tbody tr').first().locator('td');
+    const row = page.locator('.costing-results-table tbody tr.costing-route-day-row').first().locator('td');
     await expect(row.nth(1)).toHaveText('—');
     await expect(row.nth(3)).toHaveText('—');
     await expect(page.getByText(/Totals are computed before rounding/)).toHaveCount(0);
@@ -232,7 +232,7 @@ test('Annual cost is visible without scrolling the table at 1024 and 1440 px, an
     expect(await table.evaluate((element) => element.scrollWidth <= element.clientWidth), `the results table does not scroll at ${width} px`).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     const header = await page.getByRole('columnheader', { name: 'Annual cost', exact: true }).first().boundingBox();
-    const cell = await page.locator('.costing-results-table tbody tr').first().locator('td').last().boundingBox();
+    const cell = await page.locator('.costing-results-table tbody tr.costing-route-day-row').first().locator('td').last().boundingBox();
     for (const box of [header, cell]) {
       expect(box).not.toBeNull();
       expect(box!.x).toBeGreaterThanOrEqual(0);
