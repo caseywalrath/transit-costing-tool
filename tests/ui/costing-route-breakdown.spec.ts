@@ -97,3 +97,17 @@ test('a Route factor is saved for that Route only, its blank cells inherit, and 
   const stored = await runInPage(page, 'const record = (await e.db.costingAssumptions.toArray())[0]; return record.routeEstimateFactors.map((entry) => [entry.routeId, entry.factors.allDays.layoverFraction])');
   expect(stored).toEqual([['second-route', 0.3]]);
 });
+
+test('the Cost Summary shows Cost by route for two Routes', async ({ page }) => {
+  await open(page, true);
+  const grid = factorsPanel(page).getByRole('grid', { name: 'Estimate factors' });
+  await editGridCell(gridCell(grid, 'All days layover percent'), '10');
+  await page.getByRole('combobox', { name: 'Operating cost per revenue hour in USD' }).fill('150');
+  await page.getByRole('button', { name: 'Costing actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'View cost summary…', exact: true }).click();
+  const partial = page.getByRole('alertdialog', { name: 'This estimate is partial' });
+  if (await partial.isVisible().catch(() => false)) await partial.getByRole('button', { name: 'Open summary', exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: 'Operating Cost Estimate' });
+  await expect(sheet.getByRole('heading', { name: 'Cost by route' })).toBeVisible();
+  await expect(sheet).toContainText('Second route');
+});
