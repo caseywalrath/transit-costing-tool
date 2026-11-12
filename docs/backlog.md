@@ -8,6 +8,10 @@ Each entry lists the problem, the proposed approach, open choices, and the edge 
 | --- | --- | --- |
 | [Planned frequencies](#planned-frequencies) | Route, Trips, Costing | Implemented 2026-11-05: Decision 0058, `docs/implementation/planned-frequencies-closeout.md` |
 | [Auto-shift to a consistent frequency](#auto-shift-to-a-consistent-frequency) | Trips | Proposed; would use Planned frequencies as its periods |
+| [Per-route cost breakdown and factors](#per-route-cost-breakdown-and-factors) | Costing | Implemented 2026-11-12, awaiting acceptance: Decision 0077, `docs/implementation/route-cost-breakdown-closeout.md` |
+| [Costing by service day across routes](#costing-by-service-day-across-routes) | Costing | Proposed 2026-11-12; follows the per-route breakdown |
+| [Multi-route interlining](#multi-route-interlining) | Blocking, Costing | Proposed 2026-11-12; not needed for the current scenario |
+| [Year-varying service](#year-varying-service) | Scenario, Costing | Idea 2026-11-12; beyond current scope |
 
 ---
 
@@ -149,3 +153,76 @@ A shift keeps a trip's runtimes, so a trip moved into another band shows "Run ti
 3. Service: per-trip staged operation, preview with blocking impact, saved undo (structural).
 4. Setup panel, anchor-column headway markers, preview summary (UI design).
 5. Combined auto-shift and regenerate (follow-up).
+
+---
+
+## Per-route cost breakdown and factors
+
+- Proposed: 2026-11-12
+- Implemented: 2026-11-12, awaiting acceptance. Closeout: `docs/implementation/route-cost-breakdown-closeout.md`.
+- Area: Costing (Cost breakdown table, Estimate factors, Cost Summary and export)
+- Rules: `docs/decisions/0077-per-route-cost-breakdown-and-factors.md` (governs; the open decisions below are resolved there). Plan: `docs/implementation/route-cost-breakdown.md`.
+
+### Problem
+
+Costing is scenario-wide: every Route's Trips (estimated basis) or Blocks (blocking basis) are summed. The Cost breakdown table has one row per service day, so the planner cannot see which Routes drive cost. Estimate factors (layover %, deadhead %) are per Trip Profile and service day, not per Route.
+
+### Agreed design (user, 2026-11-12)
+
+1. **Replaces the by-service-day table.** The new table has one row per Route plus Total, with the existing Cost breakdown columns. A by-service-day view across Routes is a separate entry ([Costing by service day across routes](#costing-by-service-day-across-routes)).
+2. **Expandable rows.** Selecting a Route expands its service-day rows in place, below the Route row.
+3. **Stable columns.** Expanding or collapsing never changes column widths or positions: fixed table layout, indentation inside the first cell only, a toggle space reserved in every Route row, right-aligned tabular numbers. A browser test measures column positions before and after expanding.
+4. **Single Route.** The Route row is expanded by default.
+5. **Expanded state** is remembered. The Expand all control is discreet.
+6. **Year columns** stay as they are.
+7. **Per-route estimate factors.** A Route selector next to the Estimate factors title (All routes, then each Route) replaces the subtitle text "Trip profile X · shared scenario factors" / "blank days use All days". Inherited cells stay visibly distinct from values entered for that Route.
+
+### Open decisions
+
+- Factor fallback order, for example: Profile + Route + day → Profile + Route All days → Profile + day → Profile All days → Scenario shared.
+- Whether per-route factors are owned by the Trip Profile (as factors are now, Decision 0062) or by the Scenario.
+- Blocking basis: block-level hours (pull-out, pull-in, deadhead) go to the Block's Route; a multi-route Block gets a validation finding and an Unattributed row until [Multi-route interlining](#multi-route-interlining) sets the rule.
+- Whether the Route row shows unassigned Trips (blocking basis costs only Trips in Blocks, and the Blocking screen lists unassigned Trips for the selected Route only).
+- Route row order: by name or by annual cost.
+- Whether the Cost Summary and CSV/ZIP report gain the Route table in the same effort.
+
+### Suggested packages
+
+1. Decision record: factor ownership and fallback, Route attribution, Unattributed row.
+2. Domain, persistence, migration, backup schema bump, and costing grouped by Route, with tests that Route rows sum to the scenario total (structural).
+3. Route comparison table and factor Route selector (UI design).
+4. Cost Summary and report output (structural).
+
+---
+
+## Costing by service day across routes
+
+- Proposed: 2026-11-12
+- Area: Costing
+
+The per-route breakdown replaces the by-service-day table. A way to see scenario-wide totals per service day (a grouping toggle, or a summary row set) is decided after the per-route table is in use.
+
+---
+
+## Multi-route interlining
+
+- Proposed: 2026-11-12
+- Area: Blocking, Costing
+
+Today the Blocking screen lists unassigned Trips for the selected Route only (`listUnassignedTrips(blockingScenarioId, serviceDayId, routeId)`), Phase 4 does not create multi-route Blocks, and existing multi-route Blocks are shown in full with other-route Trips flagged.
+
+Plan:
+
+1. Decision record for costing attribution: deadhead between Trips of different Routes (preceding Trip, following Trip, or split); pull-out and pull-in on a multi-route Block (proportional to Revenue hours, or first and last Trip's Route); the Unattributed row.
+2. An All routes option for the Unassigned trips panel, with a Route column and filter.
+3. Deliberate multi-route assignment in Blocking.
+4. Interlining assistance (see Phase 6 in `architecture_overview.md`).
+
+---
+
+## Year-varying service
+
+- Idea: 2026-11-12
+- Area: Scenario, Costing
+
+Costing assumes the same service in every forecast year; only the rate escalates. A real plan may change one Route in year 3 and leave another unchanged. Supporting this needs a temporal model (for example, a Trip Profile or Route service level per year range) and is beyond current scope. Until then, separate Scenarios model each service stage.

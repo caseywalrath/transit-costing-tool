@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { calculatorRevenueHours, solveCycle, type CycleResult, type CycleSolveFor } from '../../domain/cycleCalculator';
-import type { EstimatedCostingCalculationResult, ImpliedRouteService } from '../../domain/estimatedCosting';
+import type { EstimatedCostingCalculationResult, ImpliedRouteService, RouteFactorSource } from '../../domain/estimatedCosting';
 import { SegmentedControl } from '../shared/SegmentedControl';
 import { formatMoney, MISSING } from '../format';
 
@@ -30,20 +30,28 @@ function scheduleValues(route: ImpliedRouteService, layoverFraction: number | un
 }
 
 type Row = {
-  key: string; serviceDayId: string; dayName: string; routeName?: string; annualServiceDays: number;
+  key: string; serviceDayId: string; routeId: string; dayName: string; routeName?: string; annualServiceDays: number;
   text: Record<Field, string>; result: CycleResult; revenue?: number; annualCost?: number; savedLayover?: number;
+  /** Decision 0077: the starting layover % is the Route's own value (day or All days), not inherited from the Trip Profile. */
+  routeOwnLayover: boolean;
 };
+
+const isRouteSource = (source: RouteFactorSource | undefined) => source === 'routeServiceDay' || source === 'routeAllDays';
 
 /**
  * The Vehicle requirement surface (Decision 0063): one row per service day and Route of an estimated cost basis. The running cycle, headway, and
- * layover start from the trips and the day's layover %; one of layover, headway, and vehicles is solved from the others. Typed values
- * stay on this screen until "Use" writes a row's layover % into that day's Estimate factors cell as an unsaved change.
+ * layover start from the trips and the Route's resolved layover % (Decision 0077); one of layover, headway, and vehicles is solved from the
+ * others. Typed values stay on this screen until "Use" writes a row's layover % into that day's Estimate factors cell as an unsaved change.
+ * "Use" writes only where the Estimate factors grid shows the result: with All routes, on rows whose Route inherits the Trip Profile's
+ * layover; with one Route chosen, on that Route's rows (the others are dimmed).
  */
-export function CycleCalculator({ result, rate, disabled, onUseLayover }: {
+export function CycleCalculator({ result, rate, disabled, factorRouteId, onUseLayover }: {
   result: EstimatedCostingCalculationResult;
   /** The applied rate of the selected year; costs show "—" without it. */
   rate?: number;
   disabled?: boolean;
+  /** The level the Estimate factors grid edits: '' is All routes, otherwise a Route ID. */
+  factorRouteId: string;
   onUseLayover: (serviceDayId: string, layoverFraction: number) => void;
 }) {
   const [solveFor, setSolveFor] = useState<CycleSolveFor>('vehicles');
@@ -52,7 +60,8 @@ export function CycleCalculator({ result, rate, disabled, onUseLayover }: {
 
   const rows: Row[] = result.dailyRows.flatMap((day) => (day.impliedService ?? []).map((route): Row => {
     const key = `${day.serviceDayId}:${route.routeId}`;
-    const schedule = scheduleValues(route, day.factors.layoverFraction);
+    const startLayover = route.layoverSource !== undefined || route.layoverFraction !== undefined ? route.layoverFraction : day.factors.layoverFraction;
+    const schedule = scheduleValues(route, startLayover);
     const typed = overrides[key] ?? {};
     const text: Record<Field, string> = {
       run: typed.run ?? fixed(schedule.run, 1),
@@ -69,8 +78,8 @@ export function CycleCalculator({ result, rate, disabled, onUseLayover }: {
     }, solveFor, roundVehicles);
     const revenue = calculatorRevenueHours(route.runningHours, schedule.run, solved);
     return {
-      key, serviceDayId: day.serviceDayId, dayName: day.serviceDayName, routeName: route.routeName, annualServiceDays: day.annualServiceDays,
-      text, result: solved, revenue, savedLayover: day.factors.layoverFraction,
+      key, serviceDayId: day.serviceDayId, routeId: route.routeId, dayName: day.serviceDayName, routeName: route.routeName, annualServiceDays: day.annualServiceDays,
+      text, result: solved, revenue, savedLayover: startLayover, routeOwnLayover: isRouteSource(route.layoverSource),
       annualCost: revenue === undefined || rate === undefined ? undefined : revenue * rate * day.annualServiceDays,
     };
   }));
@@ -116,18 +125,23 @@ export function CycleCalculator({ result, rate, disabled, onUseLayover }: {
       </tr></thead>
       <tbody>{rows.map((row) => {
         const layover = row.result.layoverFraction;
-        const useable = layover !== undefined && (row.savedLayover === undefined || Math.abs(layover - row.savedLayover) > 1e-9);
+        const changed = layover !== undefined && (row.savedLayover === undefined || Math.abs(layover - row.savedLayover) > 1e-9);
+        // Decision 0077: Use writes only to the level the Estimate factors grid shows.
+        const otherRoute = factorRouteId !== '' && row.routeId !== factorRouteId;
+        const blockedReason = otherRoute ? `This row belongs to another route. Choose ${row.routeName ?? 'it'} in the Route menu to change it.`
+          : factorRouteId === '' && row.routeOwnLayover ? 'This route has its own layover %. Choose it in the Route menu to change it.' : undefined;
+        const useable = changed && !blockedReason;
         const percent = layover === undefined ? MISSING : (layover * 100).toFixed(2);
-        return <tr key={row.key}>
+        return <tr key={row.key} className={otherRoute ? 'cycle-row--other' : undefined}>
           <th scope="row">{row.dayName}</th>{showRoute && <td>{row.routeName ?? MISSING}</td>}
           <td>{cell(row, 'run', 'cycle running minutes', false, '')}</td>
-          <td>{cell(row, 'layover', 'layover percent', solvedLayover, percent)}</td>
+          <td><span className="cycle-layover">{cell(row, 'layover', 'layover percent', solvedLayover, percent)}<span className="cycle-source">{row.routeOwnLayover ? 'route' : 'trip profile'}</span></span></td>
           <td>{fixed(row.result.cycleMinutes, 1)}</td>
           <td>{cell(row, 'headway', 'headway minutes', solveFor === 'headway', fixed(row.result.headwayMinutes, 1))}</td>
           <td>{cell(row, 'vehicles', 'vehicles', solveFor === 'vehicles', vehiclesText(row.result.vehicles))}</td>
           <td>{fixed(row.revenue, 2)}</td>
           <td>{row.annualCost === undefined ? MISSING : formatMoney(row.annualCost)}</td>
-          <td><button type="button" className="cycle-use" disabled={disabled || !useable} aria-label={`Use ${percent}% layover for ${row.dayName}`} onClick={() => layover !== undefined && onUseLayover(row.serviceDayId, layover)}>Use</button></td>
+          <td><button type="button" className="cycle-use" disabled={disabled || !useable} title={blockedReason} aria-label={`Use ${percent}% layover for ${row.dayName}`} onClick={() => layover !== undefined && onUseLayover(row.serviceDayId, layover)}>Use</button></td>
         </tr>;
       })}</tbody>
       {total !== undefined && <tfoot><tr><th scope="row">Total</th>{showRoute && <td />}<td /><td /><td /><td /><td /><td /><td>{formatMoney(total)}</td><td /></tr></tfoot>}

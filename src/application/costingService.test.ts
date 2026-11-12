@@ -14,6 +14,7 @@ const emptyQueries = (overrides: Partial<CostingCalculationContextQueries> = {})
   countBlocks: async () => 1,
   getCostingCalculationContext: async () => undefined,
   getEstimatedCostingContext: async () => undefined,
+  listRoutes: async () => [],
   ...overrides,
 });
 const selected: BlockingScenario = {
@@ -65,7 +66,7 @@ describe('CostingApplicationService', () => {
     expect(result?.basis).toBe('blocked');
     expect(result?.state).toBe('noEstimate');
     expect(result?.noEstimateReason).toBe('noEligibleBlocks');
-    expect(files?.map((file) => file.suffix)).toEqual(['costing-assumptions', 'costing-results', 'costing-exclusions']);
+    expect(files?.map((file) => file.suffix)).toEqual(['costing-assumptions', 'costing-results', 'costing-exclusions', 'costing-routes']);
     expect(files?.[1].contents).toContain('noEstimate');
   });
 
@@ -140,7 +141,7 @@ describe('CostingApplicationService', () => {
       const service = new CostingApplicationService(queries());
       const estimateFactors = { allDays: { layoverFraction: 0.2, deadheadFraction: 0.2 }, serviceDays: [] };
       const files = await service.exportEstimateCsv({ scenarioId, basis: { kind: 'estimated', tripProfileId: 'p-alpha' }, assumptions: { ...input, estimateFactors } });
-      expect(files?.map((file) => file.suffix)).toEqual(['costing-assumptions', 'costing-results', 'costing-exclusions']);
+      expect(files?.map((file) => file.suffix)).toEqual(['costing-assumptions', 'costing-results', 'costing-exclusions', 'costing-routes']);
       expect(files?.[0].contents).toContain(',estimated,');
       expect(files?.[1].contents).toContain('10.0000');
       expect(await service.exportEstimateCsv({ scenarioId, basis: { kind: 'estimated', tripProfileId: 'p-zeta' }, assumptions: input })).toBeUndefined();
@@ -203,6 +204,62 @@ describe('CostingApplicationService', () => {
       expect(resaved.tripProfileEstimateFactors).toEqual([{ tripProfileId: 'p-alpha', factors }]);
       const fresh = await new CostingApplicationService(queries(), memoryRepository(), at).saveAssumptions(scenarioId, { ...input, estimateFactors: factors });
       expect(fresh.estimateFactors).toBeUndefined();
+    });
+
+    describe('Route estimate factors (Decision 0077)', () => {
+      const routes = [{ id: 'r', scenarioId, name: 'Route', ...stamp }, { id: 'foreign', scenarioId: 'other-scenario', name: 'Foreign', ...stamp }];
+      const routeQueries = () => queries({ listRoutes: async () => routes });
+
+      it('creates the record from the given assumptions when the Scenario has none, strips its factor fields, and normalizes the Route factors', async () => {
+        const repository = memoryRepository();
+        const service = new CostingApplicationService(routeQueries(), repository, at);
+        const saved = await service.saveRouteEstimateFactors(scenarioId, 'p-alpha', 'r', { allDays: { layoverFraction: 0.31 }, serviceDays: [{ serviceDayId: 'saturday' }, { serviceDayId: 'weekday', deadheadFraction: 0.05 }] }, {
+          ...input, estimateFactors: { allDays: { layoverFraction: 0.9 }, serviceDays: [] }, routeEstimateFactors: [{ routeId: 'r', factors: { allDays: { layoverFraction: 0.5 }, serviceDays: [] } }],
+        });
+        expect(saved).toMatchObject({ scenarioId, currencyCode: 'USD', enteredRate: 100, createdAt: at(), updatedAt: at() });
+        expect(saved.estimateFactors).toBeUndefined();
+        expect(saved.routeEstimateFactors).toEqual([{ tripProfileId: 'p-alpha', routeId: 'r', factors: { allDays: { layoverFraction: 0.31 }, serviceDays: [{ serviceDayId: 'weekday', deadheadFraction: 0.05 }] } }]);
+        expect(saved.tripProfileEstimateFactors).toBeUndefined();
+      });
+
+      it('replaces the entry of one Trip Profile and Route, keeps the others, and removes the entry when the factors are all blank', async () => {
+        const repository = memoryRepository();
+        const service = new CostingApplicationService(routeQueries(), repository, at);
+        await service.saveRouteEstimateFactors(scenarioId, 'p-alpha', 'r', { allDays: { layoverFraction: 0.31 }, serviceDays: [] }, input);
+        const other = await service.saveRouteEstimateFactors(scenarioId, 'p-zeta', 'r', { allDays: { layoverFraction: 0.2 }, serviceDays: [] }, input);
+        expect(other.routeEstimateFactors?.map((entry) => entry.tripProfileId)).toEqual(['p-alpha', 'p-zeta']);
+        const replaced = await service.saveRouteEstimateFactors(scenarioId, 'p-alpha', 'r', { allDays: { layoverFraction: 0.35 }, serviceDays: [] }, input);
+        expect(replaced.id).toBe(other.id);
+        expect(replaced.routeEstimateFactors?.map((entry) => [entry.tripProfileId, entry.routeId, entry.factors.allDays.layoverFraction])).toEqual([['p-alpha', 'r', 0.35], ['p-zeta', 'r', 0.2]]);
+        const removed = await service.saveRouteEstimateFactors(scenarioId, 'p-alpha', 'r', { allDays: {}, serviceDays: [] }, input);
+        expect(removed.routeEstimateFactors?.map((entry) => entry.tripProfileId)).toEqual(['p-zeta']);
+      });
+
+      it('drops the entries of Trip Profiles and Routes that no longer exist when it saves', async () => {
+        const repository = memoryRepository();
+        const service = new CostingApplicationService(routeQueries(), repository, at);
+        const created = await service.saveAssumptions(scenarioId, input);
+        const factors = { allDays: { layoverFraction: 0.1 }, serviceDays: [] };
+        await repository.saveCostingAssumptions({ ...created, routeEstimateFactors: [{ tripProfileId: 'gone', routeId: 'r', factors }, { tripProfileId: 'p-alpha', routeId: 'gone-route', factors }] });
+        const saved = await service.saveRouteEstimateFactors(scenarioId, 'p-alpha', 'r', { allDays: { layoverFraction: 0.2 }, serviceDays: [] }, input);
+        expect(saved.routeEstimateFactors).toEqual([{ tripProfileId: 'p-alpha', routeId: 'r', factors: { allDays: { layoverFraction: 0.2 }, serviceDays: [] } }]);
+      });
+
+      it('refuses a Route outside the Scenario, a Trip Profile outside the Scenario, a day outside the Scenario, and invalid factors, and writes nothing', async () => {
+        const repository = memoryRepository();
+        const service = new CostingApplicationService(routeQueries(), repository, at);
+        const factors = { allDays: { layoverFraction: 0.1 }, serviceDays: [] };
+        await expect(service.saveRouteEstimateFactors(scenarioId, 'p-alpha', 'elsewhere', factors, input))
+          .rejects.toThrow('The route of the route estimate factors is not in this scenario.');
+        await expect(service.saveRouteEstimateFactors(scenarioId, 'p-alpha', 'foreign', factors, input))
+          .rejects.toThrow('The route of the route estimate factors is not in this scenario.');
+        await expect(service.saveRouteEstimateFactors(scenarioId, 'elsewhere', 'r', factors, input))
+          .rejects.toThrow('The trip profile of the route estimate factors is not in this scenario.');
+        await expect(service.saveRouteEstimateFactors(scenarioId, 'p-alpha', 'r', { allDays: {}, serviceDays: [{ serviceDayId: 'elsewhere', layoverFraction: 0.1 }] }, input))
+          .rejects.toThrow('A service day of the route estimate factors is not in this scenario.');
+        await expect(service.saveRouteEstimateFactors(scenarioId, 'p-alpha', 'r', { allDays: { layoverFraction: 1 }, serviceDays: [] }, input)).rejects.toThrow('costing.estimateFactorInvalid');
+        expect(repository.saveCostingAssumptions).not.toHaveBeenCalled();
+      });
     });
   });
 

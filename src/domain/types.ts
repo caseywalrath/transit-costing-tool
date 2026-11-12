@@ -141,9 +141,13 @@ export interface CostingAssumptions extends EntityMetadata {
   estimateFactors?: CostingEstimateFactors;
   /** Decision 0062. Each Trip Profile's own factors, at most one entry per Trip Profile. An entry, even an empty one, replaces `estimateFactors`. */
   tripProfileEstimateFactors?: TripProfileEstimateFactors[];
+  /** Decision 0077. At most one entry per Trip Profile × Route. */
+  routeEstimateFactors?: RouteEstimateFactors[];
 }
 /** Decision 0062. The estimate factors of one Trip Profile of the Scenario. */
 export interface TripProfileEstimateFactors { tripProfileId: EntityId; factors: CostingEstimateFactors }
+/** Decision 0077. The estimate factors of one Route under one Trip Profile. Blank cells inherit the Trip Profile's resolved factors. */
+export interface RouteEstimateFactors { tripProfileId: EntityId; routeId: EntityId; factors: CostingEstimateFactors }
 /** Decision 0051. A value absent means "not entered". Fractions are in [0, 1). */
 export interface CostingFactorPair { layoverFraction?: number; deadheadFraction?: number }
 export interface CostingServiceDayFactors extends CostingFactorPair { serviceDayId: EntityId }

@@ -1,6 +1,9 @@
 import type { CostingCalculationResult } from './costing';
 import type { EstimatedCostingCalculationResult } from './estimatedCosting';
 
+/** Decision 0077 item 3.2: the label of the Unattributed Route row (eligible Blocks whose revenue Trips belong to more than one Route). */
+export const UNATTRIBUTED_ROUTE_NAME = 'Unattributed (multi-route blocks)';
+
 /** Decision 0054. The figures of the printable Operating Cost Estimate. Values keep full calculation precision; the page rounds them. */
 export interface CostSummary {
   projectName: string;
@@ -16,6 +19,8 @@ export interface CostSummary {
   /** Revenue hours are the same in every service year. */
   annualRevenueHours: number;
   days: CostSummaryDay[];
+  /** Decision 0077 item 4: one entry per Route row of the result, in the result's order (the Unattributed row last). */
+  routes: CostSummaryRoute[];
   years: CostSummaryYear[];
 }
 
@@ -26,6 +31,16 @@ export interface CostSummaryDay {
   revenueHoursPerDay?: number;
   annualRevenueHours?: number;
   firstYearCostUsd?: number;
+}
+
+/** One Route of the "Cost by route" table. A value the result does not have is undefined. */
+export interface CostSummaryRoute {
+  routeId: string | null;
+  name: string;
+  annualRevenueHours?: number;
+  firstYearCostUsd?: number;
+  /** The Route's first-year annual cost divided by the scenario's first-year annual cost, from 0 to 1. */
+  shareOfFirstYearCost?: number;
 }
 
 export interface CostSummaryYear {
@@ -58,6 +73,19 @@ export function buildCostSummary(result: CostingCalculationResult | EstimatedCos
     ...(row.annualRevenueHours === undefined ? {} : { annualRevenueHours: row.annualRevenueHours }),
     ...(row.yearCosts[0] && row.yearCosts[0].serviceYear === first.serviceYear ? { firstYearCostUsd: row.yearCosts[0].annualCostUsd } : {}),
   }));
+  // A sum is undefined when any part is undefined, as in the Cost breakdown (Decision 0077 item 1.2). A Route with no days has no sum.
+  const sumWhenKnown = (values: Array<number | undefined>) => values.length > 0 && values.every((value) => value !== undefined) ? values.reduce<number>((total, value) => total + value!, 0) : undefined;
+  const routes = result.routeRows.map((route): CostSummaryRoute => {
+    const revenue = sumWhenKnown(route.days.map((day) => day.annualRevenueHours));
+    const cost = sumWhenKnown(route.days.map((day) => day.yearCosts.find((item) => item.serviceYear === first.serviceYear)?.annualCostUsd));
+    return {
+      routeId: route.routeId,
+      name: route.routeId === null ? UNATTRIBUTED_ROUTE_NAME : route.routeName || 'Untitled route',
+      ...(revenue === undefined ? {} : { annualRevenueHours: revenue }),
+      ...(cost === undefined ? {} : { firstYearCostUsd: cost }),
+      ...(cost === undefined || !(first.annualCostUsd > 0) ? {} : { shareOfFirstYearCost: cost / first.annualCostUsd }),
+    };
+  });
   return {
     ...heading,
     firstYear: first.serviceYear,
@@ -67,6 +95,7 @@ export function buildCostSummary(result: CostingCalculationResult | EstimatedCos
     lastYearCostUsd: last.annualCostUsd,
     annualRevenueHours: first.annualRevenueHours,
     days,
+    routes,
     years,
   };
 }

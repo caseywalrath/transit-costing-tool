@@ -3,6 +3,8 @@ import type { BlockSummary, BlockingSummary } from '../domain/blocking';
 import { roundCostingDisplay, type CostingAssumptionsInput, type CostingCalculationResult } from '../domain/costing';
 import type { EstimatedCostingCalculationResult } from '../domain/estimatedCosting';
 import { formatServiceTime } from '../domain/time';
+import { UNATTRIBUTED_ROUTE_NAME } from '../domain/costSummary';
+import type { CostingRouteResult } from '../domain/routeCosting';
 /** Quotes a field that contains a comma, a double quote, or a line break (LF, CR, or CRLF). Every CSV writer in the application uses this rule. */
 export function csvEscape(value: unknown): string { const s = String(value ?? ''); return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s; }
 
@@ -95,7 +97,7 @@ export const blockingScenariosCsv = (scenarios: BlockingScenario[], tripProfiles
   return toCsv(['id', 'scenarioId', 'tripProfileId', 'tripProfileName', 'name', 'description'], scenarios.map((scenario) => ({ id: scenario.id, scenarioId: scenario.scenarioId, tripProfileId: scenario.tripProfileId, tripProfileName: names.get(scenario.tripProfileId), name: scenario.name, description: scenario.description })), ['tripProfileName', 'name', 'description']);
 };
 
-export type CostingCsvFileSuffix = 'costing-assumptions' | 'costing-results' | 'costing-exclusions';
+export type CostingCsvFileSuffix = 'costing-assumptions' | 'costing-results' | 'costing-exclusions' | 'costing-routes';
 export interface CostingCsvFile { suffix: CostingCsvFileSuffix; contents: string; }
 
 const usd = (value: number | undefined) => value === undefined || !Number.isFinite(value) ? '' : roundCostingDisplay(value, 2).toFixed(2);
@@ -217,10 +219,38 @@ export function costingCsvFiles(
       .map((day) => ({ ...context, serviceDayId: day.serviceDayId, serviceDayName: day.serviceDayName, exclusionType: 'tripsWithoutRunTime', tripsWithoutRunTimeCount: day.tripsWithoutRunTimeCount }));
   const exclusionsContents = toCsv(exclusionHeaders, exclusionRows, ['scenarioName', 'blockingScenarioName', 'tripProfileName', 'serviceDayName', 'blockLabel']);
 
+  // Decision 0077 item 4: one row per Route service day and one total row per Route, in the result's Route order (Unattributed last).
+  const routeHeaders = ['projectId', 'scenarioId', 'scenarioName', 'blockingScenarioId', 'blockingScenarioName', 'tripProfileId', 'tripProfileName', 'routeId', 'routeName', 'rowType', 'serviceDayId', 'serviceDayName', 'annualServiceDays', 'tripCount', 'blockCount', 'unassignedTripCount', 'runningHoursPerDay', 'revenueHoursPerDay', 'platformHoursPerDay', 'annualRevenueHours', 'annualPlatformHours', 'firstYear', 'firstYearAnnualCostUsd'];
+  const firstYear = result.yearRows[0]?.serviceYear;
+  const firstYearCostOf = (day: CostingRouteResult['days'][number]) => firstYear === undefined ? undefined : day.yearCosts.find((item) => item.serviceYear === firstYear)?.annualCostUsd;
+  const routeResultRows: ResultRow[] = result.routeRows.flatMap((route) => {
+    const routeColumns = { ...context, routeId: route.routeId ?? '', routeName: route.routeId === null ? UNATTRIBUTED_ROUTE_NAME : (route.routeName ?? '') };
+    const dayRows = route.days.map((day): ResultRow => ({
+      rowType: 'routeDay', ...routeColumns, serviceDayId: day.serviceDayId, serviceDayName: day.serviceDayName, annualServiceDays: day.annualServiceDays,
+      tripCount: day.tripCount, blockCount: day.blockCount, unassignedTripCount: day.unassignedTripCount,
+      runningHoursPerDay: hours(day.runningHoursPerDay), revenueHoursPerDay: hours(day.revenueHoursPerDay), platformHoursPerDay: hours(day.platformHoursPerDay),
+      annualRevenueHours: hours(day.annualRevenueHours), annualPlatformHours: hours(day.annualPlatformHours),
+      firstYear, firstYearAnnualCostUsd: usd(firstYearCostOf(day)),
+    }));
+    // The total row sums its service-day rows; a column any day leaves blank is blank in the total (sumWhenKnown).
+    const totalRow: ResultRow = {
+      rowType: 'routeTotal', ...routeColumns,
+      annualServiceDays: route.days.reduce((total, day) => total + day.annualServiceDays, 0),
+      tripCount: sumWhenKnown(route.days.map((day) => day.tripCount)),
+      blockCount: sumWhenKnown(route.days.map((day) => day.blockCount)),
+      unassignedTripCount: sumWhenKnown(route.days.map((day) => day.unassignedTripCount)),
+      annualRevenueHours: hours(sumWhenKnown(route.days.map((day) => day.annualRevenueHours))),
+      annualPlatformHours: hours(sumWhenKnown(route.days.map((day) => day.annualPlatformHours))),
+      firstYear, firstYearAnnualCostUsd: usd(sumWhenKnown(route.days.map((day) => firstYearCostOf(day)))),
+    };
+    return [...dayRows, totalRow];
+  });
+
   return [
     { suffix: 'costing-assumptions', contents: assumptionsContents },
     { suffix: 'costing-results', contents: toCsv(resultHeaders, resultRows, ['scenarioName', 'blockingScenarioName', 'tripProfileName', 'serviceDayName']) },
     { suffix: 'costing-exclusions', contents: exclusionsContents },
+    { suffix: 'costing-routes', contents: toCsv(routeHeaders, routeResultRows, ['scenarioName', 'blockingScenarioName', 'tripProfileName', 'routeName', 'serviceDayName']) },
   ];
 }
 

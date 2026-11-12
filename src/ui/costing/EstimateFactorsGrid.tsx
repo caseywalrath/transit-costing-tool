@@ -1,5 +1,5 @@
 import { useEffect, useId } from 'react';
-import { formatEstimateFactorPercent, parseEstimateFactorPercent } from '../../domain/estimatedCosting';
+import { formatEstimateFactorPercent, parseEstimateFactorPercent, resolveDayFactors } from '../../domain/estimatedCosting';
 import type { CostingEstimateFactors, CostingFactorPair, ServiceDayDefinition } from '../../domain/types';
 import { useGridNavigation } from '../shared/useGridNavigation';
 
@@ -35,10 +35,12 @@ export function setEstimateFactor(factors: CostingEstimateFactors | undefined, s
  * Runtimes grid. A blank day cell shows the All days value it falls back to. A refused entry keeps the cell open with the grid message,
  * and `onInvalidChange` tells the screen, which disables Save factors meanwhile.
  */
-export function EstimateFactorsGrid({ days, factors, savedFactors, disabled, onChange, onInvalidChange }: {
+export function EstimateFactorsGrid({ days, factors, savedFactors, inherited, disabled, onChange, onInvalidChange }: {
   days: ServiceDayDefinition[];
   factors: CostingEstimateFactors | undefined;
   savedFactors: CostingEstimateFactors | undefined;
+  /** Decision 0077: the Trip Profile's factors, which a Route's blank cells inherit. Absent at the All routes level. */
+  inherited?: CostingEstimateFactors;
   disabled: boolean;
   onChange: (next: CostingEstimateFactors) => void;
   onInvalidChange: (invalid: boolean) => void;
@@ -67,7 +69,9 @@ export function EstimateFactorsGrid({ days, factors, savedFactors, disabled, onC
           const value = pairOf(factors, days, c)?.[row.key];
           const edited = value !== pairOf(savedFactors, days, c)?.[row.key];
           const editing = grid.editing?.r === r && grid.editing.c === c;
-          const fallback = c > 0 && value === undefined ? factors?.allDays[row.key] : undefined;
+          // A blank cell shows, as a placeholder, the value it falls back to: this level's All days, then the inherited level's value.
+          const inheritedValue = inherited ? (c === 0 ? inherited.allDays[row.key] : resolveDayFactors(inherited, days[c - 1].id)[row.key]) : undefined;
+          const fallback = value !== undefined ? undefined : (c > 0 ? factors?.allDays[row.key] : undefined) ?? inheritedValue;
           const className = ['grid-cell', edited && 'grid-cell--edited'].filter(Boolean).join(' ');
           return <td key={c} {...grid.cellProps(r, c)} className={className} data-cell={cellLabel(r, c)}>
             {editing

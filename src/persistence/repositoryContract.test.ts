@@ -1,7 +1,7 @@
 import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouteDefinitionService } from '../application/routeDefinitionService';
-import { duplicateScenario, projectSnapshotWithScenario, snapshotForScenario } from '../domain/project';
+import { duplicateRouteRecords, duplicateScenario, projectSnapshotWithScenario, snapshotForScenario, type ScenarioRecords } from '../domain/project';
 import type { RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
 import type { CostingAssumptions, PlannedFrequency, ProjectSnapshot, Trip, TripGenerationSet, TripRegenerationUndo } from '../domain/types';
 import { asSnapshot, goldenWithAltBlocking } from '../testSupport/goldenBackup';
@@ -164,7 +164,7 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       await repository.saveProjectSnapshot(snapshot);
       const backup = new ProjectBackupService((id) => repository.getProjectSnapshot(id), (value) => repository.saveProjectSnapshot(value));
       const payload = await backup.exportProject(snapshot.project.id);
-      expect(JSON.parse(payload).exportSchemaVersion).toBe(11);
+      expect(JSON.parse(payload).exportSchemaVersion).toBe(12);
       const before = JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value);
       await backup.importProject(payload, 'replace');
       expect(JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value)).toBe(before);
@@ -630,6 +630,71 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
 
       await repository.deleteTripProfile(altProfile.id);
       expect((await repository.getCostingAssumptions(scenarioId))?.tripProfileEstimateFactors?.map((entry) => entry.tripProfileId)).toEqual([defaultProfile.id, 'alt-copy']);
+    });
+
+    it('copies a Trip Profile’s Route entries to its copy, with no own entry, and removes them with the Profile (Decision 0077)', async () => {
+      const { snapshot, scenarioId, altProfile, defaultProfile } = fixture();
+      await repository.saveProjectSnapshot(snapshot);
+      const [route] = snapshot.routes;
+      const factors = (layoverFraction: number) => ({ allDays: { layoverFraction }, serviceDays: [] });
+      const later = '2026-10-23T00:00:00.000Z';
+      await repository.saveCostingAssumptions({ ...assumptions('first', scenarioId), routeEstimateFactors: [
+        { tripProfileId: altProfile.id, routeId: route.id, factors: factors(0.12) },
+        { tripProfileId: defaultProfile.id, routeId: route.id, factors: factors(0.22) },
+      ] });
+
+      await repository.copyTripProfileAtomically({ id: 'alt-copy', scenarioId, name: 'Alt copy', sourceTripProfileId: altProfile.id, createdAt: later, updatedAt: later }, []);
+      const afterCopy = await repository.getCostingAssumptions(scenarioId);
+      expect(afterCopy?.tripProfileEstimateFactors).toBeUndefined();
+      expect(afterCopy?.routeEstimateFactors).toEqual([
+        { tripProfileId: altProfile.id, routeId: route.id, factors: factors(0.12) },
+        { tripProfileId: defaultProfile.id, routeId: route.id, factors: factors(0.22) },
+        { tripProfileId: 'alt-copy', routeId: route.id, factors: factors(0.12) },
+      ]);
+
+      await repository.deleteTripProfile(altProfile.id);
+      expect((await repository.getCostingAssumptions(scenarioId))?.routeEstimateFactors?.map((entry) => entry.tripProfileId)).toEqual([defaultProfile.id, 'alt-copy']);
+    });
+  });
+
+  describe('Route estimate factors (Decision 0077)', () => {
+    const stamp = '2026-10-22T00:00:00.000Z';
+    const factors = { allDays: { layoverFraction: 0.31 }, serviceDays: [] };
+
+    it('a Route duplicate copies the Route entries, and deleting that Route through the application removes them in the same write', async () => {
+      const { snapshot, scenarioId, defaultProfile } = fixture();
+      await repository.saveProjectSnapshot(snapshot);
+      const [route] = snapshot.routes;
+      const original = { tripProfileId: defaultProfile.id, routeId: route.id, factors };
+      await repository.saveCostingAssumptions({ id: 'first', scenarioId, currencyCode: 'USD', enteredRate: 100, rateYear: 2025, sourceType: 'user', baseServiceYear: 2025, futureYearCount: 0, annualEscalation: 0.03, createdAt: stamp, updatedAt: stamp, routeEstimateFactors: [original] });
+
+      const duplicate = duplicateRouteRecords(await repository.getScenarioRecords(scenarioId) as ScenarioRecords, route.id, 'Copy', stamp);
+      await repository.saveScenarioRecords(duplicate.records);
+      const copied = { tripProfileId: defaultProfile.id, routeId: duplicate.route.id, factors };
+      expect((await repository.getCostingAssumptions(scenarioId))?.routeEstimateFactors).toEqual([original, copied]);
+
+      const backup = new ProjectBackupService((id) => repository.getProjectSnapshot(id), (saved) => repository.saveProjectSnapshot(saved));
+      const service = new RouteDefinitionService(repository, backup);
+      await service.deleteRoute(duplicate.route.id, (await service.getRouteDeletionImpact(duplicate.route.id)).reviewToken);
+      expect((await repository.getScenarioRecords(scenarioId))!.routes.map((candidate) => candidate.id)).toEqual([route.id]);
+      expect((await repository.getCostingAssumptions(scenarioId))?.routeEstimateFactors).toEqual([original]);
+    });
+
+    it('a Scenario duplicate remaps the Trip Profile, Route and service-day identifiers of the Route entries', async () => {
+      const { snapshot, scenarioId, defaultProfile, weekday } = fixture();
+      await repository.saveProjectSnapshot(snapshot);
+      const [route] = snapshot.routes;
+      await repository.saveCostingAssumptions({ id: 'first', scenarioId, currencyCode: 'USD', enteredRate: 100, rateYear: 2025, sourceType: 'user', baseServiceYear: 2025, futureYearCount: 0, annualEscalation: 0.03, createdAt: stamp, updatedAt: stamp, routeEstimateFactors: [{ tripProfileId: defaultProfile.id, routeId: route.id, factors: { allDays: {}, serviceDays: [{ serviceDayId: weekday, deadheadFraction: 0.07 }] } }] });
+
+      const duplicate = duplicateScenario((await repository.getScenarioRecords(scenarioId)) as ScenarioRecords, 'Scenario copy', stamp);
+      await repository.saveScenarioRecords(duplicate);
+      const copied = (await repository.getCostingAssumptions(duplicate.scenario.id))!;
+      expect(copied.routeEstimateFactors).toEqual([{
+        tripProfileId: duplicate.tripProfiles!.find((profile) => profile.name === 'Default')!.id,
+        routeId: duplicate.routes[0].id,
+        factors: { allDays: {}, serviceDays: [{ serviceDayId: duplicate.serviceDays.find((day) => day.kind === 'weekday')!.id, deadheadFraction: 0.07 }] },
+      }]);
+      expect(copied.routeEstimateFactors![0].routeId).not.toBe(route.id);
     });
   });
 });

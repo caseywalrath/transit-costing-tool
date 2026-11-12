@@ -14,11 +14,11 @@ async function openEstimated(page: Page) {
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await expect(scopeField(page, 'Cost basis').locator('option:checked')).toHaveText('Workbook Blocks');
   await chooseCostBasis(page, 'Estimated from running time', 'Default');
-  await expect(page.locator('.costing-results-table tbody tr').first().locator('td').nth(1)).not.toHaveText('—');
+  await expect(page.locator('.costing-results-table tbody tr.costing-route-day-row').first().locator('td').nth(1)).not.toHaveText('—');
 }
 
 const factors = (page: Page) => page.getByRole('grid', { name: 'Estimate factors' });
-const resultRow = (page: Page, day: string) => page.locator('.costing-results-table tbody tr').filter({ has: page.locator('th', { hasText: day }) });
+const resultRow = (page: Page, day: string) => page.locator('.costing-results-table tbody tr.costing-route-day-row').filter({ has: page.locator('th', { hasText: day }) });
 /** The number in the cell of the Cost breakdown under `column` (1 is Days, 2 Trips, 3 Blocks, 4 Daily running) in a day's row. */
 async function cellNumber(page: Page, day: string, column: number) {
   return Number((await resultRow(page, day).locator('td').nth(column - 1).innerText()).replaceAll(/[$,]/g, ''));
@@ -31,7 +31,7 @@ test('the cost basis lists blocked and estimated choices, and Weekday factors fr
   await expect(select.locator('optgroup[label="Blocked hours"] option')).toHaveText(['Workbook Blocks']);
   await expect(select.locator('optgroup[label="Estimated from running time"] option')).toHaveText(['Default']);
   await expect(page.locator('.context-field__value')).toHaveText('Default');
-  await expect(page.locator('.costing-results-table thead th')).toHaveText(['Service day', 'Days', 'Trips', 'Blocks', 'Daily running (h)', 'Daily revenue (h)', 'Daily platform (h)', 'Daily cost', 'Annual revenue (h)', 'Annual platform (h)', 'Annual cost']);
+  await expect(page.locator('.costing-results-table thead th')).toHaveText(['Route', 'Days', 'Trips', 'Blocks', 'Daily running (h)', 'Daily revenue (h)', 'Daily platform (h)', 'Daily cost', 'Annual revenue (h)', 'Annual platform (h)', 'Annual cost']);
   // The estimated basis has no blocks.
   await expect(resultRow(page, 'Weekday').locator('td').nth(2)).toHaveText('—');
 
@@ -57,7 +57,7 @@ test('a blank day uses All days: the factor cell shows the value, and the breakd
     await editGridCell(gridCell(factors(page), `${day} deadhead percent`), '5');
   }
   await expect(gridCell(factors(page), 'Holiday layover percent').locator('.grid-cell__placeholder')).toHaveText('18.2');
-  await expect(page.locator('.costing-results-table tbody th')).toHaveText(['Weekday', 'Saturday', 'Sunday', 'Holiday']);
+  await expect(page.locator('.costing-results-table tbody tr.costing-route-day-row th')).toHaveText(['Weekday', 'Saturday', 'Sunday', 'Holiday']);
   await expect(page.getByRole('region', { name: 'Estimate basis' })).toHaveCount(0);
   await page.getByLabel('Operating cost per revenue hour in USD').fill('152.40');
   await expect(page.locator('.costing-state')).toHaveCount(0);
@@ -142,7 +142,7 @@ test('at 1024 and 1440 px the eleven-column table shows Annual cost without scro
     const table = page.locator('.costing-results-table');
     expect(await table.evaluate((element) => element.scrollWidth <= element.clientWidth), `the results table does not scroll at ${width} px`).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-    const cell = await page.locator('.costing-results-table tbody tr').first().locator('td').last().boundingBox();
+    const cell = await page.locator('.costing-results-table tbody tr.costing-route-day-row').first().locator('td').last().boundingBox();
     expect(cell!.x + cell!.width).toBeLessThanOrEqual(width);
   }
 });

@@ -30,6 +30,24 @@
 .costing-results-table tbody th[scope='row'], .costing-results-table tfoot th[scope='row'] { text-align: right; vertical-align: middle; font-size: var(--font-size-note); }
 .costing-results-table tfoot, .costing-outlook-table .selected-costing-year { background: var(--color-sunken); font-weight: var(--font-weight-bold); }
 .costing-results-table tfoot th { background: var(--color-sunken); }
+/* Decision 0077. The Cost breakdown by Route: a wider first column for the toggle, the Route name and the unassigned note. Every Route row
+   reserves the toggle slot, and day rows indent inside the first cell only, so expanding never moves a column. */
+.costing-route-table table { min-width: 940px; }
+.costing-route-table .costing-col-day { width: 17%; }
+.costing-route-table .costing-col-hours { width: 8.5%; }
+.costing-route-table .costing-col-money { width: 10%; }
+.costing-route-table .costing-col-total { width: 12%; }
+.costing-route-table thead th:first-child, .costing-route-table tbody th[scope='row'], .costing-route-table tfoot th[scope='row'] { text-align: left; }
+.costing-route-table tbody + tbody { border-top: 1px solid var(--color-border-soft); }
+.costing-route-row th, .costing-route-row td { font-weight: var(--font-weight-semibold); }
+.costing-route-cell { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.costing-route-toggle { flex: none; display: inline-grid; place-items: center; width: 22px; min-width: 22px; height: 22px; min-height: 22px; padding: 0; border: 0; background: transparent; color: var(--color-text-muted); }
+.costing-route-toggle:hover:not(:disabled) { background: var(--color-sunken); color: var(--color-text); }
+.costing-route-toggle:disabled { visibility: hidden; }
+.costing-route-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.costing-route-note { flex: none; margin-left: auto; color: var(--color-warn); font-size: var(--font-size-caption); font-weight: var(--font-weight-regular); }
+.costing-route-day { display: block; padding-left: 26px; overflow: hidden; text-overflow: ellipsis; color: var(--color-text-muted); }
+.costing-route-day-row th, .costing-route-day-row td { font-weight: var(--font-weight-regular); }
 .costing-lower-grid { display: grid; grid-template-columns: minmax(0, 560px); gap: 14px; min-width: 0; }
 /* Decision 0063: the Vehicle requirement surface above the Cost breakdown. */
 .cycle-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-bottom: var(--space-3); }
@@ -38,6 +56,10 @@
 .cycle-round input[type='checkbox'] { width: 15px; min-width: 15px; height: 15px; min-height: 15px; margin: 0; padding: 0; }
 .cycle-reset { margin-left: auto; }
 .cycle-table table { min-width: 860px; }
+/* Decision 0077: where each row's starting layover % comes from, and the rows of other Routes while one Route is chosen. */
+.cycle-layover { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--space-1); }
+.cycle-source { min-width: 5.5em; color: var(--color-text-muted); font-size: var(--font-size-caption); text-align: left; white-space: nowrap; }
+.cycle-row--other > * { opacity: 0.55; }
 .cycle-table th, .cycle-table td { vertical-align: middle; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 6px; padding-right: 6px; }
 .cycle-table thead th { white-space: normal; line-height: 1.2; vertical-align: bottom; }
 .cycle-table tbody th[scope='row'], .cycle-table tfoot th[scope='row'] { font-size: var(--font-size-note); }

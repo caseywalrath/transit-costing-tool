@@ -441,6 +441,8 @@ interface CostingAssumptions extends EntityMetadata {
   estimateFactors?: CostingEstimateFactors;
   /** Decision 0062. One entry per Trip Profile of the Scenario at most. An entry, even an empty one, replaces `estimateFactors` for that Profile. */
   tripProfileEstimateFactors?: TripProfileEstimateFactors[];
+  /** Decision 0077. At most one entry { tripProfileId, routeId, factors } per Trip Profile × Route. Blank cells inherit the Trip Profile's resolved factors. */
+  routeEstimateFactors?: RouteEstimateFactors[];
 }
 interface CostingFactorPair { layoverFraction?: number; deadheadFraction?: number } // each absent or a fraction from 0 up to but not including 1
 interface CostingServiceDayFactors extends CostingFactorPair { serviceDayId: EntityId } // a service day of the same Scenario, at most once
@@ -584,7 +586,9 @@ Import must validate the complete payload before opening a write transaction. ID
 
 Version 10 adds the optional top-level `plannedFrequencies` array (Decision 0058); the key is omitted when a project has no plans, so such a file differs from version 9 only by its version number. Versions 1 to 9 stay readable and import with no plans.
 
-Version 11 (current) differs from version 10 only by the optional `tripProfileEstimateFactors` array inside a Costing assumptions record (Decision 0062). Versions 1 to 10 stay readable; the field found in one of them is dropped without failing the import. Import validation rejects a plan whose Route, Service day, direction or node is missing, or whose periods break the rules above. Import-as-copy remaps the plan, Route, Service day, period, direction and node identifiers.
+Version 12 (current) differs from version 11 only by the optional `routeEstimateFactors` array inside a Costing assumptions record (Decision 0077). Its validation requires an array whose entries each name a Trip Profile and a Route of the same Scenario, each pair at most once, with factors valid as for `estimateFactors`; a version 1 to 11 file's field is dropped. Scenario duplication and import as copy remap the Trip Profile, Route and service-day IDs. `CostingCommands.saveRouteEstimateFactors` writes one pair's entry and removes it when the factors are all blank; Route deletion removes a Route's entries in the same write, and Route duplication copies them.
+
+Version 11 differs from version 10 only by the optional `tripProfileEstimateFactors` array inside a Costing assumptions record (Decision 0062). Versions 1 to 10 stay readable; the field found in one of them is dropped without failing the import. Import validation rejects a plan whose Route, Service day, direction or node is missing, or whose periods break the rules above. Import-as-copy remaps the plan, Route, Service day, period, direction and node identifiers.
 
 ### Import rules
 

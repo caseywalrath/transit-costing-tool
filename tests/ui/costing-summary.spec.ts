@@ -30,6 +30,8 @@ test('opens the Operating Cost Estimate, warns about a partial estimate, and pri
   const headings = await sheet.locator('h3').allTextContents();
   expect(headings[0]).toMatch(/^Service by day/);
   expect(headings[1]).toBe('Cost by year');
+  // Decision 0077 item 4: the route table appears only with two or more Route rows; this fixture has one Route.
+  await expect(sheet.getByRole('heading', { name: 'Cost by route' })).toHaveCount(0);
 
   await page.emulateMedia({ media: 'print' });
   await expect(page.locator('#root')).toBeHidden();

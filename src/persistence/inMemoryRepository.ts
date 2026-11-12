@@ -8,7 +8,7 @@ import { assertRuntimeGraph } from './runtimePersistence';
 import { assertTripProfileReferences } from '../domain/trips';
 import { sortServiceDays } from '../domain/serviceDays';
 import { orderDirections } from '../domain/directions';
-import { assumptionsAfterTripProfileCopy, assumptionsAfterTripProfileDeletion } from '../domain/estimatedCosting';
+import { assumptionsAfterRouteDeletion, assumptionsAfterTripProfileCopy, assumptionsAfterTripProfileDeletion } from '../domain/estimatedCosting';
 import { assertCostingAssumptions, assertCostingAssumptionsCollection } from './costingPersistence';
 
 /**
@@ -116,13 +116,15 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     const serviceDayIds = new Set(records.serviceDays.map((day) => day.id));
     assertRuntimeGraph(records.runtimeProfiles, records.runtimeAssignments, records.patterns, records.serviceDays, records.scenario.id);
     assertTripProfileReferences(records.trips, records.blocks);
-    if (records.costingAssumptions) assertCostingAssumptions(records.costingAssumptions, records.scenario.id);
+    // Decision 0077: a Route removed by this write takes its Route factor entries with it. The write below stores the pruned record.
+    const costingAssumptions = assumptionsAfterRouteDeletion(records.costingAssumptions, new Set(records.routes.map((route) => route.id)), new Date().toISOString()) ?? records.costingAssumptions;
+    if (costingAssumptions) assertCostingAssumptions(costingAssumptions, records.scenario.id);
     const previousCostingAssumptions = inKeyOrder(this.costingAssumptions.values()).find((candidate) => candidate.scenarioId === records.scenario.id);
-    if (records.costingAssumptions && previousCostingAssumptions && previousCostingAssumptions.id !== records.costingAssumptions.id) {
+    if (costingAssumptions && previousCostingAssumptions && previousCostingAssumptions.id !== costingAssumptions.id) {
       throw new Error('Scenario already has a different costing assumptions record.');
     }
-    if (records.costingAssumptions) {
-      const sameId = this.costingAssumptions.get(records.costingAssumptions.id);
+    if (costingAssumptions) {
+      const sameId = this.costingAssumptions.get(costingAssumptions.id);
       if (sameId && sameId.scenarioId !== records.scenario.id) throw new Error('Costing assumption ownership cannot be moved to another Scenario.');
     }
     // A Route, Service day, direction or node removed by this write takes its plan or measure-node entry with it (Decision 0058 item 10).
@@ -154,7 +156,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     for (const assignment of records.runtimeAssignments) this.runtimeAssignments.set(assignment.id, assignment);
     for (const profile of records.tripProfiles ?? []) this.tripProfiles.set(profile.id, profile);
     for (const blockingScenario of records.blockingScenarios ?? []) this.blockingScenarios.set(blockingScenario.id, blockingScenario);
-    if (records.costingAssumptions) this.costingAssumptions.set(records.costingAssumptions.id, records.costingAssumptions);
+    if (costingAssumptions) this.costingAssumptions.set(costingAssumptions.id, costingAssumptions);
     for (const set of records.generationSets) this.generationSets.set(set.id, set);
     for (const trip of records.trips) this.trips.set(trip.id, trip);
     for (const block of records.blocks) this.blocks.set(block.id, block);
@@ -229,8 +231,11 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     const ownedRouteIds = new Set(inKeyOrder(this.routes.values()).filter((route) => ownedScenarioIds.has(route.scenarioId)).map((route) => route.id));
     assertRuntimeGraph(snapshot.runtimeProfiles, snapshot.runtimeAssignments, snapshot.patterns, snapshot.serviceDays);
     assertTripProfileReferences(snapshot.trips, snapshot.blocks);
-    assertCostingAssumptionsCollection(snapshot.costingAssumptions ?? [], new Set(snapshot.scenarios.map((scenario) => scenario.id)));
-    for (const assumptions of snapshot.costingAssumptions ?? []) {
+    // Decision 0077: Route factor entries naming a Route the snapshot does not contain are dropped, as a Route deletion drops them.
+    const snapshotRouteIds = new Set(snapshot.routes.map((route) => route.id));
+    const costingAssumptions = (snapshot.costingAssumptions ?? []).map((assumptions) => assumptionsAfterRouteDeletion(assumptions, snapshotRouteIds, new Date().toISOString()) ?? assumptions);
+    assertCostingAssumptionsCollection(costingAssumptions, new Set(snapshot.scenarios.map((scenario) => scenario.id)));
+    for (const assumptions of costingAssumptions) {
       const sameId = this.costingAssumptions.get(assumptions.id);
       if (sameId && sameId.scenarioId !== assumptions.scenarioId) throw new Error('Costing assumption ownership cannot be moved to another Scenario.');
     }
@@ -269,7 +274,7 @@ export class InMemoryRouteDefinitionRepository implements RouteDefinitionReposit
     for (const assignment of snapshot.runtimeAssignments) this.runtimeAssignments.set(assignment.id, assignment);
     for (const profile of snapshot.tripProfiles ?? []) this.tripProfiles.set(profile.id, profile);
     for (const blockingScenario of snapshot.blockingScenarios ?? []) this.blockingScenarios.set(blockingScenario.id, blockingScenario);
-    for (const assumptions of snapshot.costingAssumptions ?? []) this.costingAssumptions.set(assumptions.id, assumptions);
+    for (const assumptions of costingAssumptions) this.costingAssumptions.set(assumptions.id, assumptions);
     for (const set of snapshot.generationSets) this.generationSets.set(set.id, set);
     for (const trip of snapshot.trips) this.trips.set(trip.id, trip);
     for (const block of snapshot.blocks) this.blocks.set(block.id, block);

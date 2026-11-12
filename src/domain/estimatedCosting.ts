@@ -1,5 +1,6 @@
 import {
   costingAppliedRates,
+  costingYearCostsForDay,
   validateAnnualServiceDays,
   validateCostingAssumptions,
   type CostingAssumptionsInput,
@@ -7,9 +8,10 @@ import {
   type CostingEstimateState,
   type CostingFinding,
 } from './costing';
+import { sortRouteResults, type CostingRouteDayResult, type CostingRouteResult } from './routeCosting';
 import { sortServiceDays } from './serviceDays';
 import { tripRunTimeSeconds } from './trips';
-import type { CostingAssumptions, CostingEstimateFactors, CostingFactorPair, Route, RoutePattern, Scenario, ServiceDayDefinition, Trip, TripProfile, TripProfileEstimateFactors } from './types';
+import type { CostingAssumptions, CostingEstimateFactors, CostingFactorPair, Route, RouteEstimateFactors, RoutePattern, Scenario, ServiceDayDefinition, Trip, TripProfile, TripProfileEstimateFactors } from './types';
 
 /**
  * Estimated cost basis (Decision 0051): Revenue Hours and Platform Hours estimated from the running hours of a Trip Profile's Trips and
@@ -32,6 +34,30 @@ export function resolveDayFactors(factors: CostingEstimateFactors | undefined, s
   else if (factors?.allDays?.layoverFraction !== undefined) { resolved.layoverFraction = factors.allDays.layoverFraction; resolved.layoverSource = 'allDays'; }
   if (row?.deadheadFraction !== undefined) { resolved.deadheadFraction = row.deadheadFraction; resolved.deadheadSource = 'serviceDay'; }
   else if (factors?.allDays?.deadheadFraction !== undefined) { resolved.deadheadFraction = factors.allDays.deadheadFraction; resolved.deadheadSource = 'allDays'; }
+  return resolved;
+}
+
+/** Decision 0077. Where a Route factor comes from: the Route's day row, the Route's All days row, or the Trip Profile's resolution. */
+export type RouteFactorSource = 'routeServiceDay' | 'routeAllDays' | CostingFactorSource;
+export interface ResolvedRouteDayFactors {
+  layoverFraction?: number; layoverSource?: RouteFactorSource;
+  deadheadFraction?: number; deadheadSource?: RouteFactorSource;
+}
+
+const routeFactorSource = (source: CostingFactorSource): RouteFactorSource => (source === 'serviceDay' ? 'routeServiceDay' : 'routeAllDays');
+
+/**
+ * Decision 0077 item 2.2. Each factor independently: the Route's day row, else the Route's All days row, else `profileFactors` resolved by
+ * `resolveDayFactors`. `routeFactors` undefined means the Route has no entry.
+ */
+export function resolveRouteDayFactors(routeFactors: CostingEstimateFactors | undefined, profileFactors: CostingEstimateFactors | undefined, serviceDayId: string): ResolvedRouteDayFactors {
+  const fromRoute = resolveDayFactors(routeFactors, serviceDayId);
+  const fromProfile = resolveDayFactors(profileFactors, serviceDayId);
+  const resolved: ResolvedRouteDayFactors = {};
+  if (fromRoute.layoverSource) { resolved.layoverFraction = fromRoute.layoverFraction; resolved.layoverSource = routeFactorSource(fromRoute.layoverSource); }
+  else if (fromProfile.layoverSource) { resolved.layoverFraction = fromProfile.layoverFraction; resolved.layoverSource = fromProfile.layoverSource; }
+  if (fromRoute.deadheadSource) { resolved.deadheadFraction = fromRoute.deadheadFraction; resolved.deadheadSource = routeFactorSource(fromRoute.deadheadSource); }
+  else if (fromProfile.deadheadSource) { resolved.deadheadFraction = fromProfile.deadheadFraction; resolved.deadheadSource = fromProfile.deadheadSource; }
   return resolved;
 }
 
@@ -90,21 +116,74 @@ export function setTripProfileEstimateFactors(
     : [...kept, { tripProfileId, factors: value }];
 }
 
+/** Decision 0077. The Route factors of one Trip Profile, in stored order, for the calculation input. */
+export function routeEstimateFactorsForTripProfile(assumptions: Pick<CostingAssumptions, 'routeEstimateFactors'> | undefined, tripProfileId: string): { routeId: string; factors: CostingEstimateFactors }[] {
+  return (assumptions?.routeEstimateFactors ?? [])
+    .filter((entry) => entry.tripProfileId === tripProfileId)
+    .map((entry) => ({ routeId: entry.routeId, factors: entry.factors }));
+}
+
 /**
- * The assumptions after a Trip Profile copy (Decision 0062): the copy gets the source's own factors. Returns `undefined` when the source has
- * none, so nothing needs writing and the copy uses the Scenario's shared factors, as the source does.
+ * Decision 0077. Sets the entry of one Trip Profile × Route pair, and drops entries of Trip Profiles or Routes not in the sets. An undefined
+ * `factors` removes the pair's entry, so the Route inherits again. A new entry goes last.
+ */
+export function setRouteEstimateFactors(
+  entries: RouteEstimateFactors[] | undefined,
+  tripProfileId: string,
+  routeId: string,
+  factors: CostingEstimateFactors | undefined,
+  tripProfileIds: ReadonlySet<string>,
+  routeIds: ReadonlySet<string>,
+): RouteEstimateFactors[] {
+  const kept = (entries ?? []).filter((entry) => tripProfileIds.has(entry.tripProfileId) && routeIds.has(entry.routeId));
+  const isPair = (entry: RouteEstimateFactors) => entry.tripProfileId === tripProfileId && entry.routeId === routeId;
+  if (factors === undefined) return kept.filter((entry) => !isPair(entry));
+  const next: RouteEstimateFactors = { tripProfileId, routeId, factors };
+  return kept.some(isPair) ? kept.map((entry) => (isPair(entry) ? next : entry)) : [...kept, next];
+}
+
+/**
+ * The assumptions after a Trip Profile copy (Decision 0062, extended by Decision 0077): the copy gets the source's own factors and a clone of
+ * each of the source's Route entries. Returns `undefined` when the source has neither, so nothing needs writing and the copy uses the
+ * Scenario's shared factors, as the source does.
  */
 export function assumptionsAfterTripProfileCopy(assumptions: CostingAssumptions | undefined, sourceTripProfileId: string, targetTripProfileId: string, now: string): CostingAssumptions | undefined {
   const own = assumptions?.tripProfileEstimateFactors?.find((entry) => entry.tripProfileId === sourceTripProfileId);
-  if (!assumptions || !own) return undefined;
-  const others = assumptions.tripProfileEstimateFactors!.filter((entry) => entry.tripProfileId !== targetTripProfileId);
-  return { ...assumptions, tripProfileEstimateFactors: [...others, { tripProfileId: targetTripProfileId, factors: structuredClone(own.factors) }], updatedAt: now };
+  const routeEntries = (assumptions?.routeEstimateFactors ?? []).filter((entry) => entry.tripProfileId === sourceTripProfileId);
+  if (!assumptions || (!own && routeEntries.length === 0)) return undefined;
+  const next: CostingAssumptions = { ...assumptions, updatedAt: now };
+  if (own) {
+    const others = (assumptions.tripProfileEstimateFactors ?? []).filter((entry) => entry.tripProfileId !== targetTripProfileId);
+    next.tripProfileEstimateFactors = [...others, { tripProfileId: targetTripProfileId, factors: structuredClone(own.factors) }];
+  }
+  if (routeEntries.length > 0) {
+    const others = (assumptions.routeEstimateFactors ?? []).filter((entry) => entry.tripProfileId !== targetTripProfileId);
+    next.routeEstimateFactors = [...others, ...routeEntries.map((entry) => ({ tripProfileId: targetTripProfileId, routeId: entry.routeId, factors: structuredClone(entry.factors) }))];
+  }
+  return next;
 }
 
-/** The assumptions after a Trip Profile is deleted, or `undefined` when the Profile had no factors of its own (Decision 0062). */
+/**
+ * The assumptions after a Trip Profile is deleted (Decision 0062, extended by Decision 0077 to its Route entries), or `undefined` when the
+ * Profile had neither.
+ */
 export function assumptionsAfterTripProfileDeletion(assumptions: CostingAssumptions | undefined, tripProfileId: string, now: string): CostingAssumptions | undefined {
-  if (!assumptions?.tripProfileEstimateFactors?.some((entry) => entry.tripProfileId === tripProfileId)) return undefined;
-  return { ...assumptions, tripProfileEstimateFactors: assumptions.tripProfileEstimateFactors.filter((entry) => entry.tripProfileId !== tripProfileId), updatedAt: now };
+  const hasOwn = assumptions?.tripProfileEstimateFactors?.some((entry) => entry.tripProfileId === tripProfileId) ?? false;
+  const hasRoute = assumptions?.routeEstimateFactors?.some((entry) => entry.tripProfileId === tripProfileId) ?? false;
+  if (!assumptions || (!hasOwn && !hasRoute)) return undefined;
+  return {
+    ...assumptions,
+    ...(hasOwn ? { tripProfileEstimateFactors: assumptions.tripProfileEstimateFactors!.filter((entry) => entry.tripProfileId !== tripProfileId) } : {}),
+    ...(hasRoute ? { routeEstimateFactors: assumptions.routeEstimateFactors!.filter((entry) => entry.tripProfileId !== tripProfileId) } : {}),
+    updatedAt: now,
+  };
+}
+
+/** Decision 0077. The assumptions after Route deletion: entries of Routes not in `routeIds` (the Routes that remain) are dropped. `undefined` when nothing changes. */
+export function assumptionsAfterRouteDeletion(assumptions: CostingAssumptions | undefined, routeIds: ReadonlySet<string>, now: string): CostingAssumptions | undefined {
+  const entries = assumptions?.routeEstimateFactors;
+  if (!assumptions || !entries?.some((entry) => !routeIds.has(entry.routeId))) return undefined;
+  return { ...assumptions, routeEstimateFactors: entries.filter((entry) => routeIds.has(entry.routeId)), updatedAt: now };
 }
 
 /** The factors with each service-day row renamed through `serviceDayIds`, for Scenario copies and import as a copy. */
@@ -115,6 +194,15 @@ export function remapEstimateFactorDays(factors: CostingEstimateFactors, service
 /** Trip-Profile-owned factors with Trip Profile and service-day IDs renamed, for Scenario copies and import as a copy (Decision 0062). */
 export function remapTripProfileEstimateFactors(entries: TripProfileEstimateFactors[], tripProfileIds: ReadonlyMap<string, string>, serviceDayIds: ReadonlyMap<string, string>): TripProfileEstimateFactors[] {
   return entries.map((entry) => ({ tripProfileId: tripProfileIds.get(entry.tripProfileId) ?? entry.tripProfileId, factors: remapEstimateFactorDays(entry.factors, serviceDayIds) }));
+}
+
+/** Decision 0077. Route factors with Trip Profile, Route and service-day IDs renamed, for Scenario copies and import as a copy. */
+export function remapRouteEstimateFactors(entries: RouteEstimateFactors[], tripProfileIds: ReadonlyMap<string, string>, routeIds: ReadonlyMap<string, string>, serviceDayIds: ReadonlyMap<string, string>): RouteEstimateFactors[] {
+  return entries.map((entry) => ({
+    tripProfileId: tripProfileIds.get(entry.tripProfileId) ?? entry.tripProfileId,
+    routeId: routeIds.get(entry.routeId) ?? entry.routeId,
+    factors: remapEstimateFactorDays(entry.factors, serviceDayIds),
+  }));
 }
 
 /** One direction of a Route on one service day, as the implied-service check sees it (Decision 0062). */
@@ -139,7 +227,14 @@ export interface ImpliedRouteService {
   roundTripWithLayoverSeconds?: number;
   /** Σ over directions of (mean run ÷ (1 − layover)) ÷ headway. Undefined without a layover factor or a headway in any direction. */
   impliedVehicles?: number;
+  /** The layover factor used for this Route (Decision 0077: the Route's resolved factor when the caller gives one per Route). */
+  layoverFraction?: number;
+  /** Where `layoverFraction` came from, when the caller gives a source. */
+  layoverSource?: RouteFactorSource;
 }
+
+/** A layover for every Route, or one per Route with its source (Decision 0077). */
+export type ImpliedLayover = number | undefined | ((routeId: string) => { fraction?: number; source?: RouteFactorSource });
 
 function median(values: number[]): number | undefined {
   if (!values.length) return undefined;
@@ -155,9 +250,11 @@ function median(values: number[]): number | undefined {
 export function deriveImpliedService(
   trips: Trip[],
   patterns: RoutePattern[],
-  layoverFraction: number | undefined,
+  layover: ImpliedLayover,
   routes: Route[] = [],
 ): ImpliedRouteService[] {
+  const usable = (fraction: number | undefined) => fraction !== undefined && Number.isFinite(fraction) && fraction >= 0 && fraction < 1 ? fraction : undefined;
+  const layoverOf = (routeId: string) => typeof layover === 'function' ? layover(routeId) : { fraction: layover };
   const patternById = new Map(patterns.map((pattern) => [pattern.id, pattern]));
   const routeName = new Map(routes.map((route) => [route.id, route.name]));
   const byRoute = new Map<string, Map<string, { runs: number[]; departures: number[] }>>();
@@ -173,7 +270,6 @@ export function deriveImpliedService(
     direction.runs.push(run);
     direction.departures.push([...trip.stopTimes].sort((left, right) => left.sequence - right.sequence)[0].time);
   }
-  const usableLayover = layoverFraction !== undefined && Number.isFinite(layoverFraction) && layoverFraction >= 0 && layoverFraction < 1 ? layoverFraction : undefined;
   return [...byRoute.entries()]
     .map(([routeId, directions]): ImpliedRouteService => {
       const listed = [...directions.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([directionKey, value]): ImpliedDirectionService => {
@@ -188,7 +284,11 @@ export function deriveImpliedService(
       const roundTripRunSeconds = listed.reduce((sum, direction) => sum + direction.meanRunSeconds, 0);
       const runningHours = listed.reduce((sum, direction) => sum + direction.meanRunSeconds * direction.tripCount, 0) / 3600;
       const route: ImpliedRouteService = { routeId, ...(routeName.has(routeId) ? { routeName: routeName.get(routeId) } : {}), directions: listed, roundTripRunSeconds, runningHours };
+      const chosen = layoverOf(routeId);
+      if (chosen.source !== undefined) route.layoverSource = chosen.source;
+      const usableLayover = usable(chosen.fraction);
       if (usableLayover === undefined) return route;
+      route.layoverFraction = usableLayover;
       route.roundTripWithLayoverSeconds = roundTripRunSeconds / (1 - usableLayover);
       if (listed.every((direction) => direction.headwaySeconds !== undefined)) {
         route.impliedVehicles = listed.reduce((sum, direction) => sum + direction.meanRunSeconds / (1 - usableLayover) / direction.headwaySeconds!, 0);
@@ -225,6 +325,20 @@ export interface EstimatedCostingCalculationResult {
   tripCount: number; tripsWithoutRunTimeCount: number;
   findings: CostingFinding[];
   dailyRows: EstimatedCostingDailyResult[]; yearRows: EstimatedCostingYearResult[];
+  /** Decision 0077. One row per Route with Trips on the Trip Profile. Empty for an invalid result. */
+  routeRows: CostingRouteResult[];
+}
+
+/** Whole seconds of one Trip Profile's Trips, per Route and service day, with the Trip counts. */
+interface DayQuantities { seconds: number; tripCount: number; withoutRunTime: number }
+
+/** Decision 0077 item 3.5. A factor that comes from a Route's own row, or from its All days row. */
+const isRouteFactorSource = (source: RouteFactorSource | undefined) => source === 'routeServiceDay' || source === 'routeAllDays';
+
+/** The sum of the values, or undefined when any value is undefined (the rule of a day's hours over its Route rows). */
+function sumDefined(values: (number | undefined)[]): number | undefined {
+  if (values.some((value) => value === undefined)) return undefined;
+  return values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
 }
 
 function finding(
@@ -255,7 +369,7 @@ export function calculateEstimatedCosting(input: EstimatedCostingInput): Estimat
     }
   }
 
-  const result = (state: CostingEstimateState, dailyRows: EstimatedCostingDailyResult[], yearRows: EstimatedCostingYearResult[], reason?: EstimatedCostingNoEstimateReason): EstimatedCostingCalculationResult => ({
+  const result = (state: CostingEstimateState, dailyRows: EstimatedCostingDailyResult[], yearRows: EstimatedCostingYearResult[], reason?: EstimatedCostingNoEstimateReason, routeRows: CostingRouteResult[] = []): EstimatedCostingCalculationResult => ({
     basis: 'estimated',
     tripProfileId: tripProfile.id,
     state,
@@ -268,6 +382,7 @@ export function calculateEstimatedCosting(input: EstimatedCostingInput): Estimat
     findings,
     dailyRows,
     yearRows,
+    routeRows,
   });
   if (findings.some((item) => item.severity === 'error')) return result('invalid', [], []);
 
@@ -279,24 +394,66 @@ export function calculateEstimatedCosting(input: EstimatedCostingInput): Estimat
 
   // Whole seconds are added per day and converted to hours once, so hours stay exact (as the blocked basis does).
   const sortedDays = sortServiceDays(serviceDays);
-  const perDay = new Map(sortedDays.map((day) => [day.id, { seconds: 0, tripCount: 0, withoutRunTime: 0 }]));
+  const perDay = new Map<string, DayQuantities>(sortedDays.map((day) => [day.id, { seconds: 0, tripCount: 0, withoutRunTime: 0 }]));
+  // Decision 0077: the same quantities for each Route, by service day.
+  const perRouteDay = new Map<string, Map<string, DayQuantities>>();
   let tripsWithRunTime = 0;
   const tripsByDay = new Map<string, Trip[]>();
   for (const trip of trips) {
     const dayTrips = tripsByDay.get(trip.serviceDayId);
     if (dayTrips) dayTrips.push(trip); else tripsByDay.set(trip.serviceDayId, [trip]);
     const day = perDay.get(trip.serviceDayId)!;
+    const routeDays = perRouteDay.get(trip.routeId) ?? new Map<string, DayQuantities>();
+    perRouteDay.set(trip.routeId, routeDays);
+    const routeQuantities = routeDays.get(trip.serviceDayId) ?? { seconds: 0, tripCount: 0, withoutRunTime: 0 };
+    routeDays.set(trip.serviceDayId, routeQuantities);
     day.tripCount += 1;
+    routeQuantities.tripCount += 1;
     const seconds = tripRunTimeSeconds(trip);
-    if (seconds === undefined) { day.withoutRunTime += 1; continue; }
+    if (seconds === undefined) { day.withoutRunTime += 1; routeQuantities.withoutRunTime += 1; continue; }
     day.seconds += seconds;
+    routeQuantities.seconds += seconds;
     tripsWithRunTime += 1;
   }
 
-  const dailyRows: EstimatedCostingDailyResult[] = sortedDays.map((day) => {
+  // Decision 0077 item 2.2: each Route's factors, per service day. A Route with no entry inherits the Trip Profile's factors.
+  const routeEntryFactors = new Map((assumptions.routeEstimateFactors ?? []).map((entry) => [entry.routeId, entry.factors]));
+  const routeNames = new Map((input.routes ?? []).map((route) => [route.id, route.name]));
+  const routeRows: CostingRouteResult[] = sortRouteResults([...perRouteDay.keys()].map((routeId) => ({
+    routeId,
+    ...(routeNames.has(routeId) ? { routeName: routeNames.get(routeId) } : {}),
+    days: sortedDays.map((day): CostingRouteDayResult => {
+      const quantities = perRouteDay.get(routeId)!.get(day.id) ?? { seconds: 0, tripCount: 0, withoutRunTime: 0 };
+      const runningHoursPerDay = quantities.seconds / 3600;
+      const factors = resolveRouteDayFactors(routeEntryFactors.get(routeId), assumptions.estimateFactors, day.id);
+      const row: CostingRouteDayResult = {
+        serviceDayId: day.id,
+        serviceDayName: day.name,
+        annualServiceDays: day.annualServiceDays,
+        tripCount: quantities.tripCount,
+        tripsWithoutRunTimeCount: quantities.withoutRunTime,
+        runningHoursPerDay,
+        factors,
+        yearCosts: [],
+      };
+      if (quantities.seconds === 0) {
+        row.revenueHoursPerDay = 0;
+        row.platformHoursPerDay = 0;
+      } else if (factors.layoverFraction !== undefined) {
+        row.revenueHoursPerDay = runningHoursPerDay / (1 - factors.layoverFraction);
+        if (factors.deadheadFraction !== undefined) row.platformHoursPerDay = row.revenueHoursPerDay / (1 - factors.deadheadFraction);
+      }
+      if (row.revenueHoursPerDay !== undefined) row.annualRevenueHours = row.revenueHoursPerDay * day.annualServiceDays;
+      if (row.platformHoursPerDay !== undefined) row.annualPlatformHours = row.platformHoursPerDay * day.annualServiceDays;
+      return row;
+    }),
+  })));
+
+  const dailyRows: EstimatedCostingDailyResult[] = sortedDays.map((day, index) => {
     const quantities = perDay.get(day.id)!;
     const runningHoursPerDay = quantities.seconds / 3600;
     const factors = resolveDayFactors(assumptions.estimateFactors, day.id);
+    const dayRouteRows = routeRows.map((route) => route.days[index]);
     const row: EstimatedCostingDailyResult = {
       serviceDayId: day.id,
       serviceDayName: day.name,
@@ -307,34 +464,48 @@ export function calculateEstimatedCosting(input: EstimatedCostingInput): Estimat
       runningHoursPerDay,
       annualRunningHours: runningHoursPerDay * day.annualServiceDays,
       factors,
-      ...(input.patterns ? { impliedService: deriveImpliedService(tripsByDay.get(day.id) ?? [], input.patterns, factors.layoverFraction, input.routes) } : {}),
+      ...(input.patterns ? { impliedService: deriveImpliedService(tripsByDay.get(day.id) ?? [], input.patterns, (routeId) => {
+        // Decision 0077: each Route's implied service uses that Route's resolved layover, as its cost row does.
+        const resolved = routeRows.find((route) => route.routeId === routeId)?.days[index]?.factors;
+        return resolved ? { fraction: resolved.layoverFraction, source: resolved.layoverSource } : { fraction: factors.layoverFraction, source: factors.layoverSource };
+      }, input.routes) } : {}),
       yearCosts: [],
     };
-    if (quantities.seconds === 0) {
+    // Decision 0077 item 3.5: a day where no Route factor applies keeps the Trip Profile computation unchanged. Otherwise the day is the sum of its Route rows.
+    if (dayRouteRows.some((route) => isRouteFactorSource(route.factors?.layoverSource) || isRouteFactorSource(route.factors?.deadheadSource))) {
+      row.revenueHoursPerDay = sumDefined(dayRouteRows.map((route) => route.revenueHoursPerDay));
+      row.platformHoursPerDay = sumDefined(dayRouteRows.map((route) => route.platformHoursPerDay));
+    } else if (quantities.seconds === 0) {
       row.revenueHoursPerDay = 0;
       row.platformHoursPerDay = 0;
     } else if (factors.layoverFraction !== undefined) {
       row.revenueHoursPerDay = runningHoursPerDay / (1 - factors.layoverFraction);
       if (factors.deadheadFraction !== undefined) row.platformHoursPerDay = row.revenueHoursPerDay / (1 - factors.deadheadFraction);
-    } else {
-      findings.push(finding('costing.layoverFactorMissing', 'warning', 'serviceDay', day.id, 'estimateFactors', { serviceDayId: day.id }));
-    }
-    if (quantities.seconds > 0 && factors.deadheadFraction === undefined) {
-      findings.push(finding('costing.deadheadFactorMissing', 'warning', 'serviceDay', day.id, 'estimateFactors', { serviceDayId: day.id }));
     }
     if (row.revenueHoursPerDay !== undefined) row.annualRevenueHours = row.revenueHoursPerDay * day.annualServiceDays;
     if (row.platformHoursPerDay !== undefined) row.annualPlatformHours = row.platformHoursPerDay * day.annualServiceDays;
     return row;
   });
 
+  // Findings are emitted per service day, layover first, after the rows exist (as before). A factor is missing when a Route with running time lacks it.
+  sortedDays.forEach((day, index) => {
+    const dayRouteRows = routeRows.map((route) => route.days[index]);
+    if (dayRouteRows.some((route) => route.runningHoursPerDay! > 0 && route.factors!.layoverFraction === undefined)) {
+      findings.push(finding('costing.layoverFactorMissing', 'warning', 'serviceDay', day.id, 'estimateFactors', { serviceDayId: day.id }));
+    }
+    if (dayRouteRows.some((route) => route.runningHoursPerDay! > 0 && route.factors!.deadheadFraction === undefined)) {
+      findings.push(finding('costing.deadheadFactorMissing', 'warning', 'serviceDay', day.id, 'estimateFactors', { serviceDayId: day.id }));
+    }
+  });
+
   if (tripsWithRunTime === 0) {
     findings.push(finding('costing.noTrips', 'warning', 'tripProfile', tripProfile.id));
-    return result('noEstimate', dailyRows, [], 'noTrips');
+    return result('noEstimate', dailyRows, [], 'noTrips', routeRows);
   }
-  if (dailyRows.some((row) => row.revenueHoursPerDay === undefined)) return result('noEstimate', dailyRows, [], 'layoverFactorMissing');
+  if (dailyRows.some((row) => row.revenueHoursPerDay === undefined)) return result('noEstimate', dailyRows, [], 'layoverFactorMissing', routeRows);
   if (assumptions.enteredRate === undefined) {
     findings.push(finding('costing.rateMissing', 'warning', 'costingAssumptions', scenario.id, 'enteredRate'));
-    return result('noEstimate', dailyRows, [], 'rateMissing');
+    return result('noEstimate', dailyRows, [], 'rateMissing', routeRows);
   }
 
   const appliedRates = costingAppliedRates(assumptions);
@@ -360,9 +531,15 @@ export function calculateEstimatedCosting(input: EstimatedCostingInput): Estimat
     ...(platformKnown ? { annualPlatformHours: costedRows.reduce((sum, row) => sum + row.annualPlatformHours!, 0) } : {}),
     annualCostUsd: costedRows.reduce((sum, row) => sum + row.yearCosts.find((cost) => cost.serviceYear === serviceYear)!.annualCostUsd, 0),
   }));
+  // Decision 0077: the Route rows carry the same year costs as the day rows, from each Route day's revenue hours.
+  const costedRouteRows: CostingRouteResult[] = routeRows.map((route) => ({
+    ...route,
+    days: route.days.map((day) => ({ ...day, yearCosts: costingYearCostsForDay(day.revenueHoursPerDay!, day.annualServiceDays, appliedRates) })),
+  }));
   const finiteNumbers = [
     ...costedRows.flatMap((row) => [row.runningHoursPerDay, row.annualRunningHours, row.revenueHoursPerDay!, row.annualRevenueHours!, ...(row.platformHoursPerDay !== undefined ? [row.platformHoursPerDay, row.annualPlatformHours!] : []), ...row.yearCosts.flatMap((cost) => [cost.costPerDayUsd, cost.annualCostUsd])]),
     ...yearRows.flatMap((row) => [row.annualRunningHours, row.annualRevenueHours, row.annualCostUsd, ...(row.annualPlatformHours !== undefined ? [row.annualPlatformHours] : [])]),
+    ...costedRouteRows.flatMap((route) => route.days.flatMap((day) => [day.revenueHoursPerDay!, day.annualRevenueHours!, ...(day.platformHoursPerDay !== undefined ? [day.platformHoursPerDay, day.annualPlatformHours!] : []), ...day.yearCosts.flatMap((cost) => [cost.costPerDayUsd, cost.annualCostUsd])])),
   ];
   if (!finiteNumbers.every(Number.isFinite)) {
     findings.push(finding('costing.calculationOverflow', 'error', 'scenario', scenario.id));
@@ -370,7 +547,7 @@ export function calculateEstimatedCosting(input: EstimatedCostingInput): Estimat
   }
 
   const tripsWithoutRunTime = costedRows.reduce((sum, row) => sum + row.tripsWithoutRunTimeCount, 0);
-  return result(tripsWithoutRunTime > 0 ? 'partial' : 'complete', costedRows, yearRows);
+  return result(tripsWithoutRunTime > 0 ? 'partial' : 'complete', costedRows, yearRows, undefined, costedRouteRows);
 }
 
 export const ESTIMATE_FACTOR_PERCENT_ERROR = 'Enter a percentage from 0 up to 100, or leave the cell blank.';

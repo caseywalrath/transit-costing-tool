@@ -71,7 +71,8 @@ test('the Vehicle requirement surface solves vehicles, layover, or headway, and 
 
 test('each Trip Profile keeps its own factors, and changing to another Profile with unsaved factors asks first', async ({ page }) => {
   await open(page);
-  await expect(factorsPanel(page)).toContainText('Trip profile Default · blank days use All days');
+  // Decision 0077: the Route field menu replaces the subtitle; All routes edits the Trip Profile's factors.
+  await expect(factorsPanel(page).getByRole('button', { name: 'Route: All routes' })).toBeVisible();
   await editGridCell(gridCell(factors(page), 'All days layover percent'), '22.2');
   await page.getByRole('button', { name: 'Save factors', exact: true }).click();
   // The save bar hides while the save runs ("Saving…"), so wait for the stored record instead.
@@ -80,7 +81,7 @@ test('each Trip Profile keeps its own factors, and changing to another Profile w
 
   // Another Profile starts blank, and unsaved edits there are guarded when the basis changes.
   await chooseCostBasis(page, 'Estimated from running time', 'Alternative');
-  await expect(factorsPanel(page)).toContainText('Trip profile Alternative');
+  await expect(page.locator('.context-field__value')).toHaveText('Alternative');
   await expect(gridCell(factors(page), 'All days layover percent')).toHaveText('');
   await editGridCell(gridCell(factors(page), 'All days layover percent'), '12.2222');
   await chooseCostBasis(page, 'Estimated from running time', 'Default');
@@ -116,12 +117,11 @@ test('a Profile with no factors of its own shows the scenario’s shared factors
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await chooseCostBasis(page, 'Estimated from running time', 'Default');
-  await expect(factorsPanel(page)).toContainText('Trip profile Default · shared scenario factors');
   await expect(factorsPanel(page)).toContainText('These are the scenario’s shared factors. Saving stores factors for this trip profile only.');
   await expect(gridCell(factors(page), 'All days layover percent')).toHaveText('30');
   await editGridCell(gridCell(factors(page), 'All days layover percent'), '20');
   await page.getByRole('button', { name: 'Save factors', exact: true }).click();
-  await expect(factorsPanel(page)).toContainText('Trip profile Default · blank days use All days');
+  await expect(factorsPanel(page)).not.toContainText('These are the scenario’s shared factors.');
   await expect.poll(() => runInPage(page, 'return (await e.db.costingAssumptions.toArray())[0].estimateFactors.allDays.layoverFraction')).toBe(0.3);
   await expect(scopeField(page, 'Cost basis')).toBeVisible();
 });

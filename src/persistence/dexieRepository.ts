@@ -8,7 +8,7 @@ import { TransitDatabase } from './database';
 import { assertRuntimeGraph } from './runtimePersistence';
 import { assertTripProfileReferences } from '../domain/trips';
 import { sortServiceDays } from '../domain/serviceDays';
-import { assumptionsAfterTripProfileCopy, assumptionsAfterTripProfileDeletion } from '../domain/estimatedCosting';
+import { assumptionsAfterRouteDeletion, assumptionsAfterTripProfileCopy, assumptionsAfterTripProfileDeletion } from '../domain/estimatedCosting';
 import { orderDirections } from '../domain/directions';
 import { assertCostingAssumptions, assertCostingAssumptionsCollection } from './costingPersistence';
 
@@ -118,7 +118,9 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
   async saveScenarioRecords(records: ScenarioRecords): Promise<void> {
     assertRuntimeGraph(records.runtimeProfiles, records.runtimeAssignments, records.patterns, records.serviceDays, records.scenario.id);
     assertTripProfileReferences(records.trips, records.blocks);
-    if (records.costingAssumptions) assertCostingAssumptions(records.costingAssumptions, records.scenario.id);
+    // Decision 0077: a Route removed by this write takes its Route factor entries with it. The put in the transaction below writes the pruned record.
+    const costingAssumptions = assumptionsAfterRouteDeletion(records.costingAssumptions, new Set(records.routes.map((route) => route.id)), new Date().toISOString()) ?? records.costingAssumptions;
+    if (costingAssumptions) assertCostingAssumptions(costingAssumptions, records.scenario.id);
     // A Route, Service day, direction or node removed by this write takes its plan or measure-node entry with it (Decision 0058 item 10).
     const plannedFrequencies = prunePlannedFrequencies(records.plannedFrequencies ?? [], records);
     assertPlannedFrequencies(plannedFrequencies, { scenarioIds: new Set([records.scenario.id]), routes: records.routes, serviceDays: records.serviceDays, directions: records.directions ?? [], nodes: records.nodes });
@@ -141,11 +143,11 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
       const oldTripProfiles = await this.db.tripProfiles.where('scenarioId').equals(records.scenario.id).toArray();
       const oldBlockingScenarios = await this.db.blockingScenarios.where('scenarioId').equals(records.scenario.id).toArray();
       const oldCostingAssumptions = await this.db.costingAssumptions.where('scenarioId').equals(records.scenario.id).toArray();
-      if (records.costingAssumptions && oldCostingAssumptions.some((candidate) => candidate.id !== records.costingAssumptions!.id)) {
+      if (costingAssumptions && oldCostingAssumptions.some((candidate) => candidate.id !== costingAssumptions.id)) {
         throw new Error('Scenario already has a different costing assumptions record.');
       }
-      if (records.costingAssumptions) {
-        const sameId = await this.db.costingAssumptions.get(records.costingAssumptions.id);
+      if (costingAssumptions) {
+        const sameId = await this.db.costingAssumptions.get(costingAssumptions.id);
         if (sameId && sameId.scenarioId !== records.scenario.id) throw new Error('Costing assumption ownership cannot be moved to another Scenario.');
       }
       const oldGenerationSets = await this.db.generationSets.where('scenarioId').equals(records.scenario.id).toArray();
@@ -185,7 +187,7 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
       await this.db.runtimeAssignments.bulkPut(records.runtimeAssignments);
       await this.db.tripProfiles.bulkPut(records.tripProfiles ?? []);
       await this.db.blockingScenarios.bulkPut(records.blockingScenarios ?? []);
-      if (records.costingAssumptions) await this.db.costingAssumptions.put(records.costingAssumptions);
+      if (costingAssumptions) await this.db.costingAssumptions.put(costingAssumptions);
       await this.db.generationSets.bulkPut(records.generationSets);
       await this.db.trips.bulkPut(records.trips);
       await this.db.blocks.bulkPut(records.blocks);

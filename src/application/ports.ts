@@ -284,6 +284,8 @@ export interface CostingCalculationContextQueries {
   getCostingCalculationContext(scenarioId: string, blockingScenarioId: string): Promise<CostingCalculationContext | undefined>;
   /** `undefined` when the Trip Profile is not the Scenario's. */
   getEstimatedCostingContext(scenarioId: string, tripProfileId: string): Promise<EstimatedCostingContext | undefined>;
+  /** The Scenario's Routes (Decision 0077: a Route factor entry names a Route of the Scenario). `[]` when the sources do not read Routes. */
+  listRoutes(scenarioId: string): Promise<import('../domain/types').Route[]>;
 }
 
 /** Decision 0051. A blocked basis is a Blocking Scenario; an estimated basis is a Trip Profile costed from running hours. */
@@ -319,6 +321,12 @@ export interface CostingCommands {
    * that no longer exist are dropped. `assumptionsIfNew` creates the assumptions record when the Scenario has none yet.
    */
   saveEstimateFactors(scenarioId: string, tripProfileId: string, factors: CostingEstimateFactors | undefined, assumptionsIfNew: CostingAssumptionsInput): Promise<CostingAssumptions>;
+  /**
+   * Decision 0077. Saves the typed layover and deadhead factors of one Route under one Trip Profile. Blank cells inherit the Trip Profile's
+   * factors. An all-blank set removes the Route's entry. Entries of Trip Profiles and Routes that no longer exist are dropped.
+   * `assumptionsIfNew` creates the assumptions record when the Scenario has none yet.
+   */
+  saveRouteEstimateFactors(scenarioId: string, tripProfileId: string, routeId: string, factors: CostingEstimateFactors | undefined, assumptionsIfNew: CostingAssumptionsInput): Promise<CostingAssumptions>;
 }
 
 /** Application query surface for the selected Blocking Scenario's derived cost estimate. */

@@ -16,15 +16,16 @@ export async function buildCostingCalculationContext(sources: CostingContextSour
   const [scenario, serviceDays, blockingScenarios] = await Promise.all([sources.getScenario(scenarioId), sources.listServiceDays(scenarioId), sources.listBlockingScenarios(scenarioId)]);
   const blockingScenario = blockingScenarios.find((candidate) => candidate.id === blockingScenarioId && candidate.scenarioId === scenarioId);
   if (!scenario || !blockingScenario) return undefined;
-  const [tripProfile, trips, patterns, blocks] = await Promise.all([
+  const [tripProfile, trips, patterns, blocks, routes] = await Promise.all([
     sources.getTripProfile(blockingScenario.tripProfileId),
     sources.listTrips(scenarioId, blockingScenario.tripProfileId),
     sources.listPatterns(scenarioId),
     sources.listBlockingBlocks(blockingScenario.id),
+    sources.listRoutes?.(scenarioId) ?? Promise.resolve([]),
   ]);
   if (!tripProfile) return undefined;
   const { blockSummaries } = summarizeBlockingScenario(blockingScenario, blocks, { scenario: { id: scenario.id }, trips, patterns });
-  return { scenario, serviceDays, blockingScenario, tripProfile, trips, blocks, blockSummaries };
+  return { scenario, serviceDays, blockingScenario, tripProfile, trips, blocks, blockSummaries, routes };
 }
 
 /**
@@ -47,5 +48,6 @@ export function createCostingContextQueries(sources: CostingContextSources): Cos
     countBlocks: async (blockingScenarioId) => (await sources.listBlockingBlocks(blockingScenarioId)).length,
     getCostingCalculationContext: (scenarioId, blockingScenarioId) => buildCostingCalculationContext(sources, scenarioId, blockingScenarioId),
     getEstimatedCostingContext: (scenarioId, tripProfileId) => buildEstimatedCostingContext(sources, scenarioId, tripProfileId),
+    listRoutes: (scenarioId) => sources.listRoutes?.(scenarioId) ?? Promise.resolve([]),
   };
 }

@@ -298,6 +298,14 @@ Pull-out, pull-in, and deadhead as a share of Platform Hours. In an estimate, Pl
 
 The typed Layover % and Deadhead % of an estimated cost basis, per service day with an All days row that any blank day falls back to, each factor independently. Stored with the Scenario's Costing assumptions as fractions from 0 up to but not including 1.
 
+### Route estimate factors
+
+Estimate factors of one Route under one Trip Profile (Decision 0077). Chosen with the **Route** menu of the Estimate factors panel. A blank cell inherits: the Route's All days value, then the Trip Profile's factor for that day. They affect the estimated cost basis only.
+
+### Unattributed (cost)
+
+The Cost breakdown row "Unattributed (multi-route blocks)" (Decision 0077). It holds the hours and cost of eligible Blocks whose revenue Trips belong to more than one Route, until a rule for multi-route interlining is decided. Its hours are part of the Total.
+
 ### NTD assumption
 
 A manually entered rate or value sourced from National Transit Database information. The app stores source metadata but does not retrieve NTD data in the initial release.

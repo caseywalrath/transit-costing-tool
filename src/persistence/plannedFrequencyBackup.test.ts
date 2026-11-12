@@ -36,7 +36,7 @@ describe('planned frequencies in backups (Decision 0058 item 11)', () => {
     const snapshot = importProjectJson(text);
     expect(snapshot.plannedFrequencies).toEqual(raw.plannedFrequencies);
     const again = exportProjectJson(snapshot);
-    expect(JSON.parse(again).exportSchemaVersion).toBe(11);
+    expect(JSON.parse(again).exportSchemaVersion).toBe(12);
     expect(JSON.parse(again).plannedFrequencies).toEqual(raw.plannedFrequencies);
     // Re-export of the re-import is identical, record for record.
     expect(withoutExportedAt(exportProjectJson(importProjectJson(again)))).toEqual(withoutExportedAt(again));
