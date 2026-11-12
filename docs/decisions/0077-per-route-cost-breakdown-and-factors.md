@@ -1,8 +1,8 @@
-# Decision 0076: Per-Route Cost Breakdown and Route Estimate Factors
+# Decision 0077: Per-Route Cost Breakdown and Route Estimate Factors
 
 - Status: Accepted (2026-11-12, user acceptance of the recommendations for open decisions 1–6). Not yet implemented. Plan: `docs/implementation/route-cost-breakdown.md`.
 - Date: 2026-11-12
-- Related: Decisions 0026 (Revenue hours include layover), 0027 (cost basis), 0051 (estimated cost basis), 0054 (cost summary), 0062 (Trip-Profile-owned factors), 0066 (copy table)
+- Related: Decisions 0026 (Revenue hours include layover), 0027 (cost basis), 0051 (estimated cost basis), 0054 (cost summary), 0062 (Trip-Profile-owned factors), 0066 (copy table), 0076 (Blocking summary surface; its placement rule, item 6, governs where the selectors and actions of this decision sit)
 - Backlog: `docs/backlog.md`, "Per-route cost breakdown and factors"
 
 ## Context
@@ -17,7 +17,7 @@ Costing is scenario-wide. The estimated basis sums every Trip of the Trip Profil
 2. Each Route row expands in place to show that Route's service-day rows, indented in the first cell. A Route row's values are the sums of its service-day rows, computed by the same rules as the Total row today.
 3. Expanding or collapsing never changes a column's width or position.
 4. With exactly one Route row, it is expanded by default.
-5. The expanded state is remembered per device and per Scenario. An Expand all / Collapse all control is present and visually quiet.
+5. The expanded state is remembered per device and per Scenario. Expand all and Collapse all are items in a new Actions menu in the Cost breakdown header, which holds commands on that surface's rows (Decision 0076 item 6). They are not visible buttons, and they are not added to the scope-bar Costing actions menu.
 6. The year columns are unchanged.
 7. A scenario-wide by-service-day view is not part of this decision (backlog: "Costing by service day across routes").
 
@@ -37,7 +37,7 @@ Costing is scenario-wide. The estimated basis sums every Trip of the Trip Profil
    - Deleting a Route removes its Route entries, in the same write.
    - Duplicating a Route copies its Route entries to the new Route.
    - Scenario duplication and backup import-as-copy remap Trip Profile, Route and service-day IDs.
-5. **Costing screen.** A Route selector next to the Estimate factors title has "All routes" (the Trip Profile's factors, as today) followed by each Route. The subtitle produced by `factorSubtitle` ("Trip profile X · shared scenario factors" / "· blank days use All days") is removed. A cell that inherits is visibly distinct from a value entered at the selected level.
+5. **Costing screen.** A Route field menu (`MenuButton` with `fieldLabel`, as the Blocking scenario field menu of Decision 0076) in the Estimate factors header has "All routes" (the Trip Profile's factors, as today) followed by each Route. The subtitle produced by `factorSubtitle` ("Trip profile X · shared scenario factors" / "· blank days use All days") is removed. A cell that inherits is visibly distinct from a value entered at the selected level.
 6. **Bases.** Route factors affect the estimated basis only. The blocked basis takes its hours from Block summaries and does not use factors, as today.
 
 ### 3. Attribution

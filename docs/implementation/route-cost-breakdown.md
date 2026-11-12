@@ -1,8 +1,8 @@
 # Per-Route Cost Breakdown and Route Estimate Factors: Implementation Plan
 
-- Decision: `docs/decisions/0076-per-route-cost-breakdown-and-factors.md` (governs where this plan is unclear)
+- Decision: `docs/decisions/0077-per-route-cost-breakdown-and-factors.md` (governs where this plan is unclear)
 - Backlog entry: `docs/backlog.md`, "Per-route cost breakdown and factors"
-- Status: Planned 2026-11-12. RC0 done. RC1 not started.
+- Status: Planned 2026-11-12. RC0 done. RC1 not started. Revised 2026-11-12 after PR #62 (Decision 0076, Blocking summary surface): this decision renumbered to 0077; RC4 follows the Decision 0076 placement rule for the factor Route menu and the Expand all / Collapse all commands.
 
 ## Roles
 
@@ -14,7 +14,7 @@
 
 | Package | Title | Agent | Depends on | Owns |
 | --- | --- | --- | --- | --- |
-| RC0 | Decision record and plan | Opus | none | Decision 0076, this plan, backlog entry |
+| RC0 | Decision record and plan | Opus | none | Decision 0077, this plan, backlog entry |
 | RC1 | Domain: route factor types and resolution | Haiku | RC0 | `src/domain/types.ts`, `src/domain/estimatedCosting.ts`, `src/domain/costing.ts` (validation only), `src/domain/routeEstimateFactors.test.ts` (new) |
 | RC2 | Domain: costing grouped by Route | Haiku | RC1 | `src/domain/routeCosting.ts` (new, + test), `src/domain/estimatedCosting.ts`, `src/domain/costing.ts`, `src/application/costingContext.ts` |
 | RC3 | Persistence, backup, lifecycle, service | Haiku, Opus review | RC1 | `src/persistence/backup.ts`, `src/persistence/dexieRepository.ts`, `src/persistence/inMemoryRepository.ts`, `src/domain/project.ts`, `src/application/costingService.ts`, `src/application/ports.ts`, `src/main.tsx` (wiring only) |
@@ -26,12 +26,12 @@ Order: RC1 → RC2 and RC3 (any order) → RC4 → RC5 → RC6. Each package end
 
 ## Instructions that apply to every package
 
-- Read first: `AGENTS.md`, `codex.md`, `architecture_overview.md`, `docs/data-schema.md`, `docs/ui-conventions.md`, Decisions 0051, 0062 and 0076, and this plan.
+- Read first: `AGENTS.md`, `codex.md`, `architecture_overview.md`, `docs/data-schema.md`, `docs/ui-conventions.md`, Decisions 0051, 0062, 0076 (placement rule, item 6) and 0077, and this plan. Browser specs reach menus through the helpers in `tests/ui/support/ui.ts`, which PR #62 extended for field menus.
 - Read every file a step names before editing it. Line numbers in this plan are from 2026-11-12 and are hints only; find code by the function or type name.
 - Keep domain code free of React and IndexedDB. Store inputs only; Route rows, totals and shares are derived and never stored.
 - Edit files with the file-edit tool, not shell scripts.
 - Do not change files another package owns. If a step needs a change elsewhere, stop and report it.
-- Keep existing behaviour unchanged when no Route factors exist (Decision 0076 item 3.5). Existing tests must pass without edits, except where a step names the test to change.
+- Keep existing behaviour unchanged when no Route factors exist (Decision 0077 item 3.5). Existing tests must pass without edits, except where a step names the test to change.
 - Commit at the end of each package with `Verified:` lines naming what ran and what was skipped and why.
 
 ## Verification per package
@@ -54,7 +54,7 @@ If a skipped area turns out to be touched, add its tests and say so at the gate.
 
 ## RC0: Decision record and plan (Opus) — done
 
-Decision 0076 and this plan. The backlog entry links to both.
+Decision 0077 and this plan. The backlog entry links to both.
 
 ---
 
@@ -65,21 +65,21 @@ Decision 0076 and this plan. The backlog entry links to both.
 1. **`src/domain/types.ts`.** After `TripProfileEstimateFactors`, add:
 
    ```ts
-   /** Decision 0076. The estimate factors of one Route under one Trip Profile. Blank cells inherit the Trip Profile's resolved factors. */
+   /** Decision 0077. The estimate factors of one Route under one Trip Profile. Blank cells inherit the Trip Profile's resolved factors. */
    export interface RouteEstimateFactors { tripProfileId: EntityId; routeId: EntityId; factors: CostingEstimateFactors }
    ```
 
    In `CostingAssumptions`, after `tripProfileEstimateFactors`, add:
 
    ```ts
-   /** Decision 0076. At most one entry per Trip Profile × Route. */
+   /** Decision 0077. At most one entry per Trip Profile × Route. */
    routeEstimateFactors?: RouteEstimateFactors[];
    ```
 
 2. **`src/domain/costing.ts`, `CostingAssumptionsInput`.** After `estimateFactors`, add:
 
    ```ts
-   /** Decision 0076. The selected Trip Profile's Route factors (draft or saved). Used only by an estimated cost basis. */
+   /** Decision 0077. The selected Trip Profile's Route factors (draft or saved). Used only by an estimated cost basis. */
    routeEstimateFactors?: { routeId: string; factors: CostingEstimateFactors }[];
    ```
 
@@ -94,7 +94,7 @@ Decision 0076 and this plan. The backlog entry links to both.
      deadheadFraction?: number; deadheadSource?: RouteFactorSource;
    }
    /**
-    * Decision 0076 item 2.2. Each factor independently: the Route's day row, else the Route's All days, else `profileFactors` resolved by
+    * Decision 0077 item 2.2. Each factor independently: the Route's day row, else the Route's All days, else `profileFactors` resolved by
     * `resolveDayFactors`. `routeFactors` undefined means the Route has no entry.
     */
    export function resolveRouteDayFactors(routeFactors: CostingEstimateFactors | undefined, profileFactors: CostingEstimateFactors | undefined, serviceDayId: string): ResolvedRouteDayFactors
@@ -102,10 +102,10 @@ Decision 0076 and this plan. The backlog entry links to both.
 
    Implement it by calling `resolveDayFactors(routeFactors, serviceDayId)` and mapping its sources (`serviceDay` → `routeServiceDay`, `allDays` → `routeAllDays`), then filling each factor still undefined from `resolveDayFactors(profileFactors, serviceDayId)` with that call's source unchanged.
 
-5. **`src/domain/estimatedCosting.ts`.** Add these pure helpers next to `setTripProfileEstimateFactors`, each with a one-line doc comment citing Decision 0076:
+5. **`src/domain/estimatedCosting.ts`.** Add these pure helpers next to `setTripProfileEstimateFactors`, each with a one-line doc comment citing Decision 0077:
 
    - `routeEstimateFactorsForTripProfile(assumptions: Pick<CostingAssumptions, 'routeEstimateFactors'> | undefined, tripProfileId: string): { routeId: string; factors: CostingEstimateFactors }[]` — the Profile's entries, in stored order.
-   - `setRouteEstimateFactors(entries: RouteEstimateFactors[] | undefined, tripProfileId: string, routeId: string, factors: CostingEstimateFactors | undefined, tripProfileIds: ReadonlySet<string>, routeIds: ReadonlySet<string>): RouteEstimateFactors[]` — drops entries whose Trip Profile or Route is not in the sets; replaces the pair's entry, or appends it; **removes** the pair's entry when `factors` is undefined (Decision 0076 item 2.2, unlike 0062).
+   - `setRouteEstimateFactors(entries: RouteEstimateFactors[] | undefined, tripProfileId: string, routeId: string, factors: CostingEstimateFactors | undefined, tripProfileIds: ReadonlySet<string>, routeIds: ReadonlySet<string>): RouteEstimateFactors[]` — drops entries whose Trip Profile or Route is not in the sets; replaces the pair's entry, or appends it; **removes** the pair's entry when `factors` is undefined (Decision 0077 item 2.2, unlike 0062).
    - `assumptionsAfterTripProfileCopy`: extend so the copy also receives a clone of every Route entry of the source Profile, replacing any existing entries of the target. It must still return `undefined` only when the source has neither an own entry nor Route entries. When the source has Route entries but no own entry, the result keeps `tripProfileEstimateFactors` unchanged.
    - `assumptionsAfterTripProfileDeletion`: extend so it also removes the Profile's Route entries, and returns `undefined` only when the Profile had neither.
    - `assumptionsAfterRouteDeletion(assumptions: CostingAssumptions | undefined, routeIds: ReadonlySet<string>, now: string): CostingAssumptions | undefined` — removes entries whose `routeId` is not in `routeIds` (the Routes that remain); `undefined` when nothing changes.
@@ -145,7 +145,7 @@ Decision 0076 and this plan. The backlog entry links to both.
      factors?: ResolvedRouteDayFactors; // estimated basis
      yearCosts: CostingDailyYearResult[];
    }
-   /** `routeId` null is the Unattributed row (Decision 0076 item 3.2). */
+   /** `routeId` null is the Unattributed row (Decision 0077 item 3.2). */
    export interface CostingRouteResult { routeId: string | null; routeName?: string; days: CostingRouteDayResult[] }
    export function sortRouteResults(rows: CostingRouteResult[]): CostingRouteResult[]
    ```
@@ -226,14 +226,14 @@ The orchestrator designs and builds this package. Requirements:
 3. **Stable columns.** `table-layout: fixed` with the existing `<colgroup>` classes; the expand toggle takes a fixed-width slot inside the first cell of every Route row; day rows indent inside the first cell only; numeric cells right-aligned with tabular digits. A browser test reads each `th` `getBoundingClientRect().left` and `width` with every Route collapsed, expanded, and mixed, and requires them to be identical.
 4. Expand toggle: a `button` in the Route row's header cell with `aria-expanded` and `aria-controls` naming the child rows; Enter and Space toggle; focus stays on the button. Child rows carry `aria-level`-equivalent indentation and their header cell names the service day.
 5. One Route row → expanded by default. Expanded state persists in localStorage under `transit-costing-tool.costing-route-expanded.v1`, keyed by Scenario ID, read through `readStoredRecord` and written inside try/catch, as `VEHICLE_REQUIREMENT_OPEN_PREFERENCE_KEY` is.
-6. Expand all / Collapse all: a quiet link-style control in the WorkSurface header actions, not a primary button.
+6. Expand all and Collapse all: two items in a new Cost breakdown surface Actions menu (`MenuButton` in the WorkSurface header, `triggerAriaLabel="Cost breakdown actions"`), because Decision 0076 item 6 puts commands on a surface's rows in that surface's Actions menu. Do not add them to `costingActionsMenu`: that menu sits in the scope bar and holds page-wide commands. The table's context menu (today `costingActionsMenu`) shows the scope-bar items followed by the two new items in their own group. Not visible buttons.
 7. Unassigned Trips (blocked basis): a muted note within the Route row's first cell, for example "3 unassigned", with the full sentence as accessible text. Not a column.
 8. The Unattributed row: last before Total, labelled "Unattributed (multi-route blocks)", expandable like a Route row. The `costing.multiRouteBlock` finding needs a message in `costingFindingMessage`.
 9. Row order: propose at the gate (name order from the domain, or sort by annual cost); implement the domain order until the user decides.
 
 ### Factor Route selector
 
-1. A `select` in the Estimate factors WorkSurface header, labelled "Route", with "All routes" then each Route by `routeOptionLabel`. Remove `factorSubtitle` and its use.
+1. A Route field menu in the Estimate factors WorkSurface header `context`, built like the Blocking scenario field menu (`src/ui/blocking/BlockingWorkspace.tsx`, `MenuButton` with `fieldLabel="Route"`, `selectionStyle="highlight"`, `menuAlign="start"`, trigger accessible name "Route: {name}"). Decision 0076 item 6 requires a field menu, not a native `select`, for an object chosen inside a surface. The menu lists "All routes", then each Route by `routeOptionLabel`, the selected one marked. It holds no lifecycle commands (Routes are managed on the Route tab). Remove `factorSubtitle` and its use.
 2. "All routes" edits the Trip Profile's factors exactly as today. A Route edits that Route's entry through `saveRouteEstimateFactors`.
 3. The grid shows inherited values distinct from values entered at the selected level, reusing `costing-factor-fallback` styling. Inherited cells show the inherited value as a placeholder, not as a value.
 4. Changing the Route with unsaved factor edits opens the existing leave dialog (the `factorsOnly` variant), titled "Save estimate factors before changing the route?".
