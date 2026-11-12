@@ -23,7 +23,7 @@ import { remapMeasureNodes } from './plannedFrequencies';
 import { createBlockingScenario } from './blocking';
 import { metadata, newId, withUpdatedAt } from './ids';
 import { createStandardServiceDays } from './serviceDays';
-import { remapEstimateFactorDays, remapTripProfileEstimateFactors } from './estimatedCosting';
+import { remapEstimateFactorDays, remapRouteEstimateFactors, remapTripProfileEstimateFactors } from './estimatedCosting';
 
 export function createProject(name: string, now = new Date().toISOString()): Project {
   if (!name.trim()) throw new Error('Project name is required');
@@ -142,11 +142,19 @@ export function duplicateRouteRecords(source: ScenarioRecords, routeId: string, 
     ...metadata(now),
   }));
 
+  // Decision 0077: the Route's factor entries are copied to the new Route. Trip Profile and service day IDs are unchanged (same Scenario).
+  const routeFactorEntries = (source.costingAssumptions?.routeEstimateFactors ?? [])
+    .filter((entry) => entry.routeId === routeId)
+    .map((entry) => ({ ...entry, routeId: route.id, factors: structuredClone(entry.factors) }));
+
   return {
     route,
     records: {
       ...source,
       ...(source.plannedFrequencies || plannedFrequencies.length ? { plannedFrequencies: [...(source.plannedFrequencies ?? []), ...plannedFrequencies] } : {}),
+      ...(source.costingAssumptions && routeFactorEntries.length
+        ? { costingAssumptions: { ...source.costingAssumptions, routeEstimateFactors: [...(source.costingAssumptions.routeEstimateFactors ?? []), ...routeFactorEntries], updatedAt: now } }
+        : {}),
       routes: [...source.routes, route],
       nodes: [...source.nodes, ...nodes],
       patterns: [...source.patterns, ...patterns],
@@ -271,6 +279,8 @@ export function duplicateScenario(source: ScenarioRecords, targetName: string, n
       ...(source.costingAssumptions.estimateFactors ? { estimateFactors: remapEstimateFactorDays(source.costingAssumptions.estimateFactors, serviceDayIds) } : {}),
       // Decision 0062: each Trip Profile's own factors follow it into the copy.
       ...(source.costingAssumptions.tripProfileEstimateFactors ? { tripProfileEstimateFactors: remapTripProfileEstimateFactors(source.costingAssumptions.tripProfileEstimateFactors, tripProfileIds, serviceDayIds) } : {}),
+      // Decision 0077: Route factors name Trip Profiles, Routes and service days, which all get new identifiers in the copy.
+      ...(source.costingAssumptions.routeEstimateFactors ? { routeEstimateFactors: remapRouteEstimateFactors(source.costingAssumptions.routeEstimateFactors, tripProfileIds, routeIds, serviceDayIds) } : {}),
       ...metadata(now),
     }
     : undefined;

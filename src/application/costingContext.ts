@@ -48,5 +48,6 @@ export function createCostingContextQueries(sources: CostingContextSources): Cos
     countBlocks: async (blockingScenarioId) => (await sources.listBlockingBlocks(blockingScenarioId)).length,
     getCostingCalculationContext: (scenarioId, blockingScenarioId) => buildCostingCalculationContext(sources, scenarioId, blockingScenarioId),
     getEstimatedCostingContext: (scenarioId, tripProfileId) => buildEstimatedCostingContext(sources, scenarioId, tripProfileId),
+    listRoutes: (scenarioId) => sources.listRoutes?.(scenarioId) ?? Promise.resolve([]),
   };
 }
