@@ -8,7 +8,7 @@ Each entry lists the problem, the proposed approach, open choices, and the edge 
 | --- | --- | --- |
 | [Planned frequencies](#planned-frequencies) | Route, Trips, Costing | Implemented 2026-11-05: Decision 0058, `docs/implementation/planned-frequencies-closeout.md` |
 | [Auto-shift to a consistent frequency](#auto-shift-to-a-consistent-frequency) | Trips | Proposed; would use Planned frequencies as its periods |
-| [Per-route cost breakdown and factors](#per-route-cost-breakdown-and-factors) | Costing | Proposed 2026-11-12; design choices below; open decisions listed |
+| [Per-route cost breakdown and factors](#per-route-cost-breakdown-and-factors) | Costing | Planned 2026-11-12: Decision 0076, `docs/implementation/route-cost-breakdown.md` |
 | [Costing by service day across routes](#costing-by-service-day-across-routes) | Costing | Proposed 2026-11-12; follows the per-route breakdown |
 | [Multi-route interlining](#multi-route-interlining) | Blocking, Costing | Proposed 2026-11-12; not needed for the current scenario |
 | [Year-varying service](#year-varying-service) | Scenario, Costing | Idea 2026-11-12; beyond current scope |
@@ -160,6 +160,7 @@ A shift keeps a trip's runtimes, so a trip moved into another band shows "Run ti
 
 - Proposed: 2026-11-12
 - Area: Costing (Cost breakdown table, Estimate factors, Cost Summary and export)
+- Rules: `docs/decisions/0076-per-route-cost-breakdown-and-factors.md` (governs; the open decisions below are resolved there). Plan: `docs/implementation/route-cost-breakdown.md`.
 
 ### Problem
 
