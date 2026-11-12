@@ -1,6 +1,12 @@
 # Packages BSS1 to BSS5: Blocking summary surface and Blocking scenario field menus
 
-Decision: `docs/decisions/0076-blocking-summary-surface.md`. Status: planned, not started.
+Decision: `docs/decisions/0076-blocking-summary-surface.md`. Status: implemented 2026-11-12 (BSS1 to BSS5), awaiting user acceptance.
+
+Implementation notes (deviations from the text below, recorded at closeout):
+- BSS1: the hook takes the caller's `busy`/`setBusy` (a scenario write keeps disabling the caller's other controls) and an optional `onBeforeCreate`; the caller remembers a new scenario in `onCreated`, so the hook imports no workspace and Trips can use it without an import cycle. `NameDialog`, `Confirm`, and `plural` moved to `src/ui/blocking/blockingDialogs.tsx`.
+- BSS2: `ScopeFieldName` kept 'Blocking scenario' until BSS3, so typechecking passed between packages. The collapsed header stays on one line above 760 px; the figures line truncates with a tooltip.
+- BSS3: after a delete, Blocking now selects the remembered or first remaining scenario (Decision 0076 item 9 amended); the former select only displayed its first option while nothing was selected.
+- BSS4: the Blocking tab keeps its own remembered scenario per Trip Profile, so a scenario created on Trips is listed, not selected, when Blocking opens next (Decision 0076 item 11).
 
 | Package | Content | Class / model | Owner |
 |---|---|---|---|

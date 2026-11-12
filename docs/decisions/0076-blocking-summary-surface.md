@@ -1,6 +1,6 @@
 # Decision 0076: Blocking Summary Surface and Blocking Scenario Field Menus
 
-- Status: Accepted (user decision of 2026-11-12); planned, not implemented
+- Status: Accepted (user decision of 2026-11-12); implemented (BSS1 to BSS5, 2026-11-12), awaiting user acceptance
 - Date: 2026-11-12
 - Plan: `docs/implementation/blocking-summary-surface.md` (packages BSS1 to BSS5)
 - Supersedes: Decision 0053 item 4 for the Blocking tab (the scope-bar Actions menu holds Blocking Scenario commands)
