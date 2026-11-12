@@ -2,7 +2,7 @@
 
 - Decision: `docs/decisions/0077-per-route-cost-breakdown-and-factors.md` (governs where this plan is unclear)
 - Backlog entry: `docs/backlog.md`, "Per-route cost breakdown and factors"
-- Status: Planned 2026-11-12. RC0 done. RC1 not started. Revised 2026-11-12 after PR #62 (Decision 0076, Blocking summary surface): this decision renumbered to 0077; RC4 follows the Decision 0076 placement rule for the factor Route menu and the Expand all / Collapse all commands.
+- Status: RC0–RC6 implemented 2026-11-12; awaiting user acceptance (closeout: `docs/implementation/route-cost-breakdown-closeout.md`). Revised 2026-11-12 after PR #62 (Decision 0076, Blocking summary surface): this decision renumbered to 0077; RC4 follows the Decision 0076 placement rule for the factor Route menu and the Expand all / Collapse all commands.
 
 ## Roles
 

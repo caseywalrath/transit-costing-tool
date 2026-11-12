@@ -1,6 +1,6 @@
 # Decision 0077: Per-Route Cost Breakdown and Route Estimate Factors
 
-- Status: Accepted (2026-11-12, user acceptance of the recommendations for open decisions 1–6). Not yet implemented. Plan: `docs/implementation/route-cost-breakdown.md`.
+- Status: Accepted (2026-11-12, user acceptance of the recommendations for open decisions 1–6). Implemented 2026-11-12 (closeout: `docs/implementation/route-cost-breakdown-closeout.md`). Plan: `docs/implementation/route-cost-breakdown.md`.
 - Date: 2026-11-12
 - Related: Decisions 0026 (Revenue hours include layover), 0027 (cost basis), 0051 (estimated cost basis), 0054 (cost summary), 0062 (Trip-Profile-owned factors), 0066 (copy table), 0076 (Blocking summary surface; its placement rule, item 6, governs where the selectors and actions of this decision sit)
 - Backlog: `docs/backlog.md`, "Per-route cost breakdown and factors"
