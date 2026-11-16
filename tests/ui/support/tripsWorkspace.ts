@@ -84,7 +84,7 @@ export async function createShiftReadySchedule(page: Page, lastTrip = '06:00', s
   await actions.focus();
   await actions.press('ArrowDown');
   // UR-6c: Build trips and Add trip are header buttons and the selection commands live in the selection bar; the menu keeps the rest.
-  await expect(page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem')).toHaveText(['Copy trips from another day…', 'Export trips CSV']);
+  await expect(page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem')).toHaveText(['Copy trips from another day…', 'Export trips CSV', 'Export trips with stops CSV']);
   await page.keyboard.press('Escape');
   await tripsSection.getByRole('button', { name: 'Build trips…', exact: true }).click();
   const drawer = page.getByRole('complementary', { name: 'Build trips' });

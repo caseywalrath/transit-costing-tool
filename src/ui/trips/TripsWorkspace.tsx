@@ -21,6 +21,7 @@ import { createBlockingScenarioSourceSignature, type BlockConnection } from '../
 import { useBlockingScenarioCommands } from '../blocking/blockingScenarioCommands';
 import { runtimeProfileCsv } from '../runtimeProfileCsv';
 import { tripTableCsv } from '../../application/tripTableCsv';
+import { stopTimesCsv } from '../../application/stopTimesCsv';
 import { type RouteNavigationGuard } from '../shared/types';
 import { type RuntimeEditorHandle, type RuntimeEditorState, RuntimeEditor2, RouteRuntimeMethodDialog } from './RuntimeEditor';
 import { type PlannedFrequencyService, type PlanComparisonResult } from '../../application/plannedFrequencyService';
@@ -645,6 +646,16 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     const blockLabels = new Map([...tripBlockByTripId].map(([tripId, block]) => [tripId, block.label]));
     download(`${safeName}-trips.csv`, tripTableCsv({ trips, patterns, directionName: direction?.name ?? '', columns, blockLabels, connections: tripConnections }), 'text/csv;charset=utf-8');
   }
+  /** Decision 0079 section 13: the displayed Trips with their stops, one row per Trip per timepoint or stop (output only, Decision 0044). */
+  async function exportStopTimesCsv() {
+    try {
+      const safeName = `${aggregate.route.name || 'route'}-${selectedDay?.name || 'service-day'}-${selectedTripProfile?.name || 'trip-profile'}`.replaceAll(/[^a-z0-9]+/gi, '-').replaceAll(/^-|-$/g, '') || 'trips';
+      const direction = directions.find((item) => item.id === directionId);
+      const blockLabels = new Map([...tripBlockByTripId].map(([tripId, block]) => [tripId, block.label]));
+      const set = await service.getRouteStopSet(aggregate.route.id);
+      download(`${safeName}-stop-times.csv`, stopTimesCsv({ trips, patterns, nodes: aggregate.nodes, set, directionName: direction?.name ?? '', blockLabels }), 'text/csv;charset=utf-8');
+    } catch (error) { onError(error, 'Unable to export stop times.'); }
+  }
   const parsedShiftSeconds = parseShiftSeconds(shiftMinutes);
   const canShiftSelectedTrips = selectedTripIds.length > 0 && parsedShiftSeconds !== undefined;
   async function requestTripDeletion(tripIds: string[]) {
@@ -790,7 +801,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   const tripActionsMenu: MenuGroup[] = [
     ...(applicableRegenerationUndo ? [{ items: [{ id: 'undo-regeneration', label: `${applicableRegenerationUndo.kind === 'patternChange' ? 'Undo last pattern change' : 'Undo last regeneration'} (${applicableRegenerationUndo.afterTrips.length} trips)`, disabled: busy || tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => void undoRegeneration() }] }] : []),
     { items: [{ id: 'copy-day', label: 'Copy trips from another day…', disabled: tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => setTripCopyOpen(true) }] },
-    { items: [{ id: 'export-trips-csv', label: 'Export trips CSV', disabled: !trips.length, onSelect: exportTripsCsv }] },
+    { items: [{ id: 'export-trips-csv', label: 'Export trips CSV', disabled: !trips.length, onSelect: exportTripsCsv }, { id: 'export-stop-times-csv', label: 'Export trips with stops CSV', disabled: !trips.length, onSelect: () => void exportStopTimesCsv() }] },
   ];
   const canUnassignSelected = selectedTripIds.some((id) => tripBlockByTripId.has(id));
   // The selection bar. The table draws it above its rows and, compact, above its pinned headings (only one copy is live at a time).

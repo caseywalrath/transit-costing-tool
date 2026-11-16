@@ -79,6 +79,14 @@ export const USER_FACING_VALIDATION_MESSAGES: Record<string, string> = {
   'trip.patternRouteMismatch': 'Choose a pattern on the same route.',
   'trip.anchorMissing': 'The anchor timepoint is not on this pattern. Choose another anchor.',
   'trip.anchorTimeMissing': 'This trip has no saved time at the anchor timepoint. Choose another anchor.',
+  'routeStop.nameRequired': 'Enter a stop name.',
+  'routeStop.codeDuplicate': 'Another stop on this route has this stop ID.',
+  'routeStop.idDuplicate': 'This stop is listed twice.',
+  'stopPlacement.stopMissing': 'This stop is no longer on the route.',
+  'stopPlacement.idDuplicate': 'This stop is listed twice.',
+  'stopPlacement.repeatedInSegment': 'This stop is already between these timepoints.',
+  'stopPlacement.timingOutOfOrder': 'Stop timing rules are out of order here.',
+  'routeStopSet.roundingInvalid': 'Choose 1 min or 30 s rounding.',
 };
 
 export function userMessage(finding: ValidationFinding) {

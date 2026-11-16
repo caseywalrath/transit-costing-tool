@@ -184,6 +184,7 @@ export function App({ service, tripService, blockingService, costingService, pla
         impact.removedBlockActivityCount ? `${impact.removedBlockActivityCount} block activit${impact.removedBlockActivityCount === 1 ? 'y' : 'ies'}` : '',
         impact.removedNonRevenueActivityCount ? `${impact.removedNonRevenueActivityCount} pull-out, pull-in, or deadhead activit${impact.removedNonRevenueActivityCount === 1 ? 'y' : 'ies'}` : '',
         impact.plannedFrequencyCount ? `planned frequencies for ${impact.plannedFrequencyCount} service day${impact.plannedFrequencyCount === 1 ? '' : 's'}` : '',
+        impact.routeStopCount ? `${impact.routeStopCount} stop${impact.routeStopCount === 1 ? '' : 's'}` : '',
       ].filter(Boolean);
       const blockNote = impact.affectedBlockCount ? ` ${impact.affectedBlockCount} block${impact.affectedBlockCount === 1 ? '' : 's'} will remain without those trips.` : '';
       setConfirm({ title: 'Delete route?', text: `Delete “${aggregate.route.name || 'Untitled route'}”${affected.length ? ` and its ${affected.join(', ')}?` : '?'}${blockNote} This cannot be undone.`, confirmLabel: 'Delete route', action: () => { void service.deleteRoute(aggregate.route.id, impact.reviewToken).then(async () => { await reload(projectId, scenarioId); }).catch((error) => showError(error, 'Unable to delete route.')); } });
@@ -200,6 +201,7 @@ export function App({ service, tripService, blockingService, costingService, pla
         impact.runtimeAssignmentCount ? `${impact.runtimeAssignmentCount} runtime assignment${impact.runtimeAssignmentCount === 1 ? '' : 's'}` : '',
         impact.tripCount ? `${impact.tripCount} trip${impact.tripCount === 1 ? '' : 's'}` : '',
         impact.affectedBlockCount ? `revenue activities in ${impact.affectedBlockCount} block${impact.affectedBlockCount === 1 ? '' : 's'}` : '',
+        impact.stopPlacementCount ? `${impact.stopPlacementCount} stop placement${impact.stopPlacementCount === 1 ? '' : 's'}` : '',
       ].filter(Boolean);
       setConfirm({ title: 'Delete pattern?',text: `Delete “${selectedPattern.name || 'Untitled pattern'}”${affected.length ? ` and remove ${affected.join(', ')}?` : '?'} This cannot be undone.`, confirmLabel: 'Delete pattern',action: () => { void service.deletePattern(selectedPattern.id, impact.reviewToken).then(async () => { setSelectedPatternId(''); await reload(projectId, scenarioId, routeId); }).catch((error) => showError(error, 'Unable to delete pattern.')); } });
     }).catch((error) => showError(error, 'Unable to review pattern deletion.'));

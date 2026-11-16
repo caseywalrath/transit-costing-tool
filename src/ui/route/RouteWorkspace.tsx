@@ -160,7 +160,7 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
       setConflict(preview.conflict?.message);
       if (preview.classification === 'invalid' || preview.conflict || preview.findings.some((finding) => finding.severity === 'error')) return;
       if (preview.requiresReset) { setImpactDialog({ preview, mode: 'reset', afterCommit }); return; }
-      if (preview.classification === 'deterministic') { setImpactDialog({ preview, mode: 'rebalance', afterCommit }); return; }
+      if (preview.classification === 'deterministic' || preview.stopsMovedCount + preview.stopsRemovedCount > 0) { setImpactDialog({ preview, mode: 'rebalance', afterCommit }); return; }
       await commitPattern(preview, 'rebalance', afterCommit);
     } catch (error) { onError(error); }
     finally { setPatternSaving(false); }
@@ -287,5 +287,10 @@ export function RouteEditImpactDialog({ preview, mode, onClose, onCommit }: { pr
       : `This will update ${affected.join(', ') || 'this pattern'} using the revised timepoint structure. Added timepoints begin with zero run time.`;
   const nonRevenue = preview.kind === 'nodes' ? preview.nonRevenueImpact : undefined;
   const nonRevenueDetail = nonRevenue?.removedActivityCount ? `Removes ${nonRevenue.removedActivityCount} pull-out, pull-in, or deadhead ${nonRevenue.removedActivityCount === 1 ? 'activity' : 'activities'} in ${nonRevenue.blockIds.length} block${nonRevenue.blockIds.length === 1 ? '' : 's'}.` : '';
-  return <ModalDialog role="alertdialog" labelledBy="route-edit-impact-title" className="confirm-dialog" onClose={onClose}><h2 id="route-edit-impact-title">{title}</h2><p>{detail}</p>{nonRevenueDetail && <p>{nonRevenueDetail}</p>}<div className="dialog-actions"><button onClick={onClose}>Cancel</button><button className={destructive ? 'danger' : 'primary'} onClick={onCommit}>{destructive ? 'Save and reset service' : preview.kind === 'nodes' ? 'Delete nodes and update service' : 'Save and rebalance'}</button></div></ModalDialog>;
+  // Decision 0079 section 10: stops that move into a merged segment or are removed with their segment are listed, one paragraph per count.
+  const stopDetails = [
+    preview.stopsMovedCount ? `Moves ${preview.stopsMovedCount} stop${preview.stopsMovedCount === 1 ? '' : 's'} into the merged segment.` : '',
+    preview.stopsRemovedCount ? `Removes ${preview.stopsRemovedCount} stop${preview.stopsRemovedCount === 1 ? ' that is' : 's that are'} no longer on the pattern.` : '',
+  ].filter(Boolean);
+  return <ModalDialog role="alertdialog" labelledBy="route-edit-impact-title" className="confirm-dialog" onClose={onClose}><h2 id="route-edit-impact-title">{title}</h2><p>{detail}</p>{nonRevenueDetail && <p>{nonRevenueDetail}</p>}{stopDetails.map((text) => <p key={text}>{text}</p>)}<div className="dialog-actions"><button onClick={onClose}>Cancel</button><button className={destructive ? 'danger' : 'primary'} onClick={onCommit}>{destructive ? 'Save and reset service' : preview.kind === 'nodes' ? 'Delete nodes and update service' : 'Save and rebalance'}</button></div></ModalDialog>;
 }
