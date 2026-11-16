@@ -303,7 +303,7 @@ Tests (`src/domain/stopTimes.test.ts`), with times in seconds (8:00:00 = 28800):
 3. Two interpolated stops between 8:10 and 8:17, rounding 30: 8:12:00 (29520) and 8:14:30 (29670); rounding 60: 8:12 and 8:14.
 4. `previous` gives `A` and `next` gives `B`, unrounded, with `A` = 8:00:20.
 5. `[previous, interpolate, interpolate, next]` between 8:00 and 8:09: `A`, 8:03, 8:06, `B`.
-6. Rounding never goes below `A`: `A` = 28850, `B` = 28870, one interpolated stop, rounding 60 gives 28850.
+6. Rounding never goes below `A`: `A` = 28850, `B` = 28852, one interpolated stop, rounding 60 gives 28850 (the rounded value 28800 is raised to `A`).
 7. Exact arithmetic: `A` = 0, `B` = 100, two interpolated stops, rounding 30 gives 30 and 60.
 8. Out of order `[next, interpolate]`: the interpolated stop is raised to `B`.
 9. A missing `A`, a missing `B`, and `B < A` each give `undefined` for every stop.

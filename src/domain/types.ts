@@ -12,7 +12,7 @@ export interface TripProfile extends EntityMetadata { id: EntityId; scenarioId: 
 export type NodeKind = 'timepoint' | 'terminal' | 'garage' | 'other';
 export interface ServiceDayDefinition extends EntityMetadata { id: EntityId; scenarioId: EntityId; kind: ServiceDayKind; name: string; annualServiceDays: number; sequence: number; /** Optional 1 to 3 character label for scope toggles (Decision 0059). When absent the label is derived, see `serviceDayAbbreviation`. */ abbreviation?: string; }
 export interface Route extends EntityMetadata { id: EntityId; scenarioId: EntityId; name: string; shortName?: string; description?: string; }
-export interface Node extends EntityMetadata { id: EntityId; scenarioId: EntityId; routeId: EntityId; name: string; shortName?: string; kind: NodeKind; notes?: string; }
+export interface Node extends EntityMetadata { id: EntityId; scenarioId: EntityId; routeId: EntityId; name: string; shortName?: string; kind: NodeKind; notes?: string; /** Decision 0079. Optional public stop ID of this timepoint. */ stopCode?: string; }
 export interface PatternPoint { id: EntityId; nodeId: EntityId; sequence: number; cumulativeMiles: Miles; directionColumnId?: EntityId; }
 export interface RouteDirection extends EntityMetadata {
   id: EntityId;
@@ -46,6 +46,20 @@ export interface PlannedFrequency extends EntityMetadata {
   periods: PlannedPeriod[];
   /** Direction ID → node ID. A missing entry means the default measure node. */
   measureNodeIdByDirectionId: Record<EntityId, EntityId>;
+}
+/** Decision 0079. A passenger stop of one Route. Never a pattern point, timetable column, or runtime segment end. `id` is unique within its stop set. */
+export interface RouteStop { id: EntityId; name: string; stopCode?: string; }
+export type StopTimingRule = 'interpolate' | 'previous' | 'next';
+/** Decision 0079. One stop on the segment from `afterPatternPointId` to the next point by sequence. `sequence` orders stops within the segment. `id` is unique within its pattern. */
+export interface PatternStopPlacement { id: EntityId; stopId: EntityId; afterPatternPointId: EntityId; sequence: number; timing: StopTimingRule; }
+export type StopTimeRoundingSeconds = 30 | 60;
+/** Decision 0079. At most one per Route. Not stored when it has no stops. */
+export interface RouteStopSet extends EntityMetadata {
+  id: EntityId; scenarioId: EntityId; routeId: EntityId;
+  roundingSeconds: StopTimeRoundingSeconds;
+  stops: RouteStop[];
+  /** Pattern ID → its placements, ordered by segment, then `sequence`. A pattern with no stops has no entry. */
+  placementsByPatternId: Record<EntityId, PatternStopPlacement[]>;
 }
 /** A transient additive request. It is never persisted as a scheduling record. */
 export interface GenerateTripsRequest {
@@ -175,10 +189,12 @@ export interface ProjectSnapshot {
   costingAssumptions?: CostingAssumptions[];
   /** Scenario-owned planned frequencies (Decision 0058). Snapshots before backup schema 10 omit this collection. */
   plannedFrequencies?: PlannedFrequency[];
+  /** Decision 0079. Snapshots before backup schema 13 omit this collection. */
+  routeStopSets?: RouteStopSet[];
   /** @deprecated Historical Phase 2 collection; authoritative snapshots leave this empty. */
   generationSets: TripGenerationSet[];
   trips: Trip[];
   blocks: Block[];
 }
 
-export interface DatabaseRecordMap { projects: Project; scenarios: Scenario; serviceDays: ServiceDayDefinition; routes: Route; nodes: Node; patterns: RoutePattern; directions: RouteDirection; runtimeProfiles: RuntimeProfile; runtimeAssignments: RuntimeAssignment; generationSets: TripGenerationSet; tripProfiles: TripProfile; blockingScenarios: BlockingScenario; trips: Trip; tripRegenerationUndo: TripRegenerationUndo; blocks: Block; costingAssumptions: CostingAssumptions; plannedFrequencies: PlannedFrequency; appMetadata: AppMetadata; }
+export interface DatabaseRecordMap { projects: Project; scenarios: Scenario; serviceDays: ServiceDayDefinition; routes: Route; nodes: Node; patterns: RoutePattern; directions: RouteDirection; runtimeProfiles: RuntimeProfile; runtimeAssignments: RuntimeAssignment; generationSets: TripGenerationSet; tripProfiles: TripProfile; blockingScenarios: BlockingScenario; trips: Trip; tripRegenerationUndo: TripRegenerationUndo; blocks: Block; costingAssumptions: CostingAssumptions; plannedFrequencies: PlannedFrequency; routeStopSets: RouteStopSet; appMetadata: AppMetadata; }
