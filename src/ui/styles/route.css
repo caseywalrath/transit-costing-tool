@@ -73,3 +73,38 @@
 .planned-copy-tag { margin-left: var(--space-1); color: var(--color-text-muted); font-weight: var(--font-weight-regular); }
 .planned-copy-note { margin: 0; color: var(--color-text-muted); font-size: var(--font-size-note); }
 .route-top-grid .support-panel__body { min-width: 0; }
+/* ST5 (Decision 0079): the Stops drawer of one pattern. Timepoints read as a line with a node marker; the stops of a segment hang under
+   it with an indent and a connecting rail, so a stop's place between two timepoints is visible. The Route tab keeps the drawer's width
+   free on the right so the pattern editor's Actions menu is never covered. */
+.pattern-stops-drawer { width: min(460px, 42vw); }
+@media (min-width: 681px) { .route-workspace--stops-drawer { padding-right: calc(min(460px, 42vw) + var(--space-2)); } }
+.pattern-stops-drawer header h2 { display: grid; gap: 2px; margin: 0; font-size: var(--font-size-title); }
+.pattern-stops-drawer__pattern { overflow: hidden; color: var(--color-text-muted); font-size: var(--font-size-note); font-weight: var(--font-weight-regular); text-overflow: ellipsis; white-space: nowrap; }
+.pattern-stops-drawer header h2 { min-width: 0; }
+.pattern-stops-drawer__header-actions { display: flex; flex: none; align-items: center; gap: var(--space-2); }
+.pattern-stops-drawer__body { padding: 0; }
+.pattern-stops-drawer__footer--dirty { padding: 0; }
+.pattern-stops-drawer__footer--dirty .save-bar { flex: 1; border-radius: 0; }
+.pattern-stops-table { min-width: 0; table-layout: fixed; }
+.pattern-stops-table thead th:nth-child(1) { width: auto; padding-left: var(--space-4); }
+.pattern-stops-table thead th:nth-child(2) { width: 6.5em; }
+.pattern-stops-table thead th:nth-child(3) { width: 64px; }
+.pattern-stops-table thead th:nth-child(4) { width: 40px; }
+.pattern-stops-table td, .pattern-stops-table tbody th { border-bottom: 0; vertical-align: middle; }
+.pattern-stops-table tbody th, .pattern-stops-table tbody td:first-child { position: static; }
+.pattern-stops-timepoint th, .pattern-stops-timepoint td { padding-top: var(--space-2); background: var(--color-surface-2); color: var(--color-text); font-size: var(--font-size-label); font-weight: var(--font-weight-semibold); white-space: normal; }
+.pattern-stops-timepoint th { display: flex; align-items: center; gap: var(--space-2); padding-left: var(--space-4); }
+.pattern-stops-timepoint__mark { flex: none; width: 10px; height: 10px; border: 2px solid var(--color-accent); border-radius: 50%; background: var(--color-surface); }
+.pattern-stops-timepoint__code { color: var(--color-text-muted); font-variant-numeric: tabular-nums; font-weight: var(--font-weight-regular); }
+.pattern-stops-stop td:first-child, .pattern-stops-add td, .pattern-stops-error td { padding-left: calc(var(--space-4) + 4px); }
+.pattern-stops-stop td:first-child, .pattern-stops-add td:first-child, .pattern-stops-error td:first-child { box-shadow: inset calc(var(--space-4) + 5px) 0 0 -1px var(--color-surface), inset calc(var(--space-4) + 6px) 0 0 0 var(--color-border); }
+.pattern-stops-stop.row-moved > td:first-child { box-shadow: inset calc(var(--space-4) + 5px) 0 0 -1px var(--color-surface), inset calc(var(--space-4) + 6px) 0 0 0 var(--color-accent); }
+.pattern-stops-name { display: flex; align-items: center; gap: var(--space-1); min-width: 0; padding-left: var(--space-3); }
+.pattern-stops-name input { flex: 1 1 auto; min-width: 0; }
+.pattern-stops-name .chip { flex: none; }
+.pattern-stops-code { width: 100%; min-width: 0; font-variant-numeric: tabular-nums; }
+.pattern-stops-order { white-space: nowrap; }
+.pattern-stops-add .ghost { margin-left: var(--space-3); padding-left: var(--space-1); font-weight: var(--font-weight-semibold); }
+.pattern-stops-error td { padding-top: 0; }
+.pattern-stops-error .field-error { padding-left: var(--space-3); }
+@media (max-width: 680px) { .pattern-stops-drawer { width: 100vw; } }
