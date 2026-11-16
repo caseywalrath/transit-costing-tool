@@ -38,10 +38,10 @@
 | Check | Result |
 | --- | --- |
 | `pnpm typecheck` | Passes |
-| `pnpm test` | FULL_UNIT |
+| `pnpm test` | 93 files, 1526 tests pass |
 | `pnpm build` | Passes (the existing chunk-size warning only) |
-| Full browser suite (`pnpm test:ui`, Chromium at `/opt/pw-browsers/chromium`) | FULL_UI |
-| Visual tour (`UI_TOUR=1`) | VISUAL_TOUR |
+| Full browser suite (`pnpm test:ui`, Chromium at `/opt/pw-browsers/chromium`) | 372 passed, 2 skipped (the existing skips), 13.8 min |
+| Visual tour (`UI_TOUR=1`) | 2 passed |
 | Backup round trip | `routeStopBackup.test.ts`: export, import, export of a project with stops and a Node `stopCode` is identical; a version 12 file imports with its `routeEstimateFactors` and no stops; `route-stop-wiring.spec.ts` imports a schema 13 file through the screen |
 | New specs repeated | `route-stop-wiring` 20/20, `route-stops` 20/20, `stop-trips` 12/12 |
 | Screenshots | Nodes table at 1024 px and 1440 px; Stops drawer at 1440, 1024 and 390 px; Stop trips drawer at 1440 and 390 px. The app has no dark theme, so no dark screenshots apply. |
