@@ -103,8 +103,7 @@ interface Node extends EntityMetadata {
   shortName?: string;
   kind: NodeKind;
   notes?: string;
-  /** Decision 0079. Optional public stop ID of this timepoint, shown on timepoint rows of the stop-level export. */
-  stopCode?: string;
+  // Decision 0080 removed `stopCode` (Decision 0079): a timepoint's stop ID is stored per pattern point in the Route's stop set.
 }
 
 interface RouteDirection extends EntityMetadata {
@@ -480,7 +479,7 @@ interface ValidationFinding {
 
 ## Route stops
 
-Decision 0079. A Route-owned record, at most one per Route, stored only while it has at least one stop. Stops are passenger stops between timepoints; they are never Nodes or pattern points, and their times are derived, never stored.
+Decision 0079. A Route-owned record, at most one per Route, stored only while it has at least one stop or one timepoint stop ID (Decision 0080). Stops are passenger stops between timepoints; they are never Nodes or pattern points, and their times are derived, never stored.
 
 ```typescript
 interface RouteStop { id: EntityId; name: string; stopCode?: string }
@@ -496,17 +495,20 @@ interface RouteStopSet extends EntityMetadata {
   stops: RouteStop[];
   /** Pattern ID → placements, by segment, then sequence. A pattern with no stops has no entry. */
   placementsByPatternId: Record<EntityId, PatternStopPlacement[]>;
+  /** Decision 0080. Pattern ID → pattern point ID → that timepoint's stop ID on that pattern. A pattern with none has no entry. */
+  timepointStopCodesByPatternId?: Record<EntityId, Record<EntityId, string>>;
 }
 ```
 
 - A placement sits on the segment from `afterPatternPointId` to the next point by `sequence`; a placement after the last point is not valid. `sequence` orders stops within a segment from 0. One stop appears at most once per segment.
 - `stopCode` is optional and unique within the set after trimming, ignoring case. Stop and placement IDs are unique within their set, so Route and Scenario copies keep them.
 - Validation (`validateRouteStopSet`): `routeStop.nameRequired`, `routeStop.codeDuplicate`, `routeStop.idDuplicate`, `stopPlacement.stopMissing`, `stopPlacement.idDuplicate`, `stopPlacement.repeatedInSegment`, and `routeStopSet.roundingInvalid` are errors; `stopPlacement.timingOutOfOrder` is a warning.
-- Every Scenario write prunes placements whose pattern or point no longer exists, stops no placement uses, and sets left with no stops (`pruneRouteStopSets`). Writes go through `updateScenarioRecords` (`saveRouteStops`, stop copy and undo) or the Route edit commit (placement reconciliation).
+- A timepoint stop ID (Decision 0080) is trimmed and non-blank, and names a point of its own pattern. It is not unique: patterns of one direction share it through Fill and Copy. A pattern edit keeps it only while its point remains and stands on the same Node (`reconcileTimepointStopCodes`).
+- Every Scenario write prunes placements and timepoint stop IDs whose pattern or point no longer exists, stops no placement uses, and sets left with neither stops nor timepoint stop IDs (`pruneRouteStopSets`). Writes go through `updateScenarioRecords` (`saveRouteStops`, stop copy and undo) or the Route edit commit (placement reconciliation).
 
 ## IndexedDB tables and indexes
 
-The Dexie database uses the application-specific name `transit-costing-tool`. Its tables and indexes at version 11 (version 11 adds `routeStopSets`; version 10 added `plannedFrequencies`) are:
+The Dexie database uses the application-specific name `transit-costing-tool`. Its tables and indexes at version 12 (version 12 changes no store and moves `Node.stopCode` into the stop sets, Decision 0080; version 11 adds `routeStopSets`; version 10 added `plannedFrequencies`) are:
 
 | Table | Primary key and useful indexes |
 | --- | --- |
@@ -615,7 +617,9 @@ Import must validate the complete payload before opening a write transaction. ID
 
 Version 10 adds the optional top-level `plannedFrequencies` array (Decision 0058); the key is omitted when a project has no plans, so such a file differs from version 9 only by its version number. Versions 1 to 9 stay readable and import with no plans.
 
-Version 13 (current) adds the optional top-level `routeStopSets` array (Decision 0079; omitted when no Route has stops) and the optional `Node.stopCode`. Import validates each set's shape (string IDs, `roundingSeconds` of 30 or 60, stops with an `id` and `name`, placements with string IDs, a whole `sequence` of 0 or more, and a known `timing`), its metadata, its owners, and `validateRouteStopSet`, and fails with `Invalid project backup: <message>`; a `stopCode` must be a non-empty string. Sets are pruned against the imported Routes and Patterns. Import as copy remaps the set, Route, Scenario, Pattern keys and `afterPatternPointId`, and keeps stop and placement IDs. Versions 1 to 12 stay readable and import with no stops; every check that applied to version 12 applies to version 13.
+Version 14 (current, Decision 0080) adds the optional `timepointStopCodesByPatternId` to each stop set and no longer writes `Node.stopCode`. Import checks that each value is a non-blank string of a point of its pattern. A version 13 file's `Node.stopCode` is moved onto every point of its Route's patterns that stands on that Node (a point that already has a stop ID keeps it), and a Route without a stop set gets one.
+
+Version 13 adds the optional top-level `routeStopSets` array (Decision 0079; omitted when no Route has stops) and the optional `Node.stopCode`. Import validates each set's shape (string IDs, `roundingSeconds` of 30 or 60, stops with an `id` and `name`, placements with string IDs, a whole `sequence` of 0 or more, and a known `timing`), its metadata, its owners, and `validateRouteStopSet`, and fails with `Invalid project backup: <message>`; a `stopCode` must be a non-empty string. Sets are pruned against the imported Routes and Patterns. Import as copy remaps the set, Route, Scenario, Pattern keys and `afterPatternPointId`, and keeps stop and placement IDs. Versions 1 to 12 stay readable and import with no stops; every check that applied to version 12 applies to version 13.
 
 Version 12 differs from version 11 only by the optional `routeEstimateFactors` array inside a Costing assumptions record (Decision 0077). Its validation requires an array whose entries each name a Trip Profile and a Route of the same Scenario, each pair at most once, with factors valid as for `estimateFactors`; a version 1 to 11 file's field is dropped. Scenario duplication and import as copy remap the Trip Profile, Route and service-day IDs. `CostingCommands.saveRouteEstimateFactors` writes one pair's entry and removes it when the factors are all blank; Route deletion removes a Route's entries in the same write, and Route duplication copies them.
 

@@ -9,11 +9,11 @@ import { normalizeServiceDayAbbreviation, sortServiceDays, validateServiceDayAbb
 import { applySegmentRuntimePlan, defaultBandPairs, planCopyToOthers, planFillFromOthers, planValueCopy, qualifyingProfiles, type BandPairs, type ValueCopyRequest, type SegmentRuntimePlan } from '../domain/segmentRuntimeMatching';
 import { formatServiceTime } from '../domain/time';
 import { copyRuntimeProfile, normalizeRuntimeProfile, reverseCopyRuntimeProfile, routeRuntimeCalculationMethod, unifyRouteRuntimeCalculationMethods, validateRuntimeProfile, withRuntimeCalculationRevision, RuntimeProfileDeletionError, type RuntimeCalculationMethod } from '../domain/runtime';
-import type { Block, BlockActivity, Node, PatternStopPlacement, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RouteStop, RouteStopSet, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, StopTimeRoundingSeconds, ValidationFinding } from '../domain/types';
+import type { Block, BlockActivity, Node, PatternStopPlacement, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RouteStop, RouteStopSet, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, StopTimeRoundingSeconds, TimepointStopCodes, ValidationFinding } from '../domain/types';
 import { validateNodeDeletion, validateRouteDefinition } from '../domain/validation';
 import { adjustBlockReferences } from '../domain/trips';
-import { normalizePlacements, pruneRouteStopSets, reconcilePlacements, validateRouteStopSet } from '../domain/stops';
-import { applyStopPlacementPlan, planStopCopy, planStopFill, stopCopyCandidatePatternIds, type StopPlacementPlan } from '../domain/stopPlacementMatching';
+import { normalizePlacements, normalizeTimepointStopCodes, pruneRouteStopSets, reconcilePlacements, reconcileTimepointStopCodes, validateRouteStopSet } from '../domain/stops';
+import { applyStopPlacementPlan, applyTimepointCodePlan, planStopCopy, planStopFill, stopCopyCandidatePatternIds, type StopPlacementPlan } from '../domain/stopPlacementMatching';
 import { authoritativeTripsCsv, blockActivitiesCsv, blocksCsv, directionColumnsCsv, directionsCsv, generationSetsCsv, nodesCsv, patternPointsCsv, patternsCsv, routeCsv, runtimeBandsCsv, scheduledPointsCsv, tripsCsv } from '../persistence/csv';
 import type { BackupPort, LocalDataProtection, RouteDefinitionRepository, SaveStatus } from './ports';
 import { assertReviewCurrent, fingerprint } from './reviewToken';
@@ -321,10 +321,14 @@ export interface RouteStopsEdit {
   stops: RouteStop[];
   /** The open pattern's whole placement list. */
   placements: PatternStopPlacement[];
+  /** Decision 0080. The open pattern's timepoint stop IDs by point ID; blank values are removed. */
+  timepointStopCodes: TimepointStopCodes;
   roundingSeconds: StopTimeRoundingSeconds;
   /** `updatedAt` of the stop set the editor loaded; undefined when the Route had none. */
   baseUpdatedAt?: string;
 }
+/** Decision 0080. The Stops drawer's draft of one pattern, as Fill reads and returns it. */
+export interface StopDraft { placements: PatternStopPlacement[]; timepointStopCodes: TimepointStopCodes }
 export class RouteStopValidationError extends Error {
   constructor(readonly findings: ValidationFinding[]) { super('Resolve the highlighted stop problems before saving.'); this.name = 'RouteStopValidationError'; }
 }
@@ -337,6 +341,8 @@ export interface StopPlacementPreview extends StopPlacementPlan {
   segmentLabels: Record<string, string[]>;
   /** Stop ID → name, for every stop a change or skip names. */
   stopNames: Record<string, string>;
+  /** Node ID → name, for every timepoint a code change or skip names (Decision 0080). */
+  nodeNames: Record<string, string>;
 }
 export const STOPS_CHANGED_ELSEWHERE = 'Stops changed after this editor opened. Close it and open it again.';
 export const STOP_COPY_UNDO_REFUSED = "These stops were changed after the copy, so it can't be undone.";
@@ -784,6 +790,10 @@ export class RouteDefinitionService {
       const placements = normalizePlacements(pattern, edit.placements);
       if (placements.length) placementsByPatternId[edit.patternId] = placements;
       else delete placementsByPatternId[edit.patternId];
+      const timepointStopCodesByPatternId: Record<string, TimepointStopCodes> = { ...stored?.timepointStopCodesByPatternId };
+      const codes = normalizeTimepointStopCodes(pattern, edit.timepointStopCodes);
+      if (Object.keys(codes).length) timepointStopCodesByPatternId[edit.patternId] = codes;
+      else delete timepointStopCodesByPatternId[edit.patternId];
       const next: RouteStopSet = {
         id: stored?.id ?? newId(),
         scenarioId: route.scenarioId,
@@ -794,6 +804,7 @@ export class RouteDefinitionService {
           return { id: stop.id, name: stop.name.trim(), ...(stopCode ? { stopCode } : {}) };
         }),
         placementsByPatternId,
+        ...(Object.keys(timepointStopCodesByPatternId).length ? { timepointStopCodesByPatternId } : {}),
         createdAt: stored?.createdAt ?? now,
         updatedAt: now,
       };
@@ -806,14 +817,17 @@ export class RouteDefinitionService {
   }
 
   /** Decision 0079 (model: Decision 0065). What "Fill stops from other patterns" would write into the draft. Synchronous; nothing is read or written. */
-  previewStopFill(aggregate: RouteDefinitionAggregate, set: RouteStopSet | undefined, pattern: RoutePattern, draftPlacements: PatternStopPlacement[]): StopPlacementPreview {
-    const plan = planStopFill({ openPattern: pattern, openPlacements: draftPlacements, patterns: aggregate.patterns, placementsByPatternId: set?.placementsByPatternId ?? {} });
+  previewStopFill(aggregate: RouteDefinitionAggregate, set: RouteStopSet | undefined, pattern: RoutePattern, draft: StopDraft): StopPlacementPreview {
+    const plan = planStopFill({ openPattern: pattern, openPlacements: draft.placements, openCodes: draft.timepointStopCodes, patterns: aggregate.patterns, placementsByPatternId: set?.placementsByPatternId ?? {}, codesByPatternId: set?.timepointStopCodesByPatternId ?? {} });
     return this.describeStopPlacementPlan(plan, { scenarioId: aggregate.route.scenarioId, routeId: aggregate.route.id, excludedPatternIds: [], copyCandidates: [], patterns: aggregate.patterns, nodes: aggregate.nodes, draft: pattern, set });
   }
 
-  /** Returns the draft's placements with the previewed fill applied. Nothing is written; the draft goes through the normal save. */
-  applyStopFill(pattern: RoutePattern, draftPlacements: PatternStopPlacement[], preview: StopPlacementPreview): PatternStopPlacement[] {
-    return applyStopPlacementPlan([pattern], { [pattern.id]: draftPlacements }, preview, newId)[pattern.id] ?? draftPlacements;
+  /** Returns the draft with the previewed fill applied. Nothing is written; the draft goes through the normal save. */
+  applyStopFill(pattern: RoutePattern, draft: StopDraft, preview: StopPlacementPreview): StopDraft {
+    return {
+      placements: applyStopPlacementPlan([pattern], { [pattern.id]: draft.placements }, preview, newId)[pattern.id] ?? draft.placements,
+      timepointStopCodes: applyTimepointCodePlan([pattern], { [pattern.id]: draft.timepointStopCodes }, preview)[pattern.id] ?? draft.timepointStopCodes,
+    };
   }
 
   /** Decision 0079 (model: Decision 0065). What "Copy stops to other patterns" would write from the stored pattern; nothing is written. */
@@ -825,8 +839,9 @@ export class RouteDefinitionService {
     const patterns = records.patterns.filter((pattern) => pattern.routeId === stored.routeId);
     const set = (records.routeStopSets ?? []).find((candidate) => candidate.routeId === stored.routeId);
     const placements = set?.placementsByPatternId[patternId] ?? [];
-    if (placements.length === 0) throw new Error("Save this pattern's stops before copying them.");
-    const plan = planStopCopy({ openPattern: stored, openPlacements: placements, patterns, placementsByPatternId: set?.placementsByPatternId ?? {}, excludedPatternIds });
+    const codes = set?.timepointStopCodesByPatternId?.[patternId] ?? {};
+    if (placements.length === 0 && Object.keys(codes).length === 0) throw new Error("Save this pattern's stops before copying them.");
+    const plan = planStopCopy({ openPattern: stored, openPlacements: placements, openCodes: codes, patterns, placementsByPatternId: set?.placementsByPatternId ?? {}, codesByPatternId: set?.timepointStopCodesByPatternId ?? {}, excludedPatternIds });
     return this.describeStopPlacementPlan(plan, { scenarioId: stored.scenarioId, routeId: stored.routeId, excludedPatternIds, copyCandidates: stopCopyCandidatePatternIds(stored, patterns), patterns, nodes: records.nodes.filter((node) => node.routeId === stored.routeId), draft: stored, set });
   }
 
@@ -835,7 +850,7 @@ export class RouteDefinitionService {
    * preview, nothing is written. The set is validated, and one error aborts the whole write.
    */
   async applyStopCopy(preview: StopPlacementPreview): Promise<RouteStopSet> {
-    if (!preview.changes.length) throw new Error('No stops would change.');
+    if (!preview.changes.length && !preview.codeChanges.length) throw new Error('No stops would change.');
     const result: { set?: RouteStopSet; undo?: StopCopyUndo } = {};
     await this.updateScenarioRecords(preview.scenarioId, (current) => {
       const patterns = current.patterns.filter((pattern) => pattern.routeId === preview.routeId);
@@ -843,13 +858,15 @@ export class RouteDefinitionService {
       if (!open) throw new Error('The selected Pattern is no longer available.');
       const stored = (current.routeStopSets ?? []).find((set) => set.routeId === preview.routeId);
       const placementsByPatternId = stored?.placementsByPatternId ?? {};
-      const plan = planStopCopy({ openPattern: open, openPlacements: placementsByPatternId[open.id] ?? [], patterns, placementsByPatternId, excludedPatternIds: preview.excludedPatternIds });
-      if (!stored || JSON.stringify(plan.changes) !== JSON.stringify(preview.changes)) throw new Error(STOP_COPY_PREVIEW_STALE);
+      const codesByPatternId = stored?.timepointStopCodesByPatternId ?? {};
+      const plan = planStopCopy({ openPattern: open, openPlacements: placementsByPatternId[open.id] ?? [], openCodes: codesByPatternId[open.id] ?? {}, patterns, placementsByPatternId, codesByPatternId, excludedPatternIds: preview.excludedPatternIds });
+      if (!stored || JSON.stringify([plan.changes, plan.codeChanges]) !== JSON.stringify([preview.changes, preview.codeChanges])) throw new Error(STOP_COPY_PREVIEW_STALE);
       const applied = applyStopPlacementPlan(patterns, placementsByPatternId, plan, newId);
-      const next = withUpdatedAt({ ...stored, placementsByPatternId: { ...placementsByPatternId, ...applied } }, this.now());
+      const appliedCodes = applyTimepointCodePlan(patterns, codesByPatternId, plan);
+      const next = withUpdatedAt({ ...stored, placementsByPatternId: { ...placementsByPatternId, ...applied }, ...(plan.codeChanges.length ? { timepointStopCodesByPatternId: { ...codesByPatternId, ...appliedCodes } } : {}) }, this.now());
       const findings = validateRouteStopSet(next, patterns);
       if (findings.some((finding) => finding.severity === 'error')) throw new RouteStopValidationError(findings);
-      result.undo = { routeId: preview.routeId, scenarioId: preview.scenarioId, before: stored, writtenUpdatedAt: next.updatedAt, patternCount: new Set(plan.changes.map((change) => change.patternId)).size };
+      result.undo = { routeId: preview.routeId, scenarioId: preview.scenarioId, before: stored, writtenUpdatedAt: next.updatedAt, patternCount: plan.affectedPatterns.length };
       result.set = next;
       return { ...current, routeStopSets: (current.routeStopSets ?? []).map((set) => set.id === stored.id ? next : set) };
     });
@@ -900,7 +917,9 @@ export class RouteDefinitionService {
       const stop = stopById.get(entry.stopId);
       if (stop) stopNames[stop.id] = stop.name;
     }
-    return { ...plan, scenarioId: scope.scenarioId, routeId: scope.routeId, excludedPatternIds: plan.mode === 'copyToOthers' ? scope.excludedPatternIds : [], copyCandidates, patternNames, segmentLabels, stopNames };
+    const nodeNames: Record<string, string> = {};
+    for (const item of [...plan.codeChanges, ...plan.codeSkips]) nodeNames[item.nodeId] = scope.nodes.find((node) => node.id === item.nodeId)?.name || 'Unnamed point';
+    return { ...plan, scenarioId: scope.scenarioId, routeId: scope.routeId, excludedPatternIds: plan.mode === 'copyToOthers' ? scope.excludedPatternIds : [], copyCandidates, patternNames, segmentLabels, stopNames, nodeNames };
   }
 
   private describeSegmentDistancePlan(plan: SegmentDistancePlan, scope:{ scenarioId: string; routeId: string; excludedPatternIds: string[]; copyCandidates: string[]; patterns: RoutePattern[]; nodes: Node[]; draft: RoutePattern }): SegmentDistancePreview {
@@ -1639,13 +1658,21 @@ export class RouteDefinitionService {
     const now = this.now();
     const sets = next.routeStopSets.map((set) => {
       let placementsByPatternId = set.placementsByPatternId;
+      let codesByPatternId = set.timepointStopCodesByPatternId;
       for (const change of changes) {
         const placements = set.placementsByPatternId[change.saved.id];
-        if (!placements) continue;
-        const reconciled = reconcilePlacements(change.saved, change.next, placements).placements;
-        if (JSON.stringify(reconciled) !== JSON.stringify(placements)) placementsByPatternId = { ...placementsByPatternId, [change.saved.id]: reconciled };
+        if (placements) {
+          const reconciled = reconcilePlacements(change.saved, change.next, placements).placements;
+          if (JSON.stringify(reconciled) !== JSON.stringify(placements)) placementsByPatternId = { ...placementsByPatternId, [change.saved.id]: reconciled };
+        }
+        // Decision 0080: a timepoint stop ID goes with its point, and when the point is moved to another Node.
+        const codes = set.timepointStopCodesByPatternId?.[change.saved.id];
+        if (codes) {
+          const reconciled = reconcileTimepointStopCodes(change.saved, change.next, codes).codes;
+          if (JSON.stringify(reconciled) !== JSON.stringify(codes)) codesByPatternId = { ...codesByPatternId, [change.saved.id]: reconciled };
+        }
       }
-      return placementsByPatternId === set.placementsByPatternId ? set : withUpdatedAt({ ...set, placementsByPatternId }, now);
+      return placementsByPatternId === set.placementsByPatternId && codesByPatternId === set.timepointStopCodesByPatternId ? set : withUpdatedAt({ ...set, placementsByPatternId, ...(codesByPatternId ? { timepointStopCodesByPatternId: codesByPatternId } : {}) }, now);
     });
     return { ...next, routeStopSets: pruneRouteStopSets(sets, { routes: next.routes, patterns: next.patterns }) };
   }

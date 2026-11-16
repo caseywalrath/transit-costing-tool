@@ -9,8 +9,8 @@ const withoutExportedAt = (payload: string) => { const { exportedAt: _ignored, .
 const sortedPoints = (points: Array<{ sequence: number; id: string }>) => [...points].sort((left, right) => left.sequence - right.sequence);
 
 /**
- * The golden Federal project (one Route) with a stop set on the first pattern of its Route, and a stop code on the first Node.
- * Stop A is placed after the first point (timing `previous`), stop B after the third point (timing `next`). Decision 0079.
+ * The golden Federal project (one Route) with a stop set on the first pattern of its Route, and a stop ID on that pattern's first timepoint.
+ * Stop A is placed after the first point (timing `previous`), stop B after the third point (timing `next`). Decisions 0079 and 0080.
  */
 function goldenWithStops(): ProjectSnapshot {
   const snapshot = importProjectJson(JSON.stringify(goldenRaw()));
@@ -26,22 +26,56 @@ function goldenWithStops(): ProjectSnapshot {
         { id: 'placement-b', stopId: 'stop-b', afterPatternPointId: points[2].id, sequence: 0, timing: 'next' },
       ],
     },
+    timepointStopCodesByPatternId: { [pattern.id]: { [points[0].id]: 'N1' } },
     ...stamp,
   };
-  snapshot.nodes[0] = { ...snapshot.nodes[0], stopCode: 'N1' };
   return { ...snapshot, routeStopSets: [set] };
 }
 
+/** A schema 13 file of the golden project: one Node with a stop ID, and no stop sets. */
+function version13WithNodeStopCode() {
+  const file = JSON.parse(exportProjectJson(importProjectJson(JSON.stringify(goldenRaw()))));
+  file.exportSchemaVersion = 13;
+  const pattern = file.patterns[0];
+  const nodeId: string = (sortedPoints(pattern.points)[0] as unknown as { nodeId: string }).nodeId;
+  file.nodes.find((node: { id: string }) => node.id === nodeId).stopCode = ' N1 ';
+  return { file, nodeId };
+}
+
 describe('Route stop sets in backups (Decision 0079)', () => {
-  it('round trips a schema 13 file exactly: stop sets and Node stop codes survive export and import', () => {
+  it('round trips a schema 14 file exactly: stop sets and timepoint stop IDs survive export and import', () => {
     const snapshot = goldenWithStops();
     const payload = exportProjectJson(snapshot);
-    expect(JSON.parse(payload).exportSchemaVersion).toBe(13);
+    expect(JSON.parse(payload).exportSchemaVersion).toBe(14);
     expect(JSON.parse(payload).routeStopSets).toEqual(snapshot.routeStopSets);
     const restored = importProjectJson(payload);
     expect(restored.routeStopSets).toEqual(snapshot.routeStopSets);
-    expect(restored.nodes.find((node) => node.id === snapshot.nodes[0].id)?.stopCode).toBe('N1');
     expect(withoutExportedAt(exportProjectJson(restored))).toEqual(withoutExportedAt(payload));
+  });
+
+  it('a version 13 file moves a Node stop ID to every point on that Node of the Route\'s patterns (Decision 0080)', () => {
+    const { file, nodeId } = version13WithNodeStopCode();
+    const restored = importProjectJson(JSON.stringify(file));
+    expect(restored.nodes.some((node) => 'stopCode' in node)).toBe(false);
+    const [set] = restored.routeStopSets!;
+    expect(set.stops).toEqual([]);
+    const expected = Object.fromEntries(restored.patterns
+      .filter((pattern) => pattern.points.some((point) => point.nodeId === nodeId))
+      .map((pattern) => [pattern.id, Object.fromEntries(pattern.points.filter((point) => point.nodeId === nodeId).map((point) => [point.id, 'N1']))]));
+    expect(Object.keys(expected).length).toBeGreaterThan(0);
+    expect(set.timepointStopCodesByPatternId).toEqual(expected);
+    // The converted file exports as schema 14 and imports again unchanged.
+    const again = importProjectJson(exportProjectJson(restored));
+    expect(again.routeStopSets).toEqual(restored.routeStopSets);
+  });
+
+  it('a version 13 Node stop ID does not replace a point stop ID the file already has', () => {
+    const { file, nodeId } = version13WithNodeStopCode();
+    const pattern = file.patterns.find((candidate: { points: Array<{ nodeId: string }> }) => candidate.points.some((point) => point.nodeId === nodeId));
+    const point = pattern.points.find((candidate: { nodeId: string }) => candidate.nodeId === nodeId);
+    file.routeStopSets = [{ id: 'set', scenarioId: pattern.scenarioId, routeId: pattern.routeId, roundingSeconds: 60, stops: [], placementsByPatternId: {}, timepointStopCodesByPatternId: { [pattern.id]: { [point.id]: 'KEEP' } }, ...stamp }];
+    const restored = importProjectJson(JSON.stringify(file));
+    expect(restored.routeStopSets![0].timepointStopCodesByPatternId![pattern.id][point.id]).toBe('KEEP');
   });
 
   it('a project without stops exports no routeStopSets key', () => {
@@ -74,7 +108,7 @@ describe('Route stop sets in backups (Decision 0079)', () => {
       generationSets: [], trips: [], blocks: [],
     } as unknown as Parameters<typeof exportProjectJson>[0];
     const file = JSON.parse(exportProjectJson(source));
-    expect(file.exportSchemaVersion).toBe(13);
+    expect(file.exportSchemaVersion).toBe(14);
     file.exportSchemaVersion = 12;
     const restored = importProjectJson(JSON.stringify(file));
     expect(restored.costingAssumptions?.[0].routeEstimateFactors).toEqual(routeEntries);
@@ -100,6 +134,11 @@ describe('Route stop sets in backups (Decision 0079)', () => {
     const sourcePlacements = sourceSet.placementsByPatternId[sourcePattern.id];
     expect(copyPlacements.map((placement) => placement.id)).toEqual(sourcePlacements.map((placement) => placement.id));
     expect(copyPlacements.map((placement) => indexIn(copyPattern.points, placement.afterPatternPointId))).toEqual(sourcePlacements.map((placement) => indexIn(sourcePattern.points, placement.afterPatternPointId)));
+    // Decision 0080: the timepoint stop ID follows its pattern and point.
+    const [copyPointId] = Object.keys(copySet.timepointStopCodesByPatternId![copyPattern.id]);
+    const [sourcePointId] = Object.keys(sourceSet.timepointStopCodesByPatternId![sourcePattern.id]);
+    expect(indexIn(copyPattern.points, copyPointId)).toBe(indexIn(sourcePattern.points, sourcePointId));
+    expect(copySet.timepointStopCodesByPatternId![copyPattern.id][copyPointId]).toBe('N1');
   });
 
   it('import drops placements of a pattern the file does not contain', () => {
@@ -122,9 +161,18 @@ describe('Route stop sets in backups (Decision 0079)', () => {
     expect(() => importProjectJson(JSON.stringify(file))).toThrow(message);
   });
 
-  it('refuses a blank Node stop code', () => {
-    const file = JSON.parse(exportProjectJson(goldenWithStops()));
+  it('refuses a blank Node stop code in a version 13 file', () => {
+    const { file } = version13WithNodeStopCode();
     file.nodes[0].stopCode = '   ';
     expect(() => importProjectJson(JSON.stringify(file))).toThrow(/nodes\[0\]\.stopCode/);
+  });
+
+  it.each([
+    ['a blank timepoint stop ID', (set: any) => { const [patternId] = Object.keys(set.timepointStopCodesByPatternId); const [pointId] = Object.keys(set.timepointStopCodesByPatternId[patternId]); set.timepointStopCodesByPatternId[patternId][pointId] = ' '; }, /must be a non-blank string/],
+    ['a timepoint stop ID of a missing point', (set: any) => { const [patternId] = Object.keys(set.timepointStopCodesByPatternId); set.timepointStopCodesByPatternId[patternId]['no-such-point'] = 'X'; }, /missing timepoint/],
+  ])('refuses a stop set with %s (Decision 0080)', (_label, change, message) => {
+    const file = JSON.parse(exportProjectJson(goldenWithStops()));
+    change(file.routeStopSets[0]);
+    expect(() => importProjectJson(JSON.stringify(file))).toThrow(message);
   });
 });

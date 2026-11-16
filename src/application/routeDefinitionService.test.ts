@@ -1083,7 +1083,12 @@ describe('route stops (Decision 0079)', () => {
   /** Saves one pattern's placements, with the stored stamp, so the save is not refused as stale. */
   async function saveStops(service: RouteDefinitionService, routeId: string, patternId: string, placements: PatternStopPlacement[]) {
     const stored = await service.getRouteStopSet(routeId);
-    return service.saveRouteStops({ routeId, patternId, stops: STOPS, placements, roundingSeconds: 60, baseUpdatedAt: stored?.updatedAt });
+    return service.saveRouteStops({ routeId, patternId, stops: STOPS, placements, timepointStopCodes: stored?.timepointStopCodesByPatternId?.[patternId] ?? {}, roundingSeconds: 60, baseUpdatedAt: stored?.updatedAt });
+  }
+  /** Saves one pattern's timepoint stop IDs, keeping its stored placements (Decision 0080). */
+  async function saveCodes(service: RouteDefinitionService, routeId: string, patternId: string, timepointStopCodes: Record<string, string>) {
+    const stored = await service.getRouteStopSet(routeId);
+    return service.saveRouteStops({ routeId, patternId, stops: stored?.stops ?? [], placements: stored?.placementsByPatternId[patternId] ?? [], timepointStopCodes, roundingSeconds: 60, baseUpdatedAt: stored?.updatedAt });
   }
 
   it('saves a stop list, trims names and Stop IDs, renumbers sequences, and removes the set when no placement is left', async () => {
@@ -1093,11 +1098,12 @@ describe('route stops (Decision 0079)', () => {
       routeId, patternId: trunk.id, roundingSeconds: 60,
       stops: [{ id: 'elm', name: '  Elm Street  ', stopCode: ' 1001 ' }, { id: 'oak', name: 'Oak Avenue', stopCode: '   ' }],
       placements: [{ id: 'a', stopId: 'elm', afterPatternPointId: south, sequence: 5, timing: 'interpolate' }, { id: 'b', stopId: 'oak', afterPatternPointId: south, sequence: 9, timing: 'previous' }],
+      timepointStopCodes: {},
     });
     expect(saved?.stops).toEqual([{ id: 'elm', name: 'Elm Street', stopCode: '1001' }, { id: 'oak', name: 'Oak Avenue' }]);
     expect(saved?.placementsByPatternId[trunk.id].map((item) => item.sequence)).toEqual([0, 1]);
     expect(await service.getRouteStopSet(routeId)).toEqual(saved);
-    expect(await service.saveRouteStops({ routeId, patternId: trunk.id, roundingSeconds: 60, stops: saved!.stops, placements: [], baseUpdatedAt: saved!.updatedAt })).toBeUndefined();
+    expect(await service.saveRouteStops({ routeId, patternId: trunk.id, roundingSeconds: 60, stops: saved!.stops, placements: [], timepointStopCodes: {}, baseUpdatedAt: saved!.updatedAt })).toBeUndefined();
     expect(await service.getRouteStopSet(routeId)).toBeUndefined();
   });
 
@@ -1105,14 +1111,14 @@ describe('route stops (Decision 0079)', () => {
     const { service, repository, scenarioId, routeId, trunk } = await stopRoute();
     await saveStops(service, routeId, trunk.id, [placement('elm', pointIds(trunk)[0])]);
     const before = JSON.stringify(await repository.getScenarioRecords(scenarioId));
-    await expect(service.saveRouteStops({ routeId, patternId: trunk.id, stops: STOPS, placements: [], roundingSeconds: 60, baseUpdatedAt: undefined })).rejects.toThrow(STOPS_CHANGED_ELSEWHERE);
+    await expect(service.saveRouteStops({ routeId, patternId: trunk.id, stops: STOPS, placements: [], timepointStopCodes: {}, roundingSeconds: 60, baseUpdatedAt: undefined })).rejects.toThrow(STOPS_CHANGED_ELSEWHERE);
     expect(JSON.stringify(await repository.getScenarioRecords(scenarioId))).toBe(before);
   });
 
   it('refuses a duplicate Stop ID, ignoring case and surrounding spaces, and writes nothing', async () => {
     const { service, routeId, trunk } = await stopRoute();
     await expect(service.saveRouteStops({
-      routeId, patternId: trunk.id, roundingSeconds: 60, placements: [],
+      routeId, patternId: trunk.id, roundingSeconds: 60, placements: [], timepointStopCodes: {},
       stops: [{ id: 'a', name: 'A', stopCode: 'X1' }, { id: 'b', name: 'B', stopCode: ' x1 ' }],
     })).rejects.toMatchObject({ name: 'RouteStopValidationError', findings: [expect.objectContaining({ ruleId: 'routeStop.codeDuplicate', entityId: 'b' })] });
     expect(await service.getRouteStopSet(routeId)).toBeUndefined();
@@ -1122,11 +1128,11 @@ describe('route stops (Decision 0079)', () => {
     const { service, repository, scenarioId, routeId, aggregate, trunk, branch } = await stopRoute();
     await saveStops(service, routeId, trunk.id, [placement('elm', pointIds(trunk)[0])]);
     const before = JSON.stringify(await repository.getScenarioRecords(scenarioId));
-    const preview = service.previewStopFill(aggregate, await service.getRouteStopSet(routeId), branch, []);
+    const preview = service.previewStopFill(aggregate, await service.getRouteStopSet(routeId), branch, { placements: [], timepointStopCodes: {} });
     expect(preview.changes.map((change) => [change.patternId, change.segmentIndex])).toEqual([[branch.id, 0]]);
     expect(preview.stopNames).toEqual({ elm: 'Elm Street' });
-    const filled = service.applyStopFill(branch, [], preview);
-    expect(filled.map((item) => [item.stopId, item.afterPatternPointId])).toEqual([['elm', pointIds(branch)[0]]]);
+    const filled = service.applyStopFill(branch, { placements: [], timepointStopCodes: {} }, preview);
+    expect(filled.placements.map((item) => [item.stopId, item.afterPatternPointId])).toEqual([['elm', pointIds(branch)[0]]]);
     expect(JSON.stringify(await repository.getScenarioRecords(scenarioId))).toBe(before);
   });
 
@@ -1208,6 +1214,74 @@ describe('route stops (Decision 0079)', () => {
     const set = await service.getRouteStopSet(routeId);
     expect(set?.placementsByPatternId[trunk.id].map((item) => [item.stopId, item.afterPatternPointId])).toEqual([['elm', pointIds(trunk)[0]]]);
     expect(set?.placementsByPatternId[branch.id].map((item) => [item.stopId, item.afterPatternPointId])).toEqual([['oak', pointIds(branch)[0]]]);
+  });
+
+  describe('timepoint stop IDs (Decision 0080)', () => {
+    /** Adds Return, through Third, North, and South, in the Route's other direction. */
+    async function withReturn() {
+      const route = await stopRoute();
+      const directions = route.aggregate.directions ?? [];
+      const nodeIds = [...route.trunk.points].sort((left, right) => left.sequence - right.sequence).map((point) => point.nodeId).reverse();
+      const opposite = await savePattern(route.service, route.aggregate, { name: 'Return', directionId: directions[1].id, stops: nodeIds.map((nodeId, index) => ({ nodeId, miles: [0, 2.5, 4][index] })) });
+      expect(route.trunk.directionId).toBe(route.branch.directionId);
+      expect(opposite.pattern.directionId).not.toBe(route.trunk.directionId);
+      return { ...route, aggregate: opposite.aggregate, opposite: opposite.pattern };
+    }
+
+    it('saves trimmed stop IDs per point, drops blank ones, and keeps a set that holds only stop IDs', async () => {
+      const { service, routeId, trunk } = await stopRoute();
+      const [south, north, third] = pointIds(trunk);
+      const saved = await saveCodes(service, routeId, trunk.id, { [south]: ' 1001 ', [north]: '   ', [third]: '1003', 'not-a-point': 'X' });
+      expect(saved?.stops).toEqual([]);
+      expect(saved?.timepointStopCodesByPatternId).toEqual({ [trunk.id]: { [south]: '1001', [third]: '1003' } });
+      expect(await saveCodes(service, routeId, trunk.id, {})).toBeUndefined();
+    });
+
+    it('fill takes stop IDs from same-direction patterns only, and copy writes them to same-direction patterns only', async () => {
+      const { service, routeId, aggregate, trunk, branch, opposite } = await withReturn();
+      const [south] = pointIds(trunk);
+      await saveCodes(service, routeId, trunk.id, { [south]: '1001' });
+      await saveCodes(service, routeId, opposite.id, { [pointIds(opposite)[1]]: '2002' });
+
+      const fill = service.previewStopFill(aggregate, await service.getRouteStopSet(routeId), branch, { placements: [], timepointStopCodes: {} });
+      expect(fill.codeChanges.map((change) => [change.patternPointId, change.next, change.sourcePatternIds])).toEqual([[pointIds(branch)[0], '1001', [trunk.id]]]);
+      expect(fill.nodeNames).toEqual({ [trunk.points.find((point) => point.id === south)!.nodeId]: 'South' });
+      expect(service.applyStopFill(branch, { placements: [], timepointStopCodes: {} }, fill).timepointStopCodes).toEqual({ [pointIds(branch)[0]]: '1001' });
+
+      const copy = await service.previewStopCopy(trunk.id);
+      expect(copy.changes).toEqual([]);
+      expect(copy.codeChanges.map((change) => [change.patternId, change.patternPointId, change.next])).toEqual([[branch.id, pointIds(branch)[0], '1001']]);
+      expect(copy.copyCandidates.map((candidate) => candidate.patternId)).toEqual([branch.id]);
+      const written = await service.applyStopCopy(copy);
+      expect(written.timepointStopCodesByPatternId?.[branch.id]).toEqual({ [pointIds(branch)[0]]: '1001' });
+      expect(written.timepointStopCodesByPatternId?.[opposite.id]).toEqual({ [pointIds(opposite)[1]]: '2002' });
+      expect(service.getStopCopyUndo()).toEqual({ routeId, patternCount: 1 });
+      expect((await service.undoStopCopy())?.timepointStopCodesByPatternId?.[branch.id]).toBeUndefined();
+    });
+
+    it('fill reports a conflict when same-direction patterns disagree, and copy overwrites a different stop ID', async () => {
+      const { service, routeId, aggregate, trunk, branch } = await stopRoute();
+      const third = await savePattern(service, aggregate, { name: 'Third', stops: trunk.points.map((point) => ({ nodeId: point.nodeId })) });
+      await saveCodes(service, routeId, trunk.id, { [pointIds(trunk)[0]]: 'A' });
+      await saveCodes(service, routeId, branch.id, { [pointIds(branch)[0]]: 'B' });
+      const fill = service.previewStopFill(third.aggregate, await service.getRouteStopSet(routeId), third.pattern, { placements: [], timepointStopCodes: {} });
+      expect(fill.codeChanges).toEqual([]);
+      expect(fill.codeSkips).toEqual([expect.objectContaining({ patternId: third.pattern.id, reason: 'conflict', candidates: [{ stopCode: 'A', patternIds: [trunk.id] }, { stopCode: 'B', patternIds: [branch.id] }] })]);
+      const copy = await service.previewStopCopy(trunk.id, [third.pattern.id]);
+      expect(copy.codeChanges).toEqual([expect.objectContaining({ patternId: branch.id, previous: 'B', next: 'A' })]);
+      expect(copy.affectedPatterns).toEqual([{ patternId: branch.id, changeCount: 1, overwriteCount: 1 }]);
+    });
+
+    it('a pattern edit drops the stop ID of a removed point and of a point moved to another Node', async () => {
+      const { service, routeId, aggregate, trunk } = await stopRoute();
+      const [south, north, third] = pointIds(trunk);
+      await saveCodes(service, routeId, trunk.id, { [south]: '1001', [north]: '1002', [third]: '1003' });
+      const sorted = [...trunk.points].sort((left, right) => left.sequence - right.sequence);
+      const otherNode = aggregate.nodes.find((node) => node.id !== sorted[0].nodeId && node.id !== sorted[1].nodeId)!;
+      const preview = await service.previewPatternChange(routeId, trunk.id, { ...trunk, points: [sorted[0], { ...sorted[1], nodeId: otherNode.id }] });
+      await service.commitPatternChange(preview.previewToken);
+      expect((await service.getRouteStopSet(routeId))?.timepointStopCodesByPatternId).toEqual({ [trunk.id]: { [south]: '1001' } });
+    });
   });
 
   it('a Route rename leaves the stop set unchanged', async () => {

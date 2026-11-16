@@ -32,7 +32,7 @@ A stable ordered column in a direction-level schedule. A pattern point maps to a
 
 A scheduling location used by one or more route patterns. A node may be a timepoint, terminal, garage, or another location required for blocking. The first release primarily uses scheduling timepoints and terminals.
 
-A node is not necessarily every passenger stop on a route. Passenger stops between nodes are Route stops. A node may have an optional public stop ID (`stopCode`).
+A node is not necessarily every passenger stop on a route. Passenger stops between nodes are Route stops. A node has no stop ID of its own: the public stop ID of a timepoint is set per pattern in the Stops drawer (Decision 0080), because two directions can serve one node at different stops.
 
 ### Route stop
 

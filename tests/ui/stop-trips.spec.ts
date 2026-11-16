@@ -65,15 +65,15 @@ test('shows derived stop times, updates them from an unsaved rule and 30 s round
   const a = seconds(first[2]); const b = seconds(second[2]);
   // Two interpolated stops between A and B, rounded down to the minute: the j-th at A + (B − A) × j / 3.
   const at = (j: number, r: number) => clock(Math.max(a, Math.floor((a * 3 + (b - a) * j) / (3 * r)) * r));
-  expect((await rowCells(drawer, 'Wagon Rd & 120th')).slice(1, 3)).toEqual(['Interpolate', at(1, 60)]);
-  expect((await rowCells(drawer, 'Northgate')).slice(1, 3)).toEqual(['Interpolate', at(2, 60)]);
+  expect((await rowCells(drawer, 'Wagon Rd & 120th')).slice(1, 3)).toEqual(['Inter.', at(1, 60)]);
+  expect((await rowCells(drawer, 'Northgate')).slice(1, 3)).toEqual(['Inter.', at(2, 60)]);
   await expect(drawer.getByRole('rowheader', { name: /^Wagon Rd & 120th/ })).toContainText('9001');
 
   // An unsaved rule shows at once: Next timepoint takes B. Out of order ([next, interpolate]) shows the warning on the first row.
-  await drawer.getByLabel('Timing, Wagon Rd & 120th').selectOption({ label: 'Next timepoint' });
+  await drawer.getByLabel('Timing, Wagon Rd & 120th').selectOption({ label: 'Next' });
   expect((await rowCells(drawer, 'Wagon Rd & 120th'))[2]).toBe(second[2]);
   await expect(drawer.getByRole('img', { name: 'Stop timing rules are out of order here.' })).toHaveCount(1);
-  await drawer.getByLabel('Timing, Wagon Rd & 120th').selectOption({ label: 'Previous timepoint' });
+  await drawer.getByLabel('Timing, Wagon Rd & 120th').selectOption({ label: 'Prev.' });
   expect((await rowCells(drawer, 'Wagon Rd & 120th'))[2]).toBe(first[2]);
   await expect(drawer.getByRole('img', { name: 'Stop timing rules are out of order here.' })).toHaveCount(0);
 

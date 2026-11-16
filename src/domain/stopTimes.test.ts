@@ -52,9 +52,9 @@ describe('segmentStopTimes (Decision 0079, section 4.3)', () => {
 });
 
 describe('stopTimeRows (Decision 0079, section 8.3)', () => {
-  const nodeA: Node = { ...T, id: 'nA', scenarioId: 's', routeId: 'r', name: 'Alpha', shortName: 'AL', kind: 'timepoint', stopCode: '1001' };
+  const nodeA: Node = { ...T, id: 'nA', scenarioId: 's', routeId: 'r', name: 'Alpha', shortName: 'AL', kind: 'timepoint' };
   const nodeB: Node = { ...T, id: 'nB', scenarioId: 's', routeId: 'r', name: 'Bravo', kind: 'timepoint' };
-  const nodeC: Node = { ...T, id: 'nC', scenarioId: 's', routeId: 'r', name: 'Charlie', kind: 'timepoint', stopCode: '1003' };
+  const nodeC: Node = { ...T, id: 'nC', scenarioId: 's', routeId: 'r', name: 'Charlie', kind: 'timepoint' };
   const nodes = [nodeA, nodeB, nodeC];
   const pattern: RoutePattern = {
     ...T, id: 'P', scenarioId: 's', routeId: 'r', name: 'P',
@@ -85,6 +85,8 @@ describe('stopTimeRows (Decision 0079, section 8.3)', () => {
     placementsByPatternId: {
       P: [placement('y1', 'S1', 'pA', 0), placement('y2', 'S2', 'pB', 0), placement('y3', 'S3', 'pB', 1)],
     },
+    // Decision 0080: the timepoints' stop IDs on this pattern.
+    timepointStopCodesByPatternId: { P: { pA: '1001', pC: '1003' }, OTHER: { pB: '9999' } },
   };
 
   it('returns timepoint, stop, timepoint, stop, stop, timepoint in pattern order, with stop codes and unchanged timepoint times', () => {
@@ -99,6 +101,7 @@ describe('stopTimeRows (Decision 0079, section 8.3)', () => {
     ]);
     expect(rows[0]).toMatchObject({ nodeId: 'nA', stopCode: '1001', time: at(8, 0) });
     expect(rows[2].time).toBe(at(8, 10));
+    expect(rows[2].stopCode).toBeUndefined();
     expect(rows[5]).toMatchObject({ stopCode: '1003', time: at(8, 20) });
     expect(rows[1]).toMatchObject({ kind: 'stop', segmentIndex: 0, placementId: 'y1', stopId: 'S1', time: at(8, 5), timing: I });
     expect(rows[1].stopCode).toBeUndefined();
