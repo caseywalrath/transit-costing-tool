@@ -77,7 +77,7 @@
    it with an indent and a connecting rail, so a stop's place between two timepoints is visible. The Route tab keeps the drawer's width
    free on the right so the pattern editor's Actions menu is never covered. */
 .pattern-stops-drawer { width: min(460px, 42vw); }
-@media (min-width: 681px) { .route-workspace--stops-drawer { padding-right: calc(min(460px, 42vw) + var(--space-2)); } }
+@media (min-width: 681px) { .route-workspace--stops-drawer, .app-shell:has(.route-workspace--stops-drawer) .scope-bar { padding-right: calc(min(460px, 42vw) + var(--space-2)); } }
 .pattern-stops-drawer header h2 { display: grid; gap: 2px; margin: 0; font-size: var(--font-size-title); }
 .pattern-stops-drawer__pattern { overflow: hidden; color: var(--color-text-muted); font-size: var(--font-size-note); font-weight: var(--font-weight-regular); text-overflow: ellipsis; white-space: nowrap; }
 .pattern-stops-drawer header h2 { min-width: 0; }

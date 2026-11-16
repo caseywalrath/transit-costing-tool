@@ -219,7 +219,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
       {error && <p className="field-error" role="alert">{error}</p>}
     </div>
     <footer className={dirty ? 'pattern-stops-drawer__footer pattern-stops-drawer__footer--dirty' : 'pattern-stops-drawer__footer'}>
-      {dirty ? <SaveBar message={`${plural(count, 'unsaved change')} in stops`} saveLabel="Save stops" busy={busy} onSave={() => void save()} onDiscard={discard} /> : <button type="button" onClick={onClose} disabled={busy}>Close</button>}
+      {dirty ? <SaveBar message={plural(count, 'unsaved change')} saveLabel="Save stops" busy={busy} onSave={() => void save()} onDiscard={discard} /> : <button type="button" onClick={onClose} disabled={busy}>Close</button>}
     </footer>
     {dialog && <PatternStopsDialog service={service} mode={dialog} aggregate={aggregate} pattern={pattern} set={loaded?.set} draftPlacements={draft.placements} onFilled={(placements) => { edit({ ...draft, placements }); setDialog(undefined); }} onCopied={(set) => { accept(set); setDialog(undefined); }} onClose={() => setDialog(undefined)} />}
     {closePrompt && <DiscardRouteDraftDialog title="Discard unsaved stop changes?" onClose={() => setClosePrompt(false)} onDiscard={() => { setClosePrompt(false); onClose(); }} onSave={() => { setClosePrompt(false); void save().then((saved) => { if (saved) onClose(); }); }} />}

@@ -148,6 +148,16 @@ test('every dialog opened from the screens has an accessible name, and the axe d
   await page.keyboard.press('Escape');
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
 
+  // ST5 (Decision 0079): the Route tab's Stops drawer, with one unsaved stop row.
+  await page.getByRole('button', { name: 'Pattern actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Stops…', exact: true }).click();
+  const stopsDrawer = page.getByRole('complementary', { name: /^Stops/ });
+  await stopsDrawer.getByRole('button', { name: /^Add stop between/ }).first().click();
+  expect(await axeViolations(page)).toEqual([]);
+  await stopsDrawer.getByRole('button', { name: /^Remove / }).click();
+  await page.keyboard.press('Escape');
+  await expect(stopsDrawer).toHaveCount(0);
+
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await chooseScope(page, 'Day', { label: 'Weekday' });
   await expect(page.locator('.trips-workspace .schedule-table tbody tr').first()).toBeVisible({ timeout: 30_000 });
