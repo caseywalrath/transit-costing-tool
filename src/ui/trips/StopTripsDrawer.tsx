@@ -15,9 +15,9 @@ export type StopTripsService = Pick<RouteDefinitionApplication, 'getRouteStopSet
 export interface StopTripsHandle { save: () => Promise<boolean>; discard: () => void }
 
 const TIMING_OPTIONS: Array<{ value: StopTimingRule; text: string }> = [
-  { value: 'interpolate', text: 'Interpolate' },
-  { value: 'previous', text: 'Previous timepoint' },
-  { value: 'next', text: 'Next timepoint' },
+  { value: 'interpolate', text: 'Inter.' },
+  { value: 'previous', text: 'Prev.' },
+  { value: 'next', text: 'Next' },
 ];
 const ROUNDING_OPTIONS = [{ value: '60', text: 'Round down to 1 min' }, { value: '30', text: '30 s' }];
 const clock = (seconds: number | undefined) => seconds === undefined ? '' : formatServiceTime(seconds, seconds % 60 !== 0);

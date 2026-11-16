@@ -193,10 +193,17 @@
 .grid-table td.grid-cell select:hover, .grid-table td.grid-cell select:focus { border-color: var(--color-border); }
 .grid-cell__placeholder { color: var(--color-text-muted); }
 .route-nodes .grid-table { min-width: 0; table-layout: fixed; }
-.route-nodes .grid-table th:nth-child(1) { width: 36%; }
-.route-nodes .grid-table th:nth-child(2) { width: 16%; }
-.route-nodes .grid-table th:nth-child(3) { width: 104px; }
-.route-nodes .grid-table th:nth-child(5) { width: 48px; }
+/* Name takes the remaining width; the other columns are fixed so every header and value fits without a horizontal scroll bar. */
+.route-nodes .grid-table th:nth-child(2) { width: 84px; }
+.route-nodes .grid-table th:nth-child(3) { width: 100px; }
+.route-nodes .grid-table th:nth-child(4) { width: 68px; }
+.route-nodes .grid-table th:nth-child(5) { width: 40px; }
+@media (max-width: 520px) {
+  .route-nodes .grid-table th:nth-child(2) { width: 64px; }
+  .route-nodes .grid-table th:nth-child(3) { width: 88px; }
+  .route-nodes .grid-table th:nth-child(4) { width: 56px; }
+  .route-nodes .grid-table th:nth-child(5) { width: 36px; }
+}
 .route-nodes .grid-table td.grid-cell > span { overflow: hidden; text-overflow: ellipsis; }
 .route-nodes td select { min-width: 0; }
 .grid-table td.grid-cell:focus { outline: none; }
@@ -249,7 +256,7 @@
 /* ST6 (Decision 0079): the Stop trips drawer. Wider than Build trips, because it shows a grid: stops down, Trips across. The grid scrolls
    inside the drawer in both directions; the heading row and the stop name column stay in view. Timepoint rows are tinted and marked like
    the Route tab's Stops drawer, so the stops read as sitting between them. */
-.stop-trips-drawer { width: min(680px, 56vw); }
+.stop-trips-drawer { width: min(860px, 68vw); }
 .stop-trips-drawer__body { grid-template-rows: auto minmax(0, 1fr) auto; align-content: stretch; overflow: hidden; }
 .stop-trips-controls { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-2) var(--space-3); }
 .stop-trips-field { display: grid; gap: 5px; color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
@@ -266,7 +273,8 @@
 .stop-trips-grid__timepoint th, .stop-trips-grid__timepoint td, .stop-trips-grid tbody .stop-trips-grid__timepoint th.stop-trips-grid__stop { background: var(--color-surface-2); font-weight: var(--font-weight-semibold); }
 .stop-trips-grid__mark { display: inline-block; width: 10px; height: 10px; margin-right: var(--space-2); border: 2px solid var(--color-accent); border-radius: 50%; background: var(--color-surface); vertical-align: -1px; }
 .stop-trips-grid__code { margin-left: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-caption); font-variant-numeric: tabular-nums; font-weight: var(--font-weight-regular); }
-.stop-trips-grid__rule select { min-width: 0; height: 28px; font-size: var(--font-size-note); }
+.stop-trips-grid__rule { width: 5.5em; }
+.stop-trips-grid__rule select { width: 100%; min-width: 0; height: 28px; font-size: var(--font-size-note); }
 .stop-trips-grid__time { min-width: 4.5em; text-align: right; font-variant-numeric: tabular-nums; }
 .stop-trips-grid tbody td.stop-trips-grid__time { color: var(--color-text); }
 .stop-trips-grid__stop-row td.stop-trips-grid__time { color: var(--color-text-muted); }

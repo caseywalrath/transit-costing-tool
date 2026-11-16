@@ -13,7 +13,7 @@
 .route-setup__step[aria-current='step'] .route-setup__index { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-surface); }
 /* Route details stack their fields, so the two panels end at about the same height. */
 .route-top-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
-.route-bottom-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.6fr); gap: var(--space-4); align-items: start; }
+.route-bottom-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: var(--space-4); align-items: start; }
 .route-details-fields { grid-template-columns: minmax(0, 1fr); margin-top: 0; }
 .service-days-table th:last-child, .service-days-table td:last-child { width: 9em; }
 /* The Abbr. column takes its width from the Service day column, so the table keeps its overall width (Decision 0059). */

@@ -1,4 +1,4 @@
-// UR-7b: the Nodes table (Name, Short, Notes) and the Pattern points' Cumulative mi are spreadsheet grids (useGridNavigation). Type and the
+// UR-7b: the Nodes table (Name, Short, Type, Stop ID) and the Pattern points' Cumulative mi are spreadsheet grids (useGridNavigation). Type and the
 // points' Node stay selects, reached with Tab. Service-day count fields stay ordinary inputs that save on commit and show "Saved".
 import { expect, test, type Page } from '@playwright/test';
 import { createRouteWithPattern } from './support/tripsWorkspace';
@@ -23,12 +23,12 @@ test('Nodes: arrows, Enter edit, Tab through the Type select, edited marks, and 
   expect(await page.evaluate(() => document.activeElement?.textContent)).toBe(secondName);
   await page.keyboard.press('ArrowRight');
   expect(await focusedCell(page)).toBe('Node short name');
-  // Tab moves to the Type select, then to Notes; Shift+Tab goes back.
+  // Tab moves to the Type select, then to Stop ID; Shift+Tab goes back.
   await page.keyboard.press('Tab');
   expect(await focusedCell(page)).toBe('Node type');
   expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('SELECT');
   await page.keyboard.press('Tab');
-  expect(await focusedCell(page)).toBe('Node notes');
+  expect(await focusedCell(page)).toBe('Node stop ID');
   await page.keyboard.press('Shift+Tab');
   expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('SELECT');
   await gridCell(page, 'Node name').nth(1).click();
@@ -91,10 +91,8 @@ test('Nodes and Pattern points: Tab wraps from the end of a row to the start of 
   const focusedName = () => page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.closest('[data-cell]')?.getAttribute('data-cell') ?? '');
   const focusedText = () => page.evaluate(() => document.activeElement?.textContent ?? '');
 
-  // Decision 0079 (ST4): the Node stop ID cell is the row's last cell, after Notes and before the remove button.
-  await gridCell(page, 'Node notes').first().click();
-  await page.keyboard.press('Tab');
-  expect(await focusedCell(page)).toBe('Node stop ID');
+  // Decision 0079 (ST4): the Node stop ID cell is the row's last cell, after Type and before the remove button.
+  await gridCell(page, 'Node stop ID').first().click();
   await page.keyboard.press('Tab');
   expect(await focusedName()).toBe(`Remove ${firstName}`);
   await page.keyboard.press('Tab');
@@ -104,9 +102,6 @@ test('Nodes and Pattern points: Tab wraps from the end of a row to the start of 
   expect(await focusedName()).toBe(`Remove ${firstName}`);
   await page.keyboard.press('Shift+Tab');
   expect(await focusedCell(page)).toBe('Node stop ID');
-  await page.keyboard.press('Shift+Tab');
-  expect(await focusedCell(page)).toBe('Node notes');
-  await page.keyboard.press('Tab');
   // Tab that commits an edit in the row's last cell moves on the same way.
   await page.keyboard.press('Enter');
   await page.keyboard.type('S1');
