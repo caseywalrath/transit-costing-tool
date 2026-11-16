@@ -3,9 +3,9 @@ import { asSnapshot, goldenRaw, goldenWithAltBlocking, goldenWithDeadhead } from
 import { summarizeBlock } from './blocking';
 import { evaluateBlockEligibility } from './costing';
 import { metadata } from './ids';
-import { createScenarioRecords, duplicateRouteRecords, duplicateScenario, projectLastChangedAt, snapshotForScenario } from './project';
+import { createScenarioRecords, duplicateRouteRecords, duplicateScenario, projectLastChangedAt, projectSnapshotWithScenario, snapshotForScenario } from './project';
 import { assertTripProfileReferences } from './trips';
-import type { Block, BlockingBlock, CostingAssumptions, ProjectSnapshot, Trip } from './types';
+import type { Block, BlockingBlock, CostingAssumptions, ProjectSnapshot, RouteStopSet, Trip } from './types';
 
 describe('scenario duplication', () => {
   it('creates the four standard service days for a new scenario', () => {
@@ -256,8 +256,68 @@ describe('projectLastChangedAt', () => {
     expect(projectLastChangedAt({ ...base(), costingAssumptions: [{ updatedAt: at(9) } as CostingAssumptions] })).toBe(at(9));
   });
 
+  it('reads the stop sets (Decision 0079)', () => {
+    expect(projectLastChangedAt({ ...base(), routeStopSets: [{ updatedAt: at(8) } as RouteStopSet] })).toBe(at(8));
+  });
+
   it('ignores values that are not dates', () => {
     expect(projectLastChangedAt({ ...base(), trips: [{ updatedAt: 'not a date' } as Trip], blocks: [{ updatedAt: at(4) } as Block] })).toBe(at(4));
     expect(projectLastChangedAt({ ...base(), trips: [{ updatedAt: 'not a date' } as Trip] })).toBe(at(1));
+  });
+});
+
+describe('route stop sets in duplication and snapshots (Decision 0079)', () => {
+  const at = '2026-02-01T00:00:00.000Z';
+  // The golden Route's first pattern carries one stop, placed after its first point.
+  const withStops = () => {
+    const snapshot = asSnapshot(goldenRaw());
+    const records = snapshotForScenario(snapshot, snapshot.scenarios[0].id)!;
+    const route = records.routes[0];
+    const pattern = records.patterns.find((candidate) => candidate.routeId === route.id)!;
+    const firstPoint = [...pattern.points].sort((left, right) => left.sequence - right.sequence)[0];
+    const set: RouteStopSet = {
+      id: 'stop-set', scenarioId: records.scenario.id, routeId: route.id, roundingSeconds: 60,
+      stops: [{ id: 'stop-a', name: 'Stop A' }],
+      placementsByPatternId: { [pattern.id]: [{ id: 'placement-a', stopId: 'stop-a', afterPatternPointId: firstPoint.id, sequence: 0, timing: 'interpolate' }] },
+      ...metadata(at),
+    };
+    return { snapshot, records: { ...records, routeStopSets: [set] }, set, route, pattern };
+  };
+
+  it('a Route duplicate copies its stop set onto the new Route, with the copy\'s pattern and point IDs, and leaves the source unchanged', () => {
+    const { records, set, route } = withStops();
+    const before = JSON.stringify(records.routeStopSets);
+    const duplicate = duplicateRouteRecords(records, route.id, 'Route Copy', at);
+    const copied = duplicate.records.routeStopSets!.filter((candidate) => candidate.routeId === duplicate.route.id);
+    expect(copied).toHaveLength(1);
+    const copyPattern = duplicate.records.patterns.find((candidate) => candidate.routeId === duplicate.route.id)!;
+    const copyFirstPoint = [...copyPattern.points].sort((left, right) => left.sequence - right.sequence)[0];
+    expect(copied[0].id).not.toBe(set.id);
+    expect(copied[0].scenarioId).toBe(records.scenario.id);
+    expect(copied[0].stops.map((stop) => stop.id)).toEqual(['stop-a']);
+    expect(Object.keys(copied[0].placementsByPatternId)).toEqual([copyPattern.id]);
+    expect(copied[0].placementsByPatternId[copyPattern.id][0].afterPatternPointId).toBe(copyFirstPoint.id);
+    expect(duplicate.records.routeStopSets).toHaveLength(2);
+    expect(JSON.stringify(records.routeStopSets)).toBe(before);
+  });
+
+  it('a Scenario duplicate remaps the Route, pattern and point references of its stop sets', () => {
+    const { records, set } = withStops();
+    const copy = duplicateScenario(records, 'Copy', at);
+    const [copied] = copy.routeStopSets!;
+    expect(copied.id).not.toBe(set.id);
+    expect(copied.scenarioId).toBe(copy.scenario.id);
+    expect(copy.routes.some((route) => route.id === copied.routeId)).toBe(true);
+    const copyPattern = copy.patterns.find((pattern) => pattern.routeId === copied.routeId)!;
+    expect(Object.keys(copied.placementsByPatternId)).toEqual([copyPattern.id]);
+    expect(copyPattern.points.some((point) => point.id === copied.placementsByPatternId[copyPattern.id][0].afterPatternPointId)).toBe(true);
+  });
+
+  it('snapshotForScenario and projectSnapshotWithScenario carry the stop sets of their Scenario only', () => {
+    const { snapshot, records } = withStops();
+    const withSets = { ...snapshot, routeStopSets: [...records.routeStopSets!] };
+    expect(snapshotForScenario(withSets, records.scenario.id)!.routeStopSets).toEqual(records.routeStopSets);
+    expect(snapshotForScenario({ ...snapshot, routeStopSets: [] }, records.scenario.id)!.routeStopSets).toBeUndefined();
+    expect(projectSnapshotWithScenario(withSets, { ...records, routeStopSets: [] }).routeStopSets).toEqual([]);
   });
 });

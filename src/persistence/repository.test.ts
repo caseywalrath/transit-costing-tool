@@ -16,10 +16,12 @@ describe('route-definition persistence', () => {
     expect(await repository.getRouteDefinition(route.id)).toEqual({ route, nodes: [], patterns: [] });
   });
 
-  it('defines IndexedDB schema version 10 with Costing, Blocking Scenario, normalized Block lookups, regeneration undo, and planned frequencies', () => {
+  it('defines IndexedDB schema version 11 with Costing, Blocking Scenario, normalized Block lookups, regeneration undo, planned frequencies, and Route stop sets', () => {
     const database = new TransitDatabase(`transit-costing-test-${Date.now()}`);
-    expect(database.verno).toBe(10);
+    expect(database.verno).toBe(11);
     expect(database.tables.map((table) => table.name)).toContain('plannedFrequencies');
+    expect(database.tables.map((table) => table.name)).toContain('routeStopSets');
+    expect(database.routeStopSets.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['scenarioId', 'routeId']));
     expect(database.tables.map((table) => table.name)).toEqual(expect.arrayContaining(['runtimeProfiles', 'runtimeAssignments', 'tripProfiles', 'blockingScenarios', 'costingAssumptions', 'tripRegenerationUndo']));
     expect(database.runtimeAssignments.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['runtimeProfileId']));
     expect(database.blockingScenarios.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['tripProfileId', '[scenarioId+name]', '[tripProfileId+name]']));
@@ -41,8 +43,8 @@ describe('route-definition persistence', () => {
     const migrated = new TransitDatabase(name);
     try {
       await migrated.open();
-      expect(migrated.verno).toBe(10);
-      expect((await indexedDB.databases()).find((database) => database.name === name)?.version).toBe(100);
+      expect(migrated.verno).toBe(11);
+      expect((await indexedDB.databases()).find((database) => database.name === name)?.version).toBe(110);
       expect(await migrated.tripProfiles.get('profile')).toBeDefined();
       expect(await migrated.trips.get('trip')).toBeDefined();
       expect(await migrated.blocks.get('placeholder')).toBeUndefined();

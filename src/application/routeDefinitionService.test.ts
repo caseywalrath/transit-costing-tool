@@ -199,6 +199,74 @@ describe('RouteDefinitionService', () => {
     expect((await service.getRouteDeletionImpact(kept.route.id)).plannedFrequencyCount).toBe(1);
   });
 
+  it('counts a Route\'s stops in its deletion review, deletes its stop set with it, and refuses a review made before the set changed (Decision 0079)', async () => {
+    const repository = new InMemoryRouteDefinitionRepository();
+    const { service } = createService(repository);
+    const created = await service.createProject('Route deletion with stops');
+    const kept = await service.addRoute(created.records);
+    const doomed = await service.addRoute(kept.records);
+    const scenarioId = created.records.scenario.id;
+    const aggregate = (await service.loadWorkspace(created.project.id, scenarioId, doomed.route.id)).aggregate!;
+    const { pattern } = await addTwoStopPattern(service, aggregate);
+    const firstPoint = [...pattern.points].sort((left, right) => left.sequence - right.sequence)[0];
+    await repository.updateScenarioRecords(scenarioId, (current) => ({ ...current, routeStopSets: [{
+      id: 'doomed-stops', scenarioId, routeId: doomed.route.id, roundingSeconds: 60,
+      stops: [{ id: 'stop-a', name: 'Stop A' }, { id: 'stop-b', name: 'Stop B' }],
+      placementsByPatternId: { [pattern.id]: [{ id: 'p-a', stopId: 'stop-a', afterPatternPointId: firstPoint.id, sequence: 0, timing: 'interpolate' }, { id: 'p-b', stopId: 'stop-b', afterPatternPointId: firstPoint.id, sequence: 1, timing: 'next' }] },
+      ...metadata(),
+    }] }));
+
+    const review = await service.getRouteDeletionImpact(doomed.route.id);
+    expect(review.routeStopCount).toBe(2);
+    expect((await service.getRouteDeletionImpact(kept.route.id)).routeStopCount).toBe(0);
+    // A stop edited after the review makes the review stale.
+    await repository.updateScenarioRecords(scenarioId, (current) => ({ ...current, routeStopSets: current.routeStopSets!.map((set) => ({ ...set, stops: set.stops.map((stop) => ({ ...stop, name: 'Renamed' })) })) }));
+    await expect(service.deleteRoute(doomed.route.id, review.reviewToken)).rejects.toThrow();
+    expect(await repository.getRouteStopSet(doomed.route.id)).toBeDefined();
+
+    await service.deleteRoute(doomed.route.id, (await service.getRouteDeletionImpact(doomed.route.id)).reviewToken);
+    expect(await repository.getRouteStopSet(doomed.route.id)).toBeUndefined();
+    expect((await repository.getScenarioRecords(scenarioId))!.routeStopSets).toBeUndefined();
+  });
+
+  it('counts a pattern\'s stop placements, removes them and the stops only that pattern used, and refuses a review made before the placements changed (Decision 0079)', async () => {
+    const repository = new InMemoryRouteDefinitionRepository();
+    const { service } = createService(repository);
+    const created = await service.createProject('Pattern deletion with stops');
+    const added = await service.addRoute(created.records);
+    const scenarioId = created.records.scenario.id;
+    const aggregate = (await service.loadWorkspace(created.project.id, scenarioId, added.route.id)).aggregate!;
+    const first = await addTwoStopPattern(service, aggregate, { patternName: 'First' });
+    // Take the node order from the first pattern's points, so the second pattern runs the same way (aggregate.nodes has no fixed order).
+    const [nodeAId, nodeBId] = [...first.pattern.points].sort((left, right) => left.sequence - right.sequence).map((point) => point.nodeId);
+    const second = await savePattern(service, first.aggregate, { name: 'Second', stops: [{ nodeId: nodeAId }, { nodeId: nodeBId, miles: 1 }] });
+    const pointAt = (pattern: { points: Array<{ id: string; sequence: number }> }) => [...pattern.points].sort((left, right) => left.sequence - right.sequence)[0].id;
+    // "only-first" is placed only on the first pattern; "shared" on both.
+    await repository.updateScenarioRecords(scenarioId, (current) => ({ ...current, routeStopSets: [{
+      id: 'pattern-stops', scenarioId, routeId: added.route.id, roundingSeconds: 60,
+      stops: [{ id: 'only-first', name: 'Only first' }, { id: 'shared', name: 'Shared' }],
+      placementsByPatternId: {
+        [first.pattern.id]: [{ id: 'p-only', stopId: 'only-first', afterPatternPointId: pointAt(first.pattern), sequence: 0, timing: 'interpolate' }, { id: 'p-shared-1', stopId: 'shared', afterPatternPointId: pointAt(first.pattern), sequence: 1, timing: 'next' }],
+        [second.pattern.id]: [{ id: 'p-shared-2', stopId: 'shared', afterPatternPointId: pointAt(second.pattern), sequence: 0, timing: 'interpolate' }],
+      },
+      ...metadata(),
+    }] }));
+
+    const review = await service.getPatternDeletionImpact(first.pattern.id);
+    expect(review.stopPlacementCount).toBe(2);
+    // A placement changed after the review makes the review stale.
+    await repository.updateScenarioRecords(scenarioId, (current) => ({ ...current, routeStopSets: current.routeStopSets!.map((set) => ({ ...set, placementsByPatternId: { ...set.placementsByPatternId, [first.pattern.id]: set.placementsByPatternId[first.pattern.id].map((placement) => placement.id === 'p-shared-1' ? { ...placement, timing: 'previous' as const } : placement) } })) }));
+    await expect(service.deletePattern(first.pattern.id, review.reviewToken)).rejects.toThrow();
+    expect((await repository.getRouteStopSet(added.route.id))!.placementsByPatternId[first.pattern.id]).toHaveLength(2);
+
+    const fresh = await service.getPatternDeletionImpact(first.pattern.id);
+    expect(fresh.stopPlacementCount).toBe(2);
+    await service.deletePattern(first.pattern.id, fresh.reviewToken);
+    const after = (await repository.getRouteStopSet(added.route.id))!;
+    expect(Object.keys(after.placementsByPatternId)).toEqual([second.pattern.id]);
+    expect(after.stops.map((stop) => stop.id)).toEqual(['shared']);
+  });
+
   it('deletes a Scenario only when another Scenario remains in the project', async () => {
     const repository = new InMemoryRouteDefinitionRepository();
     const { service } = createService(repository);

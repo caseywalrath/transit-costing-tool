@@ -18,8 +18,10 @@ import type {
   BlockingScenario,
   CostingAssumptions,
   PlannedFrequency,
+  RouteStopSet,
 } from './types';
 import { remapMeasureNodes } from './plannedFrequencies';
+import { remapRouteStopSet } from './stops';
 import { createBlockingScenario } from './blocking';
 import { metadata, newId, withUpdatedAt } from './ids';
 import { createStandardServiceDays } from './serviceDays';
@@ -59,6 +61,8 @@ export interface ScenarioRecords {
   costingAssumptions?: CostingAssumptions;
   /** Planned frequencies of the Scenario's Routes (Decision 0058). Omitted or empty when none exist. */
   plannedFrequencies?: PlannedFrequency[];
+  /** Decision 0079. Route stop sets of the Scenario's Routes. Omitted or empty when none exist. */
+  routeStopSets?: RouteStopSet[];
 }
 
 export function createScenarioRecords(projectId: string, name: string, now = new Date().toISOString()): ScenarioRecords {
@@ -142,6 +146,9 @@ export function duplicateRouteRecords(source: ScenarioRecords, routeId: string, 
     ...metadata(now),
   }));
 
+  // Decision 0079: the Route's stop set is copied to the new Route with the pattern and point IDs of the copy.
+  const routeStopSets: RouteStopSet[] = (source.routeStopSets ?? []).filter((set) => set.routeId === routeId).map((set) => remapRouteStopSet(set, { id: newId(), scenarioId: source.scenario.id, routeId: route.id, patternIds, pointIds }, now));
+
   // Decision 0077: the Route's factor entries are copied to the new Route. Trip Profile and service day IDs are unchanged (same Scenario).
   const routeFactorEntries = (source.costingAssumptions?.routeEstimateFactors ?? [])
     .filter((entry) => entry.routeId === routeId)
@@ -152,6 +159,7 @@ export function duplicateRouteRecords(source: ScenarioRecords, routeId: string, 
     records: {
       ...source,
       ...(source.plannedFrequencies || plannedFrequencies.length ? { plannedFrequencies: [...(source.plannedFrequencies ?? []), ...plannedFrequencies] } : {}),
+      ...(source.routeStopSets || routeStopSets.length ? { routeStopSets: [...(source.routeStopSets ?? []), ...routeStopSets] } : {}),
       ...(source.costingAssumptions && routeFactorEntries.length
         ? { costingAssumptions: { ...source.costingAssumptions, routeEstimateFactors: [...(source.costingAssumptions.routeEstimateFactors ?? []), ...routeFactorEntries], updatedAt: now } }
         : {}),
@@ -294,8 +302,9 @@ export function duplicateScenario(source: ScenarioRecords, targetName: string, n
     measureNodeIdByDirectionId: remapMeasureNodes(plan.measureNodeIdByDirectionId, directionIds, nodeIds),
     ...metadata(now),
   }));
+  const routeStopSets: RouteStopSet[] = (source.routeStopSets ?? []).map((set) => remapRouteStopSet(set, { id: newId(), scenarioId: scenario.id, routeId: routeIds.get(set.routeId) ?? set.routeId, patternIds, pointIds }, now));
 
-  return { scenario, serviceDays, routes, nodes, patterns: copiedPatterns, ...(source.directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions ? { costingAssumptions } : {}), ...(plannedFrequencies.length ? { plannedFrequencies } : {}), generationSets, trips, blocks: normalizedBlocks };
+  return { scenario, serviceDays, routes, nodes, patterns: copiedPatterns, ...(source.directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions ? { costingAssumptions } : {}), ...(plannedFrequencies.length ? { plannedFrequencies } : {}), ...(routeStopSets.length ? { routeStopSets } : {}), generationSets, trips, blocks: normalizedBlocks };
 }
 
 export function snapshotForScenario(snapshot: ProjectSnapshot, scenarioId: string): ScenarioRecords | undefined {
@@ -315,6 +324,7 @@ export function snapshotForScenario(snapshot: ProjectSnapshot, scenarioId: strin
     blockingScenarios: (snapshot.blockingScenarios ?? []).filter((blockingScenario) => blockingScenario.scenarioId === scenarioId),
     costingAssumptions: snapshot.costingAssumptions?.find((assumptions) => assumptions.scenarioId === scenarioId),
     ...((() => { const plans = (snapshot.plannedFrequencies ?? []).filter((plan) => plan.scenarioId === scenarioId); return plans.length ? { plannedFrequencies: plans } : {}; })()),
+    ...((() => { const sets = (snapshot.routeStopSets ?? []).filter((set) => set.scenarioId === scenarioId); return sets.length ? { routeStopSets: sets } : {}; })()),
     generationSets: snapshot.generationSets.filter((set) => set.scenarioId === scenarioId),
     trips: snapshot.trips.filter((trip) => trip.scenarioId === scenarioId),
     blocks: snapshot.blocks.filter((block) => block.scenarioId === scenarioId),
@@ -338,6 +348,7 @@ export function projectSnapshotWithScenario(snapshot: ProjectSnapshot, records: 
     blockingScenarios: [...(snapshot.blockingScenarios ?? []).filter((blockingScenario) => otherScenarioIds.has(blockingScenario.scenarioId)), ...(records.blockingScenarios ?? [])],
     costingAssumptions: [...(snapshot.costingAssumptions ?? []).filter((assumptions) => otherScenarioIds.has(assumptions.scenarioId)), ...(records.costingAssumptions ? [records.costingAssumptions] : [])],
     ...(snapshot.plannedFrequencies || records.plannedFrequencies ? { plannedFrequencies: [...(snapshot.plannedFrequencies ?? []).filter((plan) => otherScenarioIds.has(plan.scenarioId)), ...(records.plannedFrequencies ?? [])] } : {}),
+    ...(snapshot.routeStopSets || records.routeStopSets ? { routeStopSets: [...(snapshot.routeStopSets ?? []).filter((set) => otherScenarioIds.has(set.scenarioId)), ...(records.routeStopSets ?? [])] } : {}),
     generationSets: [...snapshot.generationSets.filter((set) => otherScenarioIds.has(set.scenarioId)), ...records.generationSets],
     trips: [...snapshot.trips.filter((trip) => otherScenarioIds.has(trip.scenarioId)), ...records.trips],
     blocks: [...snapshot.blocks.filter((block) => otherScenarioIds.has(block.scenarioId)), ...records.blocks],
@@ -360,6 +371,7 @@ export function projectLastChangedAt(snapshot: ProjectSnapshot): string {
     snapshot.blockingScenarios ?? [],
     snapshot.costingAssumptions ?? [],
     snapshot.plannedFrequencies ?? [],
+    snapshot.routeStopSets ?? [],
     snapshot.generationSets,
     snapshot.trips,
     snapshot.blocks,

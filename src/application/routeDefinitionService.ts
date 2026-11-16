@@ -12,6 +12,7 @@ import { copyRuntimeProfile, normalizeRuntimeProfile, reverseCopyRuntimeProfile,
 import type { Block, BlockActivity, Node, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, ValidationFinding } from '../domain/types';
 import { validateNodeDeletion, validateRouteDefinition } from '../domain/validation';
 import { adjustBlockReferences } from '../domain/trips';
+import { pruneRouteStopSets } from '../domain/stops';
 import { authoritativeTripsCsv, blockActivitiesCsv, blocksCsv, directionColumnsCsv, directionsCsv, generationSetsCsv, nodesCsv, patternPointsCsv, patternsCsv, routeCsv, runtimeBandsCsv, scheduledPointsCsv, tripsCsv } from '../persistence/csv';
 import type { BackupPort, LocalDataProtection, RouteDefinitionRepository, SaveStatus } from './ports';
 import { assertReviewCurrent, fingerprint } from './reviewToken';
@@ -36,6 +37,8 @@ export interface PatternDeletionImpact {
   runtimeAssignmentCount: number;
   tripCount: number;
   affectedBlockCount: number;
+  /** Stop placements removed with the pattern (Decision 0079). */
+  stopPlacementCount: number;
   /** Fingerprint of the records this review covers; `deletePattern` requires it. */
   reviewToken: string;
 }
@@ -70,6 +73,8 @@ export interface RouteDeletionImpact {
   removedNonRevenueActivityCount: number;
   /** Planned frequency records (one per Service day) deleted with the Route (Decision 0058 item 10). */
   plannedFrequencyCount: number;
+  /** Stops of the Route's stop set deleted with the Route (Decision 0079). */
+  routeStopCount: number;
 }
 
 export interface NodeDeletionImpact {
@@ -197,6 +202,7 @@ function scenarioDeletionToken(records: ScenarioRecords): string {
     patterns: records.patterns, runtimeProfiles: records.runtimeProfiles, runtimeAssignments: records.runtimeAssignments, tripProfiles: records.tripProfiles,
     blockingScenarios: records.blockingScenarios, costingAssumptions: records.costingAssumptions ? [records.costingAssumptions] : [],
     generationSets: records.generationSets, trips: records.trips, blocks: records.blocks, plannedFrequencies: records.plannedFrequencies ?? [],
+    routeStopSets: records.routeStopSets ?? [],
   });
 }
 
@@ -542,6 +548,7 @@ export class RouteDefinitionService {
       blockingScenarios: (snapshot.blockingScenarios ?? []).filter((blockingScenario) => blockingScenario.scenarioId !== scenarioId),
       costingAssumptions: (snapshot.costingAssumptions ?? []).filter((assumptions) => assumptions.scenarioId !== scenarioId),
       ...(snapshot.plannedFrequencies ? { plannedFrequencies: snapshot.plannedFrequencies.filter((plan) => plan.scenarioId !== scenarioId) } : {}),
+      ...(snapshot.routeStopSets ? { routeStopSets: snapshot.routeStopSets.filter((set) => set.scenarioId !== scenarioId) } : {}),
       generationSets: snapshot.generationSets.filter((set) => set.scenarioId !== scenarioId),
       trips: snapshot.trips.filter((trip) => trip.scenarioId !== scenarioId),
       blocks: snapshot.blocks.filter((block) => block.scenarioId !== scenarioId),
@@ -744,14 +751,23 @@ export class RouteDefinitionService {
     const trips = records.trips.filter((trip) => trip.patternId === patternId);
     const tripIds = new Set(trips.map((trip) => trip.id));
     const affectedBlocks = records.blocks.filter((block) => block.activities.some((activity) => activity.type === 'revenueTrip' && tripIds.has(activity.tripId)));
+    const placements = (records.routeStopSets ?? []).flatMap((set) => set.placementsByPatternId[patternId] ?? []);
     const impact: PatternDeletionImpact = {
       patternId,
       runtimeProfileCount: profiles.length,
       runtimeAssignmentCount: assignments.length,
       tripCount: trips.length,
       affectedBlockCount: affectedBlocks.length,
-      reviewToken: fingerprint({ pattern, profiles, assignments, generationSets, trips, blocks: affectedBlocks }),
+      stopPlacementCount: placements.length,
+      reviewToken: fingerprint({ pattern, profiles, assignments, generationSets, trips, blocks: affectedBlocks, placements }),
     };
+    // Decision 0079: the pattern's placements go; stops that no other pattern uses are pruned with them.
+    const routeStopSets = records.routeStopSets
+      ? pruneRouteStopSets(records.routeStopSets.map((set) => {
+        const { [patternId]: _removedPlacements, ...placementsByPatternId } = set.placementsByPatternId;
+        return { ...set, placementsByPatternId };
+      }), { routes: records.routes, patterns: records.patterns.filter((candidate) => candidate.id !== patternId) })
+      : undefined;
     const next: ScenarioRecords = {
       ...records,
       patterns: records.patterns.filter((candidate) => candidate.id !== patternId),
@@ -760,6 +776,7 @@ export class RouteDefinitionService {
       generationSets: records.generationSets.filter((set) => set.patternId !== patternId),
       trips: records.trips.filter((trip) => trip.patternId !== patternId),
       blocks: adjustBlockReferences(records.blocks, [...tripIds]).blocks,
+      ...(routeStopSets ? { routeStopSets } : {}),
     };
     return { impact, next, routeId: pattern.routeId };
   }
@@ -1166,6 +1183,7 @@ export class RouteDefinitionService {
       trips: removedTrips,
       changedBlocks: records.blocks.filter((block) => changedBlockIds.has(block.id)),
       plannedFrequencies: (records.plannedFrequencies ?? []).filter((plan) => plan.routeId === routeId),
+      routeStopSets: (records.routeStopSets ?? []).filter((set) => set.routeId === routeId),
     };
     const impact: RouteDeletionImpact = {
       routeId,
@@ -1181,10 +1199,12 @@ export class RouteDefinitionService {
       removedBlockActivityCount: revenueAdjusted.adjustments.reduce((count, adjustment) => count + adjustment.removedTripIds.length, 0),
       removedNonRevenueActivityCount: removedConnectionActivityCount + nonRevenueAdjusted.removedActivityCount,
       plannedFrequencyCount: removed.plannedFrequencies.length,
+      routeStopCount: removed.routeStopSets.reduce((count, set) => count + set.stops.length, 0),
     };
     const next: ScenarioRecords = {
       ...records,
       ...(records.plannedFrequencies ? { plannedFrequencies: records.plannedFrequencies.filter((plan) => plan.routeId !== routeId) } : {}),
+      ...(records.routeStopSets ? { routeStopSets: records.routeStopSets.filter((set) => set.routeId !== routeId) } : {}),
       routes: records.routes.filter((route) => route.id !== routeId),
       nodes: records.nodes.filter((node) => node.routeId !== routeId),
       patterns: records.patterns.filter((pattern) => pattern.routeId !== routeId),

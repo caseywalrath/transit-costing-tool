@@ -1,8 +1,10 @@
-import type { Block, BlockingScenario, CostingAssumptions, PlannedFrequency, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RuntimeAssignment, RuntimeProfile, Scenario, Trip, TripGenerationSet, TripProfile, TripRegenerationUndo } from '../domain/types';
+import type { Block, BlockingScenario, CostingAssumptions, PlannedFrequency, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RouteStopSet, RuntimeAssignment, RuntimeProfile, Scenario, Trip, TripGenerationSet, TripProfile, TripRegenerationUndo } from '../domain/types';
 import type { ScenarioRecords } from '../domain/project';
 import type { CostingAssumptionsRepository, PlannedFrequencyRepository, RouteDefinitionRepository } from '../application/ports';
 import { assertPlannedFrequencies } from './plannedFrequencyPersistence';
 import { prunePlannedFrequencies } from '../domain/plannedFrequencies';
+import { assertRouteStopSets } from './routeStopPersistence';
+import { pruneRouteStopSets } from '../domain/stops';
 import type { RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
 import { TransitDatabase } from './database';
 import { assertRuntimeGraph } from './runtimePersistence';
@@ -19,7 +21,7 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
   async getProject(id: string): Promise<Project | undefined> { return this.db.projects.get(id); }
   async saveProject(project: Project): Promise<void> { await this.db.projects.put(project); }
   async deleteProject(projectId: string): Promise<void> {
-    await this.db.transaction('rw', [this.db.projects, this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.costingAssumptions, this.db.generationSets, this.db.trips, this.db.tripRegenerationUndo, this.db.blocks, this.db.costPlans, this.db.plannedFrequencies], async () => {
+    await this.db.transaction('rw', [this.db.projects, this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.costingAssumptions, this.db.generationSets, this.db.trips, this.db.tripRegenerationUndo, this.db.blocks, this.db.costPlans, this.db.plannedFrequencies, this.db.routeStopSets], async () => {
       if (!await this.db.projects.get(projectId)) throw new Error('Project not found.');
       const scenarioIds = (await this.db.scenarios.where('projectId').equals(projectId).primaryKeys()) as string[];
       const undo = await this.db.tripRegenerationUndo.get('last');
@@ -41,6 +43,7 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
         await this.db.blocks.where('scenarioId').anyOf(scenarioIds).delete();
         await this.db.costPlans.where('scenarioId').anyOf(scenarioIds).delete();
         await this.db.plannedFrequencies.where('scenarioId').anyOf(scenarioIds).delete();
+        await this.db.routeStopSets.where('scenarioId').anyOf(scenarioIds).delete();
       }
       await this.db.projects.delete(projectId);
     });
@@ -73,6 +76,8 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
     return plans[0];
   }
 
+  async getRouteStopSet(routeId: string): Promise<RouteStopSet | undefined> { return this.db.routeStopSets.where('routeId').equals(routeId).first(); }
+
   async getScenarioRecords(scenarioId: string): Promise<ScenarioRecords | undefined> {
     const scenario = await this.db.scenarios.get(scenarioId);
     if (!scenario) return undefined;
@@ -86,7 +91,7 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
       this.db.patterns.toArray().then((values) => values.filter((pattern) => routeIds.has(pattern.routeId))),
       this.db.directions.toArray().then((values) => orderDirections(values.filter((direction) => routeIds.has(direction.routeId)))),
     ]);
-    const [runtimeProfiles, runtimeAssignments, tripProfiles, blockingScenarios, costingAssumptions, generationSets, trips, blocks, plannedFrequencies] = await Promise.all([
+    const [runtimeProfiles, runtimeAssignments, tripProfiles, blockingScenarios, costingAssumptions, generationSets, trips, blocks, plannedFrequencies, routeStopSets] = await Promise.all([
       this.db.runtimeProfiles.toArray().then((values) => values.filter((profile) => routeIds.has(profile.routeId))),
       this.db.runtimeAssignments.where('scenarioId').equals(scenarioId).toArray(),
       this.db.tripProfiles.where('scenarioId').equals(scenarioId).toArray(),
@@ -96,13 +101,14 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
       this.db.trips.where('scenarioId').equals(scenarioId).toArray(),
       this.db.blocks.where('scenarioId').equals(scenarioId).toArray(),
       this.db.plannedFrequencies.where('scenarioId').equals(scenarioId).toArray(),
+      this.db.routeStopSets.where('scenarioId').equals(scenarioId).toArray(),
     ]);
     if (costingAssumptions.length > 1) throw new Error(`Scenario ${scenarioId} has more than one costing assumptions record.`);
-    return { scenario, serviceDays: sortServiceDays(serviceDays), routes, nodes, patterns, ...(directions.length ? { directions } : {}), runtimeProfiles, runtimeAssignments, ...(tripProfiles.length ? { tripProfiles } : {}), ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions[0] ? { costingAssumptions: costingAssumptions[0] } : {}), ...(plannedFrequencies.length ? { plannedFrequencies } : {}), generationSets, trips, blocks };
+    return { scenario, serviceDays: sortServiceDays(serviceDays), routes, nodes, patterns, ...(directions.length ? { directions } : {}), runtimeProfiles, runtimeAssignments, ...(tripProfiles.length ? { tripProfiles } : {}), ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions[0] ? { costingAssumptions: costingAssumptions[0] } : {}), ...(plannedFrequencies.length ? { plannedFrequencies } : {}), ...(routeStopSets.length ? { routeStopSets } : {}), generationSets, trips, blocks };
   }
 
   private scenarioRecordTables() {
-    return [this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.costingAssumptions, this.db.generationSets, this.db.trips, this.db.tripRegenerationUndo, this.db.blocks, this.db.plannedFrequencies];
+    return [this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.costingAssumptions, this.db.generationSets, this.db.trips, this.db.tripRegenerationUndo, this.db.blocks, this.db.plannedFrequencies, this.db.routeStopSets];
   }
 
   async updateScenarioRecords(scenarioId: string, change: (current: ScenarioRecords) => ScenarioRecords): Promise<ScenarioRecords> {
@@ -124,6 +130,9 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
     // A Route, Service day, direction or node removed by this write takes its plan or measure-node entry with it (Decision 0058 item 10).
     const plannedFrequencies = prunePlannedFrequencies(records.plannedFrequencies ?? [], records);
     assertPlannedFrequencies(plannedFrequencies, { scenarioIds: new Set([records.scenario.id]), routes: records.routes, serviceDays: records.serviceDays, directions: records.directions ?? [], nodes: records.nodes });
+    // Decision 0079: a Route, pattern or stop removed by this write takes its placements or stop with it, then the set is checked.
+    const routeStopSets = pruneRouteStopSets(records.routeStopSets ?? [], { routes: records.routes, patterns: records.patterns });
+    assertRouteStopSets(routeStopSets, { scenarioIds: new Set([records.scenario.id]), routes: records.routes, patterns: records.patterns });
     await this.db.transaction('rw', this.scenarioRecordTables(), async () => {
       const oldRoutes = await this.db.routes.where('scenarioId').equals(records.scenario.id).toArray();
       const oldRouteIds = new Set(oldRoutes.map((route) => route.id));
@@ -177,6 +186,10 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
       const planIds = new Set(plannedFrequencies.map((plan) => plan.id));
       await this.db.plannedFrequencies.bulkDelete(oldPlans.filter((plan) => !planIds.has(plan.id)).map((plan) => plan.id));
       await this.db.plannedFrequencies.bulkPut(plannedFrequencies);
+      const oldStopSets = await this.db.routeStopSets.where('scenarioId').equals(records.scenario.id).toArray();
+      const stopSetIds = new Set(routeStopSets.map((set) => set.id));
+      await this.db.routeStopSets.bulkDelete(oldStopSets.filter((set) => !stopSetIds.has(set.id)).map((set) => set.id));
+      await this.db.routeStopSets.bulkPut(routeStopSets);
       await this.db.scenarios.put(records.scenario);
       await this.db.serviceDays.bulkPut(records.serviceDays);
       await this.db.routes.bulkPut(records.routes);
@@ -236,7 +249,7 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
     if (!project) return undefined;
     const scenarios = await this.db.scenarios.where('projectId').equals(projectId).toArray();
     const scenarioIds = new Set(scenarios.map((scenario) => scenario.id));
-    const [serviceDays, routes, nodes, patterns, directions, runtimeProfiles, runtimeAssignments, tripProfiles, blockingScenarios, costingAssumptions, generationSets, trips, blocks, plannedFrequencies] = await Promise.all([
+    const [serviceDays, routes, nodes, patterns, directions, runtimeProfiles, runtimeAssignments, tripProfiles, blockingScenarios, costingAssumptions, generationSets, trips, blocks, plannedFrequencies, routeStopSets] = await Promise.all([
       this.db.serviceDays.toArray().then((values) => values.filter((day) => scenarioIds.has(day.scenarioId))),
       this.db.routes.toArray().then((values) => values.filter((route) => scenarioIds.has(route.scenarioId))),
       this.db.nodes.toArray().then((values) => values.filter((node) => scenarioIds.has(node.scenarioId))),
@@ -251,8 +264,9 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
       this.db.trips.toArray().then((values) => values.filter((trip) => scenarioIds.has(trip.scenarioId))),
       this.db.blocks.toArray().then((values) => values.filter((block) => scenarioIds.has(block.scenarioId))),
       this.db.plannedFrequencies.toArray().then((values) => values.filter((plan) => scenarioIds.has(plan.scenarioId))),
+      this.db.routeStopSets.toArray().then((values) => values.filter((set) => scenarioIds.has(set.scenarioId))),
     ]);
-    return { project, scenarios, serviceDays: sortServiceDays(serviceDays), routes, nodes, patterns, ...(directions.length ? { directions } : {}), runtimeProfiles, runtimeAssignments, ...(tripProfiles.length ? { tripProfiles } : {}), ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions.length ? { costingAssumptions } : {}), ...(plannedFrequencies.length ? { plannedFrequencies } : {}), generationSets, trips, blocks };
+    return { project, scenarios, serviceDays: sortServiceDays(serviceDays), routes, nodes, patterns, ...(directions.length ? { directions } : {}), runtimeProfiles, runtimeAssignments, ...(tripProfiles.length ? { tripProfiles } : {}), ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions.length ? { costingAssumptions } : {}), ...(plannedFrequencies.length ? { plannedFrequencies } : {}), ...(routeStopSets.length ? { routeStopSets } : {}), generationSets, trips, blocks };
   }
 
   async saveProjectSnapshot(snapshot: ProjectSnapshot): Promise<void> {
@@ -261,7 +275,9 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
     assertCostingAssumptionsCollection(snapshot.costingAssumptions ?? [], new Set(snapshot.scenarios.map((scenario) => scenario.id)));
     const plannedFrequencies = prunePlannedFrequencies(snapshot.plannedFrequencies ?? [], snapshot);
     assertPlannedFrequencies(plannedFrequencies, { scenarioIds: new Set(snapshot.scenarios.map((scenario) => scenario.id)), routes: snapshot.routes, serviceDays: snapshot.serviceDays, directions: snapshot.directions ?? [], nodes: snapshot.nodes });
-    await this.db.transaction('rw', [this.db.projects, this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.costingAssumptions, this.db.generationSets, this.db.trips, this.db.tripRegenerationUndo, this.db.blocks, this.db.plannedFrequencies], async () => {
+    const routeStopSets = pruneRouteStopSets(snapshot.routeStopSets ?? [], { routes: snapshot.routes, patterns: snapshot.patterns });
+    assertRouteStopSets(routeStopSets, { scenarioIds: new Set(snapshot.scenarios.map((scenario) => scenario.id)), routes: snapshot.routes, patterns: snapshot.patterns });
+    await this.db.transaction('rw', [this.db.projects, this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.costingAssumptions, this.db.generationSets, this.db.trips, this.db.tripRegenerationUndo, this.db.blocks, this.db.plannedFrequencies, this.db.routeStopSets], async () => {
       const currentScenarios = await this.db.scenarios.where('projectId').equals(snapshot.project.id).toArray();
       const undo = await this.db.tripRegenerationUndo.get('last');
       const undoScenarioInProject = undo && (currentScenarios.some((scenario) => scenario.id === undo.scenarioId) || snapshot.scenarios.some((scenario) => scenario.id === undo.scenarioId));
@@ -325,6 +341,10 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
       const currentPlans = (await this.db.plannedFrequencies.toArray()).filter((plan) => currentScenarioIds.has(plan.scenarioId));
       await this.db.plannedFrequencies.bulkDelete(currentPlans.filter((plan) => !incomingPlanIds.has(plan.id)).map((plan) => plan.id));
       await this.db.plannedFrequencies.bulkPut(plannedFrequencies);
+      const incomingStopSetIds = new Set(routeStopSets.map((set) => set.id));
+      const currentStopSets = (await this.db.routeStopSets.toArray()).filter((set) => currentScenarioIds.has(set.scenarioId));
+      await this.db.routeStopSets.bulkDelete(currentStopSets.filter((set) => !incomingStopSetIds.has(set.id)).map((set) => set.id));
+      await this.db.routeStopSets.bulkPut(routeStopSets);
       await this.db.projects.put(snapshot.project);
       await this.db.scenarios.bulkPut(snapshot.scenarios);
       await this.db.serviceDays.bulkPut(snapshot.serviceDays);
