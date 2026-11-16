@@ -95,9 +95,9 @@ function cases(): Case[] {
     yearRows: [{ serviceYear: 2026, appliedRateUsdPerRevenueHour: 100, annualRevenueHours: 1, annualPlatformHours: 1, annualCostUsd: 100 }],
   };
   // Decision 0079: a Trip with two timepoints and one stop between them, every free-text value is H.
-  const stopNodes: Node[] = [{ ...node, stopCode: H }, { ...node, id: 'second', stopCode: H }];
+  const stopNodes: Node[] = [node, { ...node, id: 'second' }];
   const stopPattern = { ...pattern, points: [{ id: H, nodeId: H, sequence: 0, cumulativeMiles: 0 }, { id: 'second-point', nodeId: 'second', sequence: 1, cumulativeMiles: 1 }] } as RoutePattern;
-  const stopSet: RouteStopSet = { id: H, scenarioId: H, routeId: H, roundingSeconds: 60, stops: [{ id: H, name: H, stopCode: H }], placementsByPatternId: { [H]: [{ id: H, stopId: H, afterPatternPointId: H, sequence: 0, timing: 'interpolate' }] }, ...meta };
+  const stopSet: RouteStopSet = { id: H, scenarioId: H, routeId: H, roundingSeconds: 60, stops: [{ id: H, name: H, stopCode: H }], placementsByPatternId: { [H]: [{ id: H, stopId: H, afterPatternPointId: H, sequence: 0, timing: 'interpolate' }] }, timepointStopCodesByPatternId: { [H]: { [H]: H, 'second-point': H } }, ...meta };
   const stopTrip: Trip = { ...trip, stopTimes: [{ patternPointId: H, sequence: 0, time: 3600 }, { patternPointId: 'second-point', sequence: 1, time: 4200 }] };
   const [costAssumptions, costResults, costExclusions] = costingCsvFiles(scenario, { kind: 'blocked', blockingScenario, tripProfile: profile }, assumptions, result).map((file) => file.contents);
   return [

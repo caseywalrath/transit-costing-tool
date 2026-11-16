@@ -6,13 +6,14 @@ import { stopTimesCsv, type StopTimesCsvInput } from './stopTimesCsv';
 
 // Pattern "Southbound to C" has timepoints Alpha (stop ID 1000), Bravo and Charlie. Elm Street is interpolated between Alpha and Bravo; Oak Avenue is "previous" after Bravo.
 const at = '2026-01-01T00:00:00.000Z';
-const node = (id: string, name: string, stopCode?: string): Node => ({ id, scenarioId: 's', routeId: 'r', name, kind: 'timepoint', ...(stopCode ? { stopCode } : {}), ...metadata(at) });
-const nodes = [node('na', 'Alpha', '1000'), node('nb', 'Bravo'), node('nc', 'Charlie')];
+const node = (id: string, name: string): Node => ({ id, scenarioId: 's', routeId: 'r', name, kind: 'timepoint', ...metadata(at) });
+const nodes = [node('na', 'Alpha'), node('nb', 'Bravo'), node('nc', 'Charlie')];
 const pattern: RoutePattern = { ...metadata(at), id: 'trunk', scenarioId: 's', routeId: 'r', name: 'Southbound to C', points: [{ id: 'p1', nodeId: 'na', sequence: 0, cumulativeMiles: 0 }, { id: 'p2', nodeId: 'nb', sequence: 1, cumulativeMiles: 1 }, { id: 'p3', nodeId: 'nc', sequence: 2, cumulativeMiles: 2 }] } as RoutePattern;
 const set = (elmName = 'Elm Street'): RouteStopSet => ({
   ...metadata(at), id: 'set', scenarioId: 's', routeId: 'r', roundingSeconds: 60,
   stops: [{ id: 'elm', name: elmName }, { id: 'oak', name: 'Oak Avenue', stopCode: '2002' }],
   placementsByPatternId: { trunk: [{ id: 'x1', stopId: 'elm', afterPatternPointId: 'p1', sequence: 0, timing: 'interpolate' }, { id: 'x2', stopId: 'oak', afterPatternPointId: 'p2', sequence: 0, timing: 'previous' }] },
+  timepointStopCodesByPatternId: { trunk: { p1: '1000' } },
 });
 const trip = (id: string, patternId: string, times: Array<[string, number]>): Trip => ({ ...metadata(at), id, scenarioId: 's', routeId: 'r', serviceDayId: 'weekday', tripProfileId: 'profile', patternId, publicLabel: id, stopTimes: times.map(([patternPointId, time], sequence) => ({ patternPointId, sequence, time })), provenance: { kind: 'generated', manuallyChangedFields: [] } } as unknown as Trip);
 const t1 = trip('t1', 'trunk', [['p1', 36000], ['p2', 36600], ['p3', 37200]]);

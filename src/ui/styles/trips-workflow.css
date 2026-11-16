@@ -196,13 +196,11 @@
 /* Name takes the remaining width; the other columns are fixed so every header and value fits without a horizontal scroll bar. */
 .route-nodes .grid-table th:nth-child(2) { width: 84px; }
 .route-nodes .grid-table th:nth-child(3) { width: 100px; }
-.route-nodes .grid-table th:nth-child(4) { width: 68px; }
-.route-nodes .grid-table th:nth-child(5) { width: 40px; }
+.route-nodes .grid-table th:nth-child(4) { width: 40px; }
 @media (max-width: 520px) {
   .route-nodes .grid-table th:nth-child(2) { width: 64px; }
   .route-nodes .grid-table th:nth-child(3) { width: 88px; }
-  .route-nodes .grid-table th:nth-child(4) { width: 56px; }
-  .route-nodes .grid-table th:nth-child(5) { width: 36px; }
+  .route-nodes .grid-table th:nth-child(4) { width: 36px; }
 }
 .route-nodes .grid-table td.grid-cell > span { overflow: hidden; text-overflow: ellipsis; }
 .route-nodes td select { min-width: 0; }

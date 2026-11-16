@@ -5,7 +5,7 @@ import { TransitDatabase } from './database';
 describe('application database schema', () => {
   it('includes scenario assumptions and local regeneration undo', () => {
     const db = new TransitDatabase('transit-costing-schema-contract');
-    expect(db.verno).toBe(11);
+    expect(db.verno).toBe(12);
     expect(db.tables.map((table) => table.name)).toContain('plannedFrequencies');
     expect(db.plannedFrequencies.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['scenarioId', 'routeId', '[routeId+serviceDayId]']));
     expect(db.tables.map((table) => table.name)).toContain('routeStopSets');
@@ -30,6 +30,7 @@ const HISTORY: Record<string, string>[] = [
   { trips: 'id,scenarioId,tripProfileId,routeId,serviceDayId,patternId,[tripProfileId+routeId],[tripProfileId+serviceDayId],provenance.generationSetId,provenance.runtimeProfileId,[scenarioId+tripProfileId]' },
   {},
   { plannedFrequencies: 'id,scenarioId,routeId,[routeId+serviceDayId]' },
+  { routeStopSets: 'id,scenarioId,routeId' },
 ];
 
 const stamp ={ createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' };
@@ -72,7 +73,7 @@ async function seed(name: string, seedVersion: number) {
 }
 
 describe('database upgrades from every earlier schema version', () => {
-  it.each([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])('upgrades a Dexie version %i database to version 11 and keeps every record', async (seedVersion) => {
+  it.each([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])('upgrades a Dexie version %i database to version 12 and keeps every record', async (seedVersion) => {
     const name = `transit-costing-upgrade-v${seedVersion}-${Date.now()}`;
     const { before, seededIdbVersion } = await seed(name, seedVersion);
     expect(seededIdbVersion).toBe(seedVersion * 10);
@@ -81,8 +82,8 @@ describe('database upgrades from every earlier schema version', () => {
       await db.open();
       const after: Record<string, number> = {};
       for (const table of db.tables) after[table.name] = await table.count();
-      expect(db.verno).toBe(11);
-      expect((await indexedDB.databases()).find((database) => database.name === name)?.version).toBe(110);
+      expect(db.verno).toBe(12);
+      expect((await indexedDB.databases()).find((database) => database.name === name)?.version).toBe(120);
 
       // Scheduling records are untouched.
       for (const kept of ['projects', 'scenarios', 'serviceDays', 'routes', 'nodes', 'patterns', 'runtimeProfiles', 'runtimeAssignments', 'trips', 'generationSets', 'costPlans', 'appMetadata'] as const) expect(after[kept]).toBe(before[kept]);
@@ -158,7 +159,7 @@ describe('database version 8: Trip Profile index and placeholder Block clean-up'
     const db = new TransitDatabase(name);
     try {
       await db.open();
-      expect(db.verno).toBe(11);
+      expect(db.verno).toBe(12);
       expect((await db.blocks.toArray()).map((block) => block.id).sort()).toEqual(['s1-blk', 's2-blk']);
       expect(JSON.stringify((await db.blocks.toArray()).sort((a, b) => a.id.localeCompare(b.id)))).toBe(keptJson);
       expect(JSON.stringify((await db.trips.toArray()).sort((a, b) => a.id.localeCompare(b.id)))).toBe(tripsJson);
@@ -190,9 +191,38 @@ describe('database version 8: Trip Profile index and placeholder Block clean-up'
     const db = new TransitDatabase(name);
     try {
       await db.open();
-      expect(db.verno).toBe(11);
+      expect(db.verno).toBe(12);
       const profiles = Object.fromEntries((await db.runtimeProfiles.toArray()).map((profile) => [profile.id, [profile.calculationMethod, profile.calculationRevision]]));
       expect(profiles).toEqual({ 's1-rp': [undefined, undefined], 's1-rp2': ['singleBand', 1], 's1-rp3': ['singleBand', 5], 's2-rp': [undefined, undefined] });
+      expect(JSON.stringify((await db.trips.toArray()).sort((a, b) => a.id.localeCompare(b.id)))).toBe(tripsJson);
+    } finally {
+      db.close();
+      await Dexie.delete(name);
+    }
+  });
+
+  it('version 12 moves a Node stop ID to the points on that Node, keeps a point stop ID already set, and removes stopCode from every Node (Decision 0080)', async () => {
+    const name = `transit-costing-upgrade-v12-${Date.now()}`;
+    await seed(name, 11);
+    const legacy = new Dexie(name);
+    for (let version = 1; version <= 11; version += 1) legacy.version(version).stores(HISTORY[version - 1]);
+    await legacy.open();
+    // s1: Node a has stop ID A1 and no stop set exists. s2: Node a has A2, Node b has a blank stop ID, and point pb already has KEEP.
+    await legacy.table('nodes').update('s1-a', { stopCode: ' A1 ' });
+    await legacy.table('nodes').update('s2-a', { stopCode: 'A2' });
+    await legacy.table('nodes').update('s2-b', { stopCode: '' });
+    await legacy.table('routeStopSets').put({ id: 's2-set', scenarioId: 's2', routeId: 's2-r', roundingSeconds: 30, stops: [], placementsByPatternId: {}, timepointStopCodesByPatternId: { 's2-p': { 's2-pb': 'KEEP' } }, ...stamp });
+    const tripsJson = JSON.stringify((await legacy.table('trips').toArray()).sort((a, b) => a.id.localeCompare(b.id)));
+    legacy.close();
+
+    const db = new TransitDatabase(name);
+    try {
+      await db.open();
+      expect(db.verno).toBe(12);
+      expect((await db.nodes.toArray()).filter((node) => 'stopCode' in node)).toEqual([]);
+      const sets = Object.fromEntries((await db.routeStopSets.toArray()).map((set) => [set.routeId, set]));
+      expect(sets['s1-r']).toMatchObject({ scenarioId: 's1', roundingSeconds: 60, stops: [], placementsByPatternId: {}, timepointStopCodesByPatternId: { 's1-p': { 's1-pa': 'A1' } } });
+      expect(sets['s2-r']).toMatchObject({ id: 's2-set', roundingSeconds: 30, timepointStopCodesByPatternId: { 's2-p': { 's2-pa': 'A2', 's2-pb': 'KEEP' } } });
       expect(JSON.stringify((await db.trips.toArray()).sort((a, b) => a.id.localeCompare(b.id)))).toBe(tripsJson);
     } finally {
       db.close();

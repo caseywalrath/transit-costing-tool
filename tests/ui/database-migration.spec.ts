@@ -65,7 +65,7 @@ test('database version 10 preserves a Dexie version 4 project and adds operation
     request.onerror = () => reject(request.error);
   }));
 
-  expect(migrated.version).toBe(110);
+  expect(migrated.version).toBe(120);
   expect(migrated.stores).toContain('plannedFrequencies');
   expect(migrated.stores).toContain('costingAssumptions');
   expect(migrated.stores).toContain('costPlans');

@@ -1,17 +1,25 @@
-import type { EntityId, PatternStopPlacement, RoutePattern, StopTimingRule } from './types';
+import type { EntityId, PatternPoint, PatternStopPlacement, RoutePattern, StopTimingRule, TimepointStopCodes } from './types';
 import { segmentKeys, type SegmentKey } from './segmentRuntimeMatching';
-import { placementSegmentIndex, placementsBySegment, normalizePlacements, sortedPoints } from './stops';
+import { placementSegmentIndex, placementsBySegment, normalizePlacements, normalizeTimepointStopCodes, sortedPoints } from './stops';
 
 /** Decision 0079 item 9 and section 4.7. Matching is derived from stored placements and is never stored. */
 export interface StopSegmentEntry { stopId: EntityId; timing: StopTimingRule; }
 export type StopSkipReason = 'ambiguous' | 'conflict';
 export interface StopSegmentChange { patternId: EntityId; segmentIndex: number; previous: StopSegmentEntry[]; next: StopSegmentEntry[]; sourcePatternIds: EntityId[]; }
 export interface StopSegmentSkip { patternId: EntityId; reason: StopSkipReason; segmentIndex?: number; candidates?: { entries: StopSegmentEntry[]; patternIds: EntityId[] }[]; }
+/** Decision 0080. One timepoint stop ID written to the point of `patternId` that stands on `nodeId`. */
+export interface TimepointCodeChange { patternId: EntityId; patternPointId: EntityId; nodeId: EntityId; previous?: string; next: string; sourcePatternIds: EntityId[]; }
+/** Decision 0080. `ambiguous`: the Node occurs more than once in the pattern. `conflict`: the source patterns disagree. */
+export interface TimepointCodeSkip { patternId: EntityId; nodeId: EntityId; reason: StopSkipReason; candidates?: { stopCode: string; patternIds: EntityId[] }[]; }
 export interface StopPlacementPlan {
   mode: 'copyToOthers' | 'fillFromOthers';
   sourcePatternId: EntityId;
   changes: StopSegmentChange[];
   skips: StopSegmentSkip[];
+  /** Decision 0080. Timepoint stop IDs, matched by Node between patterns of the same direction. */
+  codeChanges: TimepointCodeChange[];
+  codeSkips: TimepointCodeSkip[];
+  /** A change is one segment or one timepoint stop ID; an overwrite replaces stops or a stop ID that were there. */
   affectedPatterns: { patternId: EntityId; changeCount: number; overwriteCount: number }[];
 }
 export interface StopPlacementPlanInput {
@@ -22,6 +30,10 @@ export interface StopPlacementPlanInput {
   patterns: readonly RoutePattern[];
   /** The stored placements of every pattern. */
   placementsByPatternId: Readonly<Record<EntityId, readonly PatternStopPlacement[]>>;
+  /** Decision 0080. Fill: the editor draft's timepoint stop IDs. Copy: the stored ones of the open pattern. */
+  openCodes?: Readonly<TimepointStopCodes>;
+  /** Decision 0080. The stored timepoint stop IDs of every pattern. */
+  codesByPatternId?: Readonly<Record<EntityId, Readonly<TimepointStopCodes>>>;
   excludedPatternIds?: readonly EntityId[];
 }
 
@@ -52,22 +64,94 @@ function patternOrder(openPattern: RoutePattern, patterns: readonly RoutePattern
   return (left, right) => (names.get(left) ?? '').localeCompare(names.get(right) ?? '', undefined, { numeric: true, sensitivity: 'base' }) || left.localeCompare(right);
 }
 
+/** Decision 0080. Patterns of one direction: both have a direction and it is the same one. */
+export function sameDirection(left: RoutePattern, right: RoutePattern): boolean {
+  return left.directionId !== undefined && left.directionId === right.directionId;
+}
+
+/** Points by Node, in point order. */
+function pointsByNode(pattern: RoutePattern): Map<EntityId, PatternPoint[]> {
+  const result = new Map<EntityId, PatternPoint[]>();
+  for (const point of sortedPoints(pattern)) result.set(point.nodeId, [...(result.get(point.nodeId) ?? []), point]);
+  return result;
+}
+
+/**
+ * Decision 0080. Timepoint stop IDs for Fill (the open draft's points without one, from same-direction patterns that agree) or Copy (the open
+ * pattern's stop IDs onto the same Node of same-direction patterns, except excluded ones). A Node that occurs more than once in a pattern is skipped.
+ */
+function planCodes(mode: StopPlacementPlan['mode'], input: StopPlacementPlanInput): { codeChanges: TimepointCodeChange[]; codeSkips: TimepointCodeSkip[] } {
+  const { openPattern } = input;
+  const openCodes = normalizeTimepointStopCodes(openPattern, input.openCodes);
+  const excluded = new Set(mode === 'copyToOthers' ? input.excludedPatternIds ?? [] : []);
+  const others = otherPatterns(openPattern, input.patterns)
+    .filter((pattern) => sameDirection(openPattern, pattern) && !excluded.has(pattern.id))
+    .map((pattern) => ({ pattern, points: pointsByNode(pattern), codes: normalizeTimepointStopCodes(pattern, input.codesByPatternId?.[pattern.id]) }));
+  const codeChanges: TimepointCodeChange[] = [];
+  const codeSkips: TimepointCodeSkip[] = [];
+  const reported = new Set<string>();
+  const ambiguous = (patternId: EntityId, nodeId: EntityId) => {
+    const id = `${patternId}\u0000${nodeId}`;
+    if (!reported.has(id)) { reported.add(id); codeSkips.push({ patternId, nodeId, reason: 'ambiguous' }); }
+  };
+  for (const [nodeId, points] of pointsByNode(openPattern)) {
+    const relevant = mode === 'fillFromOthers' ? points.some((point) => openCodes[point.id] === undefined) : points.some((point) => openCodes[point.id] !== undefined);
+    if (!relevant) continue;
+    if (points.length > 1) { ambiguous(openPattern.id, nodeId); continue; }
+    const [point] = points;
+    if (mode === 'fillFromOthers') {
+      const groups = new Map<string, EntityId[]>();
+      for (const other of others) {
+        const at = other.points.get(nodeId) ?? [];
+        if (at.length > 1) { ambiguous(other.pattern.id, nodeId); continue; }
+        const code = at.length === 1 ? other.codes[at[0].id] : undefined;
+        if (code !== undefined) groups.set(code, [...(groups.get(code) ?? []), other.pattern.id]);
+      }
+      if (groups.size === 1) {
+        const [[code, patternIds]] = [...groups];
+        codeChanges.push({ patternId: openPattern.id, patternPointId: point.id, nodeId, next: code, sourcePatternIds: [...patternIds].sort() });
+      } else if (groups.size > 1) {
+        codeSkips.push({ patternId: openPattern.id, nodeId, reason: 'conflict', candidates: [...groups].sort(([left], [right]) => left.localeCompare(right)).map(([stopCode, patternIds]) => ({ stopCode, patternIds: [...patternIds].sort() })) });
+      }
+      continue;
+    }
+    const code = openCodes[point.id];
+    for (const other of others) {
+      const at = other.points.get(nodeId) ?? [];
+      if (at.length > 1) { ambiguous(other.pattern.id, nodeId); continue; }
+      if (at.length !== 1) continue;
+      const previous = other.codes[at[0].id];
+      if (previous === code) continue;
+      codeChanges.push({ patternId: other.pattern.id, patternPointId: at[0].id, nodeId, ...(previous === undefined ? {} : { previous }), next: code, sourcePatternIds: [openPattern.id] });
+    }
+  }
+  return { codeChanges, codeSkips };
+}
+
 function finish(mode: StopPlacementPlan['mode'], input: StopPlacementPlanInput, changes: StopSegmentChange[], skips: StopSegmentSkip[]): StopPlacementPlan {
   const order = patternOrder(input.openPattern, input.patterns);
   const sortedChanges = [...changes].sort((left, right) => order(left.patternId, right.patternId) || left.segmentIndex - right.segmentIndex);
   const sortedSkips = [...skips].sort((left, right) => order(left.patternId, right.patternId) || (left.segmentIndex ?? 0) - (right.segmentIndex ?? 0));
+  const { codeChanges, codeSkips } = planCodes(mode, input);
+  // Code changes keep the open pattern's point order within each pattern; the sort is stable.
+  const sortedCodeChanges = [...codeChanges].sort((left, right) => order(left.patternId, right.patternId));
+  const sortedCodeSkips = [...codeSkips].sort((left, right) => order(left.patternId, right.patternId));
   const affected = new Map<EntityId, StopPlacementPlan['affectedPatterns'][number]>();
-  for (const change of sortedChanges) {
-    const entry = affected.get(change.patternId) ?? { patternId: change.patternId, changeCount: 0, overwriteCount: 0 };
+  const count = (patternId: EntityId, overwrite: boolean) => {
+    const entry = affected.get(patternId) ?? { patternId, changeCount: 0, overwriteCount: 0 };
     entry.changeCount += 1;
-    if (change.previous.length !== 0) entry.overwriteCount += 1;
-    affected.set(change.patternId, entry);
-  }
+    if (overwrite) entry.overwriteCount += 1;
+    affected.set(patternId, entry);
+  };
+  for (const change of sortedChanges) count(change.patternId, change.previous.length !== 0);
+  for (const change of sortedCodeChanges) count(change.patternId, change.previous !== undefined);
   return {
     mode,
     sourcePatternId: input.openPattern.id,
     changes: sortedChanges,
     skips: sortedSkips,
+    codeChanges: sortedCodeChanges,
+    codeSkips: sortedCodeSkips,
     affectedPatterns: [...affected.values()].sort((left, right) => order(left.patternId, right.patternId)),
   };
 }
@@ -158,20 +242,49 @@ export function planStopCopy(input: StopPlacementPlanInput): StopPlacementPlan {
   return finish('copyToOthers', input, changes, skips);
 }
 
-/** The other patterns of the Route that share at least one node pair with the open pattern, where the pair occurs once in each (Decision 0065, rule 5). */
+/**
+ * The other patterns of the Route that share at least one node pair with the open pattern, where the pair occurs once in each (Decision 0065,
+ * rule 5), or that are of the same direction and share a Node that occurs once in each (Decision 0080).
+ */
 export function stopCopyCandidatePatternIds(openPattern: RoutePattern, patterns: readonly RoutePattern[]): EntityId[] {
-  const countOf = (keys: SegmentKey[]) => {
-    const counts = new Map<SegmentKey, number>();
+  const countOf = (keys: string[]) => {
+    const counts = new Map<string, number>();
     for (const key of keys) counts.set(key, (counts.get(key) ?? 0) + 1);
     return counts;
   };
+  const nodeKeys = (pattern: RoutePattern) => pattern.points.map((point) => point.nodeId);
   const openCounts = countOf(segmentKeys(openPattern));
+  const openNodes = countOf(nodeKeys(openPattern));
   return otherPatterns(openPattern, patterns)
     .filter((pattern) => {
       const counts = countOf(segmentKeys(pattern));
-      return [...openCounts].some(([key, count]) => count === 1 && counts.get(key) === 1);
+      if ([...openCounts].some(([key, count]) => count === 1 && counts.get(key) === 1)) return true;
+      if (!sameDirection(openPattern, pattern)) return false;
+      const nodes = countOf(nodeKeys(pattern));
+      return [...openNodes].some(([nodeId, count]) => count === 1 && nodes.get(nodeId) === 1);
     })
     .map((pattern) => pattern.id);
+}
+
+/**
+ * Decision 0080. Applies `plan.codeChanges` to `current` (pattern ID → timepoint stop IDs). `patterns` must hold each pattern as it is to be
+ * written (the draft for Fill). Returns the changed patterns' new stop IDs, normalized.
+ */
+export function applyTimepointCodePlan(
+  patterns: readonly RoutePattern[],
+  current: Readonly<Record<EntityId, Readonly<TimepointStopCodes>>>,
+  plan: Pick<StopPlacementPlan, 'codeChanges'>,
+): Record<EntityId, TimepointStopCodes> {
+  const byId = new Map(patterns.map((pattern) => [pattern.id, pattern] as const));
+  const result: Record<EntityId, TimepointStopCodes> = {};
+  for (const change of plan.codeChanges) {
+    const pattern = byId.get(change.patternId);
+    if (!pattern) throw new Error('Pattern not found.');
+    if (!pattern.points.some((point) => point.id === change.patternPointId && point.nodeId === change.nodeId)) throw new Error('Timepoint not found.');
+    result[change.patternId] = { ...(result[change.patternId] ?? current[change.patternId]), [change.patternPointId]: change.next };
+  }
+  for (const patternId of Object.keys(result)) result[patternId] = normalizeTimepointStopCodes(byId.get(patternId)!, result[patternId]);
+  return result;
 }
 
 /**
@@ -182,12 +295,12 @@ export function stopCopyCandidatePatternIds(openPattern: RoutePattern, patterns:
 export function applyStopPlacementPlan(
   patterns: readonly RoutePattern[],
   current: Readonly<Record<EntityId, readonly PatternStopPlacement[]>>,
-  plan: StopPlacementPlan,
+  plan: Pick<StopPlacementPlan, 'changes'>,
   makeId: () => EntityId,
 ): Record<EntityId, PatternStopPlacement[]> {
   const byId = new Map(patterns.map((pattern) => [pattern.id, pattern] as const));
   const result: Record<EntityId, PatternStopPlacement[]> = {};
-  for (const { patternId } of plan.affectedPatterns) {
+  for (const patternId of new Set(plan.changes.map((change) => change.patternId))) {
     const pattern = byId.get(patternId);
     if (!pattern) throw new Error('Pattern not found.');
     const points = sortedPoints(pattern);

@@ -10,7 +10,7 @@ export interface StopTimeRow {
   stopId?: EntityId;            // stops only
   nodeId?: EntityId;            // timepoints only
   name: string;                 // node name or stop name
-  stopCode?: string;            // Node.stopCode or RouteStop.stopCode
+  stopCode?: string;            // the timepoint's stop ID on this pattern (Decision 0080), or RouteStop.stopCode
   timing?: StopTimingRule;      // stops only
   time?: ServiceSeconds;        // undefined without a trip or a usable time
 }
@@ -60,10 +60,11 @@ export function stopTimeRows(input: {
   const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
   const timeByPointId = new Map((trip?.stopTimes ?? []).map((item) => [item.patternPointId, item.time] as const));
 
+  const timepointCodes = set?.timepointStopCodesByPatternId?.[pattern.id] ?? {};
   if (!set) {
     return points.map((point) => {
       const node = nodeById.get(point.nodeId);
-      return { kind: 'timepoint', patternPointId: point.id, nodeId: point.nodeId, name: node?.name ?? '', stopCode: node?.stopCode, time: timeByPointId.get(point.id) };
+      return { kind: 'timepoint', patternPointId: point.id, nodeId: point.nodeId, name: node?.name ?? '', time: timeByPointId.get(point.id) };
     });
   }
 
@@ -78,7 +79,7 @@ export function stopTimeRows(input: {
   const rows: StopTimeRow[] = [];
   points.forEach((point, index) => {
     const node = nodeById.get(point.nodeId);
-    rows.push({ kind: 'timepoint', patternPointId: point.id, nodeId: point.nodeId, name: node?.name ?? '', stopCode: node?.stopCode, time: timeByPointId.get(point.id) });
+    rows.push({ kind: 'timepoint', patternPointId: point.id, nodeId: point.nodeId, name: node?.name ?? '', stopCode: timepointCodes[point.id], time: timeByPointId.get(point.id) });
     if (index >= points.length - 1) return;
     const segment = segments[index];
     const times = segmentStopTimes(timeByPointId.get(point.id), timeByPointId.get(points[index + 1].id), segment.map((item) => item.placement.timing), rounding);

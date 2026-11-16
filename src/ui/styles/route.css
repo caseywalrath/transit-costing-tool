@@ -13,7 +13,7 @@
 .route-setup__step[aria-current='step'] .route-setup__index { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-surface); }
 /* Route details stack their fields, so the two panels end at about the same height. */
 .route-top-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
-.route-bottom-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: var(--space-4); align-items: start; }
+.route-bottom-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.6fr); gap: var(--space-4); align-items: start; }
 .route-details-fields { grid-template-columns: minmax(0, 1fr); margin-top: 0; }
 .service-days-table th:last-child, .service-days-table td:last-child { width: 9em; }
 /* The Abbr. column takes its width from the Service day column, so the table keeps its overall width (Decision 0059). */
@@ -93,9 +93,11 @@
 .pattern-stops-table td, .pattern-stops-table tbody th { border-bottom: 0; vertical-align: middle; }
 .pattern-stops-table tbody th, .pattern-stops-table tbody td:first-child { position: static; }
 .pattern-stops-timepoint th, .pattern-stops-timepoint td { padding-top: var(--space-2); background: var(--color-surface-2); color: var(--color-text); font-size: var(--font-size-label); font-weight: var(--font-weight-semibold); white-space: normal; }
-.pattern-stops-timepoint th { display: flex; align-items: center; gap: var(--space-2); padding-left: var(--space-4); }
+.pattern-stops-timepoint th { padding-left: var(--space-4); }
+.pattern-stops-timepoint__name { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+/* Decision 0080: the timepoint's stop ID field reads like the stop rows' fields. */
+.pattern-stops-timepoint td .pattern-stops-code { font-size: var(--font-size-body); font-weight: var(--font-weight-regular); }
 .pattern-stops-timepoint__mark { flex: none; width: 10px; height: 10px; border: 2px solid var(--color-accent); border-radius: 50%; background: var(--color-surface); }
-.pattern-stops-timepoint__code { color: var(--color-text-muted); font-variant-numeric: tabular-nums; font-weight: var(--font-weight-regular); }
 .pattern-stops-stop td:first-child, .pattern-stops-add td, .pattern-stops-error td { padding-left: calc(var(--space-4) + 4px); }
 .pattern-stops-stop td:first-child, .pattern-stops-add td:first-child, .pattern-stops-error td:first-child { box-shadow: inset calc(var(--space-4) + 5px) 0 0 -1px var(--color-surface), inset calc(var(--space-4) + 6px) 0 0 0 var(--color-border); }
 .pattern-stops-stop.row-moved > td:first-child { box-shadow: inset calc(var(--space-4) + 5px) 0 0 -1px var(--color-surface), inset calc(var(--space-4) + 6px) 0 0 0 var(--color-accent); }

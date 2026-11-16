@@ -3,6 +3,7 @@ import type { DatabaseRecordMap } from '../domain/types';
 import { metadata, newId } from '../domain/ids';
 import { recoverScenarioCopyNodeReferences } from '../domain/scenarioCopyRecovery';
 import { unifyRouteRuntimeCalculationMethods } from '../domain/runtime';
+import { moveNodeStopCodesToPatterns } from '../domain/stops';
 import type { WriteGuard } from './tabGuard';
 export class TransitDatabase extends Dexie {
   projects!: Table<DatabaseRecordMap['projects'], string>; scenarios!: Table<DatabaseRecordMap['scenarios'], string>; serviceDays!: Table<DatabaseRecordMap['serviceDays'], string>; routes!: Table<DatabaseRecordMap['routes'], string>; nodes!: Table<DatabaseRecordMap['nodes'], string>; patterns!: Table<DatabaseRecordMap['patterns'], string>; directions!: Table<DatabaseRecordMap['directions'], string>; runtimeProfiles!: Table<DatabaseRecordMap['runtimeProfiles'], string>; runtimeAssignments!: Table<DatabaseRecordMap['runtimeAssignments'], string>; generationSets!: Table<DatabaseRecordMap['generationSets'], string>; tripProfiles!: Table<DatabaseRecordMap['tripProfiles'], string>; blockingScenarios!: Table<DatabaseRecordMap['blockingScenarios'], string>; trips!: Table<DatabaseRecordMap['trips'], string>; tripRegenerationUndo!: Table<DatabaseRecordMap['tripRegenerationUndo'], string>; blocks!: Table<DatabaseRecordMap['blocks'], string>; costingAssumptions!: Table<DatabaseRecordMap['costingAssumptions'], string>; plannedFrequencies!: Table<DatabaseRecordMap['plannedFrequencies'], string>; routeStopSets!: Table<DatabaseRecordMap['routeStopSets'], string>; /** @deprecated Kept untyped and unused so the upgrade does not discard any data in the preliminary table. */ costPlans!: Table<Record<string, unknown>, string>; appMetadata!: Table<DatabaseRecordMap['appMetadata'], string>;
@@ -102,6 +103,24 @@ export class TransitDatabase extends Dexie {
     this.version(10).stores({ plannedFrequencies: 'id,scenarioId,routeId,[routeId+serviceDayId]' });
     // Version 11 adds the Route-owned `routeStopSets` table (Decision 0079). It starts empty; no existing data is read or written.
     this.version(11).stores({ routeStopSets: 'id,scenarioId,routeId' });
+    // Version 12 changes no store. A timepoint's stop ID moves from its Node to every point of the Route's patterns that stands on that Node,
+    // in the Route's stop set (Decision 0080); a point that already has a stop ID keeps it. Only Nodes that had `stopCode` and the stop sets that
+    // change are written. A failure leaves the data as it was (as in version 7).
+    this.version(12).stores({}).upgrade(async (tx) => {
+      try {
+        const nodes: Array<{ id: string; scenarioId: string; routeId: string; stopCode?: unknown }> = await tx.table('nodes').toArray();
+        if (!nodes.some((node) => 'stopCode' in node)) return;
+        const [patterns, routeStopSets] = await Promise.all([tx.table('patterns').toArray(), tx.table('routeStopSets').toArray()]);
+        const moved = moveNodeStopCodesToPatterns({ nodes, patterns, routeStopSets, now: new Date().toISOString(), makeId: newId });
+        const changedNodes = new Set(moved.changedNodeIds);
+        const changedSets = new Set(moved.changedSetIds);
+        // Stop sets first: if the Node write then fails, the Nodes keep their stop IDs and nothing is lost.
+        await tx.table('routeStopSets').bulkPut(moved.routeStopSets.filter((set) => changedSets.has(set.id)));
+        await tx.table('nodes').bulkPut(moved.nodes.filter((node) => changedNodes.has(node.id)));
+      } catch (error) {
+        console.warn('Timepoint stop ID migration was skipped.', error);
+      }
+    });
   }
 
   private installWriteGuard(guard: WriteGuard): void {

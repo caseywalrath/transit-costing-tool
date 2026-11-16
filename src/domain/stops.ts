@@ -8,6 +8,7 @@ import type {
   RouteStopSet,
   StopTimeRoundingSeconds,
   StopTimingRule,
+  TimepointStopCodes,
   ValidationFinding,
   ValidationSeverity,
 } from './types';
@@ -37,6 +38,20 @@ export function placementsBySegment(pattern: RoutePattern, placements: readonly 
   }
   for (const segment of segments) segment.sort((left, right) => left.sequence - right.sequence);
   return segments;
+}
+
+/**
+ * Decision 0080. A pattern's timepoint stop IDs as they are stored: trimmed, blank values left out, entries whose point is not on the pattern
+ * left out, in point order.
+ */
+export function normalizeTimepointStopCodes(pattern: RoutePattern, codes: Readonly<TimepointStopCodes> | undefined): TimepointStopCodes {
+  const result: TimepointStopCodes = {};
+  if (!codes) return result;
+  for (const point of sortedPoints(pattern)) {
+    const code = codes[point.id];
+    if (typeof code === 'string' && code.trim() !== '') result[point.id] = code.trim();
+  }
+  return result;
 }
 
 /** Section 4.5. */
@@ -110,8 +125,8 @@ export function validateRouteStopSet(set: RouteStopSet, patterns: readonly Route
 }
 
 /**
- * Section 4.5. Returns the input array itself when nothing changed. A set whose stops are all gone is dropped, and so is
- * a set whose Route is missing.
+ * Section 4.5. Returns the input array itself when nothing changed. A set left with no stops and no timepoint stop IDs is dropped, and so is
+ * a set whose Route is missing. Timepoint stop IDs of a missing pattern or point are dropped (Decision 0080).
  */
 export function pruneRouteStopSets(sets: RouteStopSet[], owners: { routes: readonly Route[]; patterns: readonly RoutePattern[] }): RouteStopSet[] {
   const routeIds = new Set(owners.routes.map((route) => route.id));
@@ -133,10 +148,21 @@ export function pruneRouteStopSets(sets: RouteStopSet[], owners: { routes: reado
     }
     const usedStopIds = new Set(Object.values(placementsByPatternId).flat().map((placement) => placement.stopId));
     const stops = set.stops.filter((stop) => usedStopIds.has(stop.id));
-    if (stops.length === 0) { changed = true; continue; }
-    if (!placementsChanged && stops.length === set.stops.length) { next.push(set); continue; }
+    let codesChanged = false;
+    const timepointStopCodesByPatternId: Record<EntityId, TimepointStopCodes> = {};
+    for (const [patternId, codes] of Object.entries(set.timepointStopCodesByPatternId ?? {})) {
+      const pattern = patternById.get(patternId);
+      const normalized = pattern && pattern.routeId === set.routeId ? normalizeTimepointStopCodes(pattern, codes) : {};
+      if (Object.keys(normalized).length === 0) { codesChanged = true; continue; }
+      if (JSON.stringify(normalized) !== JSON.stringify(codes)) codesChanged = true;
+      timepointStopCodesByPatternId[patternId] = normalized;
+    }
+    const hasCodes = Object.keys(timepointStopCodesByPatternId).length > 0;
+    if (stops.length === 0 && !hasCodes) { changed = true; continue; }
+    if (!placementsChanged && !codesChanged && stops.length === set.stops.length) { next.push(set); continue; }
     changed = true;
-    next.push({ ...set, stops, placementsByPatternId });
+    const { timepointStopCodesByPatternId: _previousCodes, ...rest } = set;
+    next.push({ ...rest, stops, placementsByPatternId, ...(hasCodes ? { timepointStopCodesByPatternId } : {}) });
   }
   return changed ? next : sets;
 }
@@ -181,6 +207,58 @@ export function reconcilePlacements(
 }
 
 /**
+ * Decision 0080. Reconciles a pattern's timepoint stop IDs with the pattern after an edit: a stop ID stays only while its point remains and
+ * still stands on the same Node.
+ */
+export function reconcileTimepointStopCodes(saved: RoutePattern, next: RoutePattern, codes: Readonly<TimepointStopCodes>): { codes: TimepointStopCodes; removedCount: number } {
+  const savedNodeByPoint = new Map(saved.points.map((point) => [point.id, point.nodeId] as const));
+  const kept: TimepointStopCodes = {};
+  for (const point of next.points) {
+    if (codes[point.id] !== undefined && savedNodeByPoint.get(point.id) === point.nodeId) kept[point.id] = codes[point.id];
+  }
+  const result = normalizeTimepointStopCodes(next, kept);
+  return { codes: result, removedCount: Object.keys(normalizeTimepointStopCodes(saved, codes)).length - Object.keys(result).length };
+}
+
+/**
+ * Decision 0080. Moves the stop IDs that Nodes carried before Decision 0080 onto every point of the Route's patterns that stands on that
+ * Node, unless the point already has a stop ID. A Route without a stop set gets one. Every returned Node is without `stopCode`.
+ * `changedSetIds` lists the sets that were created or changed.
+ */
+export function moveNodeStopCodesToPatterns<TNode extends { id: EntityId; scenarioId: EntityId; routeId: EntityId }>(input: {
+  nodes: readonly TNode[];
+  patterns: readonly RoutePattern[];
+  routeStopSets: readonly RouteStopSet[];
+  now: string;
+  makeId: () => EntityId;
+}): { nodes: Array<Omit<TNode, 'stopCode'>>; routeStopSets: RouteStopSet[]; changedNodeIds: EntityId[]; changedSetIds: EntityId[] } {
+  const sets = new Map(input.routeStopSets.map((set) => [set.routeId, set] as const));
+  const changedSetIds = new Set<EntityId>();
+  const changedNodeIds: EntityId[] = [];
+  const nodes = input.nodes.map((node) => {
+    if (!('stopCode' in node)) return node;
+    changedNodeIds.push(node.id);
+    const { stopCode, ...rest } = node as TNode & { stopCode?: unknown };
+    const code = typeof stopCode === 'string' ? stopCode.trim() : '';
+    if (!code) return rest;
+    for (const pattern of input.patterns) {
+      if (pattern.routeId !== node.routeId) continue;
+      const pointIds = pattern.points.filter((point) => point.nodeId === node.id).map((point) => point.id);
+      if (!pointIds.length) continue;
+      const current = sets.get(node.routeId) ?? { id: input.makeId(), scenarioId: node.scenarioId, routeId: node.routeId, roundingSeconds: DEFAULT_STOP_ROUNDING_SECONDS, stops: [], placementsByPatternId: {}, createdAt: input.now, updatedAt: input.now };
+      const codes = { ...current.timepointStopCodesByPatternId?.[pattern.id] };
+      let added = false;
+      for (const pointId of pointIds) if (codes[pointId] === undefined) { codes[pointId] = code; added = true; }
+      if (!added) continue;
+      sets.set(node.routeId, { ...current, timepointStopCodesByPatternId: { ...current.timepointStopCodesByPatternId, [pattern.id]: normalizeTimepointStopCodes(pattern, codes) }, updatedAt: input.now });
+      changedSetIds.add(current.id);
+    }
+    return rest;
+  });
+  return { nodes, routeStopSets: [...sets.values()], changedNodeIds, changedSetIds: [...changedSetIds] };
+}
+
+/**
  * Copies a set for a duplicated Route or Scenario (Decision 0079 item 11). New set id; stop and placement ids are kept. Pattern keys and
  * afterPatternPointId are mapped; an entry whose pattern has no mapping is dropped, and a placement whose point has no mapping is dropped.
  */
@@ -200,12 +278,26 @@ export function remapRouteStopSet(
     // A pattern with no stops has no entry (Decision 0079 item 2 and section 4.1).
     if (mapped.length > 0) placementsByPatternId[targetPatternId] = mapped;
   }
+  // Decision 0080: timepoint stop IDs follow their pattern and point.
+  const timepointStopCodesByPatternId: Record<EntityId, TimepointStopCodes> = {};
+  for (const [patternId, codes] of Object.entries(set.timepointStopCodesByPatternId ?? {})) {
+    const targetPatternId = target.patternIds.get(patternId);
+    if (targetPatternId === undefined) continue;
+    const mapped: TimepointStopCodes = {};
+    for (const [pointId, code] of Object.entries(codes)) {
+      const targetPointId = target.pointIds.get(pointId);
+      if (targetPointId !== undefined) mapped[targetPointId] = code;
+    }
+    if (Object.keys(mapped).length > 0) timepointStopCodesByPatternId[targetPatternId] = mapped;
+  }
+  const { timepointStopCodesByPatternId: _sourceCodes, ...rest } = set;
   return {
-    ...set,
+    ...rest,
     id: target.id,
     scenarioId: target.scenarioId,
     routeId: target.routeId,
     placementsByPatternId,
+    ...(Object.keys(timepointStopCodesByPatternId).length ? { timepointStopCodesByPatternId } : {}),
     stops: set.stops.map((stop): RouteStop => ({ ...stop })),
     createdAt: now,
     updatedAt: now,

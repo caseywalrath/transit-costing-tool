@@ -1,5 +1,6 @@
 // ST5 (Decision 0079): the Route tab's Stops drawer. Placing and ordering stops, linking an existing stop from another pattern, Fill and
-// Copy with Undo, the unsaved-changes prompt, a duplicate stop ID message, and the 390 px layout. Real IndexedDB.
+// Copy with Undo, timepoint stop IDs per pattern (Decision 0080), the unsaved-changes prompt, a duplicate stop ID message, and the 390 px
+// layout. Real IndexedDB.
 import { expect, test, type Page } from '@playwright/test';
 import { createRouteWithPattern } from './support/tripsWorkspace';
 import { runInPage } from './support/dexieEnv';
@@ -143,6 +144,67 @@ test('links an existing stop from another pattern, renames it once for both, fil
   await drawerOf(page).getByRole('button', { name: 'Stop actions', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Undo last stop copy', exact: true }).click();
   await expect.poll(() => storedStops(page, 'Short')).toEqual(['Shared stop']);
+});
+
+/** The stored timepoint stop IDs of a pattern, as "node name=stop ID" in point order (Decision 0080). */
+async function storedCodes(page: Page, patternName: string): Promise<string[]> {
+  return runInPage(page, `
+    const pattern = (await e.db.patterns.toArray()).find((candidate) => candidate.name === arg);
+    const set = await e.repository.getRouteStopSet(pattern.routeId);
+    const nodes = new Map((await e.db.nodes.toArray()).map((node) => [node.id, node.name]));
+    const codes = set?.timepointStopCodesByPatternId?.[pattern.id] ?? {};
+    return [...pattern.points].sort((left, right) => left.sequence - right.sequence).filter((point) => codes[point.id]).map((point) => nodes.get(point.nodeId) + '=' + codes[point.id]);
+  `, patternName);
+}
+
+test('timepoint stop IDs are entered per pattern, filled from and copied to patterns of the same direction only (Decision 0080)', async ({ page }) => {
+  await threePatternRoute(page, 'Timepoint stop IDs');
+  // Reverse runs C → B → A in the Route's other direction.
+  await runInPage(page, `
+    const patterns = await e.db.patterns.toArray();
+    const main = patterns.find((candidate) => candidate.name === 'Main');
+    const other = (await e.db.directions.toArray()).find((direction) => direction.routeId === main.routeId && direction.id !== main.directionId);
+    const now = new Date().toISOString();
+    const points = [...main.points].sort((left, right) => left.sequence - right.sequence).reverse().map((point, sequence) => ({ ...point, id: crypto.randomUUID(), sequence, cumulativeMiles: sequence }));
+    await e.repository.updateScenarioRecords(main.scenarioId, (current) => ({ ...current, patterns: [...current.patterns, { ...main, id: crypto.randomUUID(), name: 'Reverse', directionId: other.id, points, createdAt: now, updatedAt: now }] }));
+  `);
+  await page.reload();
+  await openStops(page, 'Reverse');
+  await drawerOf(page).getByRole('textbox', { name: 'Timepoint stop ID, B', exact: true }).fill('B-south');
+  await saveStops(page);
+
+  await patternButton(page, 'Main').click();
+  await expect(page.getByRole('heading', { name: 'Main', exact: true })).toBeVisible();
+  await drawerOf(page).getByRole('textbox', { name: 'Timepoint stop ID, A', exact: true }).fill(' A-1 ');
+  await drawerOf(page).getByRole('textbox', { name: 'Timepoint stop ID, B', exact: true }).fill('B-1');
+  await expect(drawerOf(page).getByRole('status').filter({ hasText: 'unsaved change' })).toHaveText('2 unsaved changes');
+  await saveStops(page);
+  expect(await storedCodes(page, 'Main')).toEqual(['A=A-1', 'B=B-1']);
+
+  // Short (A → B, same direction): Fill takes both stop IDs from Main, not B-south from Reverse.
+  await patternButton(page, 'Short').click();
+  await expect(page.getByRole('heading', { name: 'Short', exact: true })).toBeVisible();
+  await drawerOf(page).getByRole('button', { name: 'Stop actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Fill from other patterns…', exact: true }).click();
+  const fill = page.getByRole('dialog', { name: 'Fill stops from other patterns' });
+  await expect(fill.getByRole('table', { name: 'Timepoint stop IDs' }).getByRole('row')).toHaveText(['TimepointStop IDSource', 'AA-1Main', 'BB-1Main']);
+  await fill.getByRole('button', { name: 'Fill stops', exact: true }).click();
+  await expect(drawerOf(page).getByRole('textbox', { name: 'Timepoint stop ID, B', exact: true })).toHaveValue('B-1');
+  await saveStops(page);
+  expect(await storedCodes(page, 'Short')).toEqual(['A=A-1', 'B=B-1']);
+
+  // Copy from Main reaches Branch (B → C), and Reverse is not offered.
+  await patternButton(page, 'Main').click();
+  await expect(page.getByRole('heading', { name: 'Main', exact: true })).toBeVisible();
+  await drawerOf(page).getByRole('button', { name: 'Stop actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Copy to other patterns…', exact: true }).click();
+  const copy = page.getByRole('dialog', { name: 'Copy stops to other patterns' });
+  await expect(copy.getByRole('checkbox', { name: 'Include Branch', exact: true })).toBeChecked();
+  await expect(copy.getByRole('checkbox', { name: 'Include Reverse', exact: true })).toHaveCount(0);
+  await copy.getByRole('button', { name: 'Replace stops', exact: true }).click();
+  await expect(copy).toHaveCount(0);
+  expect(await storedCodes(page, 'Branch')).toEqual(['B=B-1']);
+  expect(await storedCodes(page, 'Reverse')).toEqual(['B=B-south']);
 });
 
 test('asks before leaving unsaved stops for another pattern, and shows a duplicate stop ID beside its row', async ({ page }) => {
