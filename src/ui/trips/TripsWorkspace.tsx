@@ -22,6 +22,7 @@ import { useBlockingScenarioCommands } from '../blocking/blockingScenarioCommand
 import { runtimeProfileCsv } from '../runtimeProfileCsv';
 import { tripTableCsv } from '../../application/tripTableCsv';
 import { stopTimesCsv } from '../../application/stopTimesCsv';
+import { StopTripsClosePrompt, StopTripsDrawer, type StopTripsHandle } from './StopTripsDrawer';
 import { type RouteNavigationGuard } from '../shared/types';
 import { type RuntimeEditorHandle, type RuntimeEditorState, RuntimeEditor2, RouteRuntimeMethodDialog } from './RuntimeEditor';
 import { type PlannedFrequencyService, type PlanComparisonResult } from '../../application/plannedFrequencyService';
@@ -138,6 +139,11 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   const [tripDeletion, setTripDeletion] = useState<{ tripIds: string[]; affectedBlockIds: string[]; reviewToken: string }>();
   const [recalculationTripIds, setRecalculationTripIds] = useState<string[]>([]);
   const [buildOpen, setBuildOpen] = useState(false);
+  // Decision 0079 (ST6): the Stop trips drawer, whether its timing rules or rounding are unsaved, and the action waiting on its prompt.
+  const [stopTripsOpen, setStopTripsOpen] = useState(false);
+  const [stopTripsDirty, setStopTripsDirty] = useState(false);
+  const [stopTripsLeaveAction, setStopTripsLeaveAction] = useState<() => void>();
+  const stopTripsRef = useRef<StopTripsHandle>(null);
   const [draftTrip, setDraftTrip] = useState<{ patternId: string; firstTrip: string }>();
   const [shiftMinutes, setShiftMinutes] = useState('1');
   const [startTimeReview, setStartTimeReview] = useState<{ preview: RecalculationPreview; patternName: string; fromSeconds: number; toSeconds: number }>();
@@ -480,15 +486,24 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   }
   function requestContextChange(action: () => void) {
     if (runtimeEditorState.dirty) { setRuntimeLeave({ action, leavesContext: true }); return; }
-    requestShiftAndDraftScopeChange(action);
+    requestStopTripsScopeChange(() => requestShiftAndDraftScopeChange(action));
   }
+  /** Unsaved timing rules or rounding in the Stop trips drawer ask Save, Discard, or Cancel before the action runs. */
+  function requestStopTripsScopeChange(action: () => void) {
+    if (stopTripsDirty) { setStopTripsLeaveAction(() => action); return; }
+    action();
+  }
+  function openStopTrips() {
+    startOpenEdit(() => requestShiftScopeChange(() => { clearTripShiftHistory(); setBuildOpen(false); setStopTripsOpen(true); }));
+  }
+  function closeStopTrips() { setStopTripsOpen(false); setStopTripsDirty(false); window.setTimeout(() => tripsActionsRef.current?.focus()); }
   /** Saves the Runtime draft, asking first when a staged Shift would be dropped by the reload, then runs `action` if the save worked. */
   function saveRuntimeThen(action: () => void, leavesContext = false) {
     (leavesContext ? requestShiftAndDraftScopeChange : requestShiftScopeChange)(() => { void (async () => { if (await runtimeEditorRef.current?.save()) action(); })(); });
   }
   /** Starts an open edit (Add-trip row, staged Shift, Build trips). Side by side first settles an open edit in the other pane (Decision 0060 item 14). */
   const startOpenEdit = (start: () => void) => { if (onBeforeOpenEdit) onBeforeOpenEdit(start); else start(); };
-  const holdsOpenEdit = draftTripEntered || shiftDrawerOpen || buildOpen;
+  const holdsOpenEdit = draftTripEntered || shiftDrawerOpen || buildOpen || stopTripsOpen;
   useEffect(() => { onOpenEditChange?.(holdsOpenEdit); }, [holdsOpenEdit]);
   // The other pane started an open edit: a Build trips drawer here closes without a question, as it does on any scope change.
   const yieldSeen = useRef(yieldToken);
@@ -496,13 +511,21 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     if (yieldSeen.current === yieldToken) return;
     yieldSeen.current = yieldToken;
     setBuildOpen(false);
+    // The other pane's guard has already asked about unsaved stop timing, so the drawer closes here without a question.
+    setStopTripsOpen(false); setStopTripsDirty(false);
     if (!shiftOperations.length) clearTripShiftHistory();
   }, [yieldToken]);
   useEffect(() => {
-    if (!runtimeEditorState.dirty && !draftTripEntered && (!shiftDrawerOpen || !shiftOperations.length)) { onRegisterNavigationGuard(undefined); return; }
+    if (!runtimeEditorState.dirty && !draftTripEntered && (!shiftDrawerOpen || !shiftOperations.length) && !stopTripsDirty) { onRegisterNavigationGuard(undefined); return; }
     onRegisterNavigationGuard(requestContextChange);
     return () => onRegisterNavigationGuard(undefined);
-  }, [shiftDrawerOpen, shiftOperations.length, runtimeEditorState.dirty, draftTripEntered]);
+  }, [shiftDrawerOpen, shiftOperations.length, runtimeEditorState.dirty, draftTripEntered, stopTripsDirty]);
+  useEffect(() => {
+    if (!stopTripsDirty) return;
+    const protect = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', protect);
+    return () => window.removeEventListener('beforeunload', protect);
+  }, [stopTripsDirty]);
   useEffect(() => {
     if (!runtimeEditorState.dirty) return;
     const protect = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
@@ -801,6 +824,8 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   const tripActionsMenu: MenuGroup[] = [
     ...(applicableRegenerationUndo ? [{ items: [{ id: 'undo-regeneration', label: `${applicableRegenerationUndo.kind === 'patternChange' ? 'Undo last pattern change' : 'Undo last regeneration'} (${applicableRegenerationUndo.afterTrips.length} trips)`, disabled: busy || tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => void undoRegeneration() }] }] : []),
     { items: [{ id: 'copy-day', label: 'Copy trips from another day…', disabled: tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => setTripCopyOpen(true) }] },
+    // Decision 0079 (ST6): one open edit at a time, so Stop trips waits for a staged Shift to be settled.
+    { items: [{ id: 'stop-trips', label: 'Stop trips…', disabled: tripProfileBusy || stopTripsOpen || shiftOperations.length > 0, title: stopTripsOpen ? 'The Stop trips drawer is already open.' : shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: openStopTrips }] },
     { items: [{ id: 'export-trips-csv', label: 'Export trips CSV', disabled: !trips.length, onSelect: exportTripsCsv }, { id: 'export-stop-times-csv', label: 'Export trips with stops CSV', disabled: !trips.length, onSelect: () => void exportStopTimesCsv() }] },
   ];
   const canUnassignSelected = selectedTripIds.some((id) => tripBlockByTripId.has(id));
@@ -826,8 +851,8 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   const assignBlockTitle = !selectedBlockingScenario ? 'Select a blocking scenario first.' : tripBlockingBlocksBusy ? 'Loading blocks.' : !tripBlockOptions.length ? 'Create a block in the selected blocking scenario first.' : !hasAssignableTripBlock ? 'No blocks can accept trips from the selected route.' : shiftOperations.length || shiftDrawerOpen ? 'Finish or discard the staged shift first.' : undefined;
   const unassignDisabled = (canUnassign: boolean) => !canUnassign || !selectedBlockingScenario || tripBlockingBlocksBusy || busy || tripProfileBusy || shiftOperations.length > 0 || shiftDrawerOpen;
   const unassignTitle = (canUnassign: boolean, none: string) => !canUnassign ? none : !selectedBlockingScenario ? 'Select a blocking scenario first.' : shiftOperations.length || shiftDrawerOpen ? 'Finish or discard the staged shift first.' : undefined;
-  const shiftDisabled = busy || tripProfileBusy || shiftDrawerOpen;
-  const shiftTitle = shiftDrawerOpen ? 'The shift drawer is already open.' : undefined;
+  const shiftDisabled = busy || tripProfileBusy || shiftDrawerOpen || stopTripsOpen;
+  const shiftTitle = shiftDrawerOpen ? 'The shift drawer is already open.' : stopTripsOpen ? 'Close the Stop trips drawer first.' : undefined;
   const stagedLockDisabled = busy || tripProfileBusy || shiftOperations.length > 0;
   const stagedLockTitle = shiftOperations.length ? 'Discard the staged shift first.' : undefined;
   const selectionCommands: MenuItem[] = [
@@ -925,7 +950,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
       actions={<>
         {!pane && viewButton}
         <button type="button" disabled={Boolean(draftTrip) || tripProfileBusy || shiftOperations.length > 0} title={shiftOperations.length ? 'Discard the staged shift first.' : undefined} onClick={() => startOpenEdit(() => setDraftTrip({ patternId: '', firstTrip: '' }))}>Add trip</button>
-        <button type="button" ref={buildTripsButtonRef} className="primary" disabled={tripProfileBusy || shiftOperations.length > 0 || buildOpen} title={buildOpen ? 'The Build trips drawer is already open.' : shiftOperations.length ? 'Discard the staged shift first.' : undefined} onClick={() => startOpenEdit(() => setBuildOpen(true))}>Build trips…</button>
+        <button type="button" ref={buildTripsButtonRef} className="primary" disabled={tripProfileBusy || shiftOperations.length > 0 || buildOpen || stopTripsOpen} title={buildOpen ? 'The Build trips drawer is already open.' : stopTripsOpen ? 'Close the Stop trips drawer first.' : shiftOperations.length ? 'Discard the staged shift first.' : undefined} onClick={() => startOpenEdit(() => setBuildOpen(true))}>Build trips…</button>
         <MenuButton label="Actions" menuLabel="Trip actions" groups={tripActionsMenu} disabled={tripProfileBusy || Boolean(tripBlockAssignment)} triggerRef={tripsActionsRef} />
       </>}>
       {tripsWithChangedRuntimes.length > 0 && <InlineNote kind="warn"><b>Run times have changed</b> for {tripsWithChangedRuntimes.length} {tripsWithChangedRuntimes.length === 1 ? 'trip' : 'trips'}. <button type="button" className="small" disabled={busy || tripProfileBusy} onClick={selectTripsWithChangedRuntimes}>Select these trips</button></InlineNote>}
@@ -943,6 +968,8 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     {segmentRuntimeDialog && selectedProfile && <SegmentRuntimeDialog service={service} mode={segmentRuntimeDialog} profileId={selectedProfile.id} onDone={() => { setSegmentRuntimeDialog(undefined); onRuntimeChanged(); }} onClose={() => setSegmentRuntimeDialog(undefined)} />}
     {runtimeDialog && <RuntimeProfileDialog2 dialog={runtimeDialog} candidates={reverseCandidates} onSubmit={submitRuntimeDialog} onClose={() => setRuntimeDialog(undefined)} />}
     {deleteProfileOpen && selectedProfile && profileDeletionImpact && <DeleteRuntimeProfileDialog profile={selectedProfile} profiles={profiles} assignmentCount={profileDeletionImpact.assignmentCount} tripCount={profileDeletionImpact.tripCount} onDelete={deleteProfile} onClose={() => { setDeleteProfileOpen(false); setProfileDeletionImpact(undefined); }} />}
+    {stopTripsOpen && <StopTripsDrawer ref={stopTripsRef} service={service} aggregate={aggregate} patterns={patterns} nodes={aggregate.nodes} trips={trips} selectedTripIds={selectedTripIds} onDirtyChange={setStopTripsDirty} onClose={closeStopTrips} />}
+    {stopTripsLeaveAction && <StopTripsClosePrompt onCancel={() => setStopTripsLeaveAction(undefined)} onDiscard={() => { const action = stopTripsLeaveAction; setStopTripsLeaveAction(undefined); stopTripsRef.current?.discard(); setStopTripsDirty(false); action(); }} onSave={() => { const action = stopTripsLeaveAction; setStopTripsLeaveAction(undefined); void stopTripsRef.current?.save().then((saved) => { if (saved) action(); }); }} />}
     {buildOpen && <BuildTripsDrawer tripService={tripService} plannedFrequencyService={plannedFrequencyService} scenarioId={records.scenario.id} routeId={aggregate.route.id} serviceDayId={serviceDayId} tripProfileId={tripProfileId} patterns={patterns} nodes={aggregate.nodes} profileName={selectedProfile?.name} initialValues={buildValues.current} onValuesChange={(values) => { buildValues.current = values; }} onDone={async (changedTripIds) => { buildValues.current = EMPTY_BUILD_VALUES; closeBuildDrawer(); setChangedMarks((previous) => markTrips(previous, changedTripIds)); clearTripShiftHistory(); await loadTrips(); }} onClose={closeBuildDrawer} />}
     {tripDeletion && <DeleteTripsDialog tripCount={tripDeletion.tripIds.length} affectedBlockCount={tripDeletion.affectedBlockIds.length} onDelete={() => void deleteTrips()} onClose={() => setTripDeletion(undefined)} busy={busy} />}
     {startTimeReview && <StartTimeChangeDialog patternName={startTimeReview.patternName} fromSeconds={startTimeReview.fromSeconds} toSeconds={startTimeReview.toSeconds} preview={startTimeReview.preview} busy={busy} onApply={() => void applyStartTimeChange(startTimeReview.preview)} onClose={() => setStartTimeReview(undefined)} />}

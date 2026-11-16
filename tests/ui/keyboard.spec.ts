@@ -162,6 +162,14 @@ test('every dialog opened from the screens has an accessible name, and the axe d
   await chooseScope(page, 'Day', { label: 'Weekday' });
   await expect(page.locator('.trips-workspace .schedule-table tbody tr').first()).toBeVisible({ timeout: 30_000 });
   expect(await axeViolations(page)).toEqual([]);
+  // ST6 (Decision 0079): the Trips tab's Stop trips drawer, with its grid of timepoints and Trips.
+  await page.getByRole('button', { name: 'Trip actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Stop trips…', exact: true }).click();
+  const stopTrips = page.getByRole('complementary', { name: 'Stop trips' });
+  await expect(stopTrips.getByRole('table')).toBeVisible();
+  expect(await axeViolations(page)).toEqual([]);
+  await page.keyboard.press('Escape');
+  await expect(stopTrips).toHaveCount(0);
   await openRuntimes(page);
   expect(await axeViolations(page)).toEqual([]);
   await page.locator('[aria-label="Runtimes section"] .menu-field').filter({ hasText: 'Profile' }).getByRole('button').click();
