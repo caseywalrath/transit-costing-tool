@@ -4,10 +4,10 @@ import { ProjectBackupService } from '../persistence/backupRepository';
 import { TransitDatabase } from '../persistence/database';
 import { DexieRouteDefinitionRepository } from '../persistence/dexieRepository';
 import { InMemoryRouteDefinitionRepository } from '../persistence/inMemoryRepository';
-import { RouteDefinitionService, SEGMENT_DISTANCE_UNDO_REFUSED, ServiceDayValidationError } from './routeDefinitionService';
+import { RouteDefinitionService, SEGMENT_DISTANCE_UNDO_REFUSED, ServiceDayValidationError, STOPS_CHANGED_ELSEWHERE, STOP_COPY_UNDO_REFUSED } from './routeDefinitionService';
 import type { RouteDefinitionRepository, TripGenerationRepository } from './ports';
 import { metadata, newId } from '../domain/ids';
-import type { Block, ProjectSnapshot, Trip } from '../domain/types';
+import type { Block, PatternStopPlacement, ProjectSnapshot, RoutePattern, RouteStop, Trip } from '../domain/types';
 import { addBlocks } from '../testSupport/addBlocks';
 import { addRouteNodes, addTwoStopPattern, savePattern, savePatternDraft } from '../testSupport/routeFixtures';
 
@@ -1050,5 +1050,171 @@ describe('distance fill and copy between patterns (Decision 0065)', () => {
   it('refuses a preview for a pattern that is not saved', async () => {
     const { service } = await distanceRoute();
     await expect(service.previewDistanceCopy('not-saved')).rejects.toThrow('Save this pattern before copying its distances.');
+  });
+});
+
+describe('route stops (Decision 0079)', () => {
+  const at = '2026-09-10T12:00:00.000Z';
+  /** Every save of the Route's stop list passes both stops, because the list replaces the stored one. */
+  const STOPS: RouteStop[] = [{ id: 'elm', name: 'Elm Street' }, { id: 'oak', name: 'Oak Avenue' }];
+  /** A Route with Trunk and Branch, both through South, North, and Third (in that order), and no stops yet. */
+  async function stopRoute() {
+    const repository = new InMemoryRouteDefinitionRepository();
+    const backup = new ProjectBackupService((id) => repository.getProjectSnapshot(id), (snapshot) => repository.saveProjectSnapshot(snapshot));
+    const service = new RouteDefinitionService(repository, backup, () => at);
+    const created = await service.createProject('Stops');
+    const scenarioId = created.records.scenario.id;
+    const addedRoute = await service.addRoute(created.records);
+    const routeId = addedRoute.route.id;
+    let aggregate = (await service.loadWorkspace(created.project.id, scenarioId, routeId)).aggregate!;
+    const withNodes = await addRouteNodes(service, aggregate, [{ name: 'South' }, { name: 'North' }, { name: 'Third' }]);
+    aggregate = withNodes.aggregate;
+    const [, north] = withNodes.nodes;
+    const stops = withNodes.nodes.map((node, index) => ({ nodeId: node.id, miles: [0, 1.5, 4][index] }));
+    const trunk = await savePattern(service, aggregate, { name: 'Trunk', stops });
+    aggregate = trunk.aggregate;
+    const branch = await savePattern(service, aggregate, { name: 'Branch', stops });
+    aggregate = branch.aggregate;
+    return { repository, service, scenarioId, routeId, aggregate, north, trunk: trunk.pattern, branch: branch.pattern };
+  }
+  /** Point IDs of a pattern in sequence order. */
+  const pointIds = (pattern: RoutePattern) => [...pattern.points].sort((left, right) => left.sequence - right.sequence).map((point) => point.id);
+  const placement = (stopId: string, afterPatternPointId: string, timing: PatternStopPlacement['timing'] = 'interpolate'): PatternStopPlacement => ({ id: newId(), stopId, afterPatternPointId, sequence: 0, timing });
+  /** Saves one pattern's placements, with the stored stamp, so the save is not refused as stale. */
+  async function saveStops(service: RouteDefinitionService, routeId: string, patternId: string, placements: PatternStopPlacement[]) {
+    const stored = await service.getRouteStopSet(routeId);
+    return service.saveRouteStops({ routeId, patternId, stops: STOPS, placements, roundingSeconds: 60, baseUpdatedAt: stored?.updatedAt });
+  }
+
+  it('saves a stop list, trims names and Stop IDs, renumbers sequences, and removes the set when no placement is left', async () => {
+    const { service, routeId, trunk } = await stopRoute();
+    const [south] = pointIds(trunk);
+    const saved = await service.saveRouteStops({
+      routeId, patternId: trunk.id, roundingSeconds: 60,
+      stops: [{ id: 'elm', name: '  Elm Street  ', stopCode: ' 1001 ' }, { id: 'oak', name: 'Oak Avenue', stopCode: '   ' }],
+      placements: [{ id: 'a', stopId: 'elm', afterPatternPointId: south, sequence: 5, timing: 'interpolate' }, { id: 'b', stopId: 'oak', afterPatternPointId: south, sequence: 9, timing: 'previous' }],
+    });
+    expect(saved?.stops).toEqual([{ id: 'elm', name: 'Elm Street', stopCode: '1001' }, { id: 'oak', name: 'Oak Avenue' }]);
+    expect(saved?.placementsByPatternId[trunk.id].map((item) => item.sequence)).toEqual([0, 1]);
+    expect(await service.getRouteStopSet(routeId)).toEqual(saved);
+    expect(await service.saveRouteStops({ routeId, patternId: trunk.id, roundingSeconds: 60, stops: saved!.stops, placements: [], baseUpdatedAt: saved!.updatedAt })).toBeUndefined();
+    expect(await service.getRouteStopSet(routeId)).toBeUndefined();
+  });
+
+  it('refuses a save from an editor that opened before the stops changed, and writes nothing', async () => {
+    const { service, repository, scenarioId, routeId, trunk } = await stopRoute();
+    await saveStops(service, routeId, trunk.id, [placement('elm', pointIds(trunk)[0])]);
+    const before = JSON.stringify(await repository.getScenarioRecords(scenarioId));
+    await expect(service.saveRouteStops({ routeId, patternId: trunk.id, stops: STOPS, placements: [], roundingSeconds: 60, baseUpdatedAt: undefined })).rejects.toThrow(STOPS_CHANGED_ELSEWHERE);
+    expect(JSON.stringify(await repository.getScenarioRecords(scenarioId))).toBe(before);
+  });
+
+  it('refuses a duplicate Stop ID, ignoring case and surrounding spaces, and writes nothing', async () => {
+    const { service, routeId, trunk } = await stopRoute();
+    await expect(service.saveRouteStops({
+      routeId, patternId: trunk.id, roundingSeconds: 60, placements: [],
+      stops: [{ id: 'a', name: 'A', stopCode: 'X1' }, { id: 'b', name: 'B', stopCode: ' x1 ' }],
+    })).rejects.toMatchObject({ name: 'RouteStopValidationError', findings: [expect.objectContaining({ ruleId: 'routeStop.codeDuplicate', entityId: 'b' })] });
+    expect(await service.getRouteStopSet(routeId)).toBeUndefined();
+  });
+
+  it('fill writes only into the draft, and nothing is saved until the draft is saved', async () => {
+    const { service, repository, scenarioId, routeId, aggregate, trunk, branch } = await stopRoute();
+    await saveStops(service, routeId, trunk.id, [placement('elm', pointIds(trunk)[0])]);
+    const before = JSON.stringify(await repository.getScenarioRecords(scenarioId));
+    const preview = service.previewStopFill(aggregate, await service.getRouteStopSet(routeId), branch, []);
+    expect(preview.changes.map((change) => [change.patternId, change.segmentIndex])).toEqual([[branch.id, 0]]);
+    expect(preview.stopNames).toEqual({ elm: 'Elm Street' });
+    const filled = service.applyStopFill(branch, [], preview);
+    expect(filled.map((item) => [item.stopId, item.afterPatternPointId])).toEqual([['elm', pointIds(branch)[0]]]);
+    expect(JSON.stringify(await repository.getScenarioRecords(scenarioId))).toBe(before);
+  });
+
+  it('copy writes the saved stops to the other pattern, and undo restores the set', async () => {
+    const { service, routeId, trunk, branch } = await stopRoute();
+    await expect(service.previewStopCopy(trunk.id)).rejects.toThrow("Save this pattern's stops before copying them.");
+    await saveStops(service, routeId, trunk.id, [placement('elm', pointIds(trunk)[0])]);
+    const preview = await service.previewStopCopy(trunk.id);
+    expect(preview.changes.map((change) => [change.patternId, change.segmentIndex])).toEqual([[branch.id, 0]]);
+    const written = await service.applyStopCopy(preview);
+    expect(written.placementsByPatternId[branch.id].map((item) => [item.stopId, item.afterPatternPointId])).toEqual([['elm', pointIds(branch)[0]]]);
+    expect(service.getStopCopyUndo()).toEqual({ routeId, patternCount: 1 });
+    const restored = await service.undoStopCopy();
+    expect(restored?.placementsByPatternId[branch.id]).toBeUndefined();
+    expect(restored?.placementsByPatternId[trunk.id]).toHaveLength(1);
+    expect(service.getStopCopyUndo()).toBeUndefined();
+    await expect(service.undoStopCopy()).rejects.toThrow('There is no stop copy to undo.');
+  });
+
+  it('refuses a copy when the stops changed after the preview, and writes nothing', async () => {
+    const { service, repository, scenarioId, routeId, trunk } = await stopRoute();
+    await saveStops(service, routeId, trunk.id, [placement('elm', pointIds(trunk)[0])]);
+    const preview = await service.previewStopCopy(trunk.id);
+    await saveStops(service, routeId, trunk.id, [placement('elm', pointIds(trunk)[0], 'next')]);
+    const before = JSON.stringify(await repository.getScenarioRecords(scenarioId));
+    await expect(service.applyStopCopy(preview)).rejects.toThrow('Stops changed after the preview. Review the changes again.');
+    expect(JSON.stringify(await repository.getScenarioRecords(scenarioId))).toBe(before);
+  });
+
+  it('a stop save makes the copy undo unavailable', async () => {
+    const { service, routeId, trunk } = await stopRoute();
+    await saveStops(service, routeId, trunk.id, [placement('elm', pointIds(trunk)[0])]);
+    await service.applyStopCopy(await service.previewStopCopy(trunk.id));
+    await saveStops(service, routeId, trunk.id, [placement('elm', pointIds(trunk)[0])]);
+    expect(service.getStopCopyUndo()).toBeUndefined();
+    await expect(service.undoStopCopy()).rejects.toThrow('There is no stop copy to undo.');
+  });
+
+  it('refuses an undo after another write changed the stop set, and writes nothing', async () => {
+    const { service, repository, scenarioId, routeId, trunk } = await stopRoute();
+    await saveStops(service, routeId, trunk.id, [placement('elm', pointIds(trunk)[0])]);
+    await service.applyStopCopy(await service.previewStopCopy(trunk.id));
+    await repository.updateScenarioRecords(scenarioId, (current) => ({ ...current, routeStopSets: (current.routeStopSets ?? []).map((set) => ({ ...set, updatedAt: '2026-09-11T00:00:00.000Z' })) }));
+    const before = JSON.stringify(await repository.getScenarioRecords(scenarioId));
+    await expect(service.undoStopCopy()).rejects.toThrow(STOP_COPY_UNDO_REFUSED);
+    expect(JSON.stringify(await repository.getScenarioRecords(scenarioId))).toBe(before);
+  });
+
+  it('a removed middle point moves its stops to the point before it', async () => {
+    const { service, routeId, trunk } = await stopRoute();
+    const [south, north] = pointIds(trunk);
+    await saveStops(service, routeId, trunk.id, [placement('elm', north)]);
+    const sorted = [...trunk.points].sort((left, right) => left.sequence - right.sequence);
+    const preview = await service.previewPatternChange(routeId, trunk.id, { ...trunk, points: [sorted[0], { ...sorted[2], sequence: 1 }] });
+    expect([preview.stopsMovedCount, preview.stopsRemovedCount]).toEqual([1, 0]);
+    await service.commitPatternChange(preview.previewToken);
+    const set = await service.getRouteStopSet(routeId);
+    expect(set?.placementsByPatternId[trunk.id].map((item) => [item.stopId, item.afterPatternPointId])).toEqual([['elm', south]]);
+  });
+
+  it('a removed last point removes the stops of the segment that ends there', async () => {
+    const { service, routeId, trunk } = await stopRoute();
+    const [, north] = pointIds(trunk);
+    await saveStops(service, routeId, trunk.id, [placement('elm', north)]);
+    const sorted = [...trunk.points].sort((left, right) => left.sequence - right.sequence);
+    const preview = await service.previewPatternChange(routeId, trunk.id, { ...trunk, points: sorted.slice(0, 2) });
+    expect([preview.stopsMovedCount, preview.stopsRemovedCount]).toEqual([0, 1]);
+    await service.commitPatternChange(preview.previewToken);
+    expect(await service.getRouteStopSet(routeId)).toBeUndefined();
+  });
+
+  it('deleting a middle Node moves the stops of every pattern that it shortens', async () => {
+    const { service, routeId, aggregate, trunk, branch, north } = await stopRoute();
+    await saveStops(service, routeId, trunk.id, [placement('elm', pointIds(trunk)[1])]);
+    await saveStops(service, routeId, branch.id, [placement('oak', pointIds(branch)[1])]);
+    const preview = await service.previewNodeChanges(routeId, aggregate.nodes.filter((node) => node.id !== north.id));
+    expect([preview.stopsMovedCount, preview.stopsRemovedCount]).toEqual([2, 0]);
+    await service.commitNodeChanges(preview.previewToken);
+    const set = await service.getRouteStopSet(routeId);
+    expect(set?.placementsByPatternId[trunk.id].map((item) => [item.stopId, item.afterPatternPointId])).toEqual([['elm', pointIds(trunk)[0]]]);
+    expect(set?.placementsByPatternId[branch.id].map((item) => [item.stopId, item.afterPatternPointId])).toEqual([['oak', pointIds(branch)[0]]]);
+  });
+
+  it('a Route rename leaves the stop set unchanged', async () => {
+    const { service, routeId, aggregate, trunk } = await stopRoute();
+    await saveStops(service, routeId, trunk.id, [placement('elm', pointIds(trunk)[0])]);
+    const before = JSON.stringify(await service.getRouteStopSet(routeId));
+    await service.updateRoute(aggregate, { name: 'Renamed route' });
+    expect(JSON.stringify(await service.getRouteStopSet(routeId))).toBe(before);
   });
 });

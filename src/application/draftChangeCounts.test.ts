@@ -40,6 +40,10 @@ describe('countNodeChanges', () => {
     expect(countNodeChanges(saved, [...saved, node('3', 'C')], new Set(['3']))).toBe(0);
     expect(countNodeChanges(saved, [node('1', 'A', { shortName: '' }), saved[1]], new Set())).toBe(0);
   });
+  it('counts a changed Stop ID as one change (Decision 0079)', () => {
+    expect(countNodeChanges(saved, [node('1', 'A', { stopCode: '1001' }), saved[1]], new Set())).toBe(1);
+    expect(countNodeChanges([node('1', 'A', { stopCode: '1001' })], [node('1', 'A', { stopCode: '1002' })], new Set())).toBe(1);
+  });
 });
 
 describe('countPatternChanges', () => {
