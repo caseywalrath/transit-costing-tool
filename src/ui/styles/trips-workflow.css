@@ -246,3 +246,32 @@
 .schedule-table--compact .trip-next-trip-column { right: 98px; min-width: 56px; width: 56px; max-width: 56px; }
 .schedule-table--compact .trip-connection-column { right: 154px; min-width: 56px; width: 56px; max-width: 56px; }
 .schedule-table--compact .trip-run-time-column { right: 210px; min-width: 56px; width: 56px; max-width: 56px; box-shadow: -1px 0 0 var(--color-border); }
+/* ST6 (Decision 0079): the Stop trips drawer. Wider than Build trips, because it shows a grid: stops down, Trips across. The grid scrolls
+   inside the drawer in both directions; the heading row and the stop name column stay in view. Timepoint rows are tinted and marked like
+   the Route tab's Stops drawer, so the stops read as sitting between them. */
+.stop-trips-drawer { width: min(680px, 56vw); }
+.stop-trips-drawer__body { grid-template-rows: auto minmax(0, 1fr) auto; align-content: stretch; overflow: hidden; }
+.stop-trips-controls { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-2) var(--space-3); }
+.stop-trips-field { display: grid; gap: 5px; color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
+.stop-trips-field select { min-width: 12em; max-width: 100%; }
+.stop-trips-count { margin-left: auto; color: var(--color-text-muted); font-size: var(--font-size-note); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stop-trips-grid { align-self: start; min-height: 0; max-height: 100%; overflow: auto; border: 1px solid var(--color-border); }
+.stop-trips-grid table { width: max-content; min-width: 100%; }
+.stop-trips-grid th, .stop-trips-grid td { vertical-align: middle; white-space: nowrap; }
+.stop-trips-grid thead th { z-index: 2; }
+.stop-trips-grid thead th:first-child { z-index: 3; }
+.stop-trips-grid__stop { min-width: 10em; max-width: 15em; overflow: hidden; text-overflow: ellipsis; text-align: left; color: var(--color-text); font-size: var(--font-size-note); font-weight: var(--font-weight-regular); }
+.stop-trips-grid tbody th.stop-trips-grid__stop { position: sticky; top: auto; left: 0; z-index: 1; background: var(--color-surface); box-shadow: inset -1px 0 0 var(--color-border-soft); }
+.stop-trips-grid__stop-row th.stop-trips-grid__stop { padding-left: var(--space-5); }
+.stop-trips-grid__timepoint th, .stop-trips-grid__timepoint td, .stop-trips-grid tbody .stop-trips-grid__timepoint th.stop-trips-grid__stop { background: var(--color-surface-2); font-weight: var(--font-weight-semibold); }
+.stop-trips-grid__mark { display: inline-block; width: 10px; height: 10px; margin-right: var(--space-2); border: 2px solid var(--color-accent); border-radius: 50%; background: var(--color-surface); vertical-align: -1px; }
+.stop-trips-grid__code { margin-left: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-caption); font-variant-numeric: tabular-nums; font-weight: var(--font-weight-regular); }
+.stop-trips-grid__rule select { min-width: 0; height: 28px; font-size: var(--font-size-note); }
+.stop-trips-grid__time { min-width: 4.5em; text-align: right; font-variant-numeric: tabular-nums; }
+.stop-trips-grid tbody td.stop-trips-grid__time { color: var(--color-text); }
+.stop-trips-grid__stop-row td.stop-trips-grid__time { color: var(--color-text-muted); }
+.stop-trips-grid__warning { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: var(--space-2); border-radius: 50%; background: var(--color-warn-soft); color: var(--color-warn); font-size: var(--font-size-caption); font-weight: var(--font-weight-bold); }
+.stop-trips-grid__stop-row--warning .stop-trips-grid__rule select { border-color: var(--color-warn-border); }
+.stop-trips-drawer__footer--dirty { padding: 0; }
+.stop-trips-drawer__footer--dirty .save-bar { flex: 1; border-radius: 0; }
+@media (max-width: 680px) { .stop-trips-drawer { width: 100vw; } }

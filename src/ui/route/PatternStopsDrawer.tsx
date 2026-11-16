@@ -1,0 +1,296 @@
+import { forwardRef, Fragment, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { RouteStopValidationError, STOPS_CHANGED_ELSEWHERE, type RouteDefinitionApplication, type StopPlacementPreview } from '../../application/routeDefinitionService';
+import { DEFAULT_STOP_ROUNDING_SECONDS, normalizePlacements, placementsBySegment, sortedPoints } from '../../domain/stops';
+import { newId } from '../../domain/ids';
+import { type PatternStopPlacement, type RouteDefinitionAggregate, type RoutePattern, type RouteStop, type RouteStopSet, type ValidationFinding } from '../../domain/types';
+import { userFacingError } from '../errorMessages';
+import { MenuButton } from '../MenuButton';
+import { ModalDialog } from '../ModalDialog';
+import { SaveBar } from '../shared/bars';
+import { DiscardRouteDraftDialog } from '../shared/dialogs';
+import { TrashIcon } from '../shared/icons';
+import { messages } from '../shared/messages';
+
+export type PatternStopsService = Pick<RouteDefinitionApplication, 'getRouteStopSet' | 'saveRouteStops' | 'previewStopFill' | 'applyStopFill' | 'previewStopCopy' | 'applyStopCopy' | 'getStopCopyUndo' | 'undoStopCopy'>;
+
+/** The workspace's handle on the drawer, for its navigation guard (Save or Discard before leaving). */
+export interface PatternStopsHandle { save: () => Promise<boolean>; discard: () => void }
+
+const plural = (count: number, singular: string) => `${count} ${singular}${count === 1 ? '' : 's'}`;
+/** The value a stop is offered under in the name suggestions; the stop ID tells apart stops with one name. */
+const suggestionValue = (stop: RouteStop) => stop.stopCode ? `${stop.name} · ${stop.stopCode}` : stop.name;
+
+type Draft = { stops: RouteStop[]; placements: PatternStopPlacement[] };
+const draftOf = (pattern: RoutePattern, set: RouteStopSet | undefined): Draft => ({ stops: (set?.stops ?? []).map((stop) => ({ ...stop })), placements: normalizePlacements(pattern, set?.placementsByPatternId[pattern.id] ?? []) });
+
+/** Counts placements added, removed, or moved, and stops renamed or given another stop ID. */
+function changeCount(base: Draft, draft: Draft): number {
+  const basePlacements = new Map(base.placements.map((placement) => [placement.id, placement]));
+  const draftIds = new Set(draft.placements.map((placement) => placement.id));
+  let count = base.placements.filter((placement) => !draftIds.has(placement.id)).length;
+  for (const placement of draft.placements) {
+    const saved = basePlacements.get(placement.id);
+    if (!saved || saved.afterPatternPointId !== placement.afterPatternPointId || saved.sequence !== placement.sequence || saved.stopId !== placement.stopId) count += 1;
+  }
+  const baseStops = new Map(base.stops.map((stop) => [stop.id, stop]));
+  for (const stop of draft.stops) {
+    const saved = baseStops.get(stop.id);
+    if (saved && (saved.name !== stop.name || (saved.stopCode ?? '') !== (stop.stopCode ?? ''))) count += 1;
+  }
+  return count;
+}
+
+/**
+ * Decision 0079 (ST5). The stops of one saved pattern, edited in a right-side drawer: the pattern's timepoints in order, and after each one
+ * except the last the stops of its segment. A stop belongs to the Route, so renaming it changes it on every pattern that uses it.
+ */
+export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: PatternStopsService; aggregate: RouteDefinitionAggregate; pattern: RoutePattern; onDirtyChange: (dirty: boolean) => void; onClose: () => void }>(function PatternStopsDrawer({ service, aggregate, pattern, onDirtyChange, onClose }, ref) {
+  const [loaded, setLoaded] = useState<{ set?: RouteStopSet }>();
+  const [base, setBase] = useState<Draft>({ stops: [], placements: [] });
+  const [draft, setDraft] = useState<Draft>({ stops: [], placements: [] });
+  const [findings, setFindings] = useState<ValidationFinding[]>([]);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [dialog, setDialog] = useState<'fill' | 'copy'>();
+  const [closePrompt, setClosePrompt] = useState(false);
+  const [moved, setMoved] = useState<{ id: string; tick: number }>();
+  const nameInputs = useRef(new Map<string, HTMLInputElement>());
+  const focusAfterRender = useRef<string | undefined>(undefined);
+  const closeButton = useRef<HTMLButtonElement>(null);
+
+  // The aggregate is rebuilt after every Route save, so the pattern is read through a ref; only a change of its points reloads the stops.
+  const patternRef = useRef(pattern);
+  patternRef.current = pattern;
+  const accept = useCallback((set: RouteStopSet | undefined) => {
+    const next = draftOf(patternRef.current, set);
+    setLoaded({ set }); setBase(next); setDraft(next); setFindings([]); setError('');
+  }, []);
+  const count = changeCount(base, draft);
+  const dirty = count > 0;
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  // A pattern save can move this pattern's stops (Decision 0079 item 10), so the stops are read again. Unsaved stop edits are kept; their
+  // save is then refused as changed elsewhere, rather than lost here.
+  const patternSignature = JSON.stringify(pattern.points);
+  useEffect(() => {
+    if (dirtyRef.current) return;
+    let current = true;
+    service.getRouteStopSet(aggregate.route.id).then((set) => { if (current) accept(set); }, (reason) => { if (current) setError(userFacingError(reason, 'The stops could not be loaded.')); });
+    return () => { current = false; };
+  }, [service, aggregate.route.id, pattern.id, patternSignature, accept]);
+
+  useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
+  useEffect(() => {
+    const id = focusAfterRender.current;
+    if (id) { focusAfterRender.current = undefined; nameInputs.current.get(id)?.focus(); }
+  });
+
+  const points = sortedPoints(pattern);
+  const segments = placementsBySegment(pattern, draft.placements);
+  const stopById = new Map(draft.stops.map((stop) => [stop.id, stop]));
+  const savedStopIds = new Set((loaded?.set?.stops ?? []).map((stop) => stop.id));
+  const nodeById = new Map(aggregate.nodes.map((node) => [node.id, node]));
+  /** How many patterns of the Route use a stop: the other saved patterns, plus this one when the draft places it. */
+  const patternUse = (stopId: string) => Object.entries(loaded?.set?.placementsByPatternId ?? {}).filter(([patternId, placements]) => patternId !== pattern.id && placements.some((placement) => placement.stopId === stopId)).length + (draft.placements.some((placement) => placement.stopId === stopId) ? 1 : 0);
+  const stopLabel = (stopId: string) => stopById.get(stopId)?.name.trim() || 'new stop';
+
+  function edit(next: Draft) { setDraft(next); setFindings([]); setError(''); }
+  /** Writes the segments back as placements, each on its segment's first point, numbered in order. */
+  function fromSegments(next: PatternStopPlacement[][]): PatternStopPlacement[] {
+    return next.flatMap((segment, index) => segment.map((placement, sequence) => ({ ...placement, afterPatternPointId: points[index].id, sequence })));
+  }
+  /** A stop created in this drawer and no longer placed is forgotten, so that adding and removing a stop leaves no edit behind. */
+  function withoutOrphans(stops: RouteStop[], placements: PatternStopPlacement[]) {
+    const used = new Set(placements.map((placement) => placement.stopId));
+    return stops.filter((stop) => savedStopIds.has(stop.id) || used.has(stop.id));
+  }
+  function addStop(segmentIndex: number) {
+    const stop: RouteStop = { id: newId(), name: '' };
+    const placement: PatternStopPlacement = { id: newId(), stopId: stop.id, afterPatternPointId: points[segmentIndex].id, sequence: segments[segmentIndex].length, timing: 'interpolate' };
+    focusAfterRender.current = placement.id;
+    edit({ stops: [...draft.stops, stop], placements: fromSegments(segments.map((segment, index) => index === segmentIndex ? [...segment, placement] : segment)) });
+  }
+  function removeStop(placementId: string) {
+    const placements = draft.placements.filter((placement) => placement.id !== placementId);
+    edit({ stops: withoutOrphans(draft.stops, placements), placements });
+  }
+  /** Decision 0079 (ST5 item 5): past the first or last stop of a segment, a stop moves across the timepoint into the next segment. */
+  function moveStop(segmentIndex: number, position: number, direction: -1 | 1) {
+    const next = segments.map((segment) => [...segment]);
+    const [placement] = next[segmentIndex].splice(position, 1);
+    const target = position + direction;
+    if (target < 0) next[segmentIndex - 1].push(placement);
+    else if (target > next[segmentIndex].length) next[segmentIndex + 1].unshift(placement);
+    else next[segmentIndex].splice(target, 0, placement);
+    setMoved((current) => ({ id: placement.id, tick: (current?.tick ?? 0) + 1 }));
+    edit({ ...draft, placements: fromSegments(next) });
+  }
+  function updateStop(stopId: string, patch: Partial<RouteStop>) { edit({ ...draft, stops: draft.stops.map((stop) => stop.id === stopId ? { ...stop, ...patch } : stop) }); }
+  /** A stop typed in this drawer that matches a suggestion links its row to that existing stop. */
+  function linkIfSuggested(placementId: string, stopId: string, value: string) {
+    if (savedStopIds.has(stopId) || patternUse(stopId) > 1) return;
+    const text = value.trim().toLocaleLowerCase();
+    if (!text) return;
+    const match = draft.stops.find((stop) => stop.id !== stopId && savedStopIds.has(stop.id) && suggestionValue(stop).toLocaleLowerCase() === text);
+    if (!match) return;
+    const placements = draft.placements.map((placement) => placement.id === placementId ? { ...placement, stopId: match.id } : placement);
+    edit({ stops: withoutOrphans(draft.stops, placements), placements });
+  }
+
+  async function save(): Promise<boolean> {
+    setBusy(true);
+    try {
+      const written = await service.saveRouteStops({ routeId: aggregate.route.id, patternId: pattern.id, stops: draft.stops, placements: draft.placements, roundingSeconds: loaded?.set?.roundingSeconds ?? DEFAULT_STOP_ROUNDING_SECONDS, baseUpdatedAt: loaded?.set?.updatedAt });
+      accept(written);
+      return true;
+    } catch (reason) {
+      if (reason instanceof RouteStopValidationError) { setFindings(reason.findings); setError(reason.message); }
+      else setError(reason instanceof Error && reason.message === STOPS_CHANGED_ELSEWHERE ? STOPS_CHANGED_ELSEWHERE : userFacingError(reason, 'The stops could not be saved.'));
+      return false;
+    } finally { setBusy(false); }
+  }
+  function discard() { setDraft(base); setFindings([]); setError(''); }
+  useImperativeHandle(ref, () => ({ save, discard }));
+
+  const requestClose = useCallback(() => { if (dirty) setClosePrompt(true); else onClose(); }, [dirty, onClose]);
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy && !dialog && !closePrompt && !event.defaultPrevented) { event.preventDefault(); requestClose(); } };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [busy, dialog, closePrompt, requestClose]);
+  useEffect(() => { closeButton.current?.focus(); }, []);
+
+  const undo = service.getStopCopyUndo();
+  const undoApplies = undo?.routeId === aggregate.route.id;
+  const hasSavedPlacements = Boolean(loaded?.set?.placementsByPatternId[pattern.id]?.length);
+  const hasOtherPatterns = aggregate.patterns.some((candidate) => candidate.id !== pattern.id);
+  async function undoCopy() {
+    setBusy(true);
+    try { accept(await service.undoStopCopy()); } catch (reason) { setError(userFacingError(reason, 'The stop copy could not be undone.')); } finally { setBusy(false); }
+  }
+  const suggestions = (loaded?.set?.stops ?? []).map((stop) => draft.stops.find((candidate) => candidate.id === stop.id) ?? stop).filter((stop) => stop.name.trim());
+  const listId = `pattern-stops-suggestions-${pattern.id}`;
+  const rowErrors = (placement: PatternStopPlacement) => [...new Set([...messages(findings, placement.stopId), ...messages(findings, placement.id)])];
+
+  return <aside className="shift-drawer pattern-stops-drawer" role="complementary" aria-labelledby="pattern-stops-title">
+    <header>
+      <h2 id="pattern-stops-title">Stops <span className="pattern-stops-drawer__pattern">{pattern.name || 'Untitled pattern'}</span></h2>
+      <div className="pattern-stops-drawer__header-actions">
+        <MenuButton label="Actions" menuLabel="Stop actions" disabled={busy || !loaded} groups={[{ items: [
+          { id: 'fill-stops', label: 'Fill from other patterns…', disabled: !hasOtherPatterns, onSelect: () => setDialog('fill') },
+          { id: 'copy-stops', label: 'Copy to other patterns…', disabled: dirty || !hasSavedPlacements || !hasOtherPatterns, title: dirty ? 'Save these stops before copying them' : !hasSavedPlacements ? 'This pattern has no saved stops' : undefined, onSelect: () => setDialog('copy') },
+          ...(undoApplies ? [{ id: 'undo-stop-copy', label: 'Undo last stop copy', disabled: dirty, title: dirty ? 'Save or discard these edits first' : undefined, onSelect: () => void undoCopy() }] : []),
+        ] }]} />
+        <button ref={closeButton} className="icon-button" type="button" aria-label="Close Stops drawer" title="Close Stops drawer" onClick={requestClose} disabled={busy}>×</button>
+      </div>
+    </header>
+    <div className="shift-drawer-body pattern-stops-drawer__body">
+      {!loaded && !error && <p role="status">Loading stops…</p>}
+      {loaded && <table className="pattern-stops-table" aria-label={`Stops of ${pattern.name || 'this pattern'}`}>
+        <thead><tr><th scope="col">Stop</th><th scope="col">Stop ID</th><th scope="col"><span className="visually-hidden">Order</span></th><th scope="col"><span className="visually-hidden">Remove</span></th></tr></thead>
+        <tbody>{points.map((point, index) => {
+          const node = nodeById.get(point.nodeId);
+          const segment = segments[index];
+          const nextNode = points[index + 1] ? nodeById.get(points[index + 1].nodeId) : undefined;
+          return <Fragment key={point.id}>
+            <tr className="pattern-stops-timepoint"><th scope="row" colSpan={1}><span className="pattern-stops-timepoint__mark" aria-hidden="true" />{node?.name || 'Untitled node'}</th><td colSpan={3} className="pattern-stops-timepoint__code">{node?.stopCode ?? ''}</td></tr>
+            {index < points.length - 1 && segment.map((placement, position) => {
+              const stop = stopById.get(placement.stopId);
+              const label = stopLabel(placement.stopId);
+              const uses = patternUse(placement.stopId);
+              const errors = rowErrors(placement);
+              const errorId = errors.length ? `stop-error-${placement.id}` : undefined;
+              const first = index === 0 && position === 0;
+              const last = index === points.length - 2 && position === segment.length - 1;
+              const isNew = !savedStopIds.has(placement.stopId);
+              return <Fragment key={placement.id}><tr className={moved?.id === placement.id ? `pattern-stops-stop row-moved row-moved--${moved.tick % 2}` : 'pattern-stops-stop'}>
+                <td><div className="pattern-stops-name"><input ref={(element) => { if (element) nameInputs.current.set(placement.id, element); else nameInputs.current.delete(placement.id); }} value={stop?.name ?? ''} placeholder="Stop name" list={isNew ? listId : undefined} aria-label={`Stop name, ${label}`} aria-invalid={errors.length > 0} aria-describedby={errorId} disabled={busy} onChange={(event) => updateStop(placement.stopId, { name: event.target.value })} onBlur={(event) => linkIfSuggested(placement.id, placement.stopId, event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') linkIfSuggested(placement.id, placement.stopId, event.currentTarget.value); }} />{uses > 1 && <span className="chip" title={`Used by ${uses} patterns of this route`}>{uses} patterns</span>}</div></td>
+                <td><input className="pattern-stops-code" value={stop?.stopCode ?? ''} aria-label={`Stop ID, ${label}`} aria-invalid={errors.length > 0} aria-describedby={errorId} disabled={busy} onChange={(event) => updateStop(placement.stopId, { stopCode: event.target.value || undefined })} /></td>
+                <td className="pattern-stops-order"><button type="button" className="icon-button" disabled={busy || first} aria-label={`Move ${label} up`} title="Move up" onClick={() => moveStop(index, position, -1)}>↑</button><button type="button" className="icon-button" disabled={busy || last} aria-label={`Move ${label} down`} title="Move down" onClick={() => moveStop(index, position, 1)}>↓</button></td>
+                <td><button type="button" className="icon-button icon-button--danger" disabled={busy} aria-label={`Remove ${label}`} title={`Remove ${label}`} onClick={() => removeStop(placement.id)}><TrashIcon /></button></td>
+              </tr>{errors.length > 0 && <tr className="pattern-stops-error"><td colSpan={4}><span className="field-error" id={errorId}>{errors.join(' ')}</span></td></tr>}</Fragment>;
+            })}
+            {index < points.length - 1 && <tr className="pattern-stops-add"><td colSpan={4}><button type="button" className="ghost" disabled={busy} aria-label={`Add stop between ${node?.name || 'this timepoint'} and ${nextNode?.name || 'the next timepoint'}`} onClick={() => addStop(index)}><span aria-hidden="true">+ </span>Add stop</button></td></tr>}
+          </Fragment>;
+        })}</tbody>
+      </table>}
+      <datalist id={listId}>{suggestions.map((stop) => <option key={stop.id} value={suggestionValue(stop)} />)}</datalist>
+      {error && <p className="field-error" role="alert">{error}</p>}
+    </div>
+    <footer className={dirty ? 'pattern-stops-drawer__footer pattern-stops-drawer__footer--dirty' : 'pattern-stops-drawer__footer'}>
+      {dirty ? <SaveBar message={plural(count, 'unsaved change')} saveLabel="Save stops" busy={busy} onSave={() => void save()} onDiscard={discard} /> : <button type="button" onClick={onClose} disabled={busy}>Close</button>}
+    </footer>
+    {dialog && <PatternStopsDialog service={service} mode={dialog} aggregate={aggregate} pattern={pattern} set={loaded?.set} draftPlacements={draft.placements} onFilled={(placements) => { edit({ ...draft, placements }); setDialog(undefined); }} onCopied={(set) => { accept(set); setDialog(undefined); }} onClose={() => setDialog(undefined)} />}
+    {closePrompt && <DiscardRouteDraftDialog title="Discard unsaved stop changes?" onClose={() => setClosePrompt(false)} onDiscard={() => { setClosePrompt(false); onClose(); }} onSave={() => { setClosePrompt(false); void save().then((saved) => { if (saved) onClose(); }); }} />}
+  </aside>;
+});
+
+const SKIP_TITLES = { ambiguous: 'Segment appears more than once in a pattern', conflict: 'Other patterns disagree' } as const;
+
+/** Decision 0079 (model: `PatternDistanceDialog`, Decision 0065): preview, then confirm, a fill of this draft's empty segments or a copy of its saved stops. */
+function PatternStopsDialog({ service, mode, aggregate, pattern, set, draftPlacements, onFilled, onCopied, onClose }: { service: PatternStopsService; mode: 'fill' | 'copy'; aggregate: RouteDefinitionAggregate; pattern: RoutePattern; set: RouteStopSet | undefined; draftPlacements: PatternStopPlacement[]; onFilled: (placements: PatternStopPlacement[]) => void; onCopied: (set: RouteStopSet) => void; onClose: () => void }) {
+  const copy = mode === 'copy';
+  const [excluded, setExcluded] = useState<string[]>([]);
+  const [preview, setPreview] = useState<StopPlacementPreview>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const firstCheckbox = useRef<HTMLInputElement>(null);
+  const focused = useRef(false);
+  useEffect(() => {
+    let current = true;
+    const shown = (next: StopPlacementPreview) => { if (current) { setPreview(next); setError(''); } };
+    const failed = (reason: unknown) => { if (current) setError(userFacingError(reason, 'The stops could not be previewed.')); };
+    if (copy) service.previewStopCopy(pattern.id, excluded).then(shown, failed);
+    else { try { shown(service.previewStopFill(aggregate, set, pattern, draftPlacements)); } catch (reason) { failed(reason); } }
+    return () => { current = false; };
+  }, [service, copy, pattern, aggregate, set, draftPlacements, excluded]);
+  useEffect(() => { if (preview && copy && !focused.current) { focused.current = true; firstCheckbox.current?.focus(); } }, [preview, copy]);
+  async function apply() {
+    if (!preview) return;
+    if (!copy) { onFilled(service.applyStopFill(pattern, draftPlacements, preview)); return; }
+    setBusy(true);
+    try { onCopied(await service.applyStopCopy(preview)); } catch (reason) { setError(userFacingError(reason, 'The stops could not be saved.')); setBusy(false); }
+  }
+  const name = (patternId: string) => preview?.patternNames[patternId] || 'Pattern';
+  const label = (patternId: string, segmentIndex: number) => preview?.segmentLabels[patternId]?.[segmentIndex] ?? 'Segment';
+  const stopList = (entries: { stopId: string }[]) => entries.length ? entries.map((entry) => preview?.stopNames[entry.stopId] ?? 'Stop').join(', ') : 'No stops';
+  const affected = new Map((preview?.affectedPatterns ?? []).map((item) => [item.patternId, item]));
+  const rows = preview && copy ? preview.copyCandidates.filter((candidate) => excluded.includes(candidate.patternId) || affected.has(candidate.patternId)) : [];
+  const skipGroups = (['ambiguous', 'conflict'] as const).map((reason) => ({ reason, skips: (preview?.skips ?? []).filter((skip) => skip.reason === reason) })).filter((group) => group.skips.length);
+  const skipText = (skip: StopPlacementPreview['skips'][number]) => {
+    const parts = [name(skip.patternId)];
+    if (skip.segmentIndex !== undefined) parts.push(label(preview?.sourcePatternId ?? pattern.id, skip.segmentIndex));
+    if (skip.candidates) parts.push(skip.candidates.map((candidate) => `${stopList(candidate.entries)} (${candidate.patternIds.map(name).join(', ')})`).join(' vs '));
+    return parts.join(' · ');
+  };
+  return <ModalDialog labelledBy="pattern-stops-dialog-title" className="confirm-dialog preview-dialog segment-runtime-dialog" onClose={onClose} busy={busy}>
+    <h2 id="pattern-stops-dialog-title">{copy ? 'Copy stops to other patterns' : 'Fill stops from other patterns'}</h2>
+    {!preview && !error && <p role="status">Loading preview…</p>}
+    {preview && <>
+      {copy && rows.length > 0 && <div className="preview-times"><table>
+        <thead><tr><th scope="col">Include</th><th scope="col">Pattern</th><th scope="col">Segments changed</th><th scope="col">Replaced</th></tr></thead>
+        <tbody>{rows.map((row, index) => {
+          const item = affected.get(row.patternId);
+          return <tr key={row.patternId}>
+            <td><input ref={index === 0 ? firstCheckbox : undefined} type="checkbox" checked={!excluded.includes(row.patternId)} disabled={busy} aria-label={`Include ${name(row.patternId)}`} onChange={(event) => setExcluded((current) => event.target.checked ? current.filter((id) => id !== row.patternId) : [...current, row.patternId])} /></td>
+            <td>{name(row.patternId)}</td><td>{item?.changeCount ?? 0}</td><td>{item?.overwriteCount ?? 0}</td>
+          </tr>;
+        })}</tbody>
+      </table></div>}
+      {preview.changes.length > 0 && <div className="preview-times"><table>
+        <thead><tr>{copy && <th scope="col">Pattern</th>}<th scope="col">Segment</th><th scope="col">Stops</th>{!copy && <th scope="col">Source</th>}</tr></thead>
+        <tbody>{preview.changes.map((change) => <tr key={`${change.patternId}:${change.segmentIndex}`}>
+          {copy && <td>{name(change.patternId)}</td>}
+          <td>{label(change.patternId, change.segmentIndex)}</td>
+          <td>{copy && change.previous.length > 0 ? `${stopList(change.previous)} → ` : ''}{stopList(change.next)}</td>
+          {!copy && <td>{change.sourcePatternIds.map(name).join(', ')}</td>}
+        </tr>)}</tbody>
+      </table></div>}
+      {preview.changes.length === 0 && <p>No stops would change.</p>}
+      {skipGroups.map((group) => <div key={group.reason} className="segment-runtime-skips"><p><strong>{SKIP_TITLES[group.reason]}</strong></p><ul className="recalculation-candidates">{group.skips.map((skip, index) => <li key={index}>{skipText(skip)}</li>)}</ul></div>)}
+    </>}
+    {error && <p className="field-error" role="alert">{error}</p>}
+    <div className="dialog-actions"><button autoFocus={!copy} type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="primary" type="button" onClick={() => void apply()} disabled={!preview || preview.changes.length === 0 || busy}>{busy ? 'Saving…' : copy ? 'Replace stops' : 'Fill stops'}</button></div>
+  </ModalDialog>;
+}

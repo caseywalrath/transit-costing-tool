@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
-import type { Block, BlockingBlock, BlockingScenario, Node, Route, RouteDirection, RoutePattern, RuntimeProfile, Scenario, Trip, TripGenerationSet, TripProfile } from '../domain/types';
+import type { Block, BlockingBlock, BlockingScenario, Node, Route, RouteDirection, RoutePattern, RouteStopSet, RuntimeProfile, Scenario, Trip, TripGenerationSet, TripProfile } from '../domain/types';
+import { stopTimesCsv } from '../application/stopTimesCsv';
 import { csvRows as rfc4180 } from '../testSupport/csvRows';
 import type { CostingAssumptionsInput, CostingCalculationResult } from '../domain/costing';
 import {
@@ -93,6 +94,11 @@ function cases(): Case[] {
     dailyRows: [{ serviceDayId: H, serviceDayName: H, serviceDayKind: 'weekday', annualServiceDays: 1, eligibleBlockCount: 1, excludedBlockCount: 1, unassignedTripCount: 1, revenueHoursPerDay: 1, platformHoursPerDay: 1, annualRevenueHours: 1, annualPlatformHours: 1, yearCosts: [{ serviceYear: 2026, costPerDayUsd: 100, annualCostUsd: 100 }] }],
     yearRows: [{ serviceYear: 2026, appliedRateUsdPerRevenueHour: 100, annualRevenueHours: 1, annualPlatformHours: 1, annualCostUsd: 100 }],
   };
+  // Decision 0079: a Trip with two timepoints and one stop between them, every free-text value is H.
+  const stopNodes: Node[] = [{ ...node, stopCode: H }, { ...node, id: 'second', stopCode: H }];
+  const stopPattern = { ...pattern, points: [{ id: H, nodeId: H, sequence: 0, cumulativeMiles: 0 }, { id: 'second-point', nodeId: 'second', sequence: 1, cumulativeMiles: 1 }] } as RoutePattern;
+  const stopSet: RouteStopSet = { id: H, scenarioId: H, routeId: H, roundingSeconds: 60, stops: [{ id: H, name: H, stopCode: H }], placementsByPatternId: { [H]: [{ id: H, stopId: H, afterPatternPointId: H, sequence: 0, timing: 'interpolate' }] }, ...meta };
+  const stopTrip: Trip = { ...trip, stopTimes: [{ patternPointId: H, sequence: 0, time: 3600 }, { patternPointId: 'second-point', sequence: 1, time: 4200 }] };
   const [costAssumptions, costResults, costExclusions] = costingCsvFiles(scenario, { kind: 'blocked', blockingScenario, tripProfile: profile }, assumptions, result).map((file) => file.contents);
   return [
     { name: 'routeCsv', csv: [routeCsv(route)], freeText: ['name', 'shortName', 'description'] },
@@ -106,6 +112,7 @@ function cases(): Case[] {
     { name: 'tripsCsv', csv: [tripsCsv([trip], [profile])], freeText: ['tripProfileName', 'publicLabel'] },
     { name: 'authoritativeTripsCsv', csv: [authoritativeTripsCsv([trip], [profile])], freeText: ['tripProfileName', 'publicLabel'] },
     { name: 'scheduledPointsCsv', csv: [scheduledPointsCsv([trip])], freeText: [] },
+    { name: 'stopTimesCsv', csv: [stopTimesCsv({ trips: [stopTrip], patterns: [stopPattern], nodes: stopNodes, set: stopSet, directionName: H, blockLabels: new Map([[H, H]]) })], freeText: ['Direction', 'Pattern', 'Stop ID', 'Stop Name', 'Block'] },
     { name: 'blocksCsv', csv: [blocksCsv([block], [profile])], freeText: ['tripProfileName', 'label', 'notes'] },
     { name: 'blockActivitiesCsv', csv: [blockActivitiesCsv([block])], freeText: [] },
     { name: 'blockingScenariosCsv', csv: [blockingScenariosCsv([blockingScenario], [profile])], freeText: ['tripProfileName', 'name', 'description'] },

@@ -91,7 +91,10 @@ test('Nodes and Pattern points: Tab wraps from the end of a row to the start of 
   const focusedName = () => page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.closest('[data-cell]')?.getAttribute('data-cell') ?? '');
   const focusedText = () => page.evaluate(() => document.activeElement?.textContent ?? '');
 
+  // Decision 0079 (ST4): the Node stop ID cell is the row's last cell, after Notes and before the remove button.
   await gridCell(page, 'Node notes').first().click();
+  await page.keyboard.press('Tab');
+  expect(await focusedCell(page)).toBe('Node stop ID');
   await page.keyboard.press('Tab');
   expect(await focusedName()).toBe(`Remove ${firstName}`);
   await page.keyboard.press('Tab');
@@ -100,12 +103,15 @@ test('Nodes and Pattern points: Tab wraps from the end of a row to the start of 
   await page.keyboard.press('Shift+Tab');
   expect(await focusedName()).toBe(`Remove ${firstName}`);
   await page.keyboard.press('Shift+Tab');
+  expect(await focusedCell(page)).toBe('Node stop ID');
+  await page.keyboard.press('Shift+Tab');
   expect(await focusedCell(page)).toBe('Node notes');
+  await page.keyboard.press('Tab');
   // Tab that commits an edit in the row's last cell moves on the same way.
   await page.keyboard.press('Enter');
-  await page.keyboard.type('Note');
+  await page.keyboard.type('S1');
   await page.keyboard.press('Tab');
-  await expect(gridCell(page, 'Node notes').first()).toHaveText('Note');
+  await expect(gridCell(page, 'Node stop ID').first()).toHaveText('S1');
   expect(await focusedName()).toBe(`Remove ${firstName}`);
 
   // Pattern points: Node, Segment mi, the enabled Order button, Remove, then the next point's Node.

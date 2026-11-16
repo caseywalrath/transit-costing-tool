@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouteDefinitionService } from '../application/routeDefinitionService';
 import { duplicateRouteRecords, duplicateScenario, projectSnapshotWithScenario, snapshotForScenario, type ScenarioRecords } from '../domain/project';
 import type { RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
-import type { CostingAssumptions, PlannedFrequency, ProjectSnapshot, Trip, TripGenerationSet, TripRegenerationUndo } from '../domain/types';
+import type { CostingAssumptions, PlannedFrequency, ProjectSnapshot, RouteStopSet, Trip, TripGenerationSet, TripRegenerationUndo } from '../domain/types';
 import { asSnapshot, goldenWithAltBlocking } from '../testSupport/goldenBackup';
 import { ProjectBackupService } from './backupRepository';
 import { TransitDatabase } from './database';
@@ -18,7 +18,7 @@ import { InMemoryRouteDefinitionRepository } from './inMemoryRepository';
 // in-memory repository offers every one of them.
 type Repository = Omit<DexieRouteDefinitionRepository, 'db'>;
 
-const SCENARIO_OWNED = ['serviceDays', 'routes', 'nodes', 'patterns', 'directions', 'runtimeProfiles', 'runtimeAssignments', 'tripProfiles', 'blockingScenarios', 'costingAssumptions', 'generationSets', 'trips', 'blocks', 'plannedFrequencies'] as const;
+const SCENARIO_OWNED = ['serviceDays', 'routes', 'nodes', 'patterns', 'directions', 'runtimeProfiles', 'runtimeAssignments', 'tripProfiles', 'blockingScenarios', 'costingAssumptions', 'generationSets', 'trips', 'blocks', 'plannedFrequencies', 'routeStopSets'] as const;
 
 interface Harness {
   repository: Repository;
@@ -91,12 +91,21 @@ function fixture() {
     periods: [{ id: 'plan-p1', startTime: 6 * 3600, endTime: 8 * 3600, headwaySeconds: 1800 }, { id: 'plan-p2', startTime: 8 * 3600, endTime: 19 * 3600, headwaySeconds: 900 }],
     measureNodeIdByDirectionId: { [planDirection.id]: planDirection.columns[1].nodeId },
   };
-  const snapshot: ProjectSnapshot = { ...base, plannedFrequencies: [plan] };
+  // One Route stop set (Decision 0079) on the same Route: stop A on the first segment of the Route's first pattern.
+  const planPattern = base.patterns.find((pattern) => pattern.routeId === planRoute.id)!;
+  const planFirstPoint = [...planPattern.points].sort((left, right) => left.sequence - right.sequence)[0];
+  const routeStopSet: RouteStopSet = {
+    id: 'stop-set-plan', scenarioId, routeId: planRoute.id, roundingSeconds: 60,
+    stops: [{ id: 'stop-a', name: 'Stop A', stopCode: 'A1' }],
+    placementsByPatternId: { [planPattern.id]: [{ id: 'placement-a', stopId: 'stop-a', afterPatternPointId: planFirstPoint.id, sequence: 0, timing: 'interpolate' }] },
+    createdAt: '2026-11-16T00:00:00.000Z', updatedAt: '2026-11-16T00:00:00.000Z',
+  };
+  const snapshot: ProjectSnapshot = { ...base, plannedFrequencies: [plan], routeStopSets: [routeStopSet] };
   const defaultProfile = snapshot.tripProfiles!.find((profile) => profile.name === 'Default')!;
   const altProfile = snapshot.tripProfiles!.find((profile) => profile.name === 'Alt')!;
   const trip = snapshot.trips.find((candidate) => candidate.tripProfileId === defaultProfile.id && candidate.serviceDayId === weekday)!;
   const assignment = snapshot.runtimeAssignments[0];
-  return { snapshot, scenarioId, weekday, defaultProfile, altProfile, trip, assignment, plan, planDirection };
+  return { snapshot, scenarioId, weekday, defaultProfile, altProfile, trip, assignment, plan, planDirection, routeStopSet, planPattern };
 }
 
 const undoFor = (scenarioId: string, before: Trip[], after: Trip[]): TripRegenerationUndo => ({ id: 'last', scenarioId, tripProfileId: before[0].tripProfileId!, createdAt: '2026-10-22T00:00:00.000Z', beforeTrips: before, afterTrips: after });
@@ -117,8 +126,9 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       expect((await repository.listScenarios(snapshot.project.id)).map((scenario) => scenario.id)).toEqual([scenarioId]);
       expect((await repository.listTripProfiles(scenarioId)).map((profile) => profile.name).sort()).toEqual(['Alt', 'Default']);
       const records = (await repository.getScenarioRecords(scenarioId))!;
-      expect(Object.keys(records).sort()).toEqual(['blockingScenarios', 'blocks', 'directions', 'generationSets', 'nodes', 'patterns', 'plannedFrequencies', 'routes', 'runtimeAssignments', 'runtimeProfiles', 'scenario', 'serviceDays', 'tripProfiles', 'trips']);
+      expect(Object.keys(records).sort()).toEqual(['blockingScenarios', 'blocks', 'directions', 'generationSets', 'nodes', 'patterns', 'plannedFrequencies', 'routeStopSets', 'routes', 'runtimeAssignments', 'runtimeProfiles', 'scenario', 'serviceDays', 'tripProfiles', 'trips']);
       expect(records.plannedFrequencies).toEqual(snapshot.plannedFrequencies);
+      expect(records.routeStopSets).toEqual(snapshot.routeStopSets);
       expect(await repository.listPlannedFrequencies(scenarioId)).toEqual(snapshot.plannedFrequencies);
       expect(await repository.getPlannedFrequency(snapshot.plannedFrequencies![0].routeId, weekday)).toEqual(snapshot.plannedFrequencies![0]);
       expect(await repository.getPlannedFrequency(snapshot.plannedFrequencies![0].routeId, 'no-such-day')).toBeUndefined();
@@ -164,7 +174,7 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       await repository.saveProjectSnapshot(snapshot);
       const backup = new ProjectBackupService((id) => repository.getProjectSnapshot(id), (value) => repository.saveProjectSnapshot(value));
       const payload = await backup.exportProject(snapshot.project.id);
-      expect(JSON.parse(payload).exportSchemaVersion).toBe(12);
+      expect(JSON.parse(payload).exportSchemaVersion).toBe(13);
       const before = JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value);
       await backup.importProject(payload, 'replace');
       expect(JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value)).toBe(before);
@@ -366,6 +376,59 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       const records = await stored(scenarioId);
       await repository.saveScenarioRecords({ ...records, patterns: records.patterns.map((pattern) => ({ ...pattern, points: pattern.points.filter((point) => point.nodeId !== measureNode) })), runtimeProfiles: [], runtimeAssignments: [], trips: [], blocks: [] });
       expect((await repository.getPlannedFrequency(plan.routeId, plan.serviceDayId))!.measureNodeIdByDirectionId).toEqual(plan.measureNodeIdByDirectionId);
+    });
+  });
+
+  describe('Route stop sets (Decision 0079)', () => {
+    const stored = async (scenarioId: string) => (await repository.getScenarioRecords(scenarioId))!;
+
+    it('reads, replaces and removes stop sets through Scenario record writes, and finds a set by its Route', async () => {
+      const { snapshot, scenarioId, routeStopSet } = fixture();
+      await repository.saveProjectSnapshot(snapshot);
+      expect(await repository.getRouteStopSet(routeStopSet.routeId)).toEqual(routeStopSet);
+      expect(await repository.getRouteStopSet('no-such-route')).toBeUndefined();
+      const renamed: RouteStopSet = { ...routeStopSet, stops: [{ ...routeStopSet.stops[0], name: 'Stop A renamed' }] };
+      await repository.updateScenarioRecords(scenarioId, (current) => ({ ...current, routeStopSets: [renamed] }));
+      expect((await stored(scenarioId)).routeStopSets).toEqual([renamed]);
+      expect((await harness.ownedCounts(scenarioId)).routeStopSets).toBe(1);
+      await repository.updateScenarioRecords(scenarioId, (current) => ({ ...current, routeStopSets: [] }));
+      expect(await repository.getRouteStopSet(routeStopSet.routeId)).toBeUndefined();
+      expect((await harness.ownedCounts(scenarioId)).routeStopSets).toBe(0);
+    });
+
+    it('a write that removes the pattern of a stop set prunes the placements, and a set left with no stops is removed', async () => {
+      const { snapshot, scenarioId, routeStopSet, planPattern } = fixture();
+      await repository.saveProjectSnapshot(snapshot);
+      const records = await stored(scenarioId);
+      await repository.saveScenarioRecords({
+        ...records,
+        patterns: records.patterns.filter((pattern) => pattern.id !== planPattern.id),
+        runtimeProfiles: records.runtimeProfiles.filter((profile) => profile.patternId !== planPattern.id),
+        runtimeAssignments: records.runtimeAssignments.filter((assignment) => assignment.patternId !== planPattern.id),
+        trips: [], blocks: [],
+      });
+      expect(await repository.getRouteStopSet(routeStopSet.routeId)).toBeUndefined();
+      expect((await stored(scenarioId)).routeStopSets).toBeUndefined();
+    });
+
+    it('refuses an invalid stop set (duplicate stop code, missing stop, second set for one Route, rounding) and writes nothing', async () => {
+      const { snapshot, scenarioId, routeStopSet, planPattern } = fixture();
+      await repository.saveProjectSnapshot(snapshot);
+      const before = await stored(scenarioId);
+      const afterPatternPointId = routeStopSet.placementsByPatternId[planPattern.id][0].afterPatternPointId;
+      const placement = (id: string, stopId: string, sequence: number) => ({ id, stopId, afterPatternPointId, sequence, timing: 'interpolate' as const });
+      const attempts: Array<[RouteStopSet[], RegExp]> = [
+        [[{ ...routeStopSet, stops: [...routeStopSet.stops, { id: 'stop-b', name: 'Stop B', stopCode: ' a1 ' }], placementsByPatternId: { [planPattern.id]: [placement('p1', 'stop-a', 0), placement('p2', 'stop-b', 1)] } }], /routeStop\.codeDuplicate/],
+        [[{ ...routeStopSet, placementsByPatternId: { [planPattern.id]: [placement('p1', 'stop-a', 0), placement('p2', 'no-such-stop', 1)] } }], /stopPlacement\.stopMissing/],
+        [[routeStopSet, { ...routeStopSet, id: 'stop-set-second' }], /has more than one stop set/],
+        [[{ ...routeStopSet, roundingSeconds: 45 as 60 }], /routeStopSet\.roundingInvalid/],
+      ];
+      for (const [sets, message] of attempts) {
+        await expect(repository.saveScenarioRecords({ ...before, routeStopSets: sets, scenario: { ...before.scenario, name: 'Must not be written' } })).rejects.toThrow(message);
+      }
+      const after = await stored(scenarioId);
+      expect(after.scenario.name).toBe(before.scenario.name);
+      expect(after.routeStopSets).toEqual(before.routeStopSets);
     });
   });
 

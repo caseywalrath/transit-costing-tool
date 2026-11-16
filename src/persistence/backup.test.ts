@@ -135,7 +135,7 @@ describe('backup', () => {
       generationSets: [], trips: [], blocks: [],
     };
     const exported = JSON.parse(exportProjectJson(source));
-    expect(exported.exportSchemaVersion).toBe(12);
+    expect(exported.exportSchemaVersion).toBe(13);
     expect(exported.costingAssumptions).toEqual(source.costingAssumptions);
     expect(importProjectJson(JSON.stringify(exported)).costingAssumptions).toEqual(source.costingAssumptions);
 
@@ -163,7 +163,7 @@ describe('backup', () => {
 
     it('round trips every factor in a version 7 file', () => {
       const payload = exportProjectJson(sourceWith(factors));
-      expect(JSON.parse(payload).exportSchemaVersion).toBe(12);
+      expect(JSON.parse(payload).exportSchemaVersion).toBe(13);
       expect(importProjectJson(payload).costingAssumptions?.[0].estimateFactors).toEqual(factors);
     });
 
@@ -266,7 +266,7 @@ describe('backup', () => {
 
       it('round trips the entries in a version 12 file, next to the shared factors', () => {
         const payload = exportProjectJson(sourceWithRoutes(routeEntries));
-        expect(JSON.parse(payload).exportSchemaVersion).toBe(12);
+        expect(JSON.parse(payload).exportSchemaVersion).toBe(13);
         const restored = importProjectJson(payload);
         expect(restored.costingAssumptions?.[0].routeEstimateFactors).toEqual(routeEntries);
         expect(restored.costingAssumptions?.[0].estimateFactors).toEqual(factors);
@@ -435,7 +435,7 @@ describe('automatic blocking record in backups (schema 8 and 9, Decisions 0055 a
   it('round trips the record, including maxVehicles, in a version 9 file (written as version 9)', () => {
     const file = fileWithRecord(9, (record) => { record.rules.maxVehicles = 12; });
     const exported = JSON.parse(exportProjectJson(importProjectJson(JSON.stringify(file))));
-    expect(exported.exportSchemaVersion).toBe(12);
+    expect(exported.exportSchemaVersion).toBe(13);
     expect(exported.blockingScenarios[0].autoBlocking).toEqual(file.blockingScenarios[0].autoBlocking);
     expect(exported.blockingScenarios[0].autoBlocking.rules.maxVehicles).toBe(12);
   });
@@ -501,7 +501,7 @@ describe('automatic blocking record in backups (schema 8 and 9, Decisions 0055 a
     it('round trips a stored abbreviation, writes it at schema version 10, and omits it when absent', () => {
       const snapshot = snapshotWith(days);
       const exported = JSON.parse(exportProjectJson(snapshot));
-      expect(exported.exportSchemaVersion).toBe(12);
+      expect(exported.exportSchemaVersion).toBe(13);
       expect(exported.serviceDays[0].abbreviation).toBe('WK');
       expect(exported.serviceDays[1]).not.toHaveProperty('abbreviation');
       expect(importProjectJson(JSON.stringify(exported)).serviceDays).toEqual(snapshot.serviceDays);

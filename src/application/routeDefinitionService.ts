@@ -9,9 +9,11 @@ import { normalizeServiceDayAbbreviation, sortServiceDays, validateServiceDayAbb
 import { applySegmentRuntimePlan, defaultBandPairs, planCopyToOthers, planFillFromOthers, planValueCopy, qualifyingProfiles, type BandPairs, type ValueCopyRequest, type SegmentRuntimePlan } from '../domain/segmentRuntimeMatching';
 import { formatServiceTime } from '../domain/time';
 import { copyRuntimeProfile, normalizeRuntimeProfile, reverseCopyRuntimeProfile, routeRuntimeCalculationMethod, unifyRouteRuntimeCalculationMethods, validateRuntimeProfile, withRuntimeCalculationRevision, RuntimeProfileDeletionError, type RuntimeCalculationMethod } from '../domain/runtime';
-import type { Block, BlockActivity, Node, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, ValidationFinding } from '../domain/types';
+import type { Block, BlockActivity, Node, PatternStopPlacement, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RouteStop, RouteStopSet, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, StopTimeRoundingSeconds, ValidationFinding } from '../domain/types';
 import { validateNodeDeletion, validateRouteDefinition } from '../domain/validation';
 import { adjustBlockReferences } from '../domain/trips';
+import { normalizePlacements, pruneRouteStopSets, reconcilePlacements, validateRouteStopSet } from '../domain/stops';
+import { applyStopPlacementPlan, planStopCopy, planStopFill, stopCopyCandidatePatternIds, type StopPlacementPlan } from '../domain/stopPlacementMatching';
 import { authoritativeTripsCsv, blockActivitiesCsv, blocksCsv, directionColumnsCsv, directionsCsv, generationSetsCsv, nodesCsv, patternPointsCsv, patternsCsv, routeCsv, runtimeBandsCsv, scheduledPointsCsv, tripsCsv } from '../persistence/csv';
 import type { BackupPort, LocalDataProtection, RouteDefinitionRepository, SaveStatus } from './ports';
 import { assertReviewCurrent, fingerprint } from './reviewToken';
@@ -36,6 +38,8 @@ export interface PatternDeletionImpact {
   runtimeAssignmentCount: number;
   tripCount: number;
   affectedBlockCount: number;
+  /** Stop placements removed with the pattern (Decision 0079). */
+  stopPlacementCount: number;
   /** Fingerprint of the records this review covers; `deletePattern` requires it. */
   reviewToken: string;
 }
@@ -70,6 +74,8 @@ export interface RouteDeletionImpact {
   removedNonRevenueActivityCount: number;
   /** Planned frequency records (one per Service day) deleted with the Route (Decision 0058 item 10). */
   plannedFrequencyCount: number;
+  /** Stops of the Route's stop set deleted with the Route (Decision 0079). */
+  routeStopCount: number;
 }
 
 export interface NodeDeletionImpact {
@@ -197,6 +203,7 @@ function scenarioDeletionToken(records: ScenarioRecords): string {
     patterns: records.patterns, runtimeProfiles: records.runtimeProfiles, runtimeAssignments: records.runtimeAssignments, tripProfiles: records.tripProfiles,
     blockingScenarios: records.blockingScenarios, costingAssumptions: records.costingAssumptions ? [records.costingAssumptions] : [],
     generationSets: records.generationSets, trips: records.trips, blocks: records.blocks, plannedFrequencies: records.plannedFrequencies ?? [],
+    routeStopSets: records.routeStopSets ?? [],
   });
 }
 
@@ -225,6 +232,10 @@ export interface PatternChangePreview {
   affectedColumns: number;
   impact: PatternServiceImpact;
   requiresReset: boolean;
+  /** Stops that move to another point of the pattern when this edit is saved (Decision 0079 item 10). */
+  stopsMovedCount: number;
+  /** Stops removed with their point or segment when this edit is saved (Decision 0079 item 10). */
+  stopsRemovedCount: number;
   conflict?: DirectionOrderConflict;
   findings: ValidationFinding[];
 }
@@ -241,6 +252,10 @@ export interface NodeChangePreview {
   /** Pull-out, pull-in, and deadhead activities that name a deleted Node. Committing the edit removes them; the Blocks stay. */
   nonRevenueImpact: { blockIds: string[]; removedActivityCount: number };
   requiresReset: boolean;
+  /** Stops that move to another point of an affected pattern when this edit is saved (Decision 0079 item 10). */
+  stopsMovedCount: number;
+  /** Stops removed with their point or segment when this edit is saved (Decision 0079 item 10). */
+  stopsRemovedCount: number;
   conflict?: DirectionOrderConflict;
   findings: ValidationFinding[];
 }
@@ -299,6 +314,35 @@ export const SEGMENT_DISTANCE_UNDO_REFUSED = "These distances were changed after
 const SEGMENT_DISTANCE_PREVIEW_STALE = 'Distances changed after the preview. Review the changes again.';
 interface SegmentDistanceUndo { routeId: string; scenarioId: string; before: RoutePattern[]; writtenUpdatedAt: Map<string, string> }
 
+/** Decision 0079. The stop-list editor's save: the Route's whole stop list and the open pattern's placements. */
+export interface RouteStopsEdit {
+  routeId: string; patternId: string;
+  /** The Route's whole stop list as the editor holds it. Stops no placement uses are pruned on save. */
+  stops: RouteStop[];
+  /** The open pattern's whole placement list. */
+  placements: PatternStopPlacement[];
+  roundingSeconds: StopTimeRoundingSeconds;
+  /** `updatedAt` of the stop set the editor loaded; undefined when the Route had none. */
+  baseUpdatedAt?: string;
+}
+export class RouteStopValidationError extends Error {
+  constructor(readonly findings: ValidationFinding[]) { super('Resolve the highlighted stop problems before saving.'); this.name = 'RouteStopValidationError'; }
+}
+/** Decision 0079. What "Fill stops from other patterns" and "Copy stops to other patterns" would write, with the names to display them. */
+export interface StopPlacementPreview extends StopPlacementPlan {
+  scenarioId: string; routeId: string;
+  excludedPatternIds: string[];
+  copyCandidates: { patternId: string; included: boolean }[];
+  patternNames: Record<string, string>;
+  segmentLabels: Record<string, string[]>;
+  /** Stop ID → name, for every stop a change or skip names. */
+  stopNames: Record<string, string>;
+}
+export const STOPS_CHANGED_ELSEWHERE = 'Stops changed after this editor opened. Close it and open it again.';
+export const STOP_COPY_UNDO_REFUSED = "These stops were changed after the copy, so it can't be undone.";
+const STOP_COPY_PREVIEW_STALE = 'Stops changed after the preview. Review the changes again.';
+interface StopCopyUndo { routeId: string; scenarioId: string; before: RouteStopSet; writtenUpdatedAt: string; patternCount: number }
+
 export class RouteEditPreviewExpiredError extends Error {
   constructor() {
     super('Route or service data changed after this review. Review the impacts again.');
@@ -342,6 +386,8 @@ export class RouteDefinitionService {
   private segmentRuntimeUndo?: SegmentRuntimeUndo;
   /** The last confirmed distance copy, for one undo (Decision 0065). In memory only; cleared by any other pattern or node commit and by pattern deletion. */
   private segmentDistanceUndo?: SegmentDistanceUndo;
+  /** The last confirmed stop copy, for one undo (Decision 0079). In memory only; cleared like the distance undo, and by a stop save. */
+  private stopCopyUndo?: StopCopyUndo;
 
   /**
    * `saveStatus` is the one publisher of the visible save status; the application passes the same instance to every service that writes
@@ -390,6 +436,7 @@ export class RouteDefinitionService {
   /** Commit a previously reviewed Node draft as one scenario transaction. */
   async commitNodeChanges(previewToken: string, mode: RouteEditMode = 'rebalance'): Promise<RouteEditCommitResult> {
     this.segmentDistanceUndo = undefined;
+    this.stopCopyUndo = undefined;
     const preview = this.takePreview(previewToken, 'nodes');
     const records = await this.recordsForRoute(preview.routeId);
     if (this.routeEditSignature(records, preview.routeId) !== preview.sourceSignature) throw new RouteEditPreviewExpiredError();
@@ -415,6 +462,7 @@ export class RouteDefinitionService {
   /** Commit a reviewed Pattern draft. Rebalance and reset are both atomic. */
   async commitPatternChange(previewToken: string, mode: RouteEditMode = 'rebalance'): Promise<RouteEditCommitResult> {
     this.segmentDistanceUndo = undefined;
+    this.stopCopyUndo = undefined;
     const preview = this.takePreview(previewToken, 'pattern');
     const records = await this.recordsForRoute(preview.routeId);
     if (this.routeEditSignature(records, preview.routeId) !== preview.sourceSignature) throw new RouteEditPreviewExpiredError();
@@ -542,6 +590,7 @@ export class RouteDefinitionService {
       blockingScenarios: (snapshot.blockingScenarios ?? []).filter((blockingScenario) => blockingScenario.scenarioId !== scenarioId),
       costingAssumptions: (snapshot.costingAssumptions ?? []).filter((assumptions) => assumptions.scenarioId !== scenarioId),
       ...(snapshot.plannedFrequencies ? { plannedFrequencies: snapshot.plannedFrequencies.filter((plan) => plan.scenarioId !== scenarioId) } : {}),
+      ...(snapshot.routeStopSets ? { routeStopSets: snapshot.routeStopSets.filter((set) => set.scenarioId !== scenarioId) } : {}),
       generationSets: snapshot.generationSets.filter((set) => set.scenarioId !== scenarioId),
       trips: snapshot.trips.filter((trip) => trip.scenarioId !== scenarioId),
       blocks: snapshot.blocks.filter((block) => block.scenarioId !== scenarioId),
@@ -627,6 +676,7 @@ export class RouteDefinitionService {
   /** Confirmed pattern deletion removes only records that cannot remain valid without that pattern. It runs only if the stored data still matches the review (`getPatternDeletionImpact`) that `reviewToken` came from. */
   async deletePattern(patternId: string, reviewToken: string): Promise<{ aggregate: RouteDefinitionAggregate; impact: PatternDeletionImpact }> {
     this.segmentDistanceUndo = undefined;
+    this.stopCopyUndo = undefined;
     const records = await this.recordsForPattern(patternId);
     const plan = this.planPatternDeletion(records, patternId);
     assertReviewCurrent('pattern', reviewToken, plan.impact.reviewToken);
@@ -710,7 +760,150 @@ export class RouteDefinitionService {
     return { records, aggregate: this.aggregateFromRecords(records, undo.routeId) };
   }
 
-  private describeSegmentDistancePlan(plan: SegmentDistancePlan, scope: { scenarioId: string; routeId: string; excludedPatternIds: string[]; copyCandidates: string[]; patterns: RoutePattern[]; nodes: Node[]; draft: RoutePattern }): SegmentDistancePreview {
+  /** Decision 0079. The stop set of one Route, or undefined when the Route has no stops. */
+  async getRouteStopSet(routeId: string): Promise<RouteStopSet | undefined> {
+    return this.repository.getRouteStopSet(routeId);
+  }
+
+  /**
+   * Decision 0079 section 4.8. Saves the Route's stop list and the open pattern's placements in one write. The stored set is re-read inside the
+   * write and refused when it changed after the editor opened. Stops that no placement uses are pruned; a set with no stops is removed.
+   */
+  async saveRouteStops(edit: RouteStopsEdit): Promise<RouteStopSet | undefined> {
+    this.stopCopyUndo = undefined;
+    const records = await this.recordsForRoute(edit.routeId);
+    const written = await this.updateScenarioRecords(records.scenario.id, (current) => {
+      const route = current.routes.find((candidate) => candidate.id === edit.routeId);
+      if (!route) throw new Error('The selected route is no longer available.');
+      const pattern = current.patterns.find((candidate) => candidate.id === edit.patternId && candidate.routeId === edit.routeId);
+      if (!pattern) throw new Error('The selected Pattern is no longer available.');
+      const stored = (current.routeStopSets ?? []).find((set) => set.routeId === edit.routeId);
+      if (stored?.updatedAt !== edit.baseUpdatedAt) throw new Error(STOPS_CHANGED_ELSEWHERE);
+      const now = this.now();
+      const placementsByPatternId: RouteStopSet['placementsByPatternId'] = { ...stored?.placementsByPatternId };
+      const placements = normalizePlacements(pattern, edit.placements);
+      if (placements.length) placementsByPatternId[edit.patternId] = placements;
+      else delete placementsByPatternId[edit.patternId];
+      const next: RouteStopSet = {
+        id: stored?.id ?? newId(),
+        scenarioId: route.scenarioId,
+        routeId: edit.routeId,
+        roundingSeconds: edit.roundingSeconds,
+        stops: edit.stops.map((stop): RouteStop => {
+          const stopCode = stop.stopCode?.trim();
+          return { id: stop.id, name: stop.name.trim(), ...(stopCode ? { stopCode } : {}) };
+        }),
+        placementsByPatternId,
+        createdAt: stored?.createdAt ?? now,
+        updatedAt: now,
+      };
+      const findings = validateRouteStopSet(next, current.patterns.filter((candidate) => candidate.routeId === edit.routeId));
+      if (findings.some((finding) => finding.severity === 'error')) throw new RouteStopValidationError(findings);
+      const kept = pruneRouteStopSets([next], { routes: current.routes, patterns: current.patterns }).find((set) => set.routeId === edit.routeId);
+      return { ...current, routeStopSets: [...(current.routeStopSets ?? []).filter((set) => set.routeId !== edit.routeId), ...(kept ? [kept] : [])] };
+    });
+    return written.routeStopSets?.find((set) => set.routeId === edit.routeId);
+  }
+
+  /** Decision 0079 (model: Decision 0065). What "Fill stops from other patterns" would write into the draft. Synchronous; nothing is read or written. */
+  previewStopFill(aggregate: RouteDefinitionAggregate, set: RouteStopSet | undefined, pattern: RoutePattern, draftPlacements: PatternStopPlacement[]): StopPlacementPreview {
+    const plan = planStopFill({ openPattern: pattern, openPlacements: draftPlacements, patterns: aggregate.patterns, placementsByPatternId: set?.placementsByPatternId ?? {} });
+    return this.describeStopPlacementPlan(plan, { scenarioId: aggregate.route.scenarioId, routeId: aggregate.route.id, excludedPatternIds: [], copyCandidates: [], patterns: aggregate.patterns, nodes: aggregate.nodes, draft: pattern, set });
+  }
+
+  /** Returns the draft's placements with the previewed fill applied. Nothing is written; the draft goes through the normal save. */
+  applyStopFill(pattern: RoutePattern, draftPlacements: PatternStopPlacement[], preview: StopPlacementPreview): PatternStopPlacement[] {
+    return applyStopPlacementPlan([pattern], { [pattern.id]: draftPlacements }, preview, newId)[pattern.id] ?? draftPlacements;
+  }
+
+  /** Decision 0079 (model: Decision 0065). What "Copy stops to other patterns" would write from the stored pattern; nothing is written. */
+  async previewStopCopy(patternId: string, excludedPatternIds: string[] = []): Promise<StopPlacementPreview> {
+    const stored = await this.repository.getPattern(patternId);
+    if (!stored) throw new Error("Save this pattern's stops before copying them.");
+    const records = await this.repository.getScenarioRecords(stored.scenarioId);
+    if (!records) throw new Error('The selected scenario is no longer available.');
+    const patterns = records.patterns.filter((pattern) => pattern.routeId === stored.routeId);
+    const set = (records.routeStopSets ?? []).find((candidate) => candidate.routeId === stored.routeId);
+    const placements = set?.placementsByPatternId[patternId] ?? [];
+    if (placements.length === 0) throw new Error("Save this pattern's stops before copying them.");
+    const plan = planStopCopy({ openPattern: stored, openPlacements: placements, patterns, placementsByPatternId: set?.placementsByPatternId ?? {}, excludedPatternIds });
+    return this.describeStopPlacementPlan(plan, { scenarioId: stored.scenarioId, routeId: stored.routeId, excludedPatternIds, copyCandidates: stopCopyCandidatePatternIds(stored, patterns), patterns, nodes: records.nodes.filter((node) => node.routeId === stored.routeId), draft: stored, set });
+  }
+
+  /**
+   * Writes a confirmed stop copy. The plan is built again from the stored records inside the write (Decision 0036); if it no longer matches the
+   * preview, nothing is written. The set is validated, and one error aborts the whole write.
+   */
+  async applyStopCopy(preview: StopPlacementPreview): Promise<RouteStopSet> {
+    if (!preview.changes.length) throw new Error('No stops would change.');
+    const result: { set?: RouteStopSet; undo?: StopCopyUndo } = {};
+    await this.updateScenarioRecords(preview.scenarioId, (current) => {
+      const patterns = current.patterns.filter((pattern) => pattern.routeId === preview.routeId);
+      const open = patterns.find((pattern) => pattern.id === preview.sourcePatternId);
+      if (!open) throw new Error('The selected Pattern is no longer available.');
+      const stored = (current.routeStopSets ?? []).find((set) => set.routeId === preview.routeId);
+      const placementsByPatternId = stored?.placementsByPatternId ?? {};
+      const plan = planStopCopy({ openPattern: open, openPlacements: placementsByPatternId[open.id] ?? [], patterns, placementsByPatternId, excludedPatternIds: preview.excludedPatternIds });
+      if (!stored || JSON.stringify(plan.changes) !== JSON.stringify(preview.changes)) throw new Error(STOP_COPY_PREVIEW_STALE);
+      const applied = applyStopPlacementPlan(patterns, placementsByPatternId, plan, newId);
+      const next = withUpdatedAt({ ...stored, placementsByPatternId: { ...placementsByPatternId, ...applied } }, this.now());
+      const findings = validateRouteStopSet(next, patterns);
+      if (findings.some((finding) => finding.severity === 'error')) throw new RouteStopValidationError(findings);
+      result.undo = { routeId: preview.routeId, scenarioId: preview.scenarioId, before: stored, writtenUpdatedAt: next.updatedAt, patternCount: new Set(plan.changes.map((change) => change.patternId)).size };
+      result.set = next;
+      return { ...current, routeStopSets: (current.routeStopSets ?? []).map((set) => set.id === stored.id ? next : set) };
+    });
+    this.stopCopyUndo = result.undo;
+    return result.set!;
+  }
+
+  /** The stop copy that "Undo last stop copy" would reverse, if any. */
+  getStopCopyUndo(): { routeId: string; patternCount: number } | undefined {
+    return this.stopCopyUndo ? { routeId: this.stopCopyUndo.routeId, patternCount: this.stopCopyUndo.patternCount } : undefined;
+  }
+
+  /** Restores the Route's stop set from before the last stop copy, only while the stored set still has the timestamp the copy wrote. */
+  async undoStopCopy(): Promise<RouteStopSet | undefined> {
+    const undo = this.stopCopyUndo;
+    if (!undo) throw new Error('There is no stop copy to undo.');
+    this.stopCopyUndo = undefined;
+    const result: { set?: RouteStopSet } = {};
+    await this.updateScenarioRecords(undo.scenarioId, (current) => {
+      const stored = (current.routeStopSets ?? []).find((set) => set.routeId === undo.routeId);
+      if (!stored || stored.updatedAt !== undo.writtenUpdatedAt) throw new Error(STOP_COPY_UNDO_REFUSED);
+      const restored = withUpdatedAt(undo.before, this.now());
+      result.set = restored;
+      return { ...current, routeStopSets: (current.routeStopSets ?? []).map((set) => set.id === stored.id ? restored : set) };
+    });
+    return result.set;
+  }
+
+  private describeStopPlacementPlan(plan: StopPlacementPlan, scope: { scenarioId: string; routeId: string; excludedPatternIds: string[]; copyCandidates: string[]; patterns: RoutePattern[]; nodes: Node[]; draft: RoutePattern; set?: RouteStopSet }): StopPlacementPreview {
+    const nodeName = (nodeId: string) => { const node = scope.nodes.find((candidate) => candidate.id === nodeId); return node?.shortName || node?.name || 'Unnamed point'; };
+    const patternNames: Record<string, string> = {};
+    const segmentLabels: Record<string, string[]> = {};
+    // The draft is last so that its unsaved name and points win over a saved record with the same id.
+    for (const pattern of [...scope.patterns, scope.draft]) {
+      patternNames[pattern.id] = pattern.name;
+      const points = [...pattern.points].sort((left, right) => left.sequence - right.sequence);
+      segmentLabels[pattern.id] = points.slice(1).map((point, index) => `${nodeName(points[index].nodeId)} → ${nodeName(point.nodeId)}`);
+    }
+    const byName = (left: string, right: string) => (patternNames[left] ?? '').localeCompare(patternNames[right] ?? '', undefined, { numeric: true, sensitivity: 'base' }) || left.localeCompare(right);
+    const copyCandidates = plan.mode === 'copyToOthers'
+      ? [...scope.copyCandidates].sort(byName).map((patternId) => ({ patternId, included: !scope.excludedPatternIds.includes(patternId) }))
+      : [];
+    // Only the stops that a change or a skip names are looked up.
+    const stopById = new Map((scope.set?.stops ?? []).map((stop) => [stop.id, stop] as const));
+    const stopNames: Record<string, string> = {};
+    const named = [...plan.changes.flatMap((change) => [...change.previous, ...change.next]), ...plan.skips.flatMap((skip) => (skip.candidates ?? []).flatMap((candidate) => candidate.entries))];
+    for (const entry of named) {
+      const stop = stopById.get(entry.stopId);
+      if (stop) stopNames[stop.id] = stop.name;
+    }
+    return { ...plan, scenarioId: scope.scenarioId, routeId: scope.routeId, excludedPatternIds: plan.mode === 'copyToOthers' ? scope.excludedPatternIds : [], copyCandidates, patternNames, segmentLabels, stopNames };
+  }
+
+  private describeSegmentDistancePlan(plan: SegmentDistancePlan, scope:{ scenarioId: string; routeId: string; excludedPatternIds: string[]; copyCandidates: string[]; patterns: RoutePattern[]; nodes: Node[]; draft: RoutePattern }): SegmentDistancePreview {
     const nodeName = (nodeId: string) => { const node = scope.nodes.find((candidate) => candidate.id === nodeId); return node?.shortName || node?.name || 'Unnamed point'; };
     const patternNames: Record<string, string> = {};
     const segmentLabels: Record<string, string[]> = {};
@@ -744,14 +937,23 @@ export class RouteDefinitionService {
     const trips = records.trips.filter((trip) => trip.patternId === patternId);
     const tripIds = new Set(trips.map((trip) => trip.id));
     const affectedBlocks = records.blocks.filter((block) => block.activities.some((activity) => activity.type === 'revenueTrip' && tripIds.has(activity.tripId)));
+    const placements = (records.routeStopSets ?? []).flatMap((set) => set.placementsByPatternId[patternId] ?? []);
     const impact: PatternDeletionImpact = {
       patternId,
       runtimeProfileCount: profiles.length,
       runtimeAssignmentCount: assignments.length,
       tripCount: trips.length,
       affectedBlockCount: affectedBlocks.length,
-      reviewToken: fingerprint({ pattern, profiles, assignments, generationSets, trips, blocks: affectedBlocks }),
+      stopPlacementCount: placements.length,
+      reviewToken: fingerprint({ pattern, profiles, assignments, generationSets, trips, blocks: affectedBlocks, placements }),
     };
+    // Decision 0079: the pattern's placements go; stops that no other pattern uses are pruned with them.
+    const routeStopSets = records.routeStopSets
+      ? pruneRouteStopSets(records.routeStopSets.map((set) => {
+        const { [patternId]: _removedPlacements, ...placementsByPatternId } = set.placementsByPatternId;
+        return { ...set, placementsByPatternId };
+      }), { routes: records.routes, patterns: records.patterns.filter((candidate) => candidate.id !== patternId) })
+      : undefined;
     const next: ScenarioRecords = {
       ...records,
       patterns: records.patterns.filter((candidate) => candidate.id !== patternId),
@@ -760,6 +962,7 @@ export class RouteDefinitionService {
       generationSets: records.generationSets.filter((set) => set.patternId !== patternId),
       trips: records.trips.filter((trip) => trip.patternId !== patternId),
       blocks: adjustBlockReferences(records.blocks, [...tripIds]).blocks,
+      ...(routeStopSets ? { routeStopSets } : {}),
     };
     return { impact, next, routeId: pattern.routeId };
   }
@@ -1166,6 +1369,7 @@ export class RouteDefinitionService {
       trips: removedTrips,
       changedBlocks: records.blocks.filter((block) => changedBlockIds.has(block.id)),
       plannedFrequencies: (records.plannedFrequencies ?? []).filter((plan) => plan.routeId === routeId),
+      routeStopSets: (records.routeStopSets ?? []).filter((set) => set.routeId === routeId),
     };
     const impact: RouteDeletionImpact = {
       routeId,
@@ -1181,10 +1385,12 @@ export class RouteDefinitionService {
       removedBlockActivityCount: revenueAdjusted.adjustments.reduce((count, adjustment) => count + adjustment.removedTripIds.length, 0),
       removedNonRevenueActivityCount: removedConnectionActivityCount + nonRevenueAdjusted.removedActivityCount,
       plannedFrequencyCount: removed.plannedFrequencies.length,
+      routeStopCount: removed.routeStopSets.reduce((count, set) => count + set.stops.length, 0),
     };
     const next: ScenarioRecords = {
       ...records,
       ...(records.plannedFrequencies ? { plannedFrequencies: records.plannedFrequencies.filter((plan) => plan.routeId !== routeId) } : {}),
+      ...(records.routeStopSets ? { routeStopSets: records.routeStopSets.filter((set) => set.routeId !== routeId) } : {}),
       routes: records.routes.filter((route) => route.id !== routeId),
       nodes: records.nodes.filter((node) => node.routeId !== routeId),
       patterns: records.patterns.filter((pattern) => pattern.routeId !== routeId),
@@ -1232,6 +1438,8 @@ export class RouteDefinitionService {
       // Blocks that a Node edit can change: those with this Route's Trips and those with a pull-out, pull-in, or deadhead at this Route's Nodes.
       blocks: records.blocks.filter((block) => block.activities.some((activity) => (activity.type === 'revenueTrip' && tripIds.has(activity.tripId)) || namesRouteNode(activity))),
       generationSets: records.generationSets.filter((set) => set.routeId === routeId),
+      // Decision 0079: the review states how many stops move or are removed, so a stop edit after the review expires it.
+      routeStopSets: (records.routeStopSets ?? []).filter((set) => set.routeId === routeId),
     });
   }
 
@@ -1279,16 +1487,20 @@ export class RouteDefinitionService {
     const points = describePatternPointChange(saved, proposed);
     const classification = reconciled.conflict ? 'invalid' : findings.some((finding) => finding.severity === 'error') ? 'invalid' : classifyPatternEdit(saved, proposed);
     const impact = getPatternServiceImpact(saved?.id ?? proposed.id, records.runtimeProfiles, records.runtimeAssignments, records.trips, records.blocks, records.generationSets);
+    const reconciledProposed = reconciled.patterns.find((pattern) => pattern.id === proposed.id) ?? proposed;
+    const stops = this.stopReconciliationCounts(records, saved ? [{ saved, next: reconciledProposed }] : []);
     return {
       kind: 'pattern',
       classification,
-      proposedPattern: reconciled.patterns.find((pattern) => pattern.id === proposed.id) ?? proposed,
+      proposedPattern: reconciledProposed,
       addedPointIds: points.added,
       removedPointIds: points.removed,
       nodeChangedPointIds: points.nodeChanged,
       affectedColumns: reconciled.directions.reduce((count, direction) => count + direction.columns.length, 0),
       impact,
       requiresReset: classification === 'reset',
+      stopsMovedCount: stops.movedCount,
+      stopsRemovedCount: stops.removedCount,
       ...(reconciled.conflict ? { conflict: reconciled.conflict } : {}),
       findings,
     };
@@ -1314,6 +1526,10 @@ export class RouteDefinitionService {
     const reconciled = reconcileRouteTimetables({ ...aggregate, nodes: normalizedNodes }, candidatePatterns, this.now());
     const impacts = affected.map((pattern) => getPatternServiceImpact(pattern.id, records.runtimeProfiles, records.runtimeAssignments, records.trips, records.blocks, records.generationSets));
     const nonRevenue = removeNonRevenueActivitiesForNodes(records.blocks, new Set(deletedNodeIds));
+    const stops = this.stopReconciliationCounts(records, affected.flatMap((pattern) => {
+      const next = candidatePatterns.find((candidate) => candidate.id === pattern.id);
+      return next ? [{ saved: pattern, next }] : [];
+    }));
     return {
       kind: 'nodes',
       classification: findings.some((finding) => finding.severity === 'error') || reconciled.conflict ? 'invalid' : deletedNodeIds.length ? 'deterministic' : 'metadata',
@@ -1324,6 +1540,8 @@ export class RouteDefinitionService {
       impact: this.mergeImpacts(impacts),
       nonRevenueImpact: { blockIds: nonRevenue.affectedBlockIds, removedActivityCount: nonRevenue.removedActivityCount },
       requiresReset: false,
+      stopsMovedCount: stops.movedCount,
+      stopsRemovedCount: stops.removedCount,
       ...(reconciled.conflict ? { conflict: reconciled.conflict } : {}),
       findings,
     };
@@ -1356,8 +1574,10 @@ export class RouteDefinitionService {
     const nextPatterns = records.patterns.map((pattern) => pattern.routeId === routeId ? reconciled.patterns.find((candidate) => candidate.id === pattern.id) ?? pattern : pattern);
     if (!saved) nextPatterns.push(reconciled.patterns.find((pattern) => pattern.id === proposed.id) ?? proposed);
     let next: ScenarioRecords = { ...records, patterns: nextPatterns, directions: [...(records.directions ?? []).filter((direction) => direction.routeId !== routeId), ...reconciled.directions] };
+    const stopChanges: Array<{ saved: RoutePattern; next: RoutePattern }> = [];
     if (saved) {
       const nextPattern = reconciled.patterns.find((pattern) => pattern.id === saved.id)!;
+      stopChanges.push({ saved, next: nextPattern });
       const classification = classifyPatternEdit(saved, nextPattern);
       if (classification === 'reset' && mode === 'reset') {
         const reset = resetPatternService(saved.id, next.runtimeProfiles, next.runtimeAssignments, next.trips, next.blocks, next.generationSets);
@@ -1367,7 +1587,8 @@ export class RouteDefinitionService {
         next = { ...next, ...rebalanced };
       }
     }
-    return next;
+    // Decision 0079 section 4.6: stops follow their points in the same write, in reset mode too.
+    return this.reconcileRouteStopSets(next, stopChanges);
   }
 
   private applyNodeChanges(records: ScenarioRecords, routeId: string, proposedNodes: Node[], _mode: RouteEditMode): ScenarioRecords {
@@ -1384,7 +1605,7 @@ export class RouteDefinitionService {
     const rebalanced = this.rebalanceDependentService(records, savedById, nextById);
     // A pull-out, pull-in, or deadhead that names a deleted Node cannot stay; its Block does.
     const blocks = removeNonRevenueActivitiesForNodes(records.blocks, deleted).blocks;
-    return {
+    const next: ScenarioRecords = {
       ...records,
       blocks,
       nodes: [...records.nodes.filter((node) => node.routeId !== routeId), ...nodes],
@@ -1392,6 +1613,41 @@ export class RouteDefinitionService {
       directions: [...(records.directions ?? []).filter((direction) => direction.routeId !== routeId), ...reconciled.directions],
       ...rebalanced,
     };
+    // Decision 0079 section 4.6: a Node deletion applies the same rules to every pattern it shortens.
+    return this.reconcileRouteStopSets(next, [...savedById.values()].flatMap((saved) => {
+      const nextPattern = nextById.get(saved.id);
+      return nextPattern ? [{ saved, next: nextPattern }] : [];
+    }));
+  }
+
+  /** Decision 0079 item 10. How many stops the given pattern edits would move or remove, summed over the changed patterns. */
+  private stopReconciliationCounts(records: ScenarioRecords, changes: Array<{ saved: RoutePattern; next: RoutePattern }>): { movedCount: number; removedCount: number } {
+    return changes.reduce((counts, change) => {
+      const placements = (records.routeStopSets ?? []).flatMap((set) => set.placementsByPatternId[change.saved.id] ?? []);
+      if (placements.length === 0) return counts;
+      const result = reconcilePlacements(change.saved, change.next, placements);
+      return { movedCount: counts.movedCount + result.movedCount, removedCount: counts.removedCount + result.removedCount };
+    }, { movedCount: 0, removedCount: 0 });
+  }
+
+  /**
+   * Decision 0079 section 4.6. Replaces the placements of each changed pattern with their reconciled placements, sets the timestamp of a set
+   * that changed, and prunes what the next records no longer use. Returns `next` unchanged when the Scenario has no stop sets.
+   */
+  private reconcileRouteStopSets(next: ScenarioRecords, changes: Array<{ saved: RoutePattern; next: RoutePattern }>): ScenarioRecords {
+    if (!next.routeStopSets) return next;
+    const now = this.now();
+    const sets = next.routeStopSets.map((set) => {
+      let placementsByPatternId = set.placementsByPatternId;
+      for (const change of changes) {
+        const placements = set.placementsByPatternId[change.saved.id];
+        if (!placements) continue;
+        const reconciled = reconcilePlacements(change.saved, change.next, placements).placements;
+        if (JSON.stringify(reconciled) !== JSON.stringify(placements)) placementsByPatternId = { ...placementsByPatternId, [change.saved.id]: reconciled };
+      }
+      return placementsByPatternId === set.placementsByPatternId ? set : withUpdatedAt({ ...set, placementsByPatternId }, now);
+    });
+    return { ...next, routeStopSets: pruneRouteStopSets(sets, { routes: next.routes, patterns: next.patterns }) };
   }
 
   /** Applies a change to the stored Scenario records inside the write, so a caller's older copy is never written back. */
@@ -1473,6 +1729,14 @@ export type RouteDefinitionApplication = Pick<RouteDefinitionService,
   | 'applyDistanceCopy'
   | 'getDistanceUndo'
   | 'undoDistanceCopy'
+  | 'getRouteStopSet'
+  | 'saveRouteStops'
+  | 'previewStopFill'
+  | 'applyStopFill'
+  | 'previewStopCopy'
+  | 'applyStopCopy'
+  | 'getStopCopyUndo'
+  | 'undoStopCopy'
   | 'reverseCopyRuntimeProfile'
   | 'deleteRuntimeProfile'
   | 'getRuntimeProfileDeletionImpact'

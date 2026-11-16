@@ -8,7 +8,7 @@ import { type Node, type NodeKind, type RoutePattern } from '../../domain/types'
 
 const NODE_KINDS: NodeKind[] = ['timepoint', 'terminal', 'garage', 'other'];
 const NODE_KIND_LABELS: Record<NodeKind, string> = { timepoint: 'Timepoint', terminal: 'Terminal', garage: 'Garage', other: 'Other' };
-const NODE_COLUMNS = ['Node name', 'Node short name', 'Node type', 'Node notes'] as const;
+const NODE_COLUMNS = ['Node name', 'Node short name', 'Node type', 'Node notes', 'Node stop ID'] as const;
 /** The short name the Blocking tables use when none is entered, shown as a placeholder only when it differs from the name. */
 const generatedNodeShortName = (node: Node) => { const generated = abbreviatePlaceName(node.name); return generated !== node.name.trim() ? generated : ''; };
 
@@ -16,17 +16,17 @@ export function NodesGrid({ nodes, savedNodes, pendingDeletes, saving, errorsFor
   nodes: Node[]; savedNodes: Node[]; pendingDeletes: Set<string>; saving: boolean; errorsFor: (id: string) => string[];
   newNodeButton: RefObject<HTMLButtonElement | null>; onChange: (id: string, patch: Partial<Node>) => void; onSetPendingDelete: (id: string, pending: boolean) => void; onAdd: () => void;
 }) {
-  const text = (node: Node, c: number) => c === 0 ? node.name : c === 1 ? node.shortName ?? '' : c === 3 ? node.notes ?? '' : node.kind;
+  const text = (node: Node, c: number) => c === 0 ? node.name : c === 1 ? node.shortName ?? '' : c === 3 ? node.notes ?? '' : c === 4 ? node.stopCode ?? '' : node.kind;
   const grid = useGridNavigation({
     rowCount: nodes.length, colCount: NODE_COLUMNS.length,
     isEditable: (r, c) => c !== 2 && !saving && !pendingDeletes.has(nodes[r].id), cellText: (r, c) => text(nodes[r], c),
-    onCommit: (r, c, value) => { onChange(nodes[r].id, c === 0 ? { name: value } : c === 1 ? { shortName: value || undefined } : { notes: value || undefined }); return undefined; },
+    onCommit: (r, c, value) => { onChange(nodes[r].id, c === 0 ? { name: value } : c === 1 ? { shortName: value || undefined } : c === 4 ? { stopCode: value.trim() || undefined } : { notes: value || undefined }); return undefined; },
   });
   const focusNew = useRef(false);
   useEffect(() => { if (!focusNew.current) return; focusNew.current = false; grid.moveTo({ r: nodes.length - 1, c: 0 }); }, [nodes.length]);
   const savedById = new Map(savedNodes.map((node) => [node.id, node]));
   return <><div className="table-scroll"><table className="grid-table" role="grid" aria-label="Nodes">
-    <thead><tr><th scope="col">Name</th><th scope="col">Short</th><th scope="col">Type</th><th scope="col">Notes</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
+    <thead><tr><th scope="col">Name</th><th scope="col">Short</th><th scope="col">Type</th><th scope="col">Notes</th><th scope="col">Stop ID</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
     <tbody>{nodes.map((node, r) => {
       const pending = pendingDeletes.has(node.id);
       const saved = savedById.get(node.id);
@@ -44,7 +44,7 @@ export function NodesGrid({ nodes, savedNodes, pendingDeletes, saving, errorsFor
         })}
         <td>{pending ? <button disabled={saving} onClick={() => onSetPendingDelete(node.id, false)}>Undo</button> : <button className="icon-button icon-button--danger" disabled={saving} onClick={() => onSetPendingDelete(node.id, true)} aria-label={`Remove ${node.name || 'node'}`} title={`Remove ${node.name || 'node'}`}><TrashIcon /></button>} {pending && <span className="row-status">Will be deleted</span>}</td>
       </tr>;
-    })}{nodes.length === 0 && <tr><td colSpan={5} className="table-empty">No nodes. A pattern needs 2 or more (terminals, timepoints).</td></tr>}<tr className="table-add-row"><td colSpan={5}><button type="button" ref={newNodeButton} className={nodes.length < 2 ? 'primary' : 'ghost'} onClick={() => { focusNew.current = true; onAdd(); }} disabled={saving}><span aria-hidden="true">+ </span>New node</button></td></tr></tbody>
+    })}{nodes.length === 0 && <tr><td colSpan={6} className="table-empty">No nodes. A pattern needs 2 or more (terminals, timepoints).</td></tr>}<tr className="table-add-row"><td colSpan={6}><button type="button" ref={newNodeButton} className={nodes.length < 2 ? 'primary' : 'ghost'} onClick={() => { focusNew.current = true; onAdd(); }} disabled={saving}><span aria-hidden="true">+ </span>New node</button></td></tr></tbody>
   </table></div><p className="grid-message" role="status" aria-live="polite">{grid.message}</p></>;
 }
 

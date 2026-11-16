@@ -1,7 +1,7 @@
 import type { CostingAssumptionsInput } from '../domain/costing';
 import type { CostingEstimateFactors, CostingFactorPair, Node, RoutePattern } from '../domain/types';
 
-const nodeKey = (node: Node) => JSON.stringify([node.name, node.shortName ?? '', node.kind, node.notes ?? '']);
+const nodeKey = (node: Node) => JSON.stringify([node.name, node.shortName ?? '', node.kind, node.notes ?? '', node.stopCode ?? '']);
 
 /** How many edits the Node draft holds: each added or changed Node, and each saved Node marked for removal. Feeds the save bar's message. */
 export function countNodeChanges(saved: readonly Node[], draft: readonly Node[], pendingDeleteIds: ReadonlySet<string>): number {

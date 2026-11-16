@@ -1,4 +1,4 @@
-import type { Block, BlockingBlock, BlockingScenario, CostingAssumptions, CostingEstimateFactors, PlannedFrequency, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, Trip, TripGenerationSet, TripProfile, ValidationFinding } from '../domain/types';
+import type { Block, BlockingBlock, BlockingScenario, CostingAssumptions, CostingEstimateFactors, PlannedFrequency, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RoutePattern, RouteStopSet, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, Trip, TripGenerationSet, TripProfile, ValidationFinding } from '../domain/types';
 import type { RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
 import type { ScenarioRecords } from '../domain/project';
 import type { ActivityTextInput, BlockDeletionImpact, BlocksDeletionImpact, BlockSummary, BlockingActivityAddRequest, BlockingAssignmentRequest, BlockingCompatibility, BlockingScenarioCreateRequest, BlockingScenarioDeletionImpact, BlockingActivityEditRequest, BlockingTripsAssignmentRequest, BulkDeadheadRequest, MinimumLayoverRule, ParsedActivityInput, ParsedMinimumLayover } from '../domain/blocking';
@@ -25,6 +25,8 @@ export interface RouteDefinitionRepository {
   getRouteDefinition(routeId: string): Promise<RouteDefinitionAggregate | undefined>;
   saveRouteDefinition(aggregate: RouteDefinitionAggregate): Promise<void>;
   getPattern(id: string): Promise<RoutePattern | undefined>;
+  /** Decision 0079. The stop set of one Route, or undefined when the Route has no stops. */
+  getRouteStopSet(routeId: string): Promise<RouteStopSet | undefined>;
   listDirections(routeId: string): Promise<RouteDirection[]>;
   getProjectSnapshot(projectId: string): Promise<ProjectSnapshot | undefined>;
   saveProjectSnapshot(snapshot: ProjectSnapshot): Promise<void>;

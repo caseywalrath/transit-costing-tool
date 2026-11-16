@@ -32,7 +32,23 @@ A stable ordered column in a direction-level schedule. A pattern point maps to a
 
 A scheduling location used by one or more route patterns. A node may be a timepoint, terminal, garage, or another location required for blocking. The first release primarily uses scheduling timepoints and terminals.
 
-A node is not necessarily every passenger stop on a route.
+A node is not necessarily every passenger stop on a route. Passenger stops between nodes are Route stops. A node may have an optional public stop ID (`stopCode`).
+
+### Route stop
+
+A passenger stop of one Route that is not a node (Decision 0079). It has a name and an optional stop ID unique within the Route. It never becomes a pattern point, a Trips table column, a runtime segment end, or a Blocking location. The code name is `RouteStop`; a Route's stops, placements, and rounding are one `RouteStopSet`.
+
+### Stop placement
+
+One Route stop on one pattern segment, after a given pattern point, in an order within that segment, with a timing rule. The code name is `PatternStopPlacement`. When a pattern's points change, placements on a removed interior point move to the merged segment, and placements outside the new pattern are removed.
+
+### Timing rule
+
+How a stop's time is derived from a Trip's times at the two timepoints around it: `interpolate` (the default; the segment's interpolated stops divide its time equally, rounded down to 1 minute or 30 seconds), `previous` (the earlier timepoint's time), or `next` (the later timepoint's time).
+
+### Stop trips
+
+The derived stop-level view of Trips: each stop's time for each Trip, calculated from the Trip's saved timepoint times and the timing rules whenever it is shown or exported. Nothing is stored per Trip. The Trips tab's **Stop trips…** drawer shows it, and **Export trips with stops CSV** writes it.
 
 ### Pattern
 
