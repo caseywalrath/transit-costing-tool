@@ -105,7 +105,7 @@ Use it to understand terminology, relationships, and expected outputs. Do not co
 - `docs/implementation/`: phase-specific scope, work packages, and acceptance criteria.
 - `docs/implementation/ui-revision-plan.md`: the approved interface revision (Phase UR, Decision 0047), split into one-agent packages UR-0 to UR-12, with mockups and screenshots in `docs/implementation/ui-revision/`.
 - `docs/implementation/automatic-blocking.md`: the automatic blocking plan (Decision 0055), packages AB1 to AB5 for fresh-context implementers, with the approved mock-ups, screenshots, mock-up CSS, and a reference check script in `docs/implementation/automatic-blocking/`.
-- `docs/implementation/stop-trips.md`: the Route stops and Stop trips plan (Decision 0079), packages ST1 to ST7 for Haiku (structural) and Opus (UI design and closeout). ST0 is done; no code package has started.
+- `docs/implementation/stop-trips.md`: the Route stops and Stop trips plan (Decision 0079), packages ST1 to ST7 for Haiku (structural) and Opus (UI design and closeout). All packages are done; the closeout is `docs/implementation/stop-trips-closeout.md`.
 - `docs/implementation/review-fixes.md`: the fix log of the October 2026 code review, with the next-sitting note. The review documents themselves are on the branch `claude/upbeat-ritchie-51mpy5` only.
 
 ## Verification and Closeout

@@ -103,6 +103,8 @@ interface Node extends EntityMetadata {
   shortName?: string;
   kind: NodeKind;
   notes?: string;
+  /** Decision 0079. Optional public stop ID of this timepoint, shown on timepoint rows of the stop-level export. */
+  stopCode?: string;
 }
 
 interface RouteDirection extends EntityMetadata {
@@ -476,9 +478,35 @@ interface ValidationFinding {
 
 `category` is set by Blocking (a structural finding rejects a write; an operational finding stays visible). Costing findings omit it. `CostingFinding` is an alias of `ValidationFinding`: its `ruleId` is the former `code`, an assumption finding sets `field`, and the Service day of a Trip or Block finding is the `serviceDayId` parameter.
 
+## Route stops
+
+Decision 0079. A Route-owned record, at most one per Route, stored only while it has at least one stop. Stops are passenger stops between timepoints; they are never Nodes or pattern points, and their times are derived, never stored.
+
+```typescript
+interface RouteStop { id: EntityId; name: string; stopCode?: string }
+type StopTimingRule = "interpolate" | "previous" | "next";
+interface PatternStopPlacement { id: EntityId; stopId: EntityId; afterPatternPointId: EntityId; sequence: number; timing: StopTimingRule }
+type StopTimeRoundingSeconds = 30 | 60;
+
+interface RouteStopSet extends EntityMetadata {
+  id: EntityId;
+  scenarioId: EntityId;
+  routeId: EntityId;
+  roundingSeconds: StopTimeRoundingSeconds;
+  stops: RouteStop[];
+  /** Pattern ID → placements, by segment, then sequence. A pattern with no stops has no entry. */
+  placementsByPatternId: Record<EntityId, PatternStopPlacement[]>;
+}
+```
+
+- A placement sits on the segment from `afterPatternPointId` to the next point by `sequence`; a placement after the last point is not valid. `sequence` orders stops within a segment from 0. One stop appears at most once per segment.
+- `stopCode` is optional and unique within the set after trimming, ignoring case. Stop and placement IDs are unique within their set, so Route and Scenario copies keep them.
+- Validation (`validateRouteStopSet`): `routeStop.nameRequired`, `routeStop.codeDuplicate`, `routeStop.idDuplicate`, `stopPlacement.stopMissing`, `stopPlacement.idDuplicate`, `stopPlacement.repeatedInSegment`, and `routeStopSet.roundingInvalid` are errors; `stopPlacement.timingOutOfOrder` is a warning.
+- Every Scenario write prunes placements whose pattern or point no longer exists, stops no placement uses, and sets left with no stops (`pruneRouteStopSets`). Writes go through `updateScenarioRecords` (`saveRouteStops`, stop copy and undo) or the Route edit commit (placement reconciliation).
+
 ## IndexedDB tables and indexes
 
-The Dexie database uses the application-specific name `transit-costing-tool`. Its tables and indexes at version 10 (version 10 adds `plannedFrequencies`; version 9 changed no store) are:
+The Dexie database uses the application-specific name `transit-costing-tool`. Its tables and indexes at version 11 (version 11 adds `routeStopSets`; version 10 added `plannedFrequencies`) are:
 
 | Table | Primary key and useful indexes |
 | --- | --- |
@@ -499,6 +527,7 @@ The Dexie database uses the application-specific name `transit-costing-tool`. It
 | `costingAssumptions` | Added in database version 5: `id`, `scenarioId` |
 | `tripRegenerationUndo` | Added in database version 6: `id`, `scenarioId`, `tripProfileId`; one local, one-step undo record, not backed up (Decision 0035) |
 | `plannedFrequencies` | Added in database version 10 (Decision 0058): `id`, `scenarioId`, `routeId`, `[routeId+serviceDayId]`; at most one record per Route and Service day |
+| `routeStopSets` | Added in database version 11 (Decision 0079): `id`, `scenarioId`, `routeId`; at most one record per Route |
 | `costPlans` | Inert legacy table retained for data preservation; no active domain type or reads/writes |
 | `appMetadata` | `key`; declared and created, but no code reads or writes it yet |
 
@@ -558,7 +587,7 @@ Use one transaction for operations that must remain consistent, including:
 
 ## Database versions and migrations
 
-The first implementation starts at database version 1. Version 2 adds a non-unique `runtimeProfileId` index to `runtimeAssignments` for profile lifecycle queries. Phase 2TP increments the database to version 3 with a `tripProfiles` store and Trip-profile ownership indexes on Trips and Blocks. Package 4B increments the database to version 4 with `blockingScenarios` and Blocking-Scenario ownership indexes on Blocks. The version 4 migration discards pre-Phase-4 placeholder Blocks while preserving Trips, Trip Profiles, and all other scheduling records. Version 5 adds the Scenario-owned `costingAssumptions` store and leaves it empty for existing Scenarios; records are created lazily when Costing inputs are saved. The preliminary `costPlans` store remains untouched and unused so the upgrade does not discard legacy data. Version 6 adds the one-step `tripRegenerationUndo` store. Version 7 changes no store. Its upgrade function repairs Scenarios that were duplicated before duplication remapped Node references (Decision 0038): in each Scenario that records a `sourceScenarioId`, the `fromNodeId` and `toNodeId` of pull-out, deadhead, and pull-in activities that name a Node of another Scenario are repointed to the copy's own Node (same Route name; same Node name, using the position in the Route's Node order when a name repeats). Where a Scenario in the copy's `sourceScenarioId` chain no longer exists, pull-out To, pull-in From, and deadhead From and To are taken from the adjacent Trip endpoints, and a pull-out From or pull-in To that cannot be inferred is cleared. The upgrade writes only Blocks that changed and no other record. Version 8 adds the compound index `[scenarioId+tripProfileId]` to `trips` (every earlier index stays) and deletes every Block whose `blockingScenarioId` is absent, null, or empty: the placeholder Blocks that imports of version 3 and 4 backup files stored before package P04. It writes nothing else; if the clean-up throws, it logs a warning and leaves the data as it was, so the database still opens. Version 9 changes no store. Its upgrade gives every Runtime profile of a Route the method most of the Route's profiles use (Decision 0045), writing only the profiles whose method changes, each with the next calculation revision; Trip times are not rewritten, and a failure leaves the data as it was. Version 10 adds the `plannedFrequencies` store (`id, scenarioId, routeId, [routeId+serviceDayId]`) with no data upgrade; existing Scenarios have no plans. Each later schema change must:
+The first implementation starts at database version 1. Version 2 adds a non-unique `runtimeProfileId` index to `runtimeAssignments` for profile lifecycle queries. Phase 2TP increments the database to version 3 with a `tripProfiles` store and Trip-profile ownership indexes on Trips and Blocks. Package 4B increments the database to version 4 with `blockingScenarios` and Blocking-Scenario ownership indexes on Blocks. The version 4 migration discards pre-Phase-4 placeholder Blocks while preserving Trips, Trip Profiles, and all other scheduling records. Version 5 adds the Scenario-owned `costingAssumptions` store and leaves it empty for existing Scenarios; records are created lazily when Costing inputs are saved. The preliminary `costPlans` store remains untouched and unused so the upgrade does not discard legacy data. Version 6 adds the one-step `tripRegenerationUndo` store. Version 7 changes no store. Its upgrade function repairs Scenarios that were duplicated before duplication remapped Node references (Decision 0038): in each Scenario that records a `sourceScenarioId`, the `fromNodeId` and `toNodeId` of pull-out, deadhead, and pull-in activities that name a Node of another Scenario are repointed to the copy's own Node (same Route name; same Node name, using the position in the Route's Node order when a name repeats). Where a Scenario in the copy's `sourceScenarioId` chain no longer exists, pull-out To, pull-in From, and deadhead From and To are taken from the adjacent Trip endpoints, and a pull-out From or pull-in To that cannot be inferred is cleared. The upgrade writes only Blocks that changed and no other record. Version 8 adds the compound index `[scenarioId+tripProfileId]` to `trips` (every earlier index stays) and deletes every Block whose `blockingScenarioId` is absent, null, or empty: the placeholder Blocks that imports of version 3 and 4 backup files stored before package P04. It writes nothing else; if the clean-up throws, it logs a warning and leaves the data as it was, so the database still opens. Version 9 changes no store. Its upgrade gives every Runtime profile of a Route the method most of the Route's profiles use (Decision 0045), writing only the profiles whose method changes, each with the next calculation revision; Trip times are not rewritten, and a failure leaves the data as it was. Version 10 adds the `plannedFrequencies` store (`id, scenarioId, routeId, [routeId+serviceDayId]`) with no data upgrade; existing Scenarios have no plans. Version 11 adds the `routeStopSets` store (`id, scenarioId, routeId`) with no data upgrade; existing Routes have no stops. Each later schema change must:
 
 1. increment the database version;
 2. define an explicit migration;
@@ -586,7 +615,9 @@ Import must validate the complete payload before opening a write transaction. ID
 
 Version 10 adds the optional top-level `plannedFrequencies` array (Decision 0058); the key is omitted when a project has no plans, so such a file differs from version 9 only by its version number. Versions 1 to 9 stay readable and import with no plans.
 
-Version 12 (current) differs from version 11 only by the optional `routeEstimateFactors` array inside a Costing assumptions record (Decision 0077). Its validation requires an array whose entries each name a Trip Profile and a Route of the same Scenario, each pair at most once, with factors valid as for `estimateFactors`; a version 1 to 11 file's field is dropped. Scenario duplication and import as copy remap the Trip Profile, Route and service-day IDs. `CostingCommands.saveRouteEstimateFactors` writes one pair's entry and removes it when the factors are all blank; Route deletion removes a Route's entries in the same write, and Route duplication copies them.
+Version 13 (current) adds the optional top-level `routeStopSets` array (Decision 0079; omitted when no Route has stops) and the optional `Node.stopCode`. Import validates each set's shape (string IDs, `roundingSeconds` of 30 or 60, stops with an `id` and `name`, placements with string IDs, a whole `sequence` of 0 or more, and a known `timing`), its metadata, its owners, and `validateRouteStopSet`, and fails with `Invalid project backup: <message>`; a `stopCode` must be a non-empty string. Sets are pruned against the imported Routes and Patterns. Import as copy remaps the set, Route, Scenario, Pattern keys and `afterPatternPointId`, and keeps stop and placement IDs. Versions 1 to 12 stay readable and import with no stops; every check that applied to version 12 applies to version 13.
+
+Version 12 differs from version 11 only by the optional `routeEstimateFactors` array inside a Costing assumptions record (Decision 0077). Its validation requires an array whose entries each name a Trip Profile and a Route of the same Scenario, each pair at most once, with factors valid as for `estimateFactors`; a version 1 to 11 file's field is dropped. Scenario duplication and import as copy remap the Trip Profile, Route and service-day IDs. `CostingCommands.saveRouteEstimateFactors` writes one pair's entry and removes it when the factors are all blank; Route deletion removes a Route's entries in the same write, and Route duplication copies them.
 
 Version 11 differs from version 10 only by the optional `tripProfileEstimateFactors` array inside a Costing assumptions record (Decision 0062). Versions 1 to 10 stay readable; the field found in one of them is dropped without failing the import. Import validation rejects a plan whose Route, Service day, direction or node is missing, or whose periods break the rules above. Import-as-copy remaps the plan, Route, Service day, period, direction and node identifiers.
 
@@ -614,3 +645,5 @@ Phase 1 should export:
 - pattern points.
 
 Phase 2R adds runtime bands, directions, direction columns, authoritative trips, scheduled points, placeholder blocks, and block activities. Phase 2TP adds `tripProfileId` and `tripProfileName` to the Trip and placeholder Block CSV outputs. Phase 4 replaces Blocking exports with Blocking Scenario, Block, block-activity, and derived block-summary files scoped to one Blocking Scenario. Summary files include validity and completeness fields. The authoritative Trip CSV contains creation method and runtime calculation source fields and does not include generation-set columns. A legacy export method (`RouteDefinitionService.exportCsv`, which still includes a generation-sets file) remains but no screen calls it; the Route CSV export uses `exportAuthoritativeCsv`. CSV files are reporting and exchange outputs, not full backups.
+
+The Trips **Export trips with stops CSV** (Decision 0079, `stopTimesCsv`) writes the displayed schedule in long form, one row per Trip per timepoint or stop in pattern order: `Trip, Direction, Pattern, Stop Order, Stop ID, Stop Name, Timepoint, Time, Block`. `Trip` and `Stop Order` are 1-based positions, `Timepoint` is `Yes` or `No`, and `Time` is the Trip's saved time at a timepoint or the derived stop time (empty when a segment has no usable times). Free-text columns are protected against spreadsheet formulas.
