@@ -1,6 +1,6 @@
 # Destructive Actions Inventory
 
-Status: Review complete; fixes not yet planned.
+Status: Review complete. Fixes are planned in `docs/implementation/undo-and-context.md` (Decision 0081, Proposed).
 Date: 2026-11-17.
 Code reviewed: `main` at commit `33bc716` (after PR #66, Decision 0080).
 
