@@ -355,3 +355,29 @@ export interface CostingQueries {
     assumptions: CostingAssumptionsInput;
   }): Promise<Array<{ suffix: string; contents: string }> | undefined>;
 }
+
+/** Decision 0081. What a covered command records. `keep` can decline a change the command made (for example a pattern save that changed no service). */
+export interface ScenarioChangeRequest {
+  kind: import('../domain/types').RestorePointKind;
+  scenarioId: string;
+  refs?: import('../domain/types').RestorePointRefs;
+  extraNames?: Partial<import('../domain/types').RestorePointNames>;
+  quantity?: number;
+  detail?: string;
+  restoredKind?: import('../domain/types').RestorePointKind;
+  keep?: (change: import('../domain/types').RecordChange) => boolean;
+}
+/** Decision 0081. Runs a write and stores its restore point in the same transaction. */
+export interface RestorePointRecorder {
+  recordScenarioChange<T>(request: ScenarioChangeRequest, write: () => Promise<T>): Promise<T>;
+  recordProjectDeletion<T>(projectId: string, write: () => Promise<T>): Promise<T>;
+}
+/** Decision 0081. The stored restore points. Listing never loads payloads. */
+export interface RestorePointStore {
+  listRestorePoints(): Promise<import('../domain/types').RestorePointSummary[]>;
+  getRestorePointPayload(id: string): Promise<import('../domain/types').RestorePointPayload | undefined>;
+  deleteRestorePoint(id: string): Promise<void>;
+  keepNewest(count: number): Promise<void>;
+  /** Called after a restore point is stored and its transaction has committed. */
+  subscribeToRestorePoints(listener: (point: import('../domain/types').RestorePointSummary) => void): () => void;
+}

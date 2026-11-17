@@ -201,4 +201,44 @@ export interface ProjectSnapshot {
   blocks: Block[];
 }
 
-export interface DatabaseRecordMap { projects: Project; scenarios: Scenario; serviceDays: ServiceDayDefinition; routes: Route; nodes: Node; patterns: RoutePattern; directions: RouteDirection; runtimeProfiles: RuntimeProfile; runtimeAssignments: RuntimeAssignment; generationSets: TripGenerationSet; tripProfiles: TripProfile; blockingScenarios: BlockingScenario; trips: Trip; tripRegenerationUndo: TripRegenerationUndo; blocks: Block; costingAssumptions: CostingAssumptions; plannedFrequencies: PlannedFrequency; routeStopSets: RouteStopSet; appMetadata: AppMetadata; }
+/** Decision 0081. The commands that store a restore point, and `restore`, which records a restore of an existing Scenario. */
+export type RestorePointKind =
+  | 'deleteProject' | 'deleteScenario' | 'deleteRoute' | 'deletePattern' | 'resetPatternService' | 'rebalancePattern' | 'deleteNodes'
+  | 'deleteRuntimeProfile' | 'deleteTrips' | 'copyTripsFromDay' | 'deleteTripProfile' | 'unassignTrips' | 'moveTripsToBlock'
+  | 'deleteBlockingScenario' | 'deleteBlocks' | 'copyBlocksFromDay' | 'rebuildAutoBlocks' | 'replaceBoundaryActivities'
+  | 'removeBlockActivity' | 'deleteDeadheads' | 'clearPlan' | 'copyPlanFromDay' | 'copyPlansFromScenario' | 'restore';
+/** Decision 0081. One collection of `ScenarioRecords`. `scenario` and `costingAssumptions` are single records, read as lists of 0 or 1. */
+export type RecordCollection = 'scenario' | 'serviceDays' | 'routes' | 'nodes' | 'patterns' | 'directions' | 'runtimeProfiles' | 'runtimeAssignments'
+  | 'tripProfiles' | 'blockingScenarios' | 'costingAssumptions' | 'generationSets' | 'trips' | 'blocks' | 'plannedFrequencies' | 'routeStopSets';
+/** Decision 0081. What one command did to one Scenario's records. */
+export interface RecordChange {
+  /** Full rows the command deleted. */
+  removed: Partial<Record<RecordCollection, Array<{ id: EntityId }>>>;
+  /** Full previous versions of the rows the command changed. */
+  changedBefore: Partial<Record<RecordCollection, Array<{ id: EntityId }>>>;
+  /** Ids the command created. */
+  added: Partial<Record<RecordCollection, EntityId[]>>;
+  /** Row id → stamp of the row as the command left it, for every changed and added row. */
+  writtenStamps: Partial<Record<RecordCollection, Record<EntityId, string>>>;
+}
+/** Decision 0081. The records a restore point names; their names are stored with it. */
+export interface RestorePointRefs { routeId?: EntityId; patternId?: EntityId; runtimeProfileId?: EntityId; tripProfileId?: EntityId; blockingScenarioId?: EntityId; serviceDayId?: EntityId; sourceServiceDayId?: EntityId; blockId?: EntityId; }
+export interface RestorePointNames { project: string; scenario: string; route?: string; pattern?: string; runtimeProfile?: string; tripProfile?: string; blockingScenario?: string; serviceDay?: string; sourceServiceDay?: string; block?: string; sourceScenario?: string; }
+export type RestorePointCounts = Partial<Record<RecordCollection, { removed: number; changed: number; added: number }>>;
+/** Decision 0081. A restore point as listed. Its payload is a separate record. Local operational data, never in a backup. */
+export interface RestorePointSummary {
+  id: EntityId; kind: RestorePointKind; scope: 'scenario' | 'project';
+  projectId: EntityId; scenarioId?: EntityId; createdAt: IsoTimestamp;
+  names: RestorePointNames; counts: RestorePointCounts;
+  /** A count the command was given, such as the number of selected trips. */
+  quantity?: number;
+  /** A word the label needs, such as 'pullOut' or 'pullIn'. */
+  detail?: string;
+  /** For kind 'restore': the kind of the point that was restored. */
+  restoredKind?: RestorePointKind;
+  /** JSON length of the payload at capture, for the size limit. */
+  sizeEstimate: number;
+}
+export interface RestorePointPayload { id: EntityId; change?: RecordChange; projectSnapshot?: ProjectSnapshot; }
+
+export interface DatabaseRecordMap { projects: Project; scenarios: Scenario; serviceDays: ServiceDayDefinition; routes: Route; nodes: Node; patterns: RoutePattern; directions: RouteDirection; runtimeProfiles: RuntimeProfile; runtimeAssignments: RuntimeAssignment; generationSets: TripGenerationSet; tripProfiles: TripProfile; blockingScenarios: BlockingScenario; trips: Trip; tripRegenerationUndo: TripRegenerationUndo; blocks: Block; costingAssumptions: CostingAssumptions; plannedFrequencies: PlannedFrequency; routeStopSets: RouteStopSet; appMetadata: AppMetadata; restorePoints: RestorePointSummary; restorePointPayloads: RestorePointPayload; }
