@@ -72,6 +72,24 @@
 | Version assertions to update in FX1: `src/persistence/database.test.ts:8, 76, 85, 86, 162, 194, 221`; `src/persistence/repository.test.ts:19, 21, 46, 47`; `tests/ui/database-migration.spec.ts:68`; `tests/ui/scenario-copy-recovery.spec.ts:148, 167, 177`. | — |
 | The trimmed golden fixture is the function `fixture()` in `src/persistence/repositoryContract.test.ts:65-109`. | — |
 
+### 4.1 Dry run of this plan (2026-11-17)
+
+Opus applied the code of FX1, FX2, FX3, and FX5 from this document, as written, to a throwaway worktree of `main`. That worktree was not committed.
+
+| Check | Result |
+| --- | --- |
+| Every anchor | Found exactly once. |
+| `pnpm typecheck` | Passed. |
+| Full unit suite | Passed: 94 files, 1537 tests. |
+| Delete route, delete blocking scenario, delete trip profile, then restore | Restore returned the exact original records. One "saved" publish per command. Notifications after commit. |
+| Full browser suite (4 workers) | 371 passed, 2 skipped, 3 failed. |
+
+The 3 failures were `impact-dialogs.spec.ts:100`, `impact-dialogs.spec.ts:111`, and `trip-table-layout.spec.ts:102`. All three pass when run alone. Running `impact-dialogs.spec.ts` and `trip-table-layout.spec.ts` with `--repeat-each=3 --workers=4` gives the same 3 failures on unmodified `main`. They are timing flakes under parallel load that already exist on `main`; this plan does not cause them. A Haiku agent that sees only these failures reruns them alone and reports both results.
+
+Two spec edits came out of the dry run, and both are in this plan: §8.11 (`route-save-race.spec.ts`) and the `scenario-copy-recovery.spec.ts:177` version assertion (§7.5).
+
+Environment note: running the browser suite from a worktree whose `node_modules` is a symlink to a directory outside the worktree makes fonts fail to load, which fails `keyboard.spec.ts:133`. Use a real `node_modules` in the worktree.
+
 ## 5. Package overview
 
 | Package | Title | Model | Depends on | Files it may change |
