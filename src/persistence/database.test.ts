@@ -1,11 +1,12 @@
 import Dexie from 'dexie';
 import { describe, expect, it } from 'vitest';
 import { TransitDatabase } from './database';
+import { runtimeInputsSignature } from '../domain/runtime';
 
 describe('application database schema', () => {
   it('includes scenario assumptions and local regeneration undo', () => {
     const db = new TransitDatabase('transit-costing-schema-contract');
-    expect(db.verno).toBe(13);
+    expect(db.verno).toBe(14);
     expect(db.tables.map((table) => table.name)).toContain('plannedFrequencies');
     expect(db.plannedFrequencies.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['scenarioId', 'routeId', '[routeId+serviceDayId]']));
     expect(db.tables.map((table) => table.name)).toContain('routeStopSets');
@@ -33,6 +34,7 @@ const HISTORY: Record<string, string>[] = [
   { plannedFrequencies: 'id,scenarioId,routeId,[routeId+serviceDayId]' },
   { routeStopSets: 'id,scenarioId,routeId' },
   {},
+  { restorePoints: 'id,projectId,createdAt', restorePointPayloads: 'id' },
 ];
 
 const stamp ={ createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' };
@@ -84,8 +86,8 @@ describe('database upgrades from every earlier schema version', () => {
       await db.open();
       const after: Record<string, number> = {};
       for (const table of db.tables) after[table.name] = await table.count();
-      expect(db.verno).toBe(13);
-      expect((await indexedDB.databases()).find((database) => database.name === name)?.version).toBe(130);
+      expect(db.verno).toBe(14);
+      expect((await indexedDB.databases()).find((database) => database.name === name)?.version).toBe(140);
 
       // Scheduling records are untouched.
       for (const kept of ['projects', 'scenarios', 'serviceDays', 'routes', 'nodes', 'patterns', 'runtimeProfiles', 'runtimeAssignments', 'trips', 'generationSets', 'costPlans', 'appMetadata'] as const) expect(after[kept]).toBe(before[kept]);
@@ -138,6 +140,37 @@ describe('database upgrades from every earlier schema version', () => {
   });
 });
 
+describe('database version 14: runtime inputs signature (FX7)', () => {
+  it('records the signature of each Trip that is current by revision, and no other', async () => {
+    const name = `transit-costing-upgrade-v14-${Date.now()}`;
+    await seed(name, 13);
+    const legacy = new Dexie(name);
+    for (let version = 1; version <= 13; version += 1) legacy.version(version).stores(HISTORY[version - 1]);
+    await legacy.open();
+    // s1-rp is at revision 2. s1-t0 was calculated at revision 2, so it is current. s1-t1 was calculated at revision 1, so it is not.
+    // The s2 Trips record no source.
+    await legacy.table('runtimeProfiles').update('s1-rp', { calculationRevision: 2 });
+    await legacy.table('trips').update('s1-t0', { provenance: { kind: 'manual', manuallyChangedFields: [], runtimeProfileId: 's1-rp', runtimeCalculationRevision: 2, calculationSource: { runtimeProfileId: 's1-rp', runtimeCalculationRevision: 2 } } });
+    await legacy.table('trips').update('s1-t1', { provenance: { kind: 'manual', manuallyChangedFields: [], runtimeProfileId: 's1-rp', runtimeCalculationRevision: 1, calculationSource: { runtimeProfileId: 's1-rp', runtimeCalculationRevision: 1 } } });
+    const profile = await legacy.table('runtimeProfiles').get('s1-rp');
+    const byId = (rows: Array<{ id: string }>) => JSON.stringify([...rows].sort((a, b) => a.id.localeCompare(b.id)));
+    const tripsBefore = await legacy.table('trips').toArray();
+    legacy.close();
+
+    const db = new TransitDatabase(name);
+    try {
+      await db.open();
+      expect(db.verno).toBe(14);
+      expect((await db.trips.get('s1-t0'))?.provenance.calculationSource).toEqual({ runtimeProfileId: 's1-rp', runtimeCalculationRevision: 2, runtimeInputsSignature: runtimeInputsSignature(profile) });
+      const others = (await db.trips.toArray()).filter((trip) => trip.id !== 's1-t0');
+      expect(byId(others)).toBe(byId(tripsBefore.filter((trip) => trip.id !== 's1-t0')));
+    } finally {
+      db.close();
+      await Dexie.delete(name);
+    }
+  });
+});
+
 describe('database version 8: Trip Profile index and placeholder Block clean-up', () => {
   const placeholder = (id: string, extra: Record<string, unknown> = {}) => ({ id, scenarioId: 's1', serviceDayId: 's1-wd', label: id, activities: [{ id: `${id}-act`, type: 'revenueTrip', sequence: 0, tripId: 's1-t0' }], ...extra, ...stamp });
 
@@ -161,7 +194,7 @@ describe('database version 8: Trip Profile index and placeholder Block clean-up'
     const db = new TransitDatabase(name);
     try {
       await db.open();
-      expect(db.verno).toBe(13);
+      expect(db.verno).toBe(14);
       expect((await db.blocks.toArray()).map((block) => block.id).sort()).toEqual(['s1-blk', 's2-blk']);
       expect(JSON.stringify((await db.blocks.toArray()).sort((a, b) => a.id.localeCompare(b.id)))).toBe(keptJson);
       expect(JSON.stringify((await db.trips.toArray()).sort((a, b) => a.id.localeCompare(b.id)))).toBe(tripsJson);
@@ -193,7 +226,7 @@ describe('database version 8: Trip Profile index and placeholder Block clean-up'
     const db = new TransitDatabase(name);
     try {
       await db.open();
-      expect(db.verno).toBe(13);
+      expect(db.verno).toBe(14);
       const profiles = Object.fromEntries((await db.runtimeProfiles.toArray()).map((profile) => [profile.id, [profile.calculationMethod, profile.calculationRevision]]));
       expect(profiles).toEqual({ 's1-rp': [undefined, undefined], 's1-rp2': ['singleBand', 1], 's1-rp3': ['singleBand', 5], 's2-rp': [undefined, undefined] });
       expect(JSON.stringify((await db.trips.toArray()).sort((a, b) => a.id.localeCompare(b.id)))).toBe(tripsJson);
@@ -220,7 +253,7 @@ describe('database version 8: Trip Profile index and placeholder Block clean-up'
     const db = new TransitDatabase(name);
     try {
       await db.open();
-      expect(db.verno).toBe(13);
+      expect(db.verno).toBe(14);
       expect((await db.nodes.toArray()).filter((node) => 'stopCode' in node)).toEqual([]);
       const sets = Object.fromEntries((await db.routeStopSets.toArray()).map((set) => [set.routeId, set]));
       expect(sets['s1-r']).toMatchObject({ scenarioId: 's1', roundingSeconds: 60, stops: [], placementsByPatternId: {}, timepointStopCodesByPatternId: { 's1-p': { 's1-pa': 'A1' } } });

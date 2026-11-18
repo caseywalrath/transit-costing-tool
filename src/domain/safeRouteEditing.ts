@@ -1,7 +1,7 @@
 import { newId, withUpdatedAt } from './ids';
 import { normalizeDirections } from './directions';
 import { normalizePattern } from './patterns';
-import { propagatePatternTimes } from './runtime';
+import { propagatePatternTimes, tripCalculationSource, tripRuntimeSourceIsCurrent } from './runtime';
 import { adjustBlockReferences } from './trips';
 import type { Block, DirectionTimepointColumn, Node, RouteDefinitionAggregate, RouteDirection, RoutePattern, RuntimeProfile, ScheduledPoint, Trip } from './types';
 
@@ -273,7 +273,7 @@ function profileReproducesTimes(pattern: RoutePattern, stopTimes: ScheduledPoint
  * stale, and a Trip whose times the merged or rebalanced profile can no longer produce (for example a segment-start Trip whose
  * merged segment crossed two bands) is not declared current (Decision 0014 item 6; review findings 2-004 and 2-005).
  */
-export function rebalanceTripForPattern(trip: Trip, saved: RoutePattern, proposed: RoutePattern, profileById: Map<string, RuntimeProfile>, now = new Date().toISOString()): Trip {
+export function rebalanceTripForPattern(trip: Trip, saved: RoutePattern, proposed: RoutePattern, profileById: Map<string, RuntimeProfile>, now = new Date().toISOString(), previousProfileById?: Map<string, RuntimeProfile>): Trip {
   const times = new Map(trip.stopTimes.map((point) => [point.patternPointId, point.time]));
   const oldFirst = trip.stopTimes[0]?.time ?? 0;
   let precedingTime = oldFirst;
@@ -286,7 +286,11 @@ export function rebalanceTripForPattern(trip: Trip, saved: RoutePattern, propose
   const profile = sourceId ? profileById.get(sourceId) : undefined;
   const revision = profile?.calculationRevision;
   const recordedRevision = trip.provenance.calculationSource?.runtimeCalculationRevision ?? trip.provenance.runtimeCalculationRevision;
-  const carryForward = profile !== undefined && revision !== undefined && recordedRevision === revision - 1 && profileReproducesTimes(proposed, stopTimes, profile);
+  const previous = sourceId ? previousProfileById?.get(sourceId) : undefined;
+  const wasCurrent = previous && sourceId && recordedRevision !== undefined
+    ? tripRuntimeSourceIsCurrent({ runtimeProfileId: sourceId, runtimeCalculationRevision: recordedRevision, runtimeInputsSignature: trip.provenance.calculationSource?.runtimeInputsSignature }, previous)
+    : recordedRevision === (revision ?? 0) - 1;
+  const carryForward = profile !== undefined && revision !== undefined && wasCurrent && profileReproducesTimes(proposed, stopTimes, profile);
   return withUpdatedAt({
     ...trip,
     stopTimes,
@@ -294,7 +298,7 @@ export function rebalanceTripForPattern(trip: Trip, saved: RoutePattern, propose
       ...trip.provenance,
       runtimeProfileId: profile.id,
       runtimeCalculationRevision: revision,
-      calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision },
+      calculationSource: tripCalculationSource(profile),
     } : trip.provenance,
   }, now);
 }

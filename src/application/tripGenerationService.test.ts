@@ -5,6 +5,7 @@ import { TripGenerationService } from './tripGenerationService';
 import type { TripGenerationRepository } from './ports';
 import { InMemoryRouteDefinitionRepository } from '../persistence/inMemoryRepository';
 import { rebalanceRuntimeProfile, rebalanceTripForPattern } from '../domain/safeRouteEditing';
+import { runtimeInputsSignature, tripCalculationSource } from '../domain/runtime';
 
 class FakeTripRepository implements TripGenerationRepository {
   sets = new Map<string, TripGenerationSet>(); trips = new Map<string, Trip>(); blocks = new Map<string, Block>();
@@ -79,6 +80,13 @@ describe('Trip generation validates the Trip profile inside the write', () => {
     await service.generateTrips({ ...request, tripProfileId: 'trip-profile' });
     expect(await repository.listTrips('weekday')).toHaveLength(3);
   });
+
+  it('records the runtime inputs signature of the profile on a Trip it adds', async () => {
+    const { repository, service } = await setup();
+    await service.addTrip({ scenarioId: 's', routeId: 'r', serviceDayId: 'weekday', patternId: 'p', directionId: 'outbound', firstTrip: 3 * 3600, tripProfileId: 'trip-profile' });
+    const [added] = await repository.listTrips('weekday');
+    expect(added.provenance.calculationSource).toEqual({ runtimeProfileId: 'profile', runtimeCalculationRevision: 0, runtimeInputsSignature: runtimeInputsSignature(storedProfile) });
+  });
 });
 
 describe('stale-source checks on Pattern changes and Trips CSV imports, and the stale Trip query', () => {
@@ -116,7 +124,7 @@ describe('stale-source checks on Pattern changes and Trips CSV imports, and the 
       const changed = await service.changeTripPattern(await service.previewTripPatternChange('out-1', 'outbound2', 'outbound'));
       expect(changed.patternId).toBe('outbound2');
       expect((await repository.getTrip('out-1'))?.patternId).toBe('outbound2');
-      expect(changed.provenance.calculationSource).toEqual({ runtimeProfileId: 'outbound2-profile', runtimeCalculationRevision: 7 });
+      expect(changed.provenance.calculationSource).toEqual({ runtimeProfileId: 'outbound2-profile', runtimeCalculationRevision: 7, runtimeInputsSignature: runtimeInputsSignature(profile('outbound2-profile', 'outbound2', 7)) });
     });
 
     it('rejects a review after the Trip was shifted, and keeps the shift', async () => {
@@ -289,6 +297,15 @@ describe('stale-source checks on Pattern changes and Trips CSV imports, and the 
       const { repository, service } = await setup({ profiles, trips: [legacyTrip('legacy', outbound, 1000, 1600)] });
       repository.runtimeProfiles.set('outbound-profile', { ...profiles[0], bands: undefined as never });
       await expect(service.listStaleTrips('weekday')).rejects.toThrow(TypeError);
+    });
+
+    it('a Trip that records a signature is current when its profile\'s revision moved but its inputs are as recorded, and stale when they differ', async () => {
+      const provenance = { kind: 'manual' as const, creationMethod: 'manual' as const, manuallyChangedFields: [], runtimeProfileId: 'outbound-profile', runtimeCalculationRevision: 4, calculationSource: tripCalculationSource(profile('outbound-profile', 'outbound', 4)) };
+      const { repository, service } = await setup({ trips: [trip('sig-1', outbound, 1000, { provenance }), trip('sig-2', outbound, 2000, { provenance })] });
+      repository.runtimeProfiles.set('outbound-profile', profile('outbound-profile', 'outbound', 6));
+      expect(await service.listStaleTrips('weekday')).toEqual([]);
+      repository.runtimeProfiles.set('outbound-profile', profile('outbound-profile', 'outbound', 7, { bands: [{ id: 'outbound-profile-band', label: 'All day', sequence: 0, startTime: 0, endTime: 86400, segmentRuntimeSeconds: [660] }] }));
+      expect((await service.listStaleTrips('weekday')).map((item) => item.id).sort()).toEqual(['sig-1', 'sig-2']);
     });
 
     it('reports a Trip that a route edit could not carry to the new revision', async () => {

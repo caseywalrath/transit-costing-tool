@@ -12,6 +12,7 @@ import type {
 } from './types';
 import { metadata, newId } from './ids';
 import { isUsablePattern } from './directions';
+import { tripRuntimeSourceIsCurrent } from './runtime';
 import { adjustBlockReferences, type PatternChangePreview, previewPatternChange, type RecalculationConnection } from './trips';
 
 export type RuntimeCopyMode = 'independent' | 'shared';
@@ -308,7 +309,7 @@ export function buildTripCopyPreview(
     const assignment = targetAssignmentByPattern.get(trip.patternId);
     const profile = assignment ? targetProfilesById.get(assignment.runtimeProfileId) : undefined;
     const source = profileCalculationSource(trip);
-    return Boolean(source && (!assignment || !profile || source.runtimeProfileId !== assignment.runtimeProfileId || source.runtimeCalculationRevision !== (profile.calculationRevision ?? 0)));
+    return Boolean(source && (!assignment || !profile || source.runtimeProfileId !== assignment.runtimeProfileId || !tripRuntimeSourceIsCurrent(source, profile)));
   }).map((trip) => trip.id);
   const adjusted = adjustBlockReferences(targetBlocks, routeTargetTrips.map((trip) => trip.id), [], now);
   const copiedTrips = routeSourceTrips.map((trip) => copyTrip(trip, request.targetServiceDayId, now));

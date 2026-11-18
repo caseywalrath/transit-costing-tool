@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
 import { AnchorBandChoiceError } from '../domain/trips';
+import { runtimeInputsSignature } from '../domain/runtime';
 import type { Block, GenerateTripsRequest, RoutePattern, RuntimeAssignment, RuntimeProfile, Trip, TripGenerationSet, TripRegenerationUndo } from '../domain/types';
 import { TripGenerationService, TripRecalculationConfirmationError, TripShiftStalePreviewError } from './tripGenerationService';
 import type { TripGenerationRepository } from './ports';
@@ -63,7 +64,7 @@ describe('authoritative trip workflow', () => {
     const second = await service.generateTrips(request('p2', 0, 600));
     expect(first.trips).toHaveLength(3); expect(second.trips).toHaveLength(3); expect(repository.trips.size).toBe(6);
     expect(second.trips[0].provenance.creationMethod).toBe('generated');
-    expect(second.trips[0].provenance.calculationSource).toEqual({ runtimeProfileId: 'rp2', runtimeCalculationRevision: 0 });
+    expect(second.trips[0].provenance.calculationSource).toEqual({ runtimeProfileId: 'rp2', runtimeCalculationRevision: 0, runtimeInputsSignature: runtimeInputsSignature(profile('rp2', 'p2')) });
   });
 
   it('accepts a count-limited additive generation request', async () => {

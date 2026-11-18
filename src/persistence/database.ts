@@ -2,7 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import type { DatabaseRecordMap } from '../domain/types';
 import { metadata, newId } from '../domain/ids';
 import { recoverScenarioCopyNodeReferences } from '../domain/scenarioCopyRecovery';
-import { unifyRouteRuntimeCalculationMethods } from '../domain/runtime';
+import { unifyRouteRuntimeCalculationMethods, withRecordedRuntimeSignatures } from '../domain/runtime';
 import { moveNodeStopCodesToPatterns } from '../domain/stops';
 import type { WriteGuard } from './tabGuard';
 export class TransitDatabase extends Dexie {
@@ -124,6 +124,20 @@ export class TransitDatabase extends Dexie {
     // Version 13 adds the local restore point tables (Decision 0081). They start empty, no existing data is read or written, and they are
     // never part of a backup.
     this.version(13).stores({ restorePoints: 'id,projectId,createdAt', restorePointPayloads: 'id' });
+    // Version 14 changes no store. Each Trip that is current by the revision rule records its profile's runtime inputs signature
+    // (Decision 0081 item 11), so a later edit that is reverted leaves it current. Only those Trips are written. A failure leaves the data as
+    // it was (as in version 7); the Trips then keep the revision rule.
+    this.version(14).stores({}).upgrade(async (tx) => {
+      try {
+        const [trips, profiles] = await Promise.all([tx.table('trips').toArray(), tx.table('runtimeProfiles').toArray()]);
+        const signed = withRecordedRuntimeSignatures(trips, profiles);
+        if (!signed.changedTripIds.length) return;
+        const changed = new Set(signed.changedTripIds);
+        await tx.table('trips').bulkPut(signed.trips.filter((trip) => changed.has(trip.id)));
+      } catch (error) {
+        console.warn('Runtime inputs signatures were not recorded.', error);
+      }
+    });
   }
 
   private installWriteGuard(guard: WriteGuard): void {

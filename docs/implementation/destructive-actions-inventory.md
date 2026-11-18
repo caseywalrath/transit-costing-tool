@@ -1,6 +1,6 @@
 # Destructive Actions Inventory
 
-Status: Review complete. Fixes are implemented through FX6 of `docs/implementation/undo-and-context.md` (Decision 0081); the status of each gap is at the end of section 8. G8 and G9 remain for FX8 and FX7.
+Status: Review complete. Fixes are implemented through FX6 of `docs/implementation/undo-and-context.md` (Decision 0081); the status of each gap is at the end of section 8. G9 is closed by FX7; G8 remains for FX8.
 Date: 2026-11-17.
 Code reviewed: `main` at commit `33bc716` (after PR #66, Decision 0080).
 
@@ -260,7 +260,7 @@ Every High-risk item (section 6) now stores a restore point and can be undone fr
 | G6 | Closed: trip deletion names the deadheads and the Blocking scenarios it changes | FX2, FX3 |
 | G7 | Closed: Route and Trip profile deletion name their Costing estimate factors | FX2, FX3 |
 | G8 | Open: the start-time edit still replaces the stored regeneration or pattern-change undo | FX8 |
-| G9 | Open: the "Run times changed" marks still follow the revision, not the content | FX7 |
+| G9 | Closed: the "Run times changed" marks follow the runtime inputs, so a reverted change clears them (the runtime-save count is not added) | FX7 |
 | G10 | Closed: Blocking "Move to block" names the deadheads that leave | FX2, FX3 |
 | G11 | Closed: "Apply to all similar trips" states how many connections it changes; undoable | FX3, FX2 |
 | G12 | Closed: a rebuild states how many Blocks it replaces on each day; undoable | FX2, FX3 |

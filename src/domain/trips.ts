@@ -1,6 +1,6 @@
 import type { Block, DurationSeconds, GenerateTripsRequest, RoutePattern, RuntimeBand, RuntimeProfile, ScheduledPoint, ServiceSeconds, Trip, TripGenerationSet, ValidationFinding } from './types';
 import { metadata, newId, withUpdatedAt } from './ids';
-import { propagatePatternTimes, propagatePatternTimesWithBand, resolveSegmentStartBand, selectRuntimeBand } from './runtime';
+import { propagatePatternTimes, propagatePatternTimesWithBand, resolveSegmentStartBand, selectRuntimeBand, tripCalculationSource } from './runtime';
 import { diagnoseAnchor, type AnchorDiagnosis } from './anchorDiagnosis';
 
 export class TripGenerationError extends Error {
@@ -104,7 +104,7 @@ function authoritativeTrip(request: GenerateTripsRequest, pattern: RoutePattern,
       manuallyChangedFields: [],
       runtimeProfileId: profile.id,
       runtimeCalculationRevision: revision,
-      calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision },
+      calculationSource: tripCalculationSource(profile),
     },
     ...metadata(now),
   };
@@ -381,7 +381,7 @@ export function recalculateTripWithAnchor(trip: Trip, pattern: RoutePattern, pro
     const chosen = singleAnchorSolution(trip, profile, matches);
     if (!chosen) throw new TripGenerationError([tripFinding(trip, 'trip.anchorNoRuntime', 'trip.anchorNoRuntime')]);
     const revision = profile.calculationRevision ?? 0;
-    return { trip: withUpdatedAt({ ...trip, patternId: pattern.id, stopTimes: chosen.stopTimes, provenance: { ...trip.provenance, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision }, manuallyChangedFields: [], manualTimeShiftSeconds: undefined } }, now) };
+    return { trip: withUpdatedAt({ ...trip, patternId: pattern.id, stopTimes: chosen.stopTimes, provenance: { ...trip.provenance, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: tripCalculationSource(profile), manuallyChangedFields: [], manualTimeShiftSeconds: undefined } }, now) };
   }
   if (profile.calculationMethod === 'blendSegments') {
     if (chosenBandId) throw new TripGenerationError([tripFinding(trip, 'trip.anchorBandChoiceInvalid', 'trip.anchorBandChoiceInvalid')]);
@@ -402,7 +402,7 @@ export function recalculateTripWithAnchor(trip: Trip, pattern: RoutePattern, pro
     const chosen = singleAnchorSolution(trip, profile, matches);
     if (!chosen) throw new TripGenerationError([tripFinding(trip, 'trip.anchorNoRuntime', 'trip.anchorNoRuntime')]);
     const revision = profile.calculationRevision ?? 0;
-    return { trip: withUpdatedAt({ ...trip, patternId: pattern.id, stopTimes: chosen.stopTimes, provenance: { ...trip.provenance, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision }, manuallyChangedFields: [], manualTimeShiftSeconds: undefined } }, now) };
+    return { trip: withUpdatedAt({ ...trip, patternId: pattern.id, stopTimes: chosen.stopTimes, provenance: { ...trip.provenance, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: tripCalculationSource(profile), manuallyChangedFields: [], manualTimeShiftSeconds: undefined } }, now) };
   }
   const candidates = anchorIndex === 0 ? [] : profile.bands.filter((band) => band.segmentRuntimeSeconds.length === pattern.points.length - 1).map((band) => {
     const first = anchorTime - band.segmentRuntimeSeconds.slice(0, anchorIndex).reduce((total, seconds) => total + seconds, 0);
@@ -432,7 +432,7 @@ export function recalculateTripWithAnchor(trip: Trip, pattern: RoutePattern, pro
   if ('finding' in propagated) throw new TripGenerationError([{ ...propagated.finding, entityType: 'trip', entityId: trip.id }]);
   if (propagated.stopTimes[anchorIndex].time !== anchorTime) throw new TripGenerationError([tripFinding(trip, 'trip.anchorAmbiguous', 'trip.anchorAmbiguous')]);
   const revision = profile.calculationRevision ?? 0;
-  return { trip: withUpdatedAt({ ...trip, patternId: pattern.id, stopTimes: propagated.stopTimes, provenance: { ...trip.provenance, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision }, manuallyChangedFields: [], manualTimeShiftSeconds: undefined } }, now), bandSelection };
+  return { trip: withUpdatedAt({ ...trip, patternId: pattern.id, stopTimes: propagated.stopTimes, provenance: { ...trip.provenance, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: tripCalculationSource(profile), manuallyChangedFields: [], manualTimeShiftSeconds: undefined } }, now), bandSelection };
 }
 
 export function markTripRecalculated(trip: Trip, pattern: RoutePattern, profile: RuntimeProfile, now = new Date().toISOString(), anchorPointId?: string): Trip {
@@ -473,7 +473,7 @@ export function generationDepartures(set: TripGenerationSet): ServiceSeconds[] {
 
 function generatedTrip(set: TripGenerationSet, pattern: RoutePattern, profile: RuntimeProfile, sequence: number, stopTimes: ScheduledPoint[], id = newId(), now = new Date().toISOString()): Trip {
   const revision = profile.calculationRevision ?? 0;
-  return { id, scenarioId: set.scenarioId, routeId: set.routeId, serviceDayId: set.serviceDayId, patternId: pattern.id, stopTimes, provenance: { kind: 'generated', creationMethod: 'generated', generationSetId: set.id, generationRevision: set.generationRevision, generationSequence: sequence, manuallyChangedFields: [], runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision } }, ...metadata(now) };
+  return { id, scenarioId: set.scenarioId, routeId: set.routeId, serviceDayId: set.serviceDayId, patternId: pattern.id, stopTimes, provenance: { kind: 'generated', creationMethod: 'generated', generationSetId: set.id, generationRevision: set.generationRevision, generationSequence: sequence, manuallyChangedFields: [], runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: tripCalculationSource(profile) }, ...metadata(now) };
 }
 
 /** Generate historical or authoritative trips. Each departure independently selects its runtime band. */

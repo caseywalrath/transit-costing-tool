@@ -7,6 +7,7 @@ import type { TripTableImportPreview } from './ports';
 import { assertReviewCurrent, fingerprint } from './reviewToken';
 import { publishWrites, SaveStatusPublisher } from './saveStatus';
 import { metadata, newId, withUpdatedAt } from '../domain/ids';
+import { tripCalculationSource, tripRuntimeSourceIsCurrent } from '../domain/runtime';
 import { buildBatchPatternChangePreview, buildRuntimeCopyPreview, buildTripCopyPreview, type BatchPatternChangePreview, type BatchPatternChangeRequest, type RuntimeCopyPreview, type RuntimeCopyRequest, type TripCopyPreview, type TripCopyRequest } from '../domain/serviceDayCopy';
 import { buildTripShiftPreview, type TripShiftPreview, type TripShiftRequest, TripShiftValidationError } from '../domain/tripShift';
 
@@ -382,7 +383,7 @@ export class TripGenerationService {
     const recalculated = previewPatternChange(trip, target, profile, { sourcePattern: source, ...inputs, now: this.now() });
     const updated = applyPatternChange(trip, target, recalculated, this.now());
     const revision = profile.calculationRevision ?? 0;
-    const sourced = { ...updated, provenance: { ...updated.provenance, creationMethod: updated.provenance.creationMethod ?? updated.provenance.kind, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision } } };
+    const sourced = { ...updated, provenance: { ...updated.provenance, creationMethod: updated.provenance.creationMethod ?? updated.provenance.kind, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: tripCalculationSource(profile) } };
     await this.persistWithUndo([trip], [sourced], 'patternChange');
     return sourced;
   }
@@ -671,7 +672,7 @@ export class TripGenerationService {
       const targetProfile = context.profilesByTripId.get(change.tripId)!;
       const changed = applyPatternChange(trip, context.targetPattern, change, this.now());
       const revision = targetProfile.calculationRevision ?? 0;
-      return { ...changed, provenance: { ...changed.provenance, creationMethod: changed.provenance.creationMethod ?? changed.provenance.kind, runtimeProfileId: targetProfile.id, runtimeCalculationRevision: revision, calculationSource: { runtimeProfileId: targetProfile.id, runtimeCalculationRevision: revision } } };
+      return { ...changed, provenance: { ...changed.provenance, creationMethod: changed.provenance.creationMethod ?? changed.provenance.kind, runtimeProfileId: targetProfile.id, runtimeCalculationRevision: revision, calculationSource: tripCalculationSource(targetProfile) } };
     });
     const befores = updated.map((trip) => currentById.get(trip.id)!);
     await this.persistWithUndo(befores, updated, 'patternChange');
@@ -760,7 +761,7 @@ export class TripGenerationService {
       const profile = profilesById.get(assignment.runtimeProfileId);
 
       if (sourceProfileId && sourceRevision !== undefined) {
-        if (!profile || assignment.runtimeProfileId !== sourceProfileId || (profile.calculationRevision ?? 0) !== sourceRevision) {
+        if (!profile || !tripRuntimeSourceIsCurrent({ runtimeProfileId: sourceProfileId, runtimeCalculationRevision: sourceRevision, runtimeInputsSignature: trip.provenance.calculationSource?.runtimeInputsSignature }, profile)) {
           stale.push(trip);
           // A Trip that the profile cannot calculate cannot be recalculated either, and the planner is told why (U09).
           if (profile) {

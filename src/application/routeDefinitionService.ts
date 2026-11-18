@@ -1592,9 +1592,10 @@ export class RouteDefinitionService {
     const profiles = records.runtimeProfiles.map((profile) => structuralPatternIds.includes(profile.patternId)
       ? rebalanceRuntimeProfile(profile, savedById.get(profile.patternId)!, nextById.get(profile.patternId)!, this.now())
       : profile);
+    const previousProfileById = new Map(records.runtimeProfiles.map((profile) => [profile.id, profile]));
     const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
     const trips = records.trips.map((trip) => structuralPatternIds.includes(trip.patternId)
-      ? rebalanceTripForPattern(trip, savedById.get(trip.patternId)!, nextById.get(trip.patternId)!, profileById, this.now())
+      ? rebalanceTripForPattern(trip, savedById.get(trip.patternId)!, nextById.get(trip.patternId)!, profileById, this.now(), previousProfileById)
       : trip);
     return { runtimeProfiles: profiles, trips };
   }

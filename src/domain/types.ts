@@ -99,7 +99,9 @@ export type GenerationLimit = { mode: 'endTime'; endTime: ServiceSeconds } | { m
 /** @deprecated Saved generation inputs are retained only for reading the historical Phase 2 implementation. */
 export interface TripGenerationSet extends EntityMetadata { id: EntityId; scenarioId: EntityId; routeId: EntityId; serviceDayId: EntityId; patternId: EntityId; name: string; firstDeparture: ServiceSeconds; headwaySeconds: DurationSeconds; limit: GenerationLimit; generationRevision: number; }
 export interface ScheduledPoint { patternPointId: EntityId; sequence: number; time: ServiceSeconds; }
-export interface TripCalculationSource { runtimeProfileId: EntityId; runtimeCalculationRevision: number; }
+export interface TripCalculationSource { runtimeProfileId: EntityId; runtimeCalculationRevision: number;
+  /** Decision 0081 item 11 (FX7). `runtimeInputsSignature` of the profile when the Trip's times were calculated. Absent on older Trips, which keep the revision rule. */
+  runtimeInputsSignature?: string; }
 export type TripCreationMethod = 'generated' | 'manual';
 export interface TripProvenance {
   kind: 'generated' | 'manual';
