@@ -492,6 +492,7 @@ export function BlockingWorkspace({ dataVersion, crumbSlot, tripProfileId, block
     { id: 'delete', label: 'Delete block…', destructive: true, restoreFocus: false, disabled: true, onSelect: () => undefined },
   ] }];
   // Decision 0082 item 5: the Current block menu holds the Blocks, then New block… and the commands on the open Block, as Runtime profile does.
+  if (!dayBlocks.length) currentBlockMenu.length = 0;
   currentBlockMenu.push({ items: [{ id: 'new-block', label: 'New block…', restoreFocus: false, disabled: busy, onSelect: () => void openNewBlockDialog() }] },
     ...(selectedBlock ? blockGroups(selectedBlock, false) : noBlockActions));
   const selectedSummary = summary?.blockSummaries.find((item) => item.blockId === selectedBlock?.id);

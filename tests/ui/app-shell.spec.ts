@@ -39,12 +39,17 @@ test('the scope row holds each tab\'s selectors', async ({ page }) => {
   await openGolden(page);
   // Each field's name: its visible label, or, for Day and Direction, which have none (Decision 0059), the control's aria-label.
   const names = async () => scopeBar(page).locator('.context-field').evaluateAll((fields) => fields.map((field) => field.querySelector('.context-field__label')?.textContent ?? `(${field.querySelector('[aria-label]')?.getAttribute('aria-label')})`));
-  expect(await names()).toEqual(['Route']);
+  // Decision 0082 item 4: Route is a switcher before the scope fields, on Route, Trips, and Blocking.
+  const route = scopeBar(page).getByRole('button', { name: /^Route: / });
+  await expect(route).toBeVisible();
+  expect(await names()).toEqual([]);
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await expect.poll(names).toEqual(['Route', '(Day)', '(Direction)']);
+  await expect.poll(names).toEqual(['(Day)', '(Direction)']);
+  await expect(route).toBeVisible();
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   // Decision 0081 (D6): the Trip profile is a breadcrumb level, not a scope field.
-  await expect.poll(names).toEqual(['Route', '(Day)']);
+  await expect.poll(names).toEqual(['(Day)']);
+  await expect(route).toBeVisible();
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await expect.poll(names).toEqual(['Cost basis', 'View year']);
 });

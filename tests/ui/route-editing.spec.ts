@@ -86,7 +86,9 @@ test('renames and duplicates a Route from the module Actions menu', async ({ pag
   await page.getByRole('dialog', { name: 'Duplicate route' }).getByRole('button', { name: 'Duplicate', exact: true }).click();
   await expect(routeActions).toHaveAccessibleName('Route: Federal Copy');
   await routeActions.click();
-  await expect(routeItems).toHaveText(['Federal', 'Federal Copy']);
+  await expect(routeItems.filter({ hasText: /^✓?Federal$/ })).toHaveCount(1);
+  await expect(routeItems.filter({ hasText: /^✓?Federal Copy$/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(routeItems).toHaveCount(2);
   await page.keyboard.press('Escape');
 
   // Both Routes are stored, and the selection survives a reload.

@@ -151,7 +151,7 @@ test('selection reloads and exports that fail show the error banner with a next 
   await runInPage(page, 'e.db.close(); await e.db.delete();');
 
   await routeActions.click();
-  await page.getByRole('menu', { name: 'Route', exact: true }).getByRole('menuitemradio').first().click();
+  await page.getByRole('menu', { name: 'Route', exact: true }).getByRole('menuitemradio', { checked: false }).click();
   await expect(banner(page).filter({ hasText: 'Unable to load that selection. Reload this page and try again.' })).toHaveCount(1);
   await expect(banner(page).filter({ hasText: /Dexie|IndexedDB|database|closed/i }).filter({ hasNotText: 'upgraded in another tab' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Dismiss message' }).click();
