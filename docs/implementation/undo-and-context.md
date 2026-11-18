@@ -1381,7 +1381,7 @@ Update `architecture_overview.md` (Persistence: restore points and Dexie 13; Und
 ## 17. Later packages
 
 - **FX7, staleness by content.** Work order in section 19 (written 2026-11-18 against `e3468ed`).
-- **FX8, trip change history.** Opus writes the work order after FX7. Outline: Regenerate, Change pattern, the start-time edit, and Shift Done record restore points in a separate retention group (newest 10); the Trips menu offers "Undo {last trip change}" for the newest restorable one in view; the `tripRegenerationUndo` table is retired (Decisions 0046 and 0070 amended).
+- **FX8, trip change history.** Work order in section 20 (written 2026-11-18 against `8331cdf`).
 - **FX9, scenario lock.** Decided after FX6 is in use.
 
 ## 18. Out of scope
@@ -1592,3 +1592,132 @@ Only these lines change, with exactly these edits:
 ### 19.10 Verification and commit
 
 Run, in order: `pnpm typecheck`; `pnpm exec vitest run src/domain/runtime.test.ts src/application/tripGenerationService.test.ts src/persistence/database.test.ts src/persistence/backup.test.ts`; `pnpm test`; `pnpm build`. Do not run the browser suite (Opus runs it at review: Dexie 14 changes app startup). Commit `FX7: Run-time staleness by content: runtime inputs signature, Dexie 14, backup schema 15 (Decision 0081)`. Gate: Opus reviews the diff, updates `architecture_overview.md`, `docs/data-schema.md`, and the inventory, and runs the full browser suite.
+
+## 20. FX8: Trip change history (FX8a Haiku, structural; FX8b Opus, UI)
+
+Written 2026-11-18 against `8331cdf`. Decision 0081 item 12; inventory gap G8; amends Decisions 0046 and 0070.
+
+**What changes.** Regenerate (`applyRecalculationReview`, `applyRecalculationPreview`, `recalculateTrips`), the start-time edit (`applyRecalculationPreview` with `anchorTimeByTripId`), Change pattern (`changeTripPattern`, `applyBatchPatternChange`), and Shift Done (`applyStagedTripShift`) store restore points. They form the **trip group**, kept separately: the newest 10, none older than 30 days. A restore point records the ids it was taken in (`refs`), so the Trips menu can offer the newest one for the Route, Day, and Trip profile in view. The one-step `tripRegenerationUndo` store, its repository methods, and its service methods are removed; Dexie 15 deletes the table.
+
+### FX8a (Haiku, structural)
+
+Section 3 applies, with the exception stated in 20.6. Files owned: `src/domain/types.ts`, `src/domain/restorePoints.ts` (+ test), `src/application/ports.ts`, `src/application/restorePointCoverage.ts` (+ tests), `src/application/tripGenerationService.ts` (+ tests), `src/application/authoritativeTripService.test.ts`, `src/application/tripsWorkspaceView.ts` (+ test), `src/persistence/restorePointPersistence.ts` (+ test), `src/persistence/database.ts` (+ test), `src/persistence/dexieRepository.ts`, `src/persistence/inMemoryRepository.ts`, `src/persistence/repository.test.ts`, `src/persistence/repositoryContract.test.ts`. Do not change any file under `src/ui/` or `tests/ui/`: FX8b does. `pnpm typecheck` will report errors in `src/ui/trips/TripsWorkspace.tsx` after 20.5; those are expected and are listed in your report, not fixed.
+
+#### 20.1 `src/domain/types.ts`
+
+1. In `RestorePointKind`, anchor `| 'removeBlockActivity' | 'deleteDeadheads' | 'clearPlan' | 'copyPlanFromDay' | 'copyPlansFromScenario' | 'restore';`. Replace `| 'restore';` with `| 'regenerateTrips' | 'changeTripStartTime' | 'changeTripPattern' | 'shiftTrips' | 'restore';`.
+2. In `RestorePointSummary`, anchor `  restoredKind?: RestorePointKind;`. Immediately below it, insert:
+
+```ts
+  /** FX8. The ids the command ran in, as given to the recorder. Used to offer a trip change for the Route, Day, and Trip profile in view. */
+  refs?: RestorePointRefs;
+```
+
+3. Delete the `TripRegenerationUndo` interface (anchor `export interface TripRegenerationUndo {`, through its closing `kind?: 'regeneration' | 'patternChange'; }`) and its doc comment line above it, and remove `tripRegenerationUndo: TripRegenerationUndo; ` from `DatabaseRecordMap`.
+
+#### 20.2 `src/domain/restorePoints.ts`
+
+Anchor: `export const RESTORE_POINT_POLICY = { maxCount: 20, maxAgeDays: 30, maxTotalSize: 50_000_000 } as const;`. Immediately below it, insert:
+
+```ts
+/** FX8. The trip changes form their own retention group, so a run of trip edits cannot push other restore points out. */
+export const TRIP_CHANGE_KINDS: ReadonlySet<RestorePointKind> = new Set<RestorePointKind>(['regenerateTrips', 'changeTripStartTime', 'changeTripPattern', 'shiftTrips']);
+export const TRIP_CHANGE_POLICY = { maxCount: 10, maxAgeDays: 30, maxTotalSize: 50_000_000 } as const;
+
+/** A recorded restore belongs to the group of the kind it restored. */
+export function isTripChange(point: Pick<RestorePointSummary, 'kind' | 'restoredKind'>): boolean {
+  return TRIP_CHANGE_KINDS.has(point.kind === 'restore' && point.restoredKind ? point.restoredKind : point.kind);
+}
+
+/** The ids to drop, each group pruned by its own policy. */
+export function restorePointsToPruneByGroup(points: ReadonlyArray<Pick<RestorePointSummary, 'id' | 'createdAt' | 'sizeEstimate' | 'kind' | 'restoredKind'>>, now: string): string[] {
+  return [
+    ...restorePointsToPrune(points.filter((point) => !isTripChange(point)), now, RESTORE_POINT_POLICY),
+    ...restorePointsToPrune(points.filter(isTripChange), now, TRIP_CHANGE_POLICY),
+  ];
+}
+```
+
+`restorePointsToPrune` is declared below this point; if TypeScript or the linter refuses the forward reference, move the inserted block to directly below `restorePointsToPrune` instead, unchanged. If `RestorePointKind` is not imported in this file, add it to the existing `import type { … } from './types';`.
+
+#### 20.3 `src/persistence/restorePointPersistence.ts`
+
+1. In the import from `'../domain/restorePoints'`, replace `restorePointsToPrune` with `restorePointsToPruneByGroup`.
+2. Replace `const pruned = restorePointsToPrune(await this.db.restorePoints.toArray(), this.now());` with `const pruned = restorePointsToPruneByGroup(await this.db.restorePoints.toArray(), this.now());`.
+3. In `recordScenarioChange`, anchor `        ...(request.restoredKind ? { restoredKind: request.restoredKind } : {}),`. Immediately below it, insert `        ...(request.refs ? { refs: request.refs } : {}),`.
+
+#### 20.4 `src/application/restorePointCoverage.ts`
+
+Anchor, in `TRIP_GENERATION_COVERAGE`: the line `  deleteTripProfile: { kind: 'deleteTripProfile', resolve: async ([profileId], lookup) => {`. Immediately **above** it, insert:
+
+```ts
+  applyRecalculationPreview: { kind: 'regenerateTrips', resolve: async ([preview], lookup) => {
+    const value = preview as { trips: Array<{ id: string }>; anchorTimeByTripId?: Record<string, number> };
+    const startTime = Object.keys(value.anchorTimeByTripId ?? {}).length > 0;
+    return tripChange(lookup, value.trips.map((trip) => trip.id), startTime ? 'changeTripStartTime' : 'regenerateTrips');
+  } },
+  applyRecalculationReview: { kind: 'regenerateTrips', resolve: async ([review], lookup) => tripChange(lookup, (review as { trips: Array<{ id: string }> }).trips.map((trip) => trip.id), 'regenerateTrips') },
+  recalculateTrips: { kind: 'regenerateTrips', resolve: async ([tripIds], lookup) => tripChange(lookup, tripIds as string[], 'regenerateTrips') },
+  changeTripPattern: { kind: 'changeTripPattern', resolve: async ([review], lookup) => tripChange(lookup, [(review as { tripId: string }).tripId], 'changeTripPattern') },
+  applyBatchPatternChange: { kind: 'changeTripPattern', resolve: async ([preview], lookup) => tripChange(lookup, (preview as { eligibleTripIds: string[] }).eligibleTripIds, 'changeTripPattern') },
+  applyStagedTripShift: { kind: 'shiftTrips', resolve: async ([preview], lookup) => tripChange(lookup, (preview as { selectedTripIds: string[] }).selectedTripIds, 'shiftTrips') },
+```
+
+Anchor: `export const TRIP_GENERATION_COVERAGE: Coverage = {`. Immediately **above** it, insert:
+
+```ts
+/** FX8. A trip change: the Scenario, Route, Day, and Trip profile of its first Trip, and the number of Trips. Nothing is recorded without Trips. */
+async function tripChange(lookup: RestorePointLookup, tripIds: readonly string[], kind: RestorePointKind): Promise<CoverageTarget | undefined> {
+  const first = tripIds[0];
+  const trip = first === undefined ? undefined : await lookup.getTrip(first);
+  return trip && { scope: 'scenario', kind, scenarioId: trip.scenarioId, quantity: tripIds.length, refs: { routeId: trip.routeId, serviceDayId: trip.serviceDayId, ...(trip.tripProfileId ? { tripProfileId: trip.tripProfileId } : {}) } };
+}
+```
+
+If a named method does not exist on `TripGenerationService` with that first argument, stop and report.
+
+#### 20.5 Remove the one-step regeneration undo
+
+Remove every declaration and use of: `TripRegenerationUndo`, `tripRegenerationUndo` (table, field, and transaction lists), `saveRegeneratedTripsWithUndo`, `getLastTripRegenerationUndo`, `restoreLastTripRegenerationUndo`, `undoLastTripRegeneration`, `invalidateRegenerationUndo`, `invalidateUndoWhenScenarioTripsChange`, `regenerationUndoApplies`, and `persistWithUndo`, in the files FX8a owns. Rules:
+
+1. `tripGenerationService.ts`: delete `persistWithUndo`, `getLastTripRegenerationUndo`, and `undoLastTripRegeneration`, and the two names from the repository method list near line 83. Each call `await this.persistWithUndo(before, after, kind);` becomes `await this.atomicChanges()(after);` with the same second argument.
+2. Repositories: a transaction that lists `this.db.tripRegenerationUndo` keeps every other table; a statement whose only purpose is the undo store is deleted; nothing else in the method changes.
+3. `database.ts`: remove the `tripRegenerationUndo!: Table<…>;` declaration. Keep `this.version(6).stores({ tripRegenerationUndo: 'id,scenarioId,tripProfileId' });` unchanged (history). Below the version 14 block, insert:
+
+```ts
+    // Version 15 deletes the one-step regeneration undo store (Decision 0081 item 12): trip changes store restore points instead.
+    this.version(15).stores({ tripRegenerationUndo: null });
+```
+
+4. `ports.ts`: delete the three optional undo methods.
+5. Search the owned files for `regeneration undo`, `Regeneration undo`, and `Decision 0070` in comments that describe the removed store; reword each to describe the restore point, in one line, or delete it when it describes only removed code.
+
+Acceptance: `grep -rn "RegenerationUndo\|tripRegenerationUndo\|persistWithUndo\|regenerationUndoApplies" src --include=*.ts` returns only `database.ts` (the version 6 and version 15 lines) and nothing in `src/ui` other than `TripsWorkspace.tsx`.
+
+#### 20.6 Tests
+
+Exception to rule 4: these existing tests change as stated, and only these.
+
+- **Delete** (they test the removed store): `tripGenerationService.test.ts` "restores a changed Trip with its Pattern, stop times and provenance after one undo", "makes the undo unavailable after a later edit of a changed Trip, as for a regeneration", "replaces a saved regeneration undo with the pattern-change undo"; `authoritativeTripService.test.ts` "stores one-step regeneration undo and expires it when an affected Trip is edited"; `repositoryContract.test.ts` "deleting a Project removes the regeneration undo of its Scenarios", "a write rejected for costing ownership leaves the regeneration undo in place", "applies a regeneration, undoes it once, and refuses to undo after a later edit"; `repository.test.ts` "preserves regeneration undo when an unrelated project snapshot is saved"; the `regenerationUndoApplies` tests in `tripsWorkspaceView.test.ts`.
+- **Trim** (keep the write assertions, delete only the lines about the undo snapshot): `tripGenerationService.test.ts` "writes only the Trips that are not skipped, and the undo keeps only them" (rename to "writes only the Trips that are not skipped"); `authoritativeTripService.test.ts` "keeps a skipped Trip out of the write and out of the undo snapshot (Decision 0071)" (rename to "keeps a skipped Trip out of the write (Decision 0071)").
+- **Versions**: `verno` 14 → 15 and IndexedDB `version` 140 → 150 in `database.test.ts` and `repository.test.ts`; the table-list assertions in `database.test.ts` "includes scenario assumptions and local regeneration undo" (rename to "includes scenario assumptions") and `repository.test.ts` "defines IndexedDB schema version 13 …" drop `tripRegenerationUndo` and name version 15. Append a 14th `HISTORY` entry `{}` in `database.test.ts`.
+- Any other failing existing test: stop and report.
+
+New tests:
+
+1. `restorePoints.test.ts`: `restorePointsToPruneByGroup` keeps 20 other points and 10 trip changes when given 25 and 15; a recorded restore of a trip change counts in the trip group; the newest of each group is kept even when older than 30 days.
+2. `restorePointService.test.ts`, in `describe('every covered command can be restored to the exact records before it')`: round trips (the file's `roundTrip` helper) for `applyStagedTripShift` (`shiftTrips`), `applyRecalculationPreview` with an `anchorTimeByTripId` (`changeTripStartTime`), `applyRecalculationReview` (`regenerateTrips`), and `applyBatchPatternChange` (`changeTripPattern`), each on the trimmed golden project; for one of them also assert the stored summary's `refs` has the Trip's `routeId`, `serviceDayId`, and `tripProfileId`. Build each preview with the service's own preview method, as the existing tests in that file do.
+3. `database.test.ts`: "version 15 deletes the regeneration undo store and keeps every other record": seed at 14 with a `tripRegenerationUndo` row; after open, `db.tables` has no `tripRegenerationUndo` and the trip count is unchanged.
+
+#### 20.7 Verification and commit (FX8a)
+
+`pnpm exec vitest run` on every test file named in 20.6; `pnpm test` (all must pass except none — the unit suite does not import `TripsWorkspace.tsx`; if a unit test fails because of it, report); `pnpm typecheck` (report the `TripsWorkspace.tsx` errors only). Skip the build and the browser suite (FX8b). Commit `FX8a: Trip changes store restore points; regeneration undo store removed, Dexie 15 (Decision 0081)` with `Verified:` lines. Do not push.
+
+### FX8b (Opus, UI)
+
+1. `restorePointLabel`: `regenerateTrips` "Regenerated {n trips}", `changeTripStartTime` "Changed the start time of {n trips}", `changeTripPattern` "Changed the pattern of {n trips}", `shiftTrips` "Shifted {n trips}".
+2. Trips menu: the "Undo last regeneration" / "Undo last pattern change" item becomes "Undo {label}" for the newest restorable trip change whose `refs` match the Route, Day, and Trip profile in view; a refusal shows the restore service's reason. The Undo notice and Undo history show trip changes like any other point.
+3. Remove the `TripsWorkspace` regeneration-undo state; pass a `tripChangeUndo` port from `App` (the restore service) instead.
+4. Browser specs: `unified-action-layer.spec.ts` (the two undo tests) and `pattern-change-undo.spec.ts` move to the new item; `database-migration.spec.ts` and `scenario-copy-recovery.spec.ts` expect version 15.
+5. Docs: architecture overview, data schema, UI conventions, inventory (G8), Decisions 0046, 0070, and 0081 amended.
+6. Verification: typecheck, unit suite, build, full browser suite, visual check of the Trips menu.
