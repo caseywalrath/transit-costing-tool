@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
 import type { BlockingBlock, BlockingScenario, RoutePattern, Trip } from './types';
-import { applyTripAssignment, assertStructurallyValidBlock, calculateBlockingScenarioDeletionImpact, classifyBlockingInsertion, createBlockingScenario, duplicateBlockingScenario, matchesBlockingFitFilter, normalizeBlockActivities, requiredLayoverSeconds, suggestChronologicalInsertionIndex, summarizeBlock, summarizeBlockingScenario, validateBlockingAssignments, validateBlockingBlock } from './blocking';
+import { applyTripAssignment, countMatchingConnections,assertStructurallyValidBlock, calculateBlockingScenarioDeletionImpact, classifyBlockingInsertion, createBlockingScenario, duplicateBlockingScenario, matchesBlockingFitFilter, normalizeBlockActivities, requiredLayoverSeconds, suggestChronologicalInsertionIndex, summarizeBlock, summarizeBlockingScenario, validateBlockingAssignments, validateBlockingBlock } from './blocking';
 
 const scenario: BlockingScenario = { id: 'bs1', scenarioId: 'scenario', tripProfileId: 'profile', name: 'Weekday blocks', ...metadata() };
 const pattern: RoutePattern = { id: 'pattern', scenarioId: 'scenario', routeId: 'route', name: 'Full', points: [{ id: 'p1', nodeId: 'A', sequence: 0, cumulativeMiles: 0 }, { id: 'p2', nodeId: 'B', sequence: 1, cumulativeMiles: 10 }], ...metadata() };
@@ -260,5 +260,22 @@ describe('requiredLayoverSeconds and duplicating an automatic Blocking Scenario'
     expect(source.autoBlocking.builtAt).toBe('2026-01-01T00:00:00.000Z');
     const plain = duplicateBlockingScenario({ scenario: createBlockingScenario({ scenarioId: 'scenario', tripProfileId: 'profile', name: 'Plain' }), blocks: [] }, 'Plain copy');
     expect('autoBlocking' in plain.scenario).toBe(false);
+  });
+});
+
+describe('countMatchingConnections', () => {
+  const ab: RoutePattern = { id: 'ab', scenarioId: 'scenario', routeId: 'route', name: 'A-B', points: [{ id: 'ab-a', nodeId: 'A', sequence: 0, cumulativeMiles: 0 }, { id: 'ab-b', nodeId: 'B', sequence: 1, cumulativeMiles: 1 }], ...metadata() };
+  const ba: RoutePattern = { id: 'ba', scenarioId: 'scenario', routeId: 'route', name: 'B-A', points: [{ id: 'ba-b', nodeId: 'B', sequence: 0, cumulativeMiles: 0 }, { id: 'ba-a', nodeId: 'A', sequence: 1, cumulativeMiles: 1 }], ...metadata() };
+  const tripOn = (id: string, pattern: RoutePattern): Trip => ({ id, scenarioId: 'scenario', routeId: 'route', serviceDayId: 'weekday', patternId: pattern.id, tripProfileId: 'profile', stopTimes: [], provenance: { kind: 'manual', manuallyChangedFields: [] }, ...metadata() });
+  const trips = [tripOn('t1', ab), tripOn('t2', ba), tripOn('t3', ab), tripOn('t4', ba)];
+  const block = (ids: string[]): BlockingBlock => ({ id: 'block', scenarioId: 'scenario', blockingScenarioId: 'blocking', serviceDayId: 'weekday', label: '1', activities: ids.map((tripId, index) => ({ id: `act-${index}`, type: 'revenueTrip' as const, sequence: index, tripId })), ...metadata() });
+
+  it('counts the consecutive Trip pairs that run from the From Node to the To Node', () => {
+    // t1 ends at B and t2 starts at B (B to B); t2 ends at A and t3 starts at A (A to A); t3 ends at B and t4 starts at B (B to B).
+    expect(countMatchingConnections(block(['t1', 't2', 't3', 't4']), 'B', 'B', trips, [ab, ba])).toBe(2);
+  });
+
+  it('gives 0 for an empty Block', () => {
+    expect(countMatchingConnections(block([]), 'B', 'B', trips, [ab, ba])).toBe(0);
   });
 });

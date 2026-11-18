@@ -178,6 +178,8 @@ export interface AutoBlockingPreview {
   ruleFindings: import('../domain/types').ValidationFinding[];
   nameFindings: import('../domain/types').ValidationFinding[];
   check?: import('../domain/autoBlocking').AutoBlockingCheck;
+  /** Decision 0081: with `replaceBlockingScenarioId`, the Blocks the rebuild replaces on each service day. */
+  replacedBlockCountByServiceDayId?: Record<string, number>;
 }
 export interface AutoBlockingStatus { record: import('../domain/autoBlocking').AutoBlockingRecord; editedBlockCount: number; blockCountChanged: boolean; summary: string }
 
@@ -196,6 +198,10 @@ export interface BlockingCommands {
   deleteBlockingScenario(blockingScenarioId: string, sourceSignature: string): Promise<BlockingScenarioDeletionImpact>;
   createBlock(blockingScenarioId: string, serviceDayId: string, label: string, sourceSignature: string): Promise<BlockingBlock>;
   updateBlock(block: BlockingBlock, sourceSignature: string): Promise<BlockingBlock>;
+  /** Decision 0081: removes one pull-out or pull-in. */
+  removeBoundaryActivity(blockingScenarioId: string, blockId: string, activityId: string, sourceSignature: string): Promise<BlockingBlock>;
+  /** Decision 0081: removes deadheads from one Block. */
+  removeDeadheads(blockingScenarioId: string, blockId: string, activityIds: string[], sourceSignature: string): Promise<BlockingBlock>;
   deleteBlock(blockingScenarioId: string, blockId: string, sourceSignature: string): Promise<void>;
   /** Deletes several Blocks in one atomic write (Decision 0053). `sourceSignature` comes from `previewDeleteBlocks`. */
   deleteBlocks(blockingScenarioId: string, blockIds: string[], sourceSignature: string): Promise<void>;

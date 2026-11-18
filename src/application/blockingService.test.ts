@@ -273,4 +273,36 @@ describe('Minimum layover by direction', () => {
     expect(await status(setup(), { inbound: twoMinutes })).toEqual(['insufficientLayover', 'insufficientLayover']);
     expect(await status(setup([direction()]), { inbound: twoMinutes })).toEqual(['insufficientLayover', 'insufficientLayover']);
   });
+
+  it('removes one pull-out and refuses a revenue Trip id or a stale source signature', async () => {
+    const scenario = { id: 'blocking', scenarioId: 'scenario', tripProfileId: profile.id, name: 'Base', ...metadata() };
+    const blocks: BlockingBlock[] = [{ id: 'block', scenarioId: 'scenario', blockingScenarioId: scenario.id, serviceDayId: 'weekday', label: '1', activities: [
+      { id: 'out', type: 'pullOut', sequence: 0, minutesBeforeFirstTrip: 12, toNodeId: 'A', miles: 2 },
+      { id: 'trip-1', type: 'revenueTrip', sequence: 1, tripId: trip.id },
+    ], ...metadata() }];
+    const repository = new InMemoryBlockingRepository([scenario], blocks);
+    const service = new BlockingApplicationService(repository, { getTrip: async (id) => id === trip.id ? trip : undefined, listTrips: async () => [trip], getTripProfile: async () => profile, listPatterns: async () => [pattern] });
+    const signature = createBlockingScenarioSourceSignature(scenario, blocks);
+    await expect(service.removeBoundaryActivity(scenario.id, 'block', 'trip-1', signature)).rejects.toThrow('Pull-out or pull-in not found.');
+    await expect(service.removeBoundaryActivity(scenario.id, 'block', 'out', 'stale')).rejects.toThrow('changed since the operation was reviewed');
+    const updated = await service.removeBoundaryActivity(scenario.id, 'block', 'out', signature);
+    expect(updated.activities.map((activity) => activity.type)).toEqual(['revenueTrip']);
+  });
+
+  it('removes two deadheads and refuses an id that is not a deadhead or a stale source signature', async () => {
+    const scenario = { id: 'blocking', scenarioId: 'scenario', tripProfileId: profile.id, name: 'Base', ...metadata() };
+    const blocks: BlockingBlock[] = [{ id: 'block', scenarioId: 'scenario', blockingScenarioId: scenario.id, serviceDayId: 'weekday', label: '1', activities: [
+      { id: 'out', type: 'pullOut', sequence: 0, minutesBeforeFirstTrip: 12, toNodeId: 'A', miles: 2 },
+      { id: 'trip-1', type: 'revenueTrip', sequence: 1, tripId: trip.id },
+      { id: 'dh-1', type: 'deadhead', sequence: 2, fromNodeId: 'A', toNodeId: 'B', miles: 1 },
+      { id: 'dh-2', type: 'deadhead', sequence: 3, fromNodeId: 'B', toNodeId: 'A', miles: 1 },
+    ], ...metadata() }];
+    const repository = new InMemoryBlockingRepository([scenario], blocks);
+    const service = new BlockingApplicationService(repository, { getTrip: async (id) => id === trip.id ? trip : undefined, listTrips: async () => [trip], getTripProfile: async () => profile, listPatterns: async () => [pattern] });
+    const signature = createBlockingScenarioSourceSignature(scenario, blocks);
+    await expect(service.removeDeadheads(scenario.id, 'block', ['dh-1', 'out'], signature)).rejects.toThrow('Deadhead not found.');
+    await expect(service.removeDeadheads(scenario.id, 'block', ['dh-1', 'dh-2'], 'stale')).rejects.toThrow('changed since the operation was reviewed');
+    const updated = await service.removeDeadheads(scenario.id, 'block', ['dh-1', 'dh-2'], signature);
+    expect(updated.activities.map((activity) => activity.id)).toEqual(['out', 'trip-1']);
+  });
 });

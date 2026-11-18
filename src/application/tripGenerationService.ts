@@ -10,6 +10,9 @@ import { metadata, newId, withUpdatedAt } from '../domain/ids';
 import { buildBatchPatternChangePreview, buildRuntimeCopyPreview, buildTripCopyPreview, type BatchPatternChangePreview, type BatchPatternChangeRequest, type RuntimeCopyPreview, type RuntimeCopyRequest, type TripCopyPreview, type TripCopyRequest } from '../domain/serviceDayCopy';
 import { buildTripShiftPreview, type TripShiftPreview, type TripShiftRequest, TripShiftValidationError } from '../domain/tripShift';
 
+/** Decision 0081 (inventory gaps G5, G6): what removing Trips from the Blocks of one service day also removes, and in which Blocking scenarios. */
+export interface TripBlockImpact { removedDeadheadCount: number; blockingScenarios: Array<{ blockingScenarioId: string; name: string; blockCount: number }>; }
+
 export interface TripProfileDeletionPreview {
   profileId: string;
   tripCount: number;
@@ -19,6 +22,8 @@ export interface TripProfileDeletionPreview {
   blockActivityCount: number;
   /** Blocking Scenarios built on the profile. They are deleted with it, together with their Blocks. */
   blockingScenarioCount: number;
+  /** Decision 0081 (inventory gap G7): the profile's Costing estimate factor entries (its own and its Route entries), deleted with it. */
+  estimateFactorEntryCount: number;
   isLastProfile: boolean;
   /** Fingerprint of everything this review covers; `deleteTripProfile` requires it. */
   previewToken: string;
@@ -116,7 +121,7 @@ export class TripGenerationService {
     const staleTripCount = staleTripIds.size;
     const records = this.repository.getScenarioRecords ? await this.repository.getScenarioRecords(profile.scenarioId) : undefined;
     const blockingScenarios = (records?.blockingScenarios ?? []).filter((blockingScenario) => blockingScenario.tripProfileId === profileId);
-    const preview = { profileId, tripCount: trips.length, manuallyAdjustedTripCount: trips.filter((trip) => trip.provenance.manuallyChangedFields.length > 0).length, staleTripCount, blockCount: blocks.length, blockActivityCount: blocks.reduce((sum, block) => sum + block.activities.length, 0), blockingScenarioCount: blockingScenarios.length, isLastProfile: profiles.length <= 1 };
+    const preview = { profileId, tripCount: trips.length, manuallyAdjustedTripCount: trips.filter((trip) => trip.provenance.manuallyChangedFields.length > 0).length, staleTripCount, blockCount: blocks.length, blockActivityCount: blocks.reduce((sum, block) => sum + block.activities.length, 0), blockingScenarioCount: blockingScenarios.length, estimateFactorEntryCount: (records?.costingAssumptions?.tripProfileEstimateFactors ?? []).filter((entry) => entry.tripProfileId === profileId).length + (records?.costingAssumptions?.routeEstimateFactors ?? []).filter((entry) => entry.tripProfileId === profileId).length, isLastProfile: profiles.length <= 1 };
     return { ...preview, previewToken: tripProfileDeletionToken(profile, profiles, trips, blocks, blockingScenarios, [...staleTripIds]) };
   }
   /** Deletes the profile only if the stored data still matches the review (`previewTripProfileDeletion`) that `previewToken` came from. */
@@ -575,6 +580,24 @@ export class TripGenerationService {
     return { deletedTripIds: uniqueIds, affectedBlockIds, reviewToken: fingerprint({ trips: trips as Trip[], blocks: blocks.filter((block) => affectedBlockIds.includes(block.id)) }) };
   }
 
+  /** Decision 0081 (inventory gaps G5, G6): the deadheads and Blocking scenarios that removing `removedTripIds` from the Blocks of `serviceDayId` changes. Reads only. */
+  async describeTripBlockImpact(serviceDayId: string, removedTripIds: string[]): Promise<TripBlockImpact> {
+    if (!removedTripIds.length) return { removedDeadheadCount: 0, blockingScenarios: [] };
+    const blocks = await this.repository.listBlocks(serviceDayId);
+    const adjusted = adjustBlockReferences(blocks, removedTripIds);
+    const changed = new Set(adjusted.adjustments.map((adjustment) => adjustment.blockId));
+    const deadheads = (block: Block) => block.activities.filter((activity) => activity.type === 'deadhead').length;
+    const removedDeadheadCount = blocks.reduce((count, block, index) => count + (changed.has(block.id) ? deadheads(block) - deadheads(adjusted.blocks[index]) : 0), 0);
+    const scenarioId = blocks.find((block) => changed.has(block.id))?.scenarioId;
+    const records = scenarioId && this.repository.getScenarioRecords ? await this.repository.getScenarioRecords(scenarioId) : undefined;
+    const names = new Map((records?.blockingScenarios ?? []).map((blockingScenario) => [blockingScenario.id, blockingScenario.name]));
+    const counts = new Map<string, number>();
+    for (const block of blocks) if (changed.has(block.id) && block.blockingScenarioId) counts.set(block.blockingScenarioId, (counts.get(block.blockingScenarioId) ?? 0) + 1);
+    const blockingScenarios = [...counts].map(([blockingScenarioId, blockCount]) => ({ blockingScenarioId, name: names.get(blockingScenarioId) ?? 'Blocking scenario', blockCount }))
+      .sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }));
+    return { removedDeadheadCount, blockingScenarios };
+  }
+
   /** Delete one or more saved trips and remove their revenue activities from affected blocks, only if the stored data still matches the review that `reviewToken` came from. */
   async deleteTrips(tripIds: string[], reviewToken: string): Promise<{ deletedTripIds: string[]; affectedBlockIds: string[]; reviewToken: string }> {
     const preview = await this.previewTripDeletion(tripIds);
@@ -843,4 +866,4 @@ export class TripShiftStalePreviewError extends Error {
 }
 
 // Keep the historical application surface while exposing the authoritative trip commands.
-export type TripGenerationApplication = Pick<TripGenerationService, 'getGenerationSet' | 'listGenerationSets' | 'previewTripShift' | 'previewStagedTripShift' | 'applyStagedTripShift' | 'previewPatternChange' | 'applyPatternChange' | 'listServiceDayTrips' | 'listRouteDayTrips' | 'resolveRuntimeProfile' | 'previewGenerateTrips' | 'generateTrips' | 'addTrip' | 'previewTripPatternChange' | 'changeTripPattern' | 'listSharedAnchorNodes' | 'previewRecalculateTrips' | 'applyRecalculationPreview' | 'reviewRecalculation' | 'applyRecalculationReview' | 'recalculateTrips' | 'getLastTripRegenerationUndo' | 'undoLastTripRegeneration' | 'previewTripTableImport' | 'applyTripTableImport' | 'previewTripDeletion' | 'deleteTrips' | 'listStaleTrips' | 'inspectStaleTrips' | 'listScheduleTrips' | 'listTripProfiles' | 'renameTripProfile' | 'copyTripProfile' | 'previewTripProfileDeletion' | 'deleteTripProfile' | 'previewRuntimeCopy' | 'applyRuntimeCopy' | 'previewTripCopy' | 'applyTripCopy' | 'previewBatchPatternChange' | 'applyBatchPatternChange'>;
+export type TripGenerationApplication = Pick<TripGenerationService, 'getGenerationSet' | 'listGenerationSets' | 'previewTripShift' | 'previewStagedTripShift' | 'applyStagedTripShift' | 'previewPatternChange' | 'applyPatternChange' | 'listServiceDayTrips' | 'listRouteDayTrips' | 'resolveRuntimeProfile' | 'previewGenerateTrips' | 'generateTrips' | 'addTrip' | 'previewTripPatternChange' | 'changeTripPattern' | 'listSharedAnchorNodes' | 'previewRecalculateTrips' | 'applyRecalculationPreview' | 'reviewRecalculation' | 'applyRecalculationReview' | 'recalculateTrips' | 'getLastTripRegenerationUndo' | 'undoLastTripRegeneration' | 'previewTripTableImport' | 'applyTripTableImport' | 'previewTripDeletion' | 'describeTripBlockImpact' | 'deleteTrips' | 'listStaleTrips' | 'inspectStaleTrips' | 'listScheduleTrips' | 'listTripProfiles' | 'renameTripProfile' | 'copyTripProfile' | 'previewTripProfileDeletion' | 'deleteTripProfile' | 'previewRuntimeCopy' | 'applyRuntimeCopy' | 'previewTripCopy' | 'applyTripCopy' | 'previewBatchPatternChange' | 'applyBatchPatternChange'>;

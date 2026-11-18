@@ -104,6 +104,23 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
     await this.repository.saveBlockingBlocksAtomically([...blocks.filter((candidate) => candidate.id !== block.id), updated], sourceSignature, scenario.id); return updated;
   }
 
+  /** Decision 0081: removes one pull-out or pull-in from a Block, as the Current block's remove button did through `updateBlock`. */
+  async removeBoundaryActivity(blockingScenarioId: string, blockId: string, activityId: string, sourceSignature: string): Promise<BlockingBlock> {
+    const { scenario, blocks, block } = await this.loadBlock(blockingScenarioId, blockId, sourceSignature);
+    const activity = block.activities.find((candidate) => candidate.id === activityId);
+    if (!activity || (activity.type !== 'pullOut' && activity.type !== 'pullIn')) throw new Error('Pull-out or pull-in not found.');
+    return this.saveBlock(scenario, blocks, normalizeBlockActivities(withUpdatedAt({ ...block, activities: block.activities.filter((candidate) => candidate.id !== activityId) })), sourceSignature);
+  }
+
+  /** Decision 0081: removes deadheads from a Block (Delete deadhead, Delete similar deadheads), as the dialog did through `updateBlock`. */
+  async removeDeadheads(blockingScenarioId: string, blockId: string, activityIds: string[], sourceSignature: string): Promise<BlockingBlock> {
+    const { scenario, blocks, block } = await this.loadBlock(blockingScenarioId, blockId, sourceSignature);
+    const removeIds = new Set(activityIds);
+    const removing = block.activities.filter((activity) => removeIds.has(activity.id));
+    if (!removeIds.size || removing.length !== removeIds.size || removing.some((activity) => activity.type !== 'deadhead')) throw new Error('Deadhead not found.');
+    return this.saveBlock(scenario, blocks, normalizeBlockActivities(withUpdatedAt({ ...block, activities: block.activities.filter((activity) => !removeIds.has(activity.id)) })), sourceSignature);
+  }
+
   async deleteBlock(blockingScenarioId: string, blockId: string, sourceSignature: string): Promise<void> {
     const scenario = await this.repository.getBlockingScenario(blockingScenarioId); if (!scenario) throw new Error('Blocking Scenario not found.');
     const blocks = await this.repository.listBlockingBlocks(blockingScenarioId); assertBlockingScenarioSourceUnchanged(scenario, blocks, sourceSignature);
@@ -354,7 +371,10 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
       const source = await this.loadAutoSource(request.sourceBlockingScenarioId);
       check = checkAgainstBuiltBlocks({ source, rules: request.rules, now, target: context });
     }
-    return { result, ruleFindings, nameFindings, ...(check ? { check } : {}) };
+    // Decision 0081 (inventory gap G12): a rebuild states how many Blocks it replaces on each day.
+    const replacedBlocks = request.replaceBlockingScenarioId ? await this.repository.listBlockingBlocks(request.replaceBlockingScenarioId) : undefined;
+    const replacedBlockCountByServiceDayId = replacedBlocks?.reduce<Record<string, number>>((counts, block) => ({ ...counts, [block.serviceDayId]: (counts[block.serviceDayId] ?? 0) + 1 }), {});
+    return { result, ruleFindings, nameFindings, ...(check ? { check } : {}), ...(replacedBlockCountByServiceDayId ? { replacedBlockCountByServiceDayId } : {}) };
   }
 
   /** A Blocking Scenario of the Project with its Scenario's data, for measuring or checking. */

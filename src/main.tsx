@@ -16,6 +16,8 @@ import { CostingApplicationService } from './application/costingService';
 import { createCostingContextQueries } from './application/costingContext';
 import { LocalDataProtectionService, SaveStatusPublisher } from './application/saveStatus';
 import { LocalStorageDataProtectionStore } from './persistence/localDataProtectionStore';
+import { DexieRestorePoints } from './persistence/restorePointPersistence';
+import { BLOCKING_COVERAGE, PLANNED_FREQUENCY_COVERAGE, ROUTE_DEFINITION_COVERAGE, TRIP_GENERATION_COVERAGE, withRestorePoints, type RestorePointLookup } from './application/restorePointCoverage';
 
 async function start() {
   // Only one tab at a time may write (Decision 0037). Decide whether this is that tab before the application starts,
@@ -33,11 +35,25 @@ async function start() {
     (projectId) => repository.getProjectSnapshot(projectId),
     (snapshot) => repository.saveProjectSnapshot(snapshot),
   );
-  const routeDefinition = new RouteDefinitionService(repository, backup, undefined, saveStatus, protection);
-  const tripGeneration = new TripGenerationService(repository, undefined, saveStatus);
+  // Decision 0081: the covered commands store a restore point in the same transaction as their write.
+  const restorePoints = new DexieRestorePoints(repository.db, repository);
+  const routeDefinitionCore = new RouteDefinitionService(repository, backup, undefined, saveStatus, protection);
+  const restoreLookup: RestorePointLookup = {
+    getTrip: (id) => repository.db.trips.get(id),
+    getTripProfile: (id) => repository.db.tripProfiles.get(id),
+    getRuntimeProfile: (id) => repository.db.runtimeProfiles.get(id),
+    getPattern: (id) => repository.db.patterns.get(id),
+    getRoute: (id) => repository.db.routes.get(id),
+    getBlockingScenario: (id) => repository.db.blockingScenarios.get(id),
+    getBlock: (id) => repository.db.blocks.get(id),
+    getScenario: (id) => repository.db.scenarios.get(id),
+    routeEditPreviewScope: (token) => routeDefinitionCore.routeEditPreviewScope(token),
+  };
+  const routeDefinition = withRestorePoints(routeDefinitionCore, ROUTE_DEFINITION_COVERAGE, restorePoints, restorePoints, saveStatus, restoreLookup);
+  const tripGeneration = withRestorePoints(new TripGenerationService(repository, undefined, saveStatus), TRIP_GENERATION_COVERAGE, restorePoints, restorePoints, saveStatus, restoreLookup);
   const listProfileTrips = (scenarioId: string, tripProfileId: string) => repository.listTripsForScenarioProfile(scenarioId, tripProfileId);
   const listScenarioPatterns = (scenarioId: string) => repository.db.patterns.where('scenarioId').equals(scenarioId).toArray();
-  const blocking = new BlockingApplicationService(new DexieBlockingRepository(repository.db), {
+  const blocking = withRestorePoints(new BlockingApplicationService(new DexieBlockingRepository(repository.db), {
     getTrip: (id) => repository.getTrip(id),
     listTrips: listProfileTrips,
     getTripProfile: (id) => repository.getTripProfile(id),
@@ -50,7 +66,7 @@ async function start() {
       const scenario = await repository.db.scenarios.get(scenarioId);
       return scenario ? repository.db.scenarios.where('projectId').equals(scenario.projectId).toArray() : [];
     },
-  }, saveStatus);
+  }, saveStatus), BLOCKING_COVERAGE, restorePoints, restorePoints, saveStatus, restoreLookup);
 
   const costing = new CostingApplicationService(createCostingContextQueries({
     getScenario: (id) => repository.db.scenarios.get(id),
@@ -64,7 +80,7 @@ async function start() {
     listRoutes: (id) => repository.db.routes.where('scenarioId').equals(id).toArray(),
   }), repository, undefined, saveStatus);
 
-  const plannedFrequencies = new PlannedFrequencyService(repository, undefined, saveStatus);
+  const plannedFrequencies = withRestorePoints(new PlannedFrequencyService(repository, undefined, saveStatus), PLANNED_FREQUENCY_COVERAGE, restorePoints, restorePoints, saveStatus, restoreLookup);
 
   createRoot(document.getElementById('root')!).render(<React.StrictMode><App service={routeDefinition} tripService={tripGeneration} blockingService={blocking} costingService={costing} plannedFrequencyService={plannedFrequencies} session={tabGuard} /></React.StrictMode>);
 }

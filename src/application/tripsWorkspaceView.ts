@@ -199,3 +199,6 @@ export function tripBlockUnassignmentImpact(tripIds: string[], blocks: BlockingB
   const sourceBlockLabels = [...new Set(assignedTripIds.map((id) => currentAssignments.get(id)?.label).filter((label): label is string => Boolean(label)))];
   return { assignedTripIds, alreadyUnassignedCount: tripIds.length - assignedTripIds.length, sourceBlockLabels, deadheadCount: blocks.reduce((count, block) => count + deadheadsRemoved(block, selected), 0) };
 }
+
+/** Decision 0081 (inventory gap G10): the deadheads that leave `block` when the Trips in `tripIds` leave it. */
+export function deadheadsRemovedFromBlock(block: BlockingBlock, tripIds: string[]): number { return deadheadsRemoved(block, new Set(tripIds)); }

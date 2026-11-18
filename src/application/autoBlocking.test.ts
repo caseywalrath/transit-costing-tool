@@ -139,6 +139,18 @@ describe('Automatic blocking application service (Decision 0055)', () => {
     expect(repository.blocks.size).toBe(0);
   });
 
+  it('states the Blocks a rebuild replaces on each service day, and nothing without a rebuild', async () => {
+    const { first, service } = setup();
+    const rules = (await service.getAutoBlockingSetup(first.scenarioId, first.profile.id)).defaultRules;
+    const built = await service.createAutoBlockingScenario({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'Auto 1', rules });
+    const expected: Record<string, number> = {};
+    for (const block of await service.listBlockingBlocks(built.id)) expected[block.serviceDayId] = (expected[block.serviceDayId] ?? 0) + 1;
+    const rebuild = await service.previewAutoBlocking({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'Auto 1', rules, replaceBlockingScenarioId: built.id });
+    expect(rebuild.replacedBlockCountByServiceDayId).toEqual(expected);
+    const fresh = await service.previewAutoBlocking({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'Preview', rules });
+    expect(fresh).not.toHaveProperty('replacedBlockCountByServiceDayId');
+  });
+
   it('previews peak vehicles and stores maxVehicles in the record', async () => {
     const { first, repository, service } = setup();
     const base = (await service.getAutoBlockingSetup(first.scenarioId, first.profile.id)).defaultRules;

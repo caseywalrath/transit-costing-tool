@@ -4,7 +4,7 @@ import type { BlockConnection } from '../domain/blocking';
 import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
 import type { BlockActivity, BlockingBlock, RoutePattern, RuntimeBand, RuntimeProfile, Trip, TripRegenerationUndo } from '../domain/types';
-import { summarizeTripTable, buildTripTableView, columnsWithTimes, buildTripsFieldProblems, parseBuildTripsForm, regenerationUndoApplies, tripBlockAssignmentImpact, tripBlockUnassignmentImpact, type BuildTripsFormValues } from './tripsWorkspaceView';
+import { summarizeTripTable, buildTripTableView, columnsWithTimes, buildTripsFieldProblems, parseBuildTripsForm, regenerationUndoApplies, tripBlockAssignmentImpact, tripBlockUnassignmentImpact, deadheadsRemovedFromBlock, type BuildTripsFormValues } from './tripsWorkspaceView';
 
 const stamp = metadata('2026-10-23T00:00:00.000Z');
 const pattern = (id: string): RoutePattern => ({ ...stamp, id, scenarioId: 's', routeId: 'r', name: id, directionId: 'out', points: [0, 1].map((index) => ({ id: `${id}-${index}`, nodeId: `n${index}`, sequence: index, cumulativeMiles: index, directionColumnId: `col-${index}` })) });
@@ -207,5 +207,19 @@ describe('summarizeTripTable (Decision 0051)', () => {
     expect(summarizeTripTable(trips, connections, new Set())).toMatchObject({ layoverSeconds: 0, deadheadSeconds: 0 });
     expect(summarizeTripTable(trips, new Map([['t1', connection(undefined, true)]]), new Set(['t1']))).toMatchObject({ layoverSeconds: 0, deadheadSeconds: 300 });
     expect(summarizeTripTable(trips, new Map(), new Set(['t1']))).toMatchObject({ layoverSeconds: 0, deadheadSeconds: 0 });
+  });
+});
+
+describe('deadheadsRemovedFromBlock', () => {
+  const at = (id: string, sequence: number, type: 'revenueTrip' | 'deadhead', tripId = ''): BlockActivity => type === 'revenueTrip'
+    ? { id, type, sequence, tripId }
+    : { id, type, sequence, fromNodeId: 'n1', toNodeId: 'n0', minutesAfterPreviousTrip: 5 };
+  const block = (activities: BlockActivity[]): BlockingBlock => ({ ...metadata(), id: 'b', scenarioId: 's', blockingScenarioId: 'bs', serviceDayId: 'wd', label: '1', activities });
+
+  it('returns 1 for a Trip with one adjacent deadhead and 0 for a Trip with none', () => {
+    const withDeadhead = block([at('a1', 0, 'revenueTrip', 't1'), at('d1', 1, 'deadhead'), at('a2', 2, 'revenueTrip', 't2')]);
+    expect(deadheadsRemovedFromBlock(withDeadhead, ['t1'])).toBe(1);
+    const withoutDeadhead = block([at('a1', 0, 'revenueTrip', 't1'), at('a2', 1, 'revenueTrip', 't2'), at('a3', 2, 'revenueTrip', 't3')]);
+    expect(deadheadsRemovedFromBlock(withoutDeadhead, ['t2'])).toBe(0);
   });
 });

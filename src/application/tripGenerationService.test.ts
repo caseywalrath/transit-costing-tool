@@ -539,3 +539,43 @@ describe('anchored Change pattern (Decision 0067)', () => {
     expect(await service.getLastTripRegenerationUndo()).toBeUndefined();
   });
 });
+
+describe('describeTripBlockImpact', () => {
+  const stamp = metadata('2026-09-14T00:00:00.000Z');
+  const deadhead = (id: string) => ({ id, type: 'deadhead' as const, sequence: 1, fromNodeId: 'n1', toNodeId: 'n0', minutesAfterPreviousTrip: 5 });
+  const revenue = (id: string, tripId: string) => ({ id, type: 'revenueTrip' as const, sequence: 0, tripId });
+  async function setup() {
+    const repository = new InMemoryRouteDefinitionRepository();
+    await repository.saveProjectSnapshot({
+      project: { id: 'project', name: 'Project', distanceUnit: 'miles', currencyCode: 'USD', ...stamp },
+      scenarios: [{ id: 's', projectId: 'project', name: 'Scenario', ...stamp }],
+      serviceDays: [{ id: 'weekday', scenarioId: 's', kind: 'weekday', name: 'Weekday', annualServiceDays: 260, sequence: 0, ...stamp }],
+      routes: [], nodes: [], patterns: [], runtimeProfiles: [], runtimeAssignments: [],
+      tripProfiles: [{ id: 'tp1', scenarioId: 's', name: 'Default', ...stamp }],
+      blockingScenarios: [
+        { id: 'bsZ', scenarioId: 's', tripProfileId: 'tp1', name: 'Zulu', ...stamp },
+        { id: 'bsA', scenarioId: 's', tripProfileId: 'tp1', name: 'Alpha', ...stamp },
+      ],
+      generationSets: [], trips: [], blocks: [],
+    });
+    repository.blocks.set('b1', { ...stamp, id: 'b1', scenarioId: 's', serviceDayId: 'weekday', blockingScenarioId: 'bsZ', label: '1', activities: [revenue('a1', 't1'), deadhead('d1'), revenue('a2', 't2')] } as never);
+    repository.blocks.set('b2', { ...stamp, id: 'b2', scenarioId: 's', serviceDayId: 'weekday', blockingScenarioId: 'bsA', label: '2', activities: [revenue('a3', 't1'), deadhead('d2'), revenue('a4', 't3')] } as never);
+    return new TripGenerationService(repository, () => '2026-09-15T00:00:00.000Z');
+  }
+
+  it('returns the deadheads removed and one entry per Blocking scenario, sorted by name', async () => {
+    const service = await setup();
+    expect(await service.describeTripBlockImpact('weekday', ['t1'])).toEqual({
+      removedDeadheadCount: 2,
+      blockingScenarios: [
+        { blockingScenarioId: 'bsA', name: 'Alpha', blockCount: 1 },
+        { blockingScenarioId: 'bsZ', name: 'Zulu', blockCount: 1 },
+      ],
+    });
+  });
+
+  it('returns zero and an empty list when no Trips are removed', async () => {
+    const service = await setup();
+    expect(await service.describeTripBlockImpact('weekday', [])).toEqual({ removedDeadheadCount: 0, blockingScenarios: [] });
+  });
+});
