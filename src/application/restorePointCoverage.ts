@@ -150,6 +150,8 @@ export const BLOCKING_COVERAGE: Coverage = {
     const replaceId = (request as { replaceBlockingScenarioId?: string }).replaceBlockingScenarioId;
     return replaceId ? blockingTarget(lookup, replaceId) : undefined;
   } },
+  // Decision 0083: adds Blocks only. Undo deletes the added Blocks.
+  fillUnassignedTrips: { kind: 'autoBlockUnassigned', resolve: async ([request], lookup) => blockingTarget(lookup, (request as { blockingScenarioId: string }).blockingScenarioId) },
   applyBulkBoundaryActivities: { kind: 'replaceBoundaryActivities', resolve: async ([request], lookup) => {
     const bulk = request as { blockingScenarioId: string; serviceDayId: string; activity: { type: string } };
     return blockingTarget(lookup, bulk.blockingScenarioId, { detail: bulk.activity.type, refs: { serviceDayId: bulk.serviceDayId } });

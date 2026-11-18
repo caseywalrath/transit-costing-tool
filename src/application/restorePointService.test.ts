@@ -260,6 +260,13 @@ describe('every covered command can be restored to the exact records before it',
     await roundTrip(h, 'rebuildAutoBlocks', async () => h.blocking.createAutoBlockingScenario({ scenarioId: h.scenarioId, tripProfileId, name: 'Auto rebuilt again', rules: setup.defaultRules, replaceBlockingScenarioId: built.id }));
   }));
 
+  it('blocking: fillUnassignedTrips adding blocks', () => withHarness(async (h) => {
+    const tripProfileId = h.fixture.defaultProfile.id;
+    const setup = await h.blocking.getAutoBlockingSetup(h.scenarioId, tripProfileId);
+    const empty = await h.blocking.createBlockingScenario({ scenarioId: h.scenarioId, tripProfileId, name: 'Fill target' });
+    await roundTrip(h, 'autoBlockUnassigned', async () => h.blocking.fillUnassignedTrips({ blockingScenarioId: empty.id, rules: setup.defaultRules, sourceSignature: await h.signature(empty.id) }));
+  }));
+
   it('blocking: applyBulkBoundaryActivities replacing pull-outs', () => withHarness(async (h) => {
     const scenario = await h.blockingScenarioOf();
     const source = (await h.blockingRepository.listBlockingBlocks(scenario.id, h.fixture.weekday)).find((block) => firstOfType(block.activities, 'pullOut'))!;

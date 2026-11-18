@@ -257,6 +257,7 @@ const commands = {
   'block.notes': { menu: 'Current block', field: true, within: 'currentBlock', item: 'Edit notes…' },
   'block.delete': { menu: 'Current block', field: true, within: 'currentBlock', item: 'Delete block…' },
   'unassigned.minimumLayover': { menu: 'Unassigned trip actions', within: 'unassignedTrips', item: 'Minimum layover…' },
+  'unassigned.autoBlock': { menu: 'Unassigned trip actions', within: 'unassignedTrips', item: 'Auto-block unassigned trips…' },
 } satisfies Record<string, Command>;
 
 export type CommandId = keyof typeof commands | keyof typeof buttonCommands;

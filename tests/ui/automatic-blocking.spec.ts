@@ -56,6 +56,39 @@ test('builds a blocking scenario automatically and offers it as a blocked cost b
   await expect.poll(() => selectedBlockingScenarioName(page)).toBe(name);
 });
 
+// Decision 0083. A deleted block leaves its trips unassigned; Auto-block unassigned trips adds blocks for them and keeps the other blocks.
+test('auto-blocks the unassigned trips into new blocks of the selected blocking scenario', async ({ page }) => {
+  await seedSnapshot(page, { ...goldenRaw(), generationSets: [] });
+  await page.goto('/');
+  await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Blocking', exact: true }).click();
+  await expectBlockingScenarioSelected(page);
+  const scenarioName = await selectedBlockingScenarioName(page);
+  const rows = page.locator('.blocking-blocks-table tbody tr');
+  await expect(rows.first()).toBeVisible({ timeout: 30_000 });
+  const before = await rows.count();
+
+  await runCommand(page, 'block.delete');
+  await page.getByRole('alertdialog', { name: 'Delete block?', exact: true }).getByRole('button', { name: 'Delete block', exact: true }).click();
+  await expect(rows).toHaveCount(before - 1);
+  await expect(region(page, 'unassignedTrips').locator('.blocking-trips-table tbody tr input[type="checkbox"]').first()).toBeVisible();
+
+  await runCommand(page, 'unassigned.autoBlock');
+  const dialog = page.getByRole('dialog', { name: 'Auto-block unassigned trips' });
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  await expect(dialog.getByLabel('Blocking scenario name')).toHaveCount(0);
+  await expect(dialog).toContainText(`Adds new blocks to ${scenarioName}`);
+  const add = dialog.getByRole('button', { name: /^Add \d+ blocks?$/ });
+  await expect(add).toBeEnabled({ timeout: 30_000 });
+  const added = Number((await add.textContent())!.match(/\d+/)![0]);
+  await add.click();
+  await expect(dialog).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.getByText('Unable to', { exact: false })).toHaveCount(0);
+  await expect(rows).toHaveCount(before - 1 + added);
+  await expect(page.getByRole('button', { name: 'Expand unassigned trips, 0', exact: true })).toBeVisible();
+  expect(await selectedBlockingScenarioName(page)).toBe(scenarioName);
+});
+
 // Decision 0056, package MR3. The preview shows peak vehicles (equal to blocks on the golden Weekday), and the Maximum vehicles field in
 // Block limits refuses 0 the way other invalid limits do.
 test('shows peak vehicles and validates the maximum vehicles limit', async ({ page }) => {

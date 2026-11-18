@@ -241,6 +241,7 @@ export function restorePointLabel(point: Pick<RestorePointSummary, 'kind' | 'nam
     case 'deleteBlocks': return `Deleted ${count(point.counts.blocks?.removed, 'block')}`;
     case 'copyBlocksFromDay': return `Copied ${names.sourceServiceDay ?? ''} blocks to ${names.serviceDay ?? ''}`;
     case 'rebuildAutoBlocks': return `Rebuilt the blocks of ${names.blockingScenario ?? 'the blocking scenario'}`;
+    case 'autoBlockUnassigned': return `Auto-blocked unassigned trips into ${count(point.counts.blocks?.added, 'new block')}`;
     case 'replaceBoundaryActivities': return `Updated ${boundary}s in ${count(point.counts.blocks?.changed, 'block')}`;
     case 'removeBlockActivity': return `Removed the ${boundary} from ${names.block ?? 'the block'}`;
     case 'deleteDeadheads': return `Deleted ${count(point.quantity, 'deadhead')}`;

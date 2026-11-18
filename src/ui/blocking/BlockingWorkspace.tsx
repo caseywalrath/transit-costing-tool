@@ -180,6 +180,8 @@ export function BlockingWorkspace({ dataVersion, crumbSlot, tripProfileId, block
   // Decision 0055: the automatic-blocking dialog (with rules when opened from "Build again…") and the selected scenario's build record.
   const [autoBlocking, setAutoBlocking] = useState<object>();
   const [autoStatus, setAutoStatus] = useState<AutoBlockingStatus>();
+  /** Decision 0083: the Auto-block unassigned trips dialog is open. */
+  const [autoFillOpen, setAutoFillOpen] = useState(false);
   const [blockDialog, setBlockDialog] = useState<{ mode: 'create' | 'rename'; block?: BlockingBlock; value: string }>(); const [notesDialog, setNotesDialog] = useState<BlockingBlock>(); const [deleteBlock, setDeleteBlock] = useState<{ block: BlockingBlock; impact: BlockDeletionImpact }>(); const blocksRequests = useRef(createLatestRequest()).current; const scenariosRequests = useRef(createLatestRequest()).current; const [activityDraft, setActivityDraft] = useState<ActivityDraft>(); const [boundaryReview, setBoundaryReview] = useState<BoundaryReview>(); const [deleteDeadhead, setDeleteDeadhead] = useState<DeadheadDeleteRequest>(); const [reassignTrips, setReassignTrips] = useState<{ trips: Trip[]; sourceBlockId: string }>(); const [removeTripsPending, setRemoveTripsPending] = useState(false); const [selectedTripIds, setSelectedTripIds] = useState<string[]>([]); const [selectedUnassignedTripIds, setSelectedUnassignedTripIds] = useState<string[]>([]); const blockSelectionAnchorId = useRef<string | undefined>(undefined); const unassignedSelectionAnchorId = useRef<string | undefined>(undefined); const compatibilityRequestRef = useRef(0); const [busy, setBusy] = useState(false); const [checkedBlockIds, setCheckedBlockIds] = useState<string[]>([]); const [deleteBlocksPending, setDeleteBlocksPending] = useState<{ impact: BlocksDeletionImpact; all: boolean }>();
   const [unassignedCollapsed, setUnassignedCollapsed] = useState(storedUnassignedCollapsed); const [unassignedReady, setUnassignedReady] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(storedSummaryOpen); const scenarioTriggerRef = useRef<HTMLButtonElement>(null);
@@ -484,6 +486,8 @@ export function BlockingWorkspace({ dataVersion, crumbSlot, tripProfileId, block
   const unassignedActionsMenu: MenuGroup[] = [
     // The Show filter and "Clear filters" are visible in the panel header (BL-A); the minimum layover has no visible control, so it stays here.
     { label: 'Compatibility', items: [{ id: 'minimum-layover', label: layoverLabel, restoreFocus: false, onSelect: () => setLayoverDialogOpen(true) }] },
+    // Decision 0083: builds new blocks from the trips no block holds; the stored blocks are not changed.
+    { label: 'Blocks', items: [{ id: 'auto-fill', label: 'Auto-block unassigned trips…', restoreFocus: false, disabled: busy || !profile || !blockingScenario, onSelect: () => setAutoFillOpen(true) }] },
   ];
   // New block is a header button, boundary activities are table rows, and the selected-trip commands are in the selection bar (BL-A).
   const noBlockActions: MenuGroup[] = [{ label: 'Block', items: [
@@ -553,6 +557,10 @@ export function BlockingWorkspace({ dataVersion, crumbSlot, tripProfileId, block
       renderPatternPill={(pattern) => <span className={patternPillClass(pattern.id)} title={pattern.name}>{patternLabel(pattern)}</span>}
       onCreated={async (created) => { setScenarioSelectionCleared(false); setBlockingScenarioId(created.id); rememberTripBlockingScenario(records.scenario.id, profile.id, created.id); setAutoBlocking(undefined); await refresh(); }}
       onClose={() => setAutoBlocking(undefined)} />}
+    {autoFillOpen && profile && blockingScenario && <AutoBlockingDialog blockingService={blockingService} scenarioId={records.scenario.id} tripProfileId={profile.id} tripProfileName={profile.name} minimumLayover={minimumLayover}
+      renderPatternPill={(pattern) => <span className={patternPillClass(pattern.id)} title={pattern.name}>{patternLabel(pattern)}</span>}
+      fill={{ blockingScenario, ...(blockingScenario.autoBlocking ? { rules: blockingScenario.autoBlocking.rules } : {}), serviceDayId, sourceSignature, onFilled: async () => { setAutoFillOpen(false); await loadBlocks(); } }}
+      onCreated={async () => undefined} onClose={() => setAutoFillOpen(false)} />}
     {dayCopyOpen && blockingScenario && day &&<BlockingDayCopyDialog blockingService={blockingService} scenarioId={records.scenario.id} blockingScenario={blockingScenario} targetDay={day} days={days} routes={routes} onDone={async () => { await loadBlocks(); }} onClose={() => setDayCopyOpen(false)} />}
     {scenarioCommands.dialogs}
     {blockDialog && <NameDialog title={blockDialog.mode === 'create' ? 'New block' : 'Rename block'} initialValue={blockDialog.value} submitLabel={blockDialog.mode === 'create' ? 'Create block' : 'Rename'} busy={busy} onSubmit={saveBlock} onClose={() => setBlockDialog(undefined)} />}
