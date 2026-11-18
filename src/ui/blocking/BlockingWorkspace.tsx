@@ -34,7 +34,7 @@ import { useBlockingScenarioCommands } from './blockingScenarioCommands';
 import { deadheadsRemovedFromBlock } from '../../application/tripsWorkspaceView';
 
 type BlockingApplication = BlockingCommands & BlockingQueries;
-type Props = { /** The element in the header's scope bar that receives the scope selectors (UR-5). */ scopeSlot: HTMLElement | null; blockingService: BlockingApplication; tripService: TripGenerationApplication; aggregate: RouteDefinitionAggregate; records: ScenarioRecords; routes: Route[]; routeId: string; onRouteChange: (routeId: string) => void; onReload: () => Promise<void>; onError: (error: unknown, fallback?: string) => void };
+type Props = { /** Decision 0081: changes when a restore rewrote stored records, so Blocking reloads them. */ dataVersion?: number; /** The element in the header's scope bar that receives the scope selectors (UR-5). */ scopeSlot: HTMLElement | null; blockingService: BlockingApplication; tripService: TripGenerationApplication; aggregate: RouteDefinitionAggregate; records: ScenarioRecords; routes: Route[]; routeId: string; onRouteChange: (routeId: string) => void; onReload: () => Promise<void>; onError: (error: unknown, fallback?: string) => void };
 type ActivityDraft = { block: BlockingBlock; activity?: Exclude<BlockActivity, { type: 'revenueTrip' }>; type: 'pullOut' | 'deadhead' | 'pullIn'; afterTripId?: string; connectionDescription?: string; defaultFromNodeId?: string; defaultToNodeId?: string };
 type ActivityValues = { minutes: string; fromNodeId: string; toNodeId: string; miles: string; applyToSimilar: boolean };
 type BoundaryReview = { request: BulkBoundaryRequest; preview: BulkBoundaryPreview };
@@ -165,7 +165,7 @@ function blockSortValue(row: BlockTableRow, column: BlockSortColumn): string | n
   return row.value?.deadheadHours;
 }
 
-export function BlockingWorkspace({ scopeSlot, blockingService, tripService, aggregate, records, routes, routeId, onRouteChange, onReload, onError }: Props) {
+export function BlockingWorkspace({ dataVersion, scopeSlot, blockingService, tripService, aggregate, records, routes, routeId, onRouteChange, onReload, onError }: Props) {
   const days = sortServiceDays(records.serviceDays); const profiles = records.tripProfiles ?? [];
   const [tripProfileId, setTripProfileId] = useState(''); const [blockingScenarioId, setBlockingScenarioId] = useState(''); const [serviceDayId, setServiceDayId] = useState('');
   const [scenarios, setScenarios] = useState<BlockingScenario[]>([]); const [allBlocks, setAllBlocks] = useState<BlockingBlock[]>([]); const [selectedBlockId, setSelectedBlockId] = useState(''); const [scenarioSelectionCleared, setScenarioSelectionCleared] = useState(false);
@@ -255,7 +255,7 @@ export function BlockingWorkspace({ scopeSlot, blockingService, tripService, agg
 
   useEffect(() => { const prior = preference(); setTripProfileId((current) => current && profiles.some((item) => item.id === current) ? current : profiles.find((item) => item.id === prior.tripProfileId)?.id ?? profiles[0]?.id ?? ''); setServiceDayId((current) => current && days.some((item) => item.id === current) ? current : days.find((item) => item.id === prior.serviceDayByScenario?.[records.scenario.id])?.id ?? days.find((item) => item.id === prior.serviceDayId)?.id ?? days[0]?.id ?? ''); }, [records.scenario.id, profiles.length, days.length]);
   async function loadScenarios() { const isCurrent = scenariosRequests.begin(); const forScenarioId = records.scenario.id; try { const next = await blockingService.listBlockingScenarios(forScenarioId); if (isCurrent()) { setScenarios(next); setScenariosLoadedFor(forScenarioId); } } catch (error) { if (isCurrent()) onError(error, 'Unable to load blocking scenarios.'); } }
-  useEffect(() => { void loadScenarios(); }, [records.scenario.id]);
+  useEffect(() => { void loadScenarios(); }, [records.scenario.id, dataVersion]);
   // A Trip Profile always has a blocking scenario: when it has none, an empty "Default" one is created, so its trips show as unassigned.
   const [scenariosLoadedFor, setScenariosLoadedFor] = useState('');
   const defaultRequested = useRef(new Set<string>());
@@ -269,7 +269,7 @@ export function BlockingWorkspace({ scopeSlot, blockingService, tripService, agg
   useEffect(() => { const prior = preference(); const candidates = scenarios.filter((item) => item.tripProfileId === tripProfileId); if (scenarioSelectionCleared) { setBlockingScenarioId(''); return; } setBlockingScenarioId((current) => current && candidates.some((item) => item.id === current) ? current : candidates.find((item) => item.id === prior.blockingScenarioByProfile?.[tripProfileId])?.id ?? candidates.find((item) => item.id === prior.blockingScenarioId)?.id ?? candidates[0]?.id ?? ''); }, [scenarios, tripProfileId, scenarioSelectionCleared]);
   // Each load starts a numbered request, and only the latest one may apply its result: a slow earlier response must not replace a later one (finding 4-026).
   async function loadBlocks() { const isCurrent = blocksRequests.begin(); if (!blockingScenarioId) { setAllBlocks([]); setSummary(undefined); setAllDayFactors(undefined); setUnassigned([]); return; } try { const values = await Promise.all([blockingService.listBlockingBlocks(blockingScenarioId), blockingService.getScenarioSummary(blockingScenarioId, serviceDayId), blockingService.listUnassignedTrips(blockingScenarioId, serviceDayId, aggregate.route.id), blockingService.getEstimateFactorSummary(blockingScenarioId, days)]); if (!isCurrent()) return; setAllBlocks(values[0]); setSummary(values[1]); setAllDayFactors(values[3]); setUnassigned(values[2]); setUnassignedReady(true); const savedBlockId = preference().blockSelections?.[blockSelectionKey(blockingScenarioId, serviceDayId)]; setSelectedBlockId((current) => current && values[0].some((block) => block.id === current && block.serviceDayId === serviceDayId) ? current : values[0].find((block) => block.id === savedBlockId && block.serviceDayId === serviceDayId)?.id ?? values[0].find((block) => block.serviceDayId === serviceDayId)?.id ?? ''); } catch (error) { if (isCurrent()) onError(error, 'Unable to load blocks.'); } }
-  useEffect(() => { void loadBlocks(); }, [blockingScenarioId, serviceDayId, aggregate.route.id]);
+  useEffect(() => { void loadBlocks(); }, [blockingScenarioId, serviceDayId, aggregate.route.id, dataVersion]);
   // The build note reloads whenever the Blocks are read again, which follows every Blocking write.
   useEffect(() => {
     let live = true; setAutoStatus(undefined);

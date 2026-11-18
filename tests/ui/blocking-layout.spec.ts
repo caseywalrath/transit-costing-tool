@@ -61,7 +61,6 @@ test('the panel is a rail when the last unassigned Trip is assigned, and the sid
   await expect(page.locator('.unassigned-rail__badge--ok')).toHaveText('0');
   // Removing a Trip from the Block makes it unassigned again, and the panel returns.
   await currentBlock(page).getByRole('button', { name: 'Remove Trip 1', exact: true }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Remove Trip 1', exact: true }).click();
   await expect(unassignedPanel(page)).toBeVisible();
   await expect(page.locator('.blocking-top')).toHaveClass(/blocking-top--side/);
   await expect(unassignedPanel(page).locator('.assign-button')).toHaveCount(1);
@@ -99,7 +98,6 @@ test('a collapsed panel stays collapsed when Trips become unassigned, and the ba
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await expect(rail(page, 0)).toBeVisible();
   await currentBlock(page).getByRole('button', { name: 'Remove Trip 1', exact: true }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Remove Trip 1', exact: true }).click();
   await expect(rail(page, 1)).toBeVisible();
   await expect(page.locator('.unassigned-rail__badge--warn')).toHaveText('1');
   await expect(unassignedPanel(page)).toHaveCount(0);

@@ -48,8 +48,12 @@ test('removing a Trip, a Pull-out, or a Pull-in happens at once and can be undon
 
   await currentBlock(page).getByRole('button', { name: 'Remove Pull-out', exact: true }).click();
   await expect.poll(async () => (await storedBlock(page, '26')).types).toEqual(before.types.filter((type: string) => type !== 'pullOut'));
+  // The next removal waits for the Block to reload, as a planner sees the row leave before acting again.
+  await expect(currentBlock(page).getByRole('button', { name: 'Remove Pull-out', exact: true })).toHaveCount(0);
   await currentBlock(page).getByRole('button', { name: 'Remove Pull-in', exact: true }).click();
   await expect.poll(async () => (await storedBlock(page, '26')).types).toEqual(before.types.filter((type: string) => type !== 'pullOut' && type !== 'pullIn'));
+  await expect(page.locator('.notice.success')).toContainText('Removed the pull-in from 26');
+  await expect(currentBlock(page).getByRole('button', { name: 'Remove Pull-in', exact: true })).toHaveCount(0);
 
   await currentBlock(page).getByRole('button', { name: 'Remove Trip 3', exact: true }).click();
   await expect.poll(async () => (await storedBlock(page, '26')).types.filter((type: string) => type === 'revenueTrip').length).toBe(before.types.filter((type: string) => type === 'revenueTrip').length - 1);
