@@ -8,7 +8,7 @@ import { BlockingWorkspace } from './blocking/BlockingWorkspace';
 import { CostingWorkspace } from './costing/CostingWorkspace';
 import { MenuButton, type MenuGroup } from './MenuButton';
 import { userFacingError } from './errorMessages';
-import { readSideBySidePreference, readStoredRecord, sideBySideDirectionIds, storedText, writeSideBySidePreference, type SideBySidePreference } from './preferences';
+import { readWorkingContext, writeWorkingContext, type WorkingContext, readSideBySidePreference, readStoredRecord, sideBySideDirectionIds, storedText, writeSideBySidePreference, type SideBySidePreference } from './preferences';
 import { createCsvArchive } from '../application/csvDownload';
 import { ServiceDayValidationError, type RouteDefinitionApplication, type RouteEditCommitResult, type ScenarioRecords } from '../application/routeDefinitionService';
 import { type TripGenerationApplication } from '../application/tripGenerationService';
@@ -29,7 +29,7 @@ import { SegmentedControl } from './shared/SegmentedControl';import { TripsOrSid
 
 export type Props = { service: RouteDefinitionApplication; tripService: TripGenerationApplication; blockingService: BlockingCommands & BlockingQueries; costingService: CostingCommands & CostingQueries; plannedFrequencyService: PlannedFrequencyService; session?: SessionStatusQueries; restorePoints?: import('../application/restorePointService').RestorePointCommands & import('../application/restorePointService').RestorePointQueries };
 /** `undoId` (Decision 0081): the restore point the notice's Undo button restores. */
-export type Notice = { kind: 'error' | 'success'; text: string; undoId?: string } | undefined;
+export type Notice = { kind: 'error' | 'success' | 'info'; text: string; undoId?: string } | undefined;
 export type ActiveTab = 'route' | 'trips' | 'blocking' | 'costing';
 export type SelectionPreference = { projectId?: string; scenarioId?: string; routeId?: string };
 export const SELECTION_PREFERENCE_KEY = 'transit-costing-tool.route-selection.v1';
@@ -95,7 +95,13 @@ export function App({ service, tripService, blockingService, costingService, pla
     if (!scenario) { setScenarioId(''); setRecords(undefined); setAggregate(undefined); setWorkspaceTripProfileId(''); saveSelectionPreference({ projectId: project.id }); return; }
     const nextRecords = workspace.records; setScenarioId(scenario.id); setRecords(nextRecords);
     const tripProfiles = nextRecords?.tripProfiles ?? [];
-    setWorkspaceTripProfileId((current) => current && tripProfiles.some((profile) => profile.id === current) ? current : tripProfiles[0]?.id ?? '');
+    // Decision 0081 item 6: a reload or a Scenario switch opens the Trip profile last used in that Scenario on this device. When it no longer
+    // exists the first time this Scenario opens in this page, say which one is open instead.
+    const rememberedProfileId = workingContext.current.scenarios[scenario.id]?.tripProfileId;
+    const rememberedProfile = tripProfiles.find((profile) => profile.id === rememberedProfileId);
+    if (rememberedProfileId && !rememberedProfile && tripProfiles[0] && !openedScenarios.current.has(scenario.id)) setNotice({ kind: 'info', text: `The trip profile open last time is no longer in this scenario. ${tripProfiles[0].name} is open.` });
+    openedScenarios.current.add(scenario.id);
+    setWorkspaceTripProfileId((current) => current && tripProfiles.some((profile) => profile.id === current) ? current : rememberedProfile?.id ?? tripProfiles[0]?.id ?? '');
     const route = workspace.aggregate?.route;
     setRouteId(route?.id ?? '');
     const nextAggregate = workspace.aggregate; setAggregate(nextAggregate);
@@ -146,27 +152,38 @@ export function App({ service, tripService, blockingService, costingService, pla
   useEffect(() => session?.subscribeToSessionStatus(setSessionStatus), [session]);
   useEffect(() => service.subscribeToLocalDataProtection(setProtection), [service]);
   useEffect(() => { const preference = loadSelectionPreference(); void reload(preference.projectId, preference.scenarioId, preference.routeId).catch((error) => { setLoadFailed(true); showError(error, 'Unable to open your saved projects. Reload this page and try again.'); }); }, []);
-  // The Day and Trip Profile last viewed in each Scenario, and the direction last viewed on each Route, for this session. A Scenario switch
-  // restores them instead of falling back to the first entry.
-  const lastViewed = useRef<Record<string, string>>({});
+  // The Day and Trip Profile last viewed in each Scenario, and the direction last viewed on each Route, kept on this device (Decision 0081
+  // item 6). A Scenario switch or a reload restores them instead of falling back to the first entry.
+  const workingContext = useRef<WorkingContext>(readWorkingContext());
+  const openedScenarios = useRef(new Set<string>());
+  function rememberContext(change: (context: WorkingContext) => void) { change(workingContext.current); writeWorkingContext(workingContext.current); }
   useEffect(() => {
     const days = sortServiceDays(records?.serviceDays ?? []);
-    if (days.some((day) => day.id === workspaceServiceDayId)) { if (records) lastViewed.current[`day:${records.scenario.id}`] = workspaceServiceDayId; return; }
-    const remembered = records ? lastViewed.current[`day:${records.scenario.id}`] : undefined;
+    if (days.some((day) => day.id === workspaceServiceDayId)) { if (records) rememberContext((context) => { context.scenarios[records.scenario.id] = { ...context.scenarios[records.scenario.id], serviceDayId: workspaceServiceDayId }; }); return; }
+    const remembered = records ? workingContext.current.scenarios[records.scenario.id]?.serviceDayId : undefined;
     setWorkspaceServiceDayId(days.find((day) => day.id === remembered)?.id ?? days[0]?.id ?? '');
   }, [records?.serviceDays, workspaceServiceDayId]);
   useEffect(() => {
     const directions = orderDirections(aggregate?.directions ?? []);
-    if (directions.some((direction) => direction.id === workspaceDirectionId)) { if (aggregate) lastViewed.current[`direction:${aggregate.route.id}`] = workspaceDirectionId; return; }
-    const remembered = aggregate ? lastViewed.current[`direction:${aggregate.route.id}`] : undefined;
+    if (directions.some((direction) => direction.id === workspaceDirectionId)) { if (aggregate) rememberContext((context) => { context.routes[aggregate.route.id] = { directionId: workspaceDirectionId }; }); return; }
+    const remembered = aggregate ? workingContext.current.routes[aggregate.route.id]?.directionId : undefined;
     setWorkspaceDirectionId(directions.find((direction) => direction.id === remembered)?.id ?? directions[0]?.id ?? '');
   }, [aggregate?.directions, workspaceDirectionId]);
   useEffect(() => {
     const profiles = records?.tripProfiles ?? [];
-    if (profiles.some((profile) => profile.id === workspaceTripProfileId)) { if (records) lastViewed.current[`profile:${records.scenario.id}`] = workspaceTripProfileId; return; }
-    const remembered = records ? lastViewed.current[`profile:${records.scenario.id}`] : undefined;
+    if (profiles.some((profile) => profile.id === workspaceTripProfileId)) { if (records) rememberContext((context) => { context.scenarios[records.scenario.id] = { ...context.scenarios[records.scenario.id], tripProfileId: workspaceTripProfileId }; }); return; }
+    const remembered = records ? workingContext.current.scenarios[records.scenario.id]?.tripProfileId : undefined;
     setWorkspaceTripProfileId(profiles.find((profile) => profile.id === remembered)?.id ?? profiles[0]?.id ?? '');
   }, [records?.tripProfiles, workspaceTripProfileId]);
+  // Decision 0081 item 6: the browser tab names the working context.
+  useEffect(() => {
+    const scenarioName = records?.scenario.name;
+    const routeName = aggregate ? aggregate.route.shortName || aggregate.route.name || 'Untitled route' : undefined;
+    const profileName = records?.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name;
+    const parts = !scenarioName ? [] : activeTab === 'costing' ? ['Costing', scenarioName] : activeTab === 'route' ? [routeName, scenarioName] : [routeName, profileName, scenarioName];
+    const label = parts.filter(Boolean).join(' · ');
+    document.title = label ? `${label} — Transit Costing Tool` : 'Transit Costing Tool';
+  }, [activeTab, records?.scenario.name, aggregate?.route.name, aggregate?.route.shortName, records?.tripProfiles, workspaceTripProfileId]);
 
   function showError(error: unknown, fallback: string) {
     if (error instanceof TripGenerationError) { setNotice({ kind: 'error', text: [...new Set(error.findings.map(userMessage))].join(' ') || fallback }); return; }

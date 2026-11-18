@@ -62,3 +62,24 @@ describe('recent operating cost rates (Decision 0061)', () => {
   });
   it.each(['{"a":1}', '5', '{broken', '', null])('reads %s as an empty list', (stored) => { expect(readRateHistory(store(stored))).toEqual([]); });
 });
+
+describe('readWorkingContext', () => {
+  it('reads a stored context back unchanged', async () => {
+    const { readWorkingContext } = await import('./preferences');
+    const context = { scenarios: { s1: { tripProfileId: 'p1', serviceDayId: 'd1' } }, routes: { r1: { directionId: 'dir1' } } };
+    expect(readWorkingContext(store(JSON.stringify(context)))).toEqual(context);
+  });
+  it.each([null, 'null', '[]', '5'])('reads %s as an empty context', async (stored) => {
+    const { readWorkingContext } = await import('./preferences');
+    expect(readWorkingContext(store(stored))).toEqual({ scenarios: {}, routes: {} });
+  });
+  it('reads wrong-shaped and empty entries as not stored', async () => {
+    const { readWorkingContext } = await import('./preferences');
+    expect(readWorkingContext(store('{"scenarios":{"s1":"x","s2":[1],"s3":{"tripProfileId":5,"serviceDayId":null}},"routes":{"r1":5,"r2":{"directionId":""}}}'))).toEqual({ scenarios: {}, routes: {} });
+    expect(readWorkingContext(store('{"scenarios":{"s1":{"tripProfileId":"","serviceDayId":""}},"routes":{"r1":{"directionId":""}}}'))).toEqual({ scenarios: {}, routes: {} });
+  });
+  it('keeps the good entries when one entry is bad', async () => {
+    const { readWorkingContext } = await import('./preferences');
+    expect(readWorkingContext(store('{"scenarios":{"bad":null,"good":{"tripProfileId":"p1"}},"routes":{"bad":[],"r1":{"directionId":"d1"}}}'))).toEqual({ scenarios: { good: { tripProfileId: 'p1' } }, routes: { r1: { directionId: 'd1' } } });
+  });
+});
