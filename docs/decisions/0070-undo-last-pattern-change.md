@@ -4,6 +4,7 @@
 - Date: 2026-11-11 (user request; plan: `docs/implementation/dialogs-selection-undo.md`, package P1)
 - Annotates: Decision 0035 item 3 (one regeneration snapshot) and Decision 0046 item 2 (the undo item)
 - Related: Decision 0067 (anchored pattern change)
+- Amended by Decision 0081 item 12 (FX8, 2026-11-18): a pattern change stores a restore point instead of replacing the single undo snapshot; the item reads "Undo changed the pattern of N trips", and an undo can itself be redone.
 
 ## Context
 

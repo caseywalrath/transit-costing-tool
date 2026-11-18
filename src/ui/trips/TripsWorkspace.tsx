@@ -15,7 +15,7 @@ import { type RouteDefinitionApplication, type ScenarioRecords } from '../../app
 import { TripShiftStalePreviewError, type TripBlockImpact, type TripGenerationApplication } from '../../application/tripGenerationService';
 import { TripShiftValidationError, type TripShiftPreview } from '../../domain/tripShift';
 import { TripGenerationError, type RecalculationPreview } from '../../domain/trips';
-import { formatNetShift, formatShiftStep, isUsablePattern, orderDirections, parseShiftSeconds, regenerationUndoApplies, reverseRuntimeCandidates, routeRuntimeCalculationMethod, sortServiceDays, summarizeTripTable, usableDirectionPatterns, type RuntimeCalculationMethod } from '../../application/tripsWorkspaceView';
+import { formatNetShift, formatShiftStep, isUsablePattern, orderDirections, parseShiftSeconds, reverseRuntimeCandidates, routeRuntimeCalculationMethod, sortServiceDays, summarizeTripTable, usableDirectionPatterns, type RuntimeCalculationMethod } from '../../application/tripsWorkspaceView';
 import { formatServiceTime, parseServiceTime } from '../../domain/time';
 import { type BlockingBlock, type Route, type RouteDefinitionAggregate, type RuntimeAssignment, type RuntimeProfile, type ServiceDayDefinition, type Trip } from '../../domain/types';
 import { createBlockingScenarioSourceSignature, type BlockConnection } from '../../domain/blocking';
@@ -87,7 +87,13 @@ export function shiftErrorText(error: unknown, fallback: string) {
   return userFacingError(error, fallback);
 }
 
-export function TripsWorkspace({ service, tripService, plannedFrequencyService, blockingService, aggregate, records, serviceDayId, directionId, tripProfileId, tripProfileBusy, tripPatternSelections, onTripPatternChange, onTripProfileChange, onTripProfileRename, onTripProfileCopy, onTripProfileDelete, onRegisterNavigationGuard, runtimeVersion, onRuntimeChanged, onError, pane, sharedControls = true, blockingScenarioId: sharedBlockingScenarioId, onBlockingScenarioChange, blockingScenarioListVersion: sharedBlockingScenarioListVersion, onBlockingScenarioListChanged, onBeforeOpenEdit, onOpenEditChange, yieldToken, sharedSlots, viewOptions, onViewOptionsChange, sideBySideMenu, paneContext, crumbSlot }: { /** Decision 0081 (D6): the header element that receives this screen's Blocking scenario level. */ crumbSlot?: HTMLElement | null; sharedSlots?: { context: HTMLElement | null; actions: HTMLElement | null }; viewOptions?: TripViewOptions; onViewOptionsChange?: (next: TripViewOptions) => void; sideBySideMenu?: SideBySideMenuItem; paneContext?: ReactNode; service: RouteDefinitionApplication; tripService: TripGenerationApplication; plannedFrequencyService: Pick<PlannedFrequencyService, 'getPlan' | 'previewBuildFromPlan' | 'comparePlan'>; blockingService: BlockingCommands & BlockingQueries; aggregate: RouteDefinitionAggregate; records: ScenarioRecords; serviceDayId: string; directionId: string; tripProfileId: string; tripProfileBusy: boolean; tripPatternSelections: Record<string, string>; onTripPatternChange: (key: string, id: string) => void; onTripProfileChange: (id: string) => void; onTripProfileRename: () => void; onTripProfileCopy: () => void; onTripProfileDelete: () => void; onRegisterNavigationGuard: (guard: RouteNavigationGuard | undefined) => void; runtimeVersion: number; onRuntimeChanged: () => void; onError: (error: unknown, fallback?: string) => void; pane?: { side: 'left' | 'right' }; sharedControls?: boolean; blockingScenarioId?: string; onBlockingScenarioChange?: (id: string) => void; blockingScenarioListVersion?: number; onBlockingScenarioListChanged?: () => void; onBeforeOpenEdit?: (start: () => void) => void; onOpenEditChange?: (open: boolean) => void; yieldToken?: number }) {
+/** FX8 (Decision 0081 item 12). Trip changes store restore points; the Trips menu offers the newest one made in this view. */
+export interface TripChangeUndo {
+  latest(view: { scenarioId: string; routeId: string; serviceDayId: string; tripProfileId: string }): Promise<{ id: string; label: string } | undefined>;
+  undo(pointId: string): Promise<void>;
+}
+
+export function TripsWorkspace({ service, tripService, plannedFrequencyService, blockingService, aggregate, records, serviceDayId, directionId, tripProfileId, tripProfileBusy, tripPatternSelections, onTripPatternChange, onTripProfileChange, onTripProfileRename, onTripProfileCopy, onTripProfileDelete, onRegisterNavigationGuard, runtimeVersion, onRuntimeChanged, onError, pane, sharedControls = true, blockingScenarioId: sharedBlockingScenarioId, onBlockingScenarioChange, tripChangeUndo, blockingScenarioListVersion: sharedBlockingScenarioListVersion, onBlockingScenarioListChanged, onBeforeOpenEdit, onOpenEditChange, yieldToken, sharedSlots, viewOptions, onViewOptionsChange, sideBySideMenu, paneContext, crumbSlot }: { /** FX8: the newest trip change in view, and its undo. */ tripChangeUndo?: TripChangeUndo; /** Decision 0081 (D6): the header element that receives this screen's Blocking scenario level. */ crumbSlot?: HTMLElement | null; sharedSlots?: { context: HTMLElement | null; actions: HTMLElement | null }; viewOptions?: TripViewOptions; onViewOptionsChange?: (next: TripViewOptions) => void; sideBySideMenu?: SideBySideMenuItem; paneContext?: ReactNode; service: RouteDefinitionApplication; tripService: TripGenerationApplication; plannedFrequencyService: Pick<PlannedFrequencyService, 'getPlan' | 'previewBuildFromPlan' | 'comparePlan'>; blockingService: BlockingCommands & BlockingQueries; aggregate: RouteDefinitionAggregate; records: ScenarioRecords; serviceDayId: string; directionId: string; tripProfileId: string; tripProfileBusy: boolean; tripPatternSelections: Record<string, string>; onTripPatternChange: (key: string, id: string) => void; onTripProfileChange: (id: string) => void; onTripProfileRename: () => void; onTripProfileCopy: () => void; onTripProfileDelete: () => void; onRegisterNavigationGuard: (guard: RouteNavigationGuard | undefined) => void; runtimeVersion: number; onRuntimeChanged: () => void; onError: (error: unknown, fallback?: string) => void; pane?: { side: 'left' | 'right' }; sharedControls?: boolean; blockingScenarioId?: string; onBlockingScenarioChange?: (id: string) => void; blockingScenarioListVersion?: number; onBlockingScenarioListChanged?: () => void; onBeforeOpenEdit?: (start: () => void) => void; onOpenEditChange?: (open: boolean) => void; yieldToken?: number }) {
   const days = sortServiceDays(records.serviceDays);
   const directions = orderDirections(aggregate.directions ?? []);
   // The Trips the last change wrote, marked in the table (Decision 0073). Cleared when the schedule, Route or Scenario changes.
@@ -133,7 +139,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     }
     return { nodeId: compared.comparison.measureNodeId, byTripId };
   })();
-  const [lastRegenerationUndo, setLastRegenerationUndo] = useState<import('../../domain/types').TripRegenerationUndo>();
+  const [lastTripChange, setLastTripChange] = useState<{ id: string; label: string }>();
   const [tripsWithChangedRuntimes, setTripsWithChangedRuntimes] = useState<Trip[]>([]);
   const [staleReasons, setStaleReasons] = useState<StaleTripNotice>();
   const [selectedTripIds, setSelectedTripIds] = useState<string[]>([]);
@@ -256,11 +262,11 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     } catch (error) { onError(error); } finally { setLoading(false); }
   }
   async function loadTrips() {
-    if (!serviceDayId || !directionId) { setTrips([]); setRouteDayTrips([]); setTripsWithChangedRuntimes([]); setStaleReasons(undefined); setLastRegenerationUndo(await tripService.getLastTripRegenerationUndo()); return; }
+    if (!serviceDayId || !directionId) { setTrips([]); setRouteDayTrips([]); setTripsWithChangedRuntimes([]); setStaleReasons(undefined); setLastTripChange(undefined); return; }
     try {
-      const [nextTrips, nextStale, undo, nextRouteDayTrips] = await Promise.all([tripService.listScheduleTrips(serviceDayId, directionId, tripProfileId), tripService.inspectStaleTrips(serviceDayId, tripProfileId), tripService.getLastTripRegenerationUndo(), tripService.listRouteDayTrips(aggregate.route.id, serviceDayId, tripProfileId)]);
+      const [nextTrips, nextStale, undo, nextRouteDayTrips] = await Promise.all([tripService.listScheduleTrips(serviceDayId, directionId, tripProfileId), tripService.inspectStaleTrips(serviceDayId, tripProfileId), tripChangeUndo?.latest({ scenarioId: records.scenario.id, routeId: aggregate.route.id, serviceDayId, tripProfileId }), tripService.listRouteDayTrips(aggregate.route.id, serviceDayId, tripProfileId)]);
       const shownTripIds = new Set(nextTrips.map((item) => item.id));
-      setTrips(nextTrips); setRouteDayTrips(nextRouteDayTrips); setTripsWithChangedRuntimes(nextStale.trips.filter((trip) => shownTripIds.has(trip.id))); setStaleReasons(staleTripNotice(nextStale.findings, shownTripIds, userMessage)); setLastRegenerationUndo(undo);
+      setTrips(nextTrips); setRouteDayTrips(nextRouteDayTrips); setTripsWithChangedRuntimes(nextStale.trips.filter((trip) => shownTripIds.has(trip.id))); setStaleReasons(staleTripNotice(nextStale.findings, shownTripIds, userMessage)); setLastTripChange(undo);
     } catch (error) { onError(error); }
   }
   useEffect(() => { void loadRuntime(); }, [aggregate.route.id, selectedPattern?.id, serviceDayId, records.scenario.id, runtimeVersion]);
@@ -676,9 +682,10 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     catch (error) { setStartTimeReview(undefined); onError(error, 'Unable to change the start time.'); await loadTrips(); }
     finally { setBusy(false); }
   }
-  async function undoRegeneration() {
+  async function undoTripChange() {
     setBusy(true);
-    try { const restored = await tripService.undoLastTripRegeneration(); setChangedMarks((previous) => markTrips(previous, restored.map((trip) => trip.id))); setSelectedTripIds([]); clearTripShiftHistory(); await loadTrips(); }
+    // FX8: the restore runs through the shell, which reports a refusal with its reason and reloads the data.
+    try { if (lastTripChange && tripChangeUndo) await tripChangeUndo.undo(lastTripChange.id); setSelectedTripIds([]); clearTripShiftHistory(); await loadTrips(); }
     catch (error) { onError(error, 'Unable to undo the last change.'); await loadTrips(); }
     finally { setBusy(false); }
   }
@@ -818,7 +825,6 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     ...(!blockingScenarios.length || !tripBlockingScenarioId ? [{ id: 'none', label: 'No blocking scenario', checked: true, disabled: tripProfileBusy, onSelect: () => requestShiftScopeChange(() => setTripBlockingScenarioId('')) }] : []),
     ...blockingScenarios.map((scenario) => ({ id: scenario.id, label: scenario.name, checked: scenario.id === tripBlockingScenarioId, disabled: tripProfileBusy, onSelect: () => requestShiftScopeChange(() => setTripBlockingScenarioId(scenario.id)) })),
   ] }, { items: [blockingScenarioCommands.items.create, blockingScenarioCommands.items.duplicate, blockingScenarioCommands.items.rename, blockingScenarioCommands.items.remove] }];
-  const applicableRegenerationUndo = regenerationUndoApplies(lastRegenerationUndo, records.scenario.id, tripProfileId, trips) ? lastRegenerationUndo : undefined;
   const viewMenu: MenuGroup[] = [{ items: [
     { id: 'show-runtime-bands', label: 'Show runtime bands', checked: showRuntimeBands, kind: 'checkbox', onSelect: () => toggleViewOption('showRuntimeBands') },
     { id: 'show-headways', label: 'Show headways', checked: showHeadways, kind: 'checkbox', onSelect: () => toggleViewOption('showHeadways') },
@@ -841,9 +847,9 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     const name = (column?: typeof columns[number]) => column ? column.labelOverride || aggregate.nodes.find((node) => node.id === column.nodeId)?.shortName || aggregate.nodes.find((node) => node.id === column.nodeId)?.name || '' : '';
     return columns.length > 1 ? `${name(columns[0])} → ${name(columns.at(-1))}` : undefined;
   })();
-  // The ⋯ menu holds only what is not a selection command: Undo (Decision 0046: listed only while the saved undo applies, never shown disabled for that reason), service-day copy, and CSV export.
+  // The ⋯ menu holds only what is not a selection command: Undo of the newest trip change made in this Route, Day, and Trip profile (Decision 0081 item 12; listed only while it can be restored), service-day copy, and CSV export.
   const tripActionsMenu: MenuGroup[] = [
-    ...(applicableRegenerationUndo ? [{ items: [{ id: 'undo-regeneration', label: `${applicableRegenerationUndo.kind === 'patternChange' ? 'Undo last pattern change' : 'Undo last regeneration'} (${applicableRegenerationUndo.afterTrips.length} trips)`, disabled: busy || tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => void undoRegeneration() }] }] : []),
+    ...(lastTripChange ? [{ items: [{ id: 'undo-trip-change', label: lastTripChange.label, disabled: busy || tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => void undoTripChange() }] }] : []),
     { items: [{ id: 'copy-day', label: 'Copy trips from another day…', disabled: tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => setTripCopyOpen(true) }] },
     // Decision 0079 (ST6): one open edit at a time, so Stop trips waits for a staged Shift to be settled.
     { items: [{ id: 'stop-trips', label: 'Stop trips…', disabled: tripProfileBusy || stopTripsOpen || shiftOperations.length > 0, title: stopTripsOpen ? 'The Stop trips drawer is already open.' : shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: openStopTrips }] },

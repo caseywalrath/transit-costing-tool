@@ -4,6 +4,7 @@
 - Date: 2026-10-27 (user request)
 - Annotates: Decision 0035 items 3 and 4 (the one-step regeneration undo and where it appears)
 - Placement amended by Decision 0047 (implemented): Regenerate moves to the Trips selection bar and Undo stays a separate Trips Actions item. Items 1 to 5 of this record keep their rules.
+- Amended by Decision 0081 item 12 (FX8, 2026-11-18): the one-step regeneration undo store is removed. Regenerate stores a restore point, and the separate Trips Actions item now reads "Undo {label}" (or "Redo …") for the newest restorable trip change in the Route, Day, and Trip profile in view.
 
 ## Context
 

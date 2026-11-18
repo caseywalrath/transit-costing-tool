@@ -247,8 +247,20 @@ export function restorePointLabel(point: Pick<RestorePointSummary, 'kind' | 'nam
     case 'clearPlan': return `Cleared the ${names.serviceDay ?? ''} plan`;
     case 'copyPlanFromDay': return `Copied the ${names.sourceServiceDay ?? ''} plan to ${names.serviceDay ?? ''}`;
     case 'copyPlansFromScenario': return `Copied plans from ${names.sourceScenario ?? 'another scenario'}`;
+    case 'regenerateTrips': return `Regenerated ${count(point.quantity, 'trip')}`;
+    case 'changeTripStartTime': return `Changed the start time of ${count(point.quantity, 'trip')}`;
+    case 'changeTripPattern': return `Changed the pattern of ${count(point.quantity, 'trip')}`;
+    case 'shiftTrips': return `Shifted ${count(point.quantity, 'trip')}`;
     case 'restore': return `Undid: ${point.restoredKind ? restorePointLabel({ ...point, kind: point.restoredKind, restoredKind: undefined }) : 'a change'}`;
   }
+}
+
+/** The menu command for a restore point: "Undo {label}", or "Redo {label}" for a recorded restore (Decision 0081). */
+export function restorePointCommandLabel(point: Pick<RestorePointSummary, 'kind' | 'names' | 'counts' | 'quantity' | 'detail' | 'restoredKind'>): string {
+  const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+  return point.kind === 'restore' && point.restoredKind
+    ? `Redo ${lowerFirst(restorePointLabel({ ...point, kind: point.restoredKind, restoredKind: undefined }))}`
+    : `Undo ${lowerFirst(restorePointLabel(point))}`;
 }
 
 /** Decision 0081, rule N3: where a restore point's change happened, leaving out what its label already names. */

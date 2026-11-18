@@ -210,8 +210,8 @@ const commands = {
   // Decision 0054: the Costing scope bar has an Actions menu.
   'costing.exportCsv': { menu: 'Costing actions', item: 'Export costing CSV' },
   'costing.viewSummary': { menu: 'Costing actions', item: 'View cost summary…' },
-  // A separate item, listed only while the saved undo applies. Its name is "Undo last regeneration (N trips)".
-  'trips.undoRegeneration': { menu: 'Trip actions', within: 'trips', item: 'Undo last regeneration' },
+  // A separate item, listed only while the newest trip change in view can be restored (Decision 0081 item 12). Its name is "Undo regenerated N trips".
+  'trips.undoRegeneration': { menu: 'Trip actions', within: 'trips', item: 'Undo regenerated' },
   'trips.copyDay': { menu: 'Trip actions', within: 'trips', item: 'Copy trips from another day…' },
   'trips.exportCsv': { menu: 'Trip actions', within: 'trips', item: 'Export trips CSV' },
   'trips.toggleHeadways': { menu: 'View', within: 'trips', item: 'Show headways', role: 'menuitemcheckbox' },
