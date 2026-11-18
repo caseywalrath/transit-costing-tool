@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
 import { duplicateScenario, projectSnapshotWithScenario, snapshotForScenario } from '../domain/project';
-import type { Block, BlockActivity, ProjectSnapshot } from '../domain/types';
+import type { Block, BlockActivity, ProjectSnapshot, RuntimeProfile, Trip } from '../domain/types';
+import { runtimeInputsSignature } from '../domain/runtime';
 import { goldenJson, goldenRaw } from '../testSupport/goldenBackup';
 import { exportProjectJson, importProjectJson, cloneProjectSnapshot, parseProjectBackupWithReport } from './backup';
 
@@ -135,7 +136,7 @@ describe('backup', () => {
       generationSets: [], trips: [], blocks: [],
     };
     const exported = JSON.parse(exportProjectJson(source));
-    expect(exported.exportSchemaVersion).toBe(14);
+    expect(exported.exportSchemaVersion).toBe(15);
     expect(exported.costingAssumptions).toEqual(source.costingAssumptions);
     expect(importProjectJson(JSON.stringify(exported)).costingAssumptions).toEqual(source.costingAssumptions);
 
@@ -163,7 +164,7 @@ describe('backup', () => {
 
     it('round trips every factor in a version 7 file', () => {
       const payload = exportProjectJson(sourceWith(factors));
-      expect(JSON.parse(payload).exportSchemaVersion).toBe(14);
+      expect(JSON.parse(payload).exportSchemaVersion).toBe(15);
       expect(importProjectJson(payload).costingAssumptions?.[0].estimateFactors).toEqual(factors);
     });
 
@@ -266,7 +267,7 @@ describe('backup', () => {
 
       it('round trips the entries in a version 12 file, next to the shared factors', () => {
         const payload = exportProjectJson(sourceWithRoutes(routeEntries));
-        expect(JSON.parse(payload).exportSchemaVersion).toBe(14);
+        expect(JSON.parse(payload).exportSchemaVersion).toBe(15);
         const restored = importProjectJson(payload);
         expect(restored.costingAssumptions?.[0].routeEstimateFactors).toEqual(routeEntries);
         expect(restored.costingAssumptions?.[0].estimateFactors).toEqual(factors);
@@ -411,6 +412,49 @@ describe('backup import repairs Scenario copies made before duplication remapped
   });
 });
 
+describe('runtime inputs signature in backups (schema 15, FX7)', () => {
+  const profile: RuntimeProfile = { ...metadata(), id: 'rp', scenarioId: 's', routeId: 'r', patternId: 'pat', name: 'All day', calculationMethod: 'segmentStart', calculationRevision: 2, bands: [{ id: 'rb', label: 'All day', sequence: 0, startTime: 0, endTime: 100, segmentRuntimeSeconds: [60] }] };
+  const signature = runtimeInputsSignature(profile);
+  const trip = (id: string, revision: number, extra: { runtimeInputsSignature?: string } = {}): Trip => ({
+    id, scenarioId: 's', routeId: 'r', serviceDayId: 'd', patternId: 'pat',
+    stopTimes: [{ patternPointId: 'pa', sequence: 0, time: 10 }, { patternPointId: 'pb', sequence: 1, time: 70 }],
+    provenance: { kind: 'generated', manuallyChangedFields: [], runtimeProfileId: 'rp', runtimeCalculationRevision: revision, calculationSource: { runtimeProfileId: 'rp', runtimeCalculationRevision: revision, ...extra } },
+    ...metadata(),
+  });
+  const snapshot = (trips: Trip[]): ProjectSnapshot => ({
+    project: { id: 'p', name: 'Demo', distanceUnit: 'miles', currencyCode: 'USD', ...metadata() },
+    scenarios: [{ id: 's', projectId: 'p', name: 'Base', ...metadata() }],
+    serviceDays: [{ id: 'd', scenarioId: 's', kind: 'weekday', name: 'Weekday', annualServiceDays: 260, sequence: 0, ...metadata() }],
+    routes: [{ id: 'r', scenarioId: 's', name: 'Route', ...metadata() }],
+    nodes: [{ id: 'a', scenarioId: 's', routeId: 'r', name: 'A', kind: 'terminal', ...metadata() }, { id: 'b', scenarioId: 's', routeId: 'r', name: 'B', kind: 'terminal', ...metadata() }],
+    patterns: [{ id: 'pat', scenarioId: 's', routeId: 'r', name: 'A-B', points: [{ id: 'pa', nodeId: 'a', sequence: 0, cumulativeMiles: 0 }, { id: 'pb', nodeId: 'b', sequence: 1, cumulativeMiles: 1 }], ...metadata() }],
+    runtimeProfiles: [profile], runtimeAssignments: [{ id: 'ra', scenarioId: 's', patternId: 'pat', serviceDayId: 'd', runtimeProfileId: 'rp', ...metadata() }],
+    generationSets: [], trips, blocks: [],
+  });
+
+  it('writes the signature of a Trip in a version 15 file and keeps it through export, import, and export', () => {
+    const once = exportProjectJson(snapshot([trip('current', 2, { runtimeInputsSignature: signature }), trip('older', 1)]));
+    expect(JSON.parse(once).exportSchemaVersion).toBe(15);
+    const again = exportProjectJson(importProjectJson(once));
+    expect(JSON.parse(again).exportSchemaVersion).toBe(15);
+    expect(importProjectJson(again).trips.find((item) => item.id === 'current')?.provenance.calculationSource?.runtimeInputsSignature).toBe(signature);
+  });
+
+  it('adds the signature to a version 14 Trip that is current by revision, and leaves an older one as it was', () => {
+    const file = JSON.parse(exportProjectJson(snapshot([trip('current', 2), trip('older', 1)])));
+    file.exportSchemaVersion = 14;
+    const imported = importProjectJson(JSON.stringify(file));
+    expect(imported.trips.find((item) => item.id === 'current')?.provenance.calculationSource).toEqual({ runtimeProfileId: 'rp', runtimeCalculationRevision: 2, runtimeInputsSignature: signature });
+    expect(imported.trips.find((item) => item.id === 'older')?.provenance.calculationSource).toEqual({ runtimeProfileId: 'rp', runtimeCalculationRevision: 1 });
+  });
+
+  it('refuses a version 15 Trip whose runtime inputs signature is not a non-empty string', () => {
+    const file = JSON.parse(exportProjectJson(snapshot([trip('current', 2)])));
+    file.trips[0].provenance.calculationSource.runtimeInputsSignature = 7;
+    expect(() => importProjectJson(JSON.stringify(file))).toThrow('Invalid project backup: trips[0] has an invalid runtime inputs signature');
+  });
+});
+
 describe('automatic blocking record in backups (schema 8 and 9, Decisions 0055 and 0056)', () => {
   const fileWithRecord = (version: number, patch: (record: any) => void = () => undefined) => {
     const file = goldenRaw();
@@ -435,7 +479,7 @@ describe('automatic blocking record in backups (schema 8 and 9, Decisions 0055 a
   it('round trips the record, including maxVehicles, in a version 9 file (written as version 9)', () => {
     const file = fileWithRecord(9, (record) => { record.rules.maxVehicles = 12; });
     const exported = JSON.parse(exportProjectJson(importProjectJson(JSON.stringify(file))));
-    expect(exported.exportSchemaVersion).toBe(14);
+    expect(exported.exportSchemaVersion).toBe(15);
     expect(exported.blockingScenarios[0].autoBlocking).toEqual(file.blockingScenarios[0].autoBlocking);
     expect(exported.blockingScenarios[0].autoBlocking.rules.maxVehicles).toBe(12);
   });
@@ -501,7 +545,7 @@ describe('automatic blocking record in backups (schema 8 and 9, Decisions 0055 a
     it('round trips a stored abbreviation, writes it at schema version 10, and omits it when absent', () => {
       const snapshot = snapshotWith(days);
       const exported = JSON.parse(exportProjectJson(snapshot));
-      expect(exported.exportSchemaVersion).toBe(14);
+      expect(exported.exportSchemaVersion).toBe(15);
       expect(exported.serviceDays[0].abbreviation).toBe('WK');
       expect(exported.serviceDays[1]).not.toHaveProperty('abbreviation');
       expect(importProjectJson(JSON.stringify(exported)).serviceDays).toEqual(snapshot.serviceDays);

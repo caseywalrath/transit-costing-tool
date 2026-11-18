@@ -5,6 +5,7 @@ import { TripGenerationService } from './tripGenerationService';
 import type { TripGenerationRepository } from './ports';
 import { InMemoryRouteDefinitionRepository } from '../persistence/inMemoryRepository';
 import { rebalanceRuntimeProfile, rebalanceTripForPattern } from '../domain/safeRouteEditing';
+import { runtimeInputsSignature, tripCalculationSource } from '../domain/runtime';
 
 class FakeTripRepository implements TripGenerationRepository {
   sets = new Map<string, TripGenerationSet>(); trips = new Map<string, Trip>(); blocks = new Map<string, Block>();
@@ -79,6 +80,13 @@ describe('Trip generation validates the Trip profile inside the write', () => {
     await service.generateTrips({ ...request, tripProfileId: 'trip-profile' });
     expect(await repository.listTrips('weekday')).toHaveLength(3);
   });
+
+  it('records the runtime inputs signature of the profile on a Trip it adds', async () => {
+    const { repository, service } = await setup();
+    await service.addTrip({ scenarioId: 's', routeId: 'r', serviceDayId: 'weekday', patternId: 'p', directionId: 'outbound', firstTrip: 3 * 3600, tripProfileId: 'trip-profile' });
+    const [added] = await repository.listTrips('weekday');
+    expect(added.provenance.calculationSource).toEqual({ runtimeProfileId: 'profile', runtimeCalculationRevision: 0, runtimeInputsSignature: runtimeInputsSignature(storedProfile) });
+  });
 });
 
 describe('stale-source checks on Pattern changes and Trips CSV imports, and the stale Trip query', () => {
@@ -116,7 +124,7 @@ describe('stale-source checks on Pattern changes and Trips CSV imports, and the 
       const changed = await service.changeTripPattern(await service.previewTripPatternChange('out-1', 'outbound2', 'outbound'));
       expect(changed.patternId).toBe('outbound2');
       expect((await repository.getTrip('out-1'))?.patternId).toBe('outbound2');
-      expect(changed.provenance.calculationSource).toEqual({ runtimeProfileId: 'outbound2-profile', runtimeCalculationRevision: 7 });
+      expect(changed.provenance.calculationSource).toEqual({ runtimeProfileId: 'outbound2-profile', runtimeCalculationRevision: 7, runtimeInputsSignature: runtimeInputsSignature(profile('outbound2-profile', 'outbound2', 7)) });
     });
 
     it('rejects a review after the Trip was shifted, and keeps the shift', async () => {
@@ -162,57 +170,6 @@ describe('stale-source checks on Pattern changes and Trips CSV imports, and the 
     });
   });
 
-  describe('undo of a pattern change (Decision 0070)', () => {
-    it('restores a changed Trip with its Pattern, stop times and provenance after one undo', async () => {
-      const { repository, service } = await setup();
-      const original = (await repository.getTrip('out-1'))!;
-      await service.changeTripPattern(await service.previewTripPatternChange('out-1', 'outbound2', 'outbound'));
-      expect(await service.getLastTripRegenerationUndo()).toMatchObject({ kind: 'patternChange', afterTrips: [{ id: 'out-1', patternId: 'outbound2' }] });
-      await service.undoLastTripRegeneration();
-      const restored = (await repository.getTrip('out-1'))!;
-      expect(restored.patternId).toBe(original.patternId);
-      expect(restored.stopTimes).toEqual(original.stopTimes);
-      expect(restored.provenance).toEqual(original.provenance);
-      expect(await service.getLastTripRegenerationUndo()).toBeUndefined();
-    });
-
-    it('restores both Trips after a batch change of two Trips', async () => {
-      const { repository, service } = await setup({ trips: [trip('out-1', outbound), trip('out-2', outbound, 2000), trip('in-1', inbound, 1200)] });
-      const originals = [(await repository.getTrip('out-1'))!, (await repository.getTrip('out-2'))!];
-      await service.applyBatchPatternChange(await service.previewBatchPatternChange({ tripIds: ['out-1', 'out-2'], targetPatternId: 'outbound2' }));
-      expect(await service.getLastTripRegenerationUndo()).toMatchObject({ kind: 'patternChange', beforeTrips: [{ id: 'out-1' }, { id: 'out-2' }], afterTrips: [{ id: 'out-1', patternId: 'outbound2' }, { id: 'out-2', patternId: 'outbound2' }] });
-      await service.undoLastTripRegeneration();
-      expect(await repository.getTrip('out-1')).toEqual(originals[0]);
-      expect(await repository.getTrip('out-2')).toEqual(originals[1]);
-    });
-
-    it('makes the undo unavailable after a later edit of a changed Trip, as for a regeneration', async () => {
-      const { repository, service } = await setup();
-      await service.changeTripPattern(await service.previewTripPatternChange('out-1', 'outbound2', 'outbound'));
-      const changed = (await repository.getTrip('out-1'))!;
-      await repository.saveTrips([{ ...changed, publicLabel: 'edited later' }]);
-      expect(await service.getLastTripRegenerationUndo()).toBeUndefined();
-      await expect(service.undoLastTripRegeneration()).rejects.toThrow('There is no regeneration to undo.');
-    });
-
-    it('replaces a saved regeneration undo with the pattern-change undo', async () => {
-      const { repository, service } = await setup();
-      const regenerated = { ...(await repository.getTrip('in-1'))!, publicLabel: 'regenerated' };
-      await repository.saveRegeneratedTripsWithUndo([(await repository.getTrip('in-1'))!], [regenerated], { id: 'last', scenarioId: 's', tripProfileId: 'trip-profile', createdAt: '2026-09-15T00:00:00.000Z', beforeTrips: [(await repository.getTrip('in-1'))!], afterTrips: [regenerated] });
-      await service.changeTripPattern(await service.previewTripPatternChange('out-1', 'outbound2', 'outbound'));
-      expect(await service.getLastTripRegenerationUndo()).toMatchObject({ kind: 'patternChange', afterTrips: [{ id: 'out-1' }] });
-    });
-
-    it('restores a snapshot saved without a kind as a regeneration', async () => {
-      const { repository, service } = await setup();
-      const before = (await repository.getTrip('out-1'))!;
-      const after = { ...before, publicLabel: 'regenerated' };
-      await repository.saveRegeneratedTripsWithUndo([before], [after], { id: 'last', scenarioId: 's', tripProfileId: 'trip-profile', createdAt: '2026-09-15T00:00:00.000Z', beforeTrips: [before], afterTrips: [after] });
-      expect(await service.getLastTripRegenerationUndo()).not.toHaveProperty('kind');
-      expect(await service.undoLastTripRegeneration()).toEqual([before]);
-      expect(await repository.getTrip('out-1')).toEqual(before);
-    });
-  });
 
   describe('Trips CSV import (I-022, 4-004; I-028, 4-019)', () => {
     const context = { scenarioId: 's', routeId: 'r', serviceDayId: 'weekday', directionId: 'outbound', tripProfileId: 'trip-profile' };
@@ -289,6 +246,15 @@ describe('stale-source checks on Pattern changes and Trips CSV imports, and the 
       const { repository, service } = await setup({ profiles, trips: [legacyTrip('legacy', outbound, 1000, 1600)] });
       repository.runtimeProfiles.set('outbound-profile', { ...profiles[0], bands: undefined as never });
       await expect(service.listStaleTrips('weekday')).rejects.toThrow(TypeError);
+    });
+
+    it('a Trip that records a signature is current when its profile\'s revision moved but its inputs are as recorded, and stale when they differ', async () => {
+      const provenance = { kind: 'manual' as const, creationMethod: 'manual' as const, manuallyChangedFields: [], runtimeProfileId: 'outbound-profile', runtimeCalculationRevision: 4, calculationSource: tripCalculationSource(profile('outbound-profile', 'outbound', 4)) };
+      const { repository, service } = await setup({ trips: [trip('sig-1', outbound, 1000, { provenance }), trip('sig-2', outbound, 2000, { provenance })] });
+      repository.runtimeProfiles.set('outbound-profile', profile('outbound-profile', 'outbound', 6));
+      expect(await service.listStaleTrips('weekday')).toEqual([]);
+      repository.runtimeProfiles.set('outbound-profile', profile('outbound-profile', 'outbound', 7, { bands: [{ id: 'outbound-profile-band', label: 'All day', sequence: 0, startTime: 0, endTime: 86400, segmentRuntimeSeconds: [660] }] }));
+      expect((await service.listStaleTrips('weekday')).map((item) => item.id).sort()).toEqual(['sig-1', 'sig-2']);
     });
 
     it('reports a Trip that a route edit could not carry to the new revision', async () => {
@@ -515,7 +481,7 @@ describe('anchored Change pattern (Decision 0067)', () => {
     expect((await repository.getTrip('t1'))?.stopTimes.map((point) => point.time)).toEqual([25100, 26000, 26300]);
   });
 
-  it('writes only the Trips that are not skipped, and the undo keeps only them', async () => {
+  it('writes only the Trips that are not skipped', async () => {
     // t2's departure gives B at 29200 on the ambiguous Pattern, so it has a finding and cannot be written unless skipped.
     const { repository, service } = await setup({ trips: [trip('t1', full, [25200, 25800, 26700, 27000]), trip('t2', full, [28600, 29200, 30100, 30400])] });
     const unskipped = await service.previewBatchPatternChange({ tripIds: ['t1', 't2'], targetPatternId: 'amb', anchorNodeId: 'B' });
@@ -526,7 +492,6 @@ describe('anchored Change pattern (Decision 0067)', () => {
     expect(preview.skippedTripIds).toEqual(['t2']);
     const skippedBefore = await repository.getTrip('t2');
     await service.applyBatchPatternChange(preview);
-    expect(await service.getLastTripRegenerationUndo()).toMatchObject({ kind: 'patternChange', beforeTrips: [{ id: 't1' }], afterTrips: [{ id: 't1', patternId: 'amb' }] });
     expect(await repository.getTrip('t2')).toEqual(skippedBefore);
     expect((await repository.getTrip('t1'))?.patternId).toBe('amb');
   });
@@ -536,6 +501,45 @@ describe('anchored Change pattern (Decision 0067)', () => {
     const preview = await service.previewBatchPatternChange({ tripIds: ['t1'], targetPatternId: 'short', anchorNodeId: 'C', skipTripIds: ['t1'] });
     await expect(service.applyBatchPatternChange(preview)).rejects.toThrow('No trips are ready to change.');
     expect((await repository.getTrip('t1'))?.patternId).toBe('full');
-    expect(await service.getLastTripRegenerationUndo()).toBeUndefined();
+  });
+});
+
+describe('describeTripBlockImpact', () => {
+  const stamp = metadata('2026-09-14T00:00:00.000Z');
+  const deadhead = (id: string) => ({ id, type: 'deadhead' as const, sequence: 1, fromNodeId: 'n1', toNodeId: 'n0', minutesAfterPreviousTrip: 5 });
+  const revenue = (id: string, tripId: string) => ({ id, type: 'revenueTrip' as const, sequence: 0, tripId });
+  async function setup() {
+    const repository = new InMemoryRouteDefinitionRepository();
+    await repository.saveProjectSnapshot({
+      project: { id: 'project', name: 'Project', distanceUnit: 'miles', currencyCode: 'USD', ...stamp },
+      scenarios: [{ id: 's', projectId: 'project', name: 'Scenario', ...stamp }],
+      serviceDays: [{ id: 'weekday', scenarioId: 's', kind: 'weekday', name: 'Weekday', annualServiceDays: 260, sequence: 0, ...stamp }],
+      routes: [], nodes: [], patterns: [], runtimeProfiles: [], runtimeAssignments: [],
+      tripProfiles: [{ id: 'tp1', scenarioId: 's', name: 'Default', ...stamp }],
+      blockingScenarios: [
+        { id: 'bsZ', scenarioId: 's', tripProfileId: 'tp1', name: 'Zulu', ...stamp },
+        { id: 'bsA', scenarioId: 's', tripProfileId: 'tp1', name: 'Alpha', ...stamp },
+      ],
+      generationSets: [], trips: [], blocks: [],
+    });
+    repository.blocks.set('b1', { ...stamp, id: 'b1', scenarioId: 's', serviceDayId: 'weekday', blockingScenarioId: 'bsZ', label: '1', activities: [revenue('a1', 't1'), deadhead('d1'), revenue('a2', 't2')] } as never);
+    repository.blocks.set('b2', { ...stamp, id: 'b2', scenarioId: 's', serviceDayId: 'weekday', blockingScenarioId: 'bsA', label: '2', activities: [revenue('a3', 't1'), deadhead('d2'), revenue('a4', 't3')] } as never);
+    return new TripGenerationService(repository, () => '2026-09-15T00:00:00.000Z');
+  }
+
+  it('returns the deadheads removed and one entry per Blocking scenario, sorted by name', async () => {
+    const service = await setup();
+    expect(await service.describeTripBlockImpact('weekday', ['t1'])).toEqual({
+      removedDeadheadCount: 2,
+      blockingScenarios: [
+        { blockingScenarioId: 'bsA', name: 'Alpha', blockCount: 1 },
+        { blockingScenarioId: 'bsZ', name: 'Zulu', blockCount: 1 },
+      ],
+    });
+  });
+
+  it('returns zero and an empty list when no Trips are removed', async () => {
+    const service = await setup();
+    expect(await service.describeTripBlockImpact('weekday', [])).toEqual({ removedDeadheadCount: 0, blockingScenarios: [] });
   });
 });

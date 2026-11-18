@@ -12,7 +12,7 @@ describe('Blocking scenario dialogs', () => {
   });
 
   it('states the Blocks and activities that a scenario deletion removes', () => {
-    expect(blockingScenarioDeleteText('Default', { blockCount: 1, activityCount: 1 })).toBe('Delete “Default” with 1 block and 1 activity across every service day? This cannot be undone.');
-    expect(blockingScenarioDeleteText('Peak', { blockCount: 3, activityCount: 0 })).toBe('Delete “Peak” with 3 blocks and 0 activities across every service day? This cannot be undone.');
+    expect(blockingScenarioDeleteText('Default', { blockCount: 1, activityCount: 1 })).toBe('Delete “Default” with 1 block and 1 activity across every service day?');
+    expect(blockingScenarioDeleteText('Peak', { blockCount: 3, activityCount: 0 })).toBe('Delete “Peak” with 3 blocks and 0 activities across every service day?');
   });
 });

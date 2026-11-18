@@ -76,6 +76,8 @@ export interface RouteDeletionImpact {
   plannedFrequencyCount: number;
   /** Stops of the Route's stop set deleted with the Route (Decision 0079). */
   routeStopCount: number;
+  /** Decision 0081 (inventory gap G7): Route estimate factor entries deleted with the Route (Decision 0077). */
+  routeEstimateFactorCount: number;
 }
 
 export interface NodeDeletionImpact {
@@ -406,6 +408,19 @@ export class RouteDefinitionService {
     private readonly saveStatus: SaveStatusPublisher = new SaveStatusPublisher(now),
     private readonly protection?: LocalDataProtectionService,
   ) {}
+
+  /** Decision 0081: the Scenario and Route a reviewed edit belongs to, read without taking the preview. Undefined for an unknown token. */
+  routeEditPreviewScope(previewToken: string): { scenarioId: string; routeId: string; kind: 'pattern' | 'nodes'; patternId?: string } | undefined {
+    const stored = this.routeEditPreviews.get(previewToken);
+    return stored ? { scenarioId: stored.scenarioId, routeId: stored.routeId, kind: stored.kind, ...(stored.proposedPattern ? { patternId: stored.proposedPattern.id } : {}) } : undefined;
+  }
+
+  /** Decision 0081: a restore rewrote stored records, so the in-memory copy undos no longer describe them. */
+  forgetCopyUndos(): void {
+    this.segmentRuntimeUndo = undefined;
+    this.segmentDistanceUndo = undefined;
+    this.stopCopyUndo = undefined;
+  }
 
   getSaveStatus(): SaveStatus { return this.saveStatus.getSaveStatus(); }
   subscribeToSaveStatus(listener: (status: SaveStatus) => void): () => void { return this.saveStatus.subscribeToSaveStatus(listener); }
@@ -1405,6 +1420,7 @@ export class RouteDefinitionService {
       removedNonRevenueActivityCount: removedConnectionActivityCount + nonRevenueAdjusted.removedActivityCount,
       plannedFrequencyCount: removed.plannedFrequencies.length,
       routeStopCount: removed.routeStopSets.reduce((count, set) => count + set.stops.length, 0),
+      routeEstimateFactorCount: (records.costingAssumptions?.routeEstimateFactors ?? []).filter((entry) => entry.routeId === routeId).length,
     };
     const next: ScenarioRecords = {
       ...records,
@@ -1576,9 +1592,10 @@ export class RouteDefinitionService {
     const profiles = records.runtimeProfiles.map((profile) => structuralPatternIds.includes(profile.patternId)
       ? rebalanceRuntimeProfile(profile, savedById.get(profile.patternId)!, nextById.get(profile.patternId)!, this.now())
       : profile);
+    const previousProfileById = new Map(records.runtimeProfiles.map((profile) => [profile.id, profile]));
     const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
     const trips = records.trips.map((trip) => structuralPatternIds.includes(trip.patternId)
-      ? rebalanceTripForPattern(trip, savedById.get(trip.patternId)!, nextById.get(trip.patternId)!, profileById, this.now())
+      ? rebalanceTripForPattern(trip, savedById.get(trip.patternId)!, nextById.get(trip.patternId)!, profileById, this.now(), previousProfileById)
       : trip);
     return { runtimeProfiles: profiles, trips };
   }

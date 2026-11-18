@@ -119,9 +119,6 @@ export interface TripGenerationRepository {
   /** Added by the authoritative trip workflow; optional only for historical test doubles. */
   insertTripsAtomically?(trips: Trip[]): Promise<void>;
   saveTripChangesAtomically?(trips: Trip[], blocks?: Block[]): Promise<void>;
-  saveRegeneratedTripsWithUndo?(beforeTrips: Trip[], afterTrips: Trip[], snapshot: import('../domain/types').TripRegenerationUndo): Promise<void>;
-  getLastTripRegenerationUndo?(): Promise<import('../domain/types').TripRegenerationUndo | undefined>;
-  restoreLastTripRegenerationUndo?(): Promise<Trip[]>;
   /** Atomically removes trips and updates blocks from which their activities were removed. */
   deleteTripsAtomically?(tripIds: string[], blocks?: Block[]): Promise<void>;
   listTripProfiles?(scenarioId: string): Promise<import('../domain/types').TripProfile[]>;
@@ -178,6 +175,8 @@ export interface AutoBlockingPreview {
   ruleFindings: import('../domain/types').ValidationFinding[];
   nameFindings: import('../domain/types').ValidationFinding[];
   check?: import('../domain/autoBlocking').AutoBlockingCheck;
+  /** Decision 0081: with `replaceBlockingScenarioId`, the Blocks the rebuild replaces on each service day. */
+  replacedBlockCountByServiceDayId?: Record<string, number>;
 }
 export interface AutoBlockingStatus { record: import('../domain/autoBlocking').AutoBlockingRecord; editedBlockCount: number; blockCountChanged: boolean; summary: string }
 
@@ -196,6 +195,10 @@ export interface BlockingCommands {
   deleteBlockingScenario(blockingScenarioId: string, sourceSignature: string): Promise<BlockingScenarioDeletionImpact>;
   createBlock(blockingScenarioId: string, serviceDayId: string, label: string, sourceSignature: string): Promise<BlockingBlock>;
   updateBlock(block: BlockingBlock, sourceSignature: string): Promise<BlockingBlock>;
+  /** Decision 0081: removes one pull-out or pull-in. */
+  removeBoundaryActivity(blockingScenarioId: string, blockId: string, activityId: string, sourceSignature: string): Promise<BlockingBlock>;
+  /** Decision 0081: removes deadheads from one Block. */
+  removeDeadheads(blockingScenarioId: string, blockId: string, activityIds: string[], sourceSignature: string): Promise<BlockingBlock>;
   deleteBlock(blockingScenarioId: string, blockId: string, sourceSignature: string): Promise<void>;
   /** Deletes several Blocks in one atomic write (Decision 0053). `sourceSignature` comes from `previewDeleteBlocks`. */
   deleteBlocks(blockingScenarioId: string, blockIds: string[], sourceSignature: string): Promise<void>;
@@ -354,4 +357,36 @@ export interface CostingQueries {
     basis: CostBasis;
     assumptions: CostingAssumptionsInput;
   }): Promise<Array<{ suffix: string; contents: string }> | undefined>;
+}
+
+/** Decision 0081. What a covered command records. `keep` can decline a change the command made (for example a pattern save that changed no service). */
+export interface ScenarioChangeRequest {
+  kind: import('../domain/types').RestorePointKind;
+  scenarioId: string;
+  refs?: import('../domain/types').RestorePointRefs;
+  extraNames?: Partial<import('../domain/types').RestorePointNames>;
+  quantity?: number;
+  detail?: string;
+  restoredKind?: import('../domain/types').RestorePointKind;
+  keep?: (change: import('../domain/types').RecordChange) => boolean;
+  /**
+   * FX8. Read the records before and after the command, and store the restore point once it has succeeded, instead of holding one
+   * transaction around the command. For commands with long computations between their reads (a 480-trip regeneration), which IndexedDB
+   * would otherwise commit early. A restore point still never exists without its change.
+   */
+  separate?: boolean;
+}
+/** Decision 0081. Runs a write and stores its restore point in the same transaction. */
+export interface RestorePointRecorder {
+  recordScenarioChange<T>(request: ScenarioChangeRequest, write: () => Promise<T>): Promise<T>;
+  recordProjectDeletion<T>(projectId: string, write: () => Promise<T>): Promise<T>;
+}
+/** Decision 0081. The stored restore points. Listing never loads payloads. */
+export interface RestorePointStore {
+  listRestorePoints(): Promise<import('../domain/types').RestorePointSummary[]>;
+  getRestorePointPayload(id: string): Promise<import('../domain/types').RestorePointPayload | undefined>;
+  deleteRestorePoint(id: string): Promise<void>;
+  keepNewest(count: number): Promise<void>;
+  /** Called after a restore point is stored and its transaction has committed. */
+  subscribeToRestorePoints(listener: (point: import('../domain/types').RestorePointSummary) => void): () => void;
 }

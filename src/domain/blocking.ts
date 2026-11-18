@@ -337,6 +337,20 @@ export function moveRevenueTripGroup(block: BlockingBlock, activityId: EntityId,
   [groups[groupIndex], groups[target]] = [groups[target], groups[groupIndex]];
   return [...activities.slice(0, starts[0]), ...groups.flat(), ...activities.slice(centralEnd)].map((activity) => activity.id);
 }
+/** Decision 0081 (inventory gap G11): how many consecutive Trip pairs of `block` run from `fromNodeId` to `toNodeId`. The matching of `applyDeadheadToMatchingConnections`; reads only. */
+export function countMatchingConnections(block: BlockingBlock, fromNodeId: EntityId, toNodeId: EntityId, tripsValue: Trip[] | Map<EntityId, Trip>, patternsValue: RoutePattern[] | Map<EntityId, RoutePattern> | undefined): number {
+  const trips = tripMap(tripsValue); const patterns = patternMap(patternsValue); const activities = sortedActivities(block.activities);
+  const revenueIndices = activities.map((activity, index) => activity.type === 'revenueTrip' ? index : -1).filter((index) => index >= 0);
+  let matched = 0;
+  for (let position = 0; position < revenueIndices.length - 1; position += 1) {
+    const previous = activities[revenueIndices[position]]; const next = activities[revenueIndices[position + 1]];
+    if (previous.type !== 'revenueTrip' || next.type !== 'revenueTrip') continue;
+    const previousTrip = trips.get(previous.tripId); const nextTrip = trips.get(next.tripId);
+    if (previousTrip && nextTrip && patternEndNode(previousTrip, patterns) === fromNodeId && patternStartNode(nextTrip, patterns) === toNodeId) matched += 1;
+  }
+  return matched;
+}
+
 /**
  * Gives every connection between two consecutive revenue Trips that ends at the deadhead's From Node and starts at its To Node a
  * deadhead with the same values. A deadhead already on such a connection keeps its id and takes the new values. The count is the

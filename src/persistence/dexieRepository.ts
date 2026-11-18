@@ -1,4 +1,4 @@
-import type { Block, BlockingScenario, CostingAssumptions, PlannedFrequency, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RouteStopSet, RuntimeAssignment, RuntimeProfile, Scenario, Trip, TripGenerationSet, TripProfile, TripRegenerationUndo } from '../domain/types';
+import type { Block, BlockingScenario, CostingAssumptions, PlannedFrequency, Project, ProjectSnapshot, RouteDefinitionAggregate, RouteDirection, RouteStopSet, RuntimeAssignment, RuntimeProfile, Scenario, Trip, TripGenerationSet, TripProfile } from '../domain/types';
 import type { ScenarioRecords } from '../domain/project';
 import type { CostingAssumptionsRepository, PlannedFrequencyRepository, RouteDefinitionRepository } from '../application/ports';
 import { assertPlannedFrequencies } from './plannedFrequencyPersistence';
@@ -21,11 +21,9 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
   async getProject(id: string): Promise<Project | undefined> { return this.db.projects.get(id); }
   async saveProject(project: Project): Promise<void> { await this.db.projects.put(project); }
   async deleteProject(projectId: string): Promise<void> {
-    await this.db.transaction('rw', [this.db.projects, this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.costingAssumptions, this.db.generationSets, this.db.trips, this.db.tripRegenerationUndo, this.db.blocks, this.db.costPlans, this.db.plannedFrequencies, this.db.routeStopSets], async () => {
+    await this.db.transaction('rw', [this.db.projects, this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.costingAssumptions, this.db.generationSets, this.db.trips, this.db.blocks, this.db.costPlans, this.db.plannedFrequencies, this.db.routeStopSets], async () => {
       if (!await this.db.projects.get(projectId)) throw new Error('Project not found.');
       const scenarioIds = (await this.db.scenarios.where('projectId').equals(projectId).primaryKeys()) as string[];
-      const undo = await this.db.tripRegenerationUndo.get('last');
-      if (undo && scenarioIds.includes(undo.scenarioId)) await this.db.tripRegenerationUndo.delete('last');
       if (scenarioIds.length) {
         await this.db.scenarios.bulkDelete(scenarioIds);
         await this.db.serviceDays.where('scenarioId').anyOf(scenarioIds).delete();
@@ -108,7 +106,7 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
   }
 
   private scenarioRecordTables() {
-    return [this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.costingAssumptions, this.db.generationSets, this.db.trips, this.db.tripRegenerationUndo, this.db.blocks, this.db.plannedFrequencies, this.db.routeStopSets];
+    return [this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.costingAssumptions, this.db.generationSets, this.db.trips, this.db.blocks, this.db.plannedFrequencies, this.db.routeStopSets];
   }
 
   async updateScenarioRecords(scenarioId: string, change: (current: ScenarioRecords) => ScenarioRecords): Promise<ScenarioRecords> {
@@ -162,7 +160,6 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
       const oldGenerationSets = await this.db.generationSets.where('scenarioId').equals(records.scenario.id).toArray();
       const oldTrips = await this.db.trips.where('scenarioId').equals(records.scenario.id).toArray();
       const oldBlocks = await this.db.blocks.where('scenarioId').equals(records.scenario.id).toArray();
-      await this.invalidateUndoWhenScenarioTripsChange(records.scenario.id, records.trips);
       await this.db.patterns.bulkDelete(oldPatterns.filter((pattern) => !patternIds.has(pattern.id)).map((pattern) => pattern.id));
       await this.db.directions.bulkDelete(oldDirections.filter((direction) => !directionIds.has(direction.id)).map((direction) => direction.id));
       await this.db.nodes.bulkDelete(oldNodes.filter((node) => !nodeIds.has(node.id)).map((node) => node.id));
@@ -277,14 +274,8 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
     assertPlannedFrequencies(plannedFrequencies, { scenarioIds: new Set(snapshot.scenarios.map((scenario) => scenario.id)), routes: snapshot.routes, serviceDays: snapshot.serviceDays, directions: snapshot.directions ?? [], nodes: snapshot.nodes });
     const routeStopSets = pruneRouteStopSets(snapshot.routeStopSets ?? [], { routes: snapshot.routes, patterns: snapshot.patterns });
     assertRouteStopSets(routeStopSets, { scenarioIds: new Set(snapshot.scenarios.map((scenario) => scenario.id)), routes: snapshot.routes, patterns: snapshot.patterns });
-    await this.db.transaction('rw', [this.db.projects, this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.costingAssumptions, this.db.generationSets, this.db.trips, this.db.tripRegenerationUndo, this.db.blocks, this.db.plannedFrequencies, this.db.routeStopSets], async () => {
+    await this.db.transaction('rw', [this.db.projects, this.db.scenarios, this.db.serviceDays, this.db.routes, this.db.nodes, this.db.patterns, this.db.directions, this.db.runtimeProfiles, this.db.runtimeAssignments, this.db.tripProfiles, this.db.blockingScenarios, this.db.costingAssumptions, this.db.generationSets, this.db.trips, this.db.blocks, this.db.plannedFrequencies, this.db.routeStopSets], async () => {
       const currentScenarios = await this.db.scenarios.where('projectId').equals(snapshot.project.id).toArray();
-      const undo = await this.db.tripRegenerationUndo.get('last');
-      const undoScenarioInProject = undo && (currentScenarios.some((scenario) => scenario.id === undo.scenarioId) || snapshot.scenarios.some((scenario) => scenario.id === undo.scenarioId));
-      if (undo && undoScenarioInProject) {
-        if (!snapshot.scenarios.some((scenario) => scenario.id === undo.scenarioId)) await this.db.tripRegenerationUndo.delete('last');
-        else await this.invalidateUndoWhenScenarioTripsChange(undo.scenarioId, snapshot.trips);
-      }
       const currentScenarioIds = new Set(currentScenarios.map((scenario) => scenario.id));
       const currentRoutes = (await this.db.routes.toArray()).filter((route) => currentScenarioIds.has(route.scenarioId));
       const currentRouteIds = new Set(currentRoutes.map((route) => route.id));
@@ -434,7 +425,7 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
     });
   }
   async deleteTripProfile(profileId: string): Promise<void> {
-    await this.db.transaction('rw', [this.db.tripProfiles, this.db.blockingScenarios, this.db.trips, this.db.tripRegenerationUndo, this.db.blocks, this.db.costingAssumptions], async () => {
+    await this.db.transaction('rw', [this.db.tripProfiles, this.db.blockingScenarios, this.db.trips, this.db.blocks, this.db.costingAssumptions], async () => {
       // Decision 0062: the Profile's own estimate factors go with it.
       const profile = await this.db.tripProfiles.get(profileId);
       if (profile) {
@@ -445,7 +436,6 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
       const blockingScenarios = await this.db.blockingScenarios.where('tripProfileId').equals(profileId).toArray();
       const blockingScenarioIds = blockingScenarios.map((scenario) => scenario.id);
       const profileTrips = await this.db.trips.where('tripProfileId').equals(profileId).toArray();
-      await this.invalidateRegenerationUndo(profileTrips.map((trip) => trip.id));
       await this.db.tripProfiles.delete(profileId);
       if (blockingScenarioIds.length) await this.db.blockingScenarios.bulkDelete(blockingScenarioIds);
       await this.db.trips.bulkDelete(profileTrips.map((trip) => trip.id));
@@ -465,21 +455,9 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
     return generationSetId ? trips.filter((trip) => trip.provenance.generationSetId === generationSetId || trip.tripProfileId === generationSetId) : trips;
   }
   async getTrip(id: string): Promise<Trip | undefined> { return this.db.trips.get(id); }
-  private async invalidateRegenerationUndo(tripIds: string[]): Promise<void> {
-    if (!tripIds.length) return;
-    const snapshot = await this.db.tripRegenerationUndo.get('last');
-    if (snapshot && tripIds.some((id) => snapshot.afterTrips.some((trip) => trip.id === id))) await this.db.tripRegenerationUndo.delete('last');
-  }
-  private async invalidateUndoWhenScenarioTripsChange(scenarioId: string, nextTrips: Trip[]): Promise<void> {
-    const snapshot = await this.db.tripRegenerationUndo.get('last');
-    if (!snapshot || snapshot.scenarioId !== scenarioId) return;
-    const nextById = new Map(nextTrips.map((trip) => [trip.id, trip]));
-    if (snapshot.afterTrips.some((trip) => JSON.stringify(nextById.get(trip.id)) !== JSON.stringify(trip))) await this.db.tripRegenerationUndo.delete('last');
-  }
   async saveTrips(trips: Trip[]): Promise<void> {
-    await this.db.transaction('rw', [this.db.trips, this.db.tripRegenerationUndo], async () => {
+    await this.db.transaction('rw', [this.db.trips], async () => {
       await this.db.trips.bulkPut(trips);
-      await this.invalidateRegenerationUndo(trips.map((trip) => trip.id));
     });
   }
   /** Atomically append authoritative trips without replacing any existing trip. */
@@ -496,40 +474,14 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
   /** Atomically update authoritative trips and affected block records. */
   async saveTripChangesAtomically(trips: Trip[], blocks: Block[] = []): Promise<void> {
     if (blocks.length) assertTripProfileReferences([...(await this.db.trips.toArray()), ...trips], blocks);
-    await this.db.transaction('rw', [this.db.trips, this.db.blocks, this.db.tripRegenerationUndo], async () => { await this.db.trips.bulkPut(trips); if (blocks.length) await this.db.blocks.bulkPut(blocks); await this.invalidateRegenerationUndo(trips.map((trip) => trip.id)); });
+    await this.db.transaction('rw', [this.db.trips, this.db.blocks], async () => { await this.db.trips.bulkPut(trips); if (blocks.length) await this.db.blocks.bulkPut(blocks); });
   }
   /** Atomically delete trips and persist only blocks whose activities changed. */
   async deleteTripsAtomically(tripIds: string[], blocks: Block[] = []): Promise<void> {
-    await this.db.transaction('rw', [this.db.trips, this.db.blocks, this.db.tripRegenerationUndo], async () => { await this.db.trips.bulkDelete(tripIds); if (blocks.length) await this.db.blocks.bulkPut(blocks); await this.invalidateRegenerationUndo(tripIds); });
-  }
-  async saveRegeneratedTripsWithUndo(beforeTrips: Trip[], afterTrips: Trip[], snapshot: TripRegenerationUndo): Promise<void> {
-    await this.db.transaction('rw', [this.db.trips, this.db.tripRegenerationUndo], async () => {
-      const current = await Promise.all(beforeTrips.map((trip) => this.db.trips.get(trip.id)));
-      if (current.some((trip, index) => !trip || JSON.stringify(trip) !== JSON.stringify(beforeTrips[index]))) throw new Error('A selected Trip changed. Review regeneration again.');
-      await this.db.trips.bulkPut(afterTrips);
-      await this.db.tripRegenerationUndo.put(snapshot);
-    });
-  }
-  async getLastTripRegenerationUndo(): Promise<TripRegenerationUndo | undefined> { return this.db.tripRegenerationUndo.get('last'); }
-  async restoreLastTripRegenerationUndo(): Promise<Trip[]> {
-    const result = await this.db.transaction('rw', [this.db.trips, this.db.tripRegenerationUndo], async () => {
-      const snapshot = await this.db.tripRegenerationUndo.get('last');
-      if (!snapshot) throw new Error('There is no regeneration to undo.');
-      const currentTrips = await Promise.all(snapshot.afterTrips.map((trip) => this.db.trips.get(trip.id)));
-      if (currentTrips.some((trip, index) => !trip || JSON.stringify(trip) !== JSON.stringify(snapshot.afterTrips[index]))) {
-        await this.db.tripRegenerationUndo.delete('last');
-        return { stale: true as const, kind: snapshot.kind, trips: [] as Trip[] };
-      }
-      await this.db.trips.bulkPut(snapshot.beforeTrips);
-      await this.db.tripRegenerationUndo.delete('last');
-      return { stale: false as const, kind: snapshot.kind, trips: snapshot.beforeTrips };
-    });
-    // Decision 0070: the refusal names the kind of change that is no longer undoable. An absent kind is a regeneration.
-    if (result.stale) throw new Error(result.kind === 'patternChange' ? 'The changed Trips were edited again. The undo is no longer available.' : 'The regenerated Trips changed. The undo is no longer available.');
-    return result.trips;
+    await this.db.transaction('rw', [this.db.trips, this.db.blocks], async () => { await this.db.trips.bulkDelete(tripIds); if (blocks.length) await this.db.blocks.bulkPut(blocks); });
   }
   async replaceTripsForDayAtomically(preview: TripCopyPreview): Promise<void> {
-    await this.db.transaction('rw', [this.db.trips, this.db.blocks, this.db.tripRegenerationUndo], async () => {
+    await this.db.transaction('rw', [this.db.trips, this.db.blocks], async () => {
       const [trips, blocks] = await Promise.all([this.db.trips.toArray(), this.db.blocks.toArray()]);
       const copiedIds = new Set(preview.copiedTrips.map((trip) => trip.id));
       if ([...copiedIds].some((id) => trips.some((trip) => trip.id === id))) throw new Error('Trip copy generated a duplicate Trip identifier.');
@@ -537,7 +489,6 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
       const adjustedById = new Map(preview.adjustedBlocks.map((block) => [block.id, block]));
       const nextBlocks = blocks.map((block) => adjustedById.get(block.id) ?? block);
       assertTripProfileReferences(nextTrips, nextBlocks);
-      await this.invalidateRegenerationUndo(preview.removedTripIds);
       if (preview.removedTripIds.length) await this.db.trips.bulkDelete(preview.removedTripIds);
       if (preview.copiedTrips.length) await this.db.trips.bulkAdd(preview.copiedTrips);
       if (preview.adjustedBlocks.length) await this.db.blocks.bulkPut(preview.adjustedBlocks);
@@ -556,11 +507,10 @@ export class DexieRouteDefinitionRepository implements RouteDefinitionRepository
   /** Replace one generation set and related trips/blocks in one IndexedDB transaction. */
   async replaceGenerationSet(set: TripGenerationSet, trips: Trip[], blocks: Block[]): Promise<void> {
     if (blocks.length) assertTripProfileReferences([...(await this.db.trips.toArray()), ...trips], blocks);
-    await this.db.transaction('rw', [this.db.generationSets, this.db.trips, this.db.blocks, this.db.tripRegenerationUndo], async () => {
+    await this.db.transaction('rw', [this.db.generationSets, this.db.trips, this.db.blocks], async () => {
       const oldTrips = await this.db.trips.where('provenance.generationSetId').equals(set.id).toArray();
       const incomingTripIds = new Set(trips.map((trip) => trip.id));
       const changedTripIds = oldTrips.filter((trip) => !incomingTripIds.has(trip.id)).map((trip) => trip.id);
-      await this.invalidateRegenerationUndo([...changedTripIds, ...trips.map((trip) => trip.id)]);
       await this.db.trips.bulkDelete(changedTripIds);
       await this.db.generationSets.put(set);
       await this.db.trips.bulkPut(trips);

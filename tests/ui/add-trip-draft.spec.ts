@@ -13,7 +13,7 @@ const draftDialog = (page: Page) => page.getByRole('heading', { name: 'Discard n
 const draftDialogBox = (page: Page) => page.getByRole('dialog', { name: 'Discard new trip?' });
 const shiftDialogBox = (page: Page) => page.getByRole('dialog', { name: 'Discard staged shift?' });
 const shiftDialog = (page: Page) => page.getByRole('heading', { name: 'Discard staged shift?' });
-const profileMenuButton = (page: Page) => tripsSection(page).locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button');
+const profileMenuButton = (page: Page) => page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / });
 
 async function openDraft(page: Page, enter: 'pattern' | 'time' | 'nothing') {
   await runCommand(page, 'trips.add');

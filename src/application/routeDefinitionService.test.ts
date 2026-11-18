@@ -1051,6 +1051,14 @@ describe('distance fill and copy between patterns (Decision 0065)', () => {
     const { service } = await distanceRoute();
     await expect(service.previewDistanceCopy('not-saved')).rejects.toThrow('Save this pattern before copying its distances.');
   });
+
+  it('forgetCopyUndos clears the distance copy undo', async () => {
+    const { service, trunk } = await distanceRoute();
+    await service.applyDistanceCopy(await service.previewDistanceCopy(trunk.id));
+    expect(service.getDistanceUndo()).toBeDefined();
+    service.forgetCopyUndos();
+    expect(service.getDistanceUndo()).toBeUndefined();
+  });
 });
 
 describe('route stops (Decision 0079)', () => {
@@ -1290,5 +1298,37 @@ describe('route stops (Decision 0079)', () => {
     const before = JSON.stringify(await service.getRouteStopSet(routeId));
     await service.updateRoute(aggregate, { name: 'Renamed route' });
     expect(JSON.stringify(await service.getRouteStopSet(routeId))).toBe(before);
+  });
+});
+
+describe('estimate factor entries, edit preview scope (Decision 0081)', () => {
+  it('counts the Route estimate factor entries of a Route in its deletion review', async () => {
+    const repository = new InMemoryRouteDefinitionRepository();
+    const { service } = createService(repository);
+    const created = await service.createProject('Estimate factor entries');
+    const scenarioId = created.records.scenario.id;
+    const kept = await service.addRoute(created.records);
+    const doomed = await service.addRoute(kept.records);
+    const entry = (routeId: string) => ({ tripProfileId: 'tp', routeId, factors: { allDays: {}, serviceDays: [] } });
+    await repository.updateScenarioRecords(scenarioId, (current) => ({
+      ...current,
+      costingAssumptions: { ...metadata(), id: 'costing', scenarioId, currencyCode: 'USD', rateYear: 2026, sourceType: 'user', baseServiceYear: 2026, futureYearCount: 0, annualEscalation: 0, routeEstimateFactors: [entry(doomed.route.id)] } as never,
+    }));
+    expect((await service.getRouteDeletionImpact(doomed.route.id)).routeEstimateFactorCount).toBe(1);
+    expect((await service.getRouteDeletionImpact(kept.route.id)).routeEstimateFactorCount).toBe(0);
+  });
+
+  it('reads the scope of a fresh edit preview, and reads none after its commit', async () => {
+    const repository = new InMemoryRouteDefinitionRepository();
+    const { service } = createService(repository);
+    const created = await service.createProject('Preview scope');
+    const added = await service.addRoute(created.records);
+    const routeId = added.route.id;
+    const aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, routeId)).aggregate!;
+    const { nodes } = await addRouteNodes(service, aggregate, [{ name: 'South' }]);
+    const preview = await service.previewNodeChanges(routeId, [{ ...nodes[0], name: 'South renamed' }]);
+    expect(service.routeEditPreviewScope(preview.previewToken)).toEqual({ scenarioId: created.records.scenario.id, routeId, kind: 'nodes' });
+    await service.commitNodeChanges(preview.previewToken);
+    expect(service.routeEditPreviewScope(preview.previewToken)).toBeUndefined();
   });
 });

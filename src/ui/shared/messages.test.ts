@@ -1,7 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import type { AnchorDiagnosis } from '../../domain/anchorDiagnosis';
 import type { ValidationFinding } from '../../domain/types';
-import { explainTripProblem, shiftText, type TripProblemInput, USER_FACING_VALIDATION_MESSAGES, userMessage } from './messages';
+import { explainTripProblem, restorePointCommandLabel, restorePointContext, restorePointLabel, shiftText, type TripProblemInput, USER_FACING_VALIDATION_MESSAGES, userMessage } from './messages';
+
+describe('restore point labels (Decision 0081)', () => {
+  const base = { names: { project: 'Federal', scenario: 'Base', route: '12', tripProfile: 'Alt', serviceDay: 'Weekday', block: '26' }, counts: {} };
+  it('names what each kind undoes, with plurals', () => {
+    expect(restorePointLabel({ ...base, kind: 'deleteTripProfile' })).toBe('Deleted trip profile Alt');
+    expect(restorePointLabel({ ...base, kind: 'deleteTrips', quantity: 1 })).toBe('Deleted 1 trip');
+    expect(restorePointLabel({ ...base, kind: 'deleteTrips', quantity: 3 })).toBe('Deleted 3 trips');
+    expect(restorePointLabel({ ...base, kind: 'removeBlockActivity', detail: 'pullIn' })).toBe('Removed the pull-in from 26');
+    expect(restorePointLabel({ ...base, kind: 'deleteBlocks', counts: { blocks: { removed: 2, changed: 0, added: 0 } } })).toBe('Deleted 2 blocks');
+    expect(restorePointLabel({ ...base, kind: 'restore', restoredKind: 'clearPlan' })).toBe('Undid: Cleared the Weekday plan');
+  });
+  it('names the trip changes, and the menu command undoes or redoes them (FX8)', () => {
+    expect(restorePointLabel({ ...base, kind: 'regenerateTrips', quantity: 1 })).toBe('Regenerated 1 trip');
+    expect(restorePointLabel({ ...base, kind: 'changeTripStartTime', quantity: 1 })).toBe('Changed the start time of 1 trip');
+    expect(restorePointLabel({ ...base, kind: 'changeTripPattern', quantity: 2 })).toBe('Changed the pattern of 2 trips');
+    expect(restorePointLabel({ ...base, kind: 'shiftTrips', quantity: 4 })).toBe('Shifted 4 trips');
+    expect(restorePointCommandLabel({ ...base, kind: 'shiftTrips', quantity: 4 })).toBe('Undo shifted 4 trips');
+    expect(restorePointCommandLabel({ ...base, kind: 'restore', restoredKind: 'shiftTrips', quantity: 4 })).toBe('Redo shifted 4 trips');
+  });
+  it('gives the context without what the label already names', () => {
+    expect(restorePointContext({ ...base, kind: 'deleteTripProfile' })).toBe('Base · 12 · Weekday');
+    expect(restorePointContext({ ...base, kind: 'deleteRoute' })).toBe('Base · Alt · Weekday');
+    expect(restorePointContext({ ...base, kind: 'deleteProject' })).toBe('');
+  });
+});
 
 // Decision 0072 items 7 to 12, with the times of the R5 mock-up: AM Peak starts at 8:00 (28800), and the kept time is Federal-32nd at 8:16.
 const boundary = { time: 28800, fromBand: { id: 'early', label: 'Early' }, toBand: { id: 'am', label: 'AM Peak' }, segmentChanges: [{ segmentIndex: 0, fromSeconds: 600, toSeconds: 660 }, { segmentIndex: 1, fromSeconds: 900, toSeconds: 1020 }] };

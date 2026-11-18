@@ -13,9 +13,13 @@ import {
   selectRuntimeBand,
   validateRuntimeAssignments,
   validateRuntimeProfile,
+  runtimeInputsSignature,
+  tripCalculationSource,
+  tripRuntimeSourceIsCurrent,
+  withRecordedRuntimeSignatures,
   withRuntimeCalculationRevision,
 } from './runtime';
-import type { RoutePattern, RuntimeAssignment, RuntimeBand, RuntimeProfile } from './types';
+import type { RoutePattern, RuntimeAssignment, RuntimeBand, RuntimeProfile, Trip } from './types';
 
 const pattern: RoutePattern = {
   ...metadata('2026-01-01T00:00:00.000Z'),
@@ -191,5 +195,49 @@ describe('segmentStart boundary matrix', () => {
     const zero = segmentStartProfile([band('z', 3600, 3600, [60, 60])]);
     expect(selectRuntimeBand(zero, 3600)).toBeUndefined();
     expect(validateRuntimeProfile(zero, abc).map((finding) => finding.ruleId)).toContain('runtime.bandBoundsInvalid');
+  });
+});
+
+describe('runtime inputs signature (FX7)', () => {
+  const tripWith = (id: string, provenance: Trip['provenance']): Trip => ({ ...metadata('2026-01-01T00:00:00.000Z'), id, scenarioId: 'scenario-a', routeId: 'route-a', serviceDayId: 'weekday', patternId: 'pattern-a', stopTimes: [], provenance });
+
+  it('is the same after a rename, a band label change, and new band ids, and changes when the method, a band bound, or one segment runtime changes', () => {
+    const base = runtimeInputsSignature(profile);
+    expect(base.startsWith('v1:')).toBe(true);
+    expect(base).toHaveLength(19);
+    expect(runtimeInputsSignature({ ...profile, name: 'Renamed' })).toBe(base);
+    expect(runtimeInputsSignature({ ...profile, bands: profile.bands.map((band) => ({ ...band, label: 'Changed' })) })).toBe(base);
+    expect(runtimeInputsSignature({ ...profile, bands: profile.bands.map((band) => ({ ...band, id: `new-${band.id}` })) })).toBe(base);
+    expect(runtimeInputsSignature({ ...profile, calculationMethod: 'blendSegments' })).not.toBe(base);
+    expect(runtimeInputsSignature({ ...profile, bands: profile.bands.map((band) => band.id === 'band-am' ? { ...band, startTime: 21601 } : band) })).not.toBe(base);
+    expect(runtimeInputsSignature({ ...profile, bands: profile.bands.map((band) => band.id === 'band-am' ? { ...band, endTime: 43201 } : band) })).not.toBe(base);
+    expect(runtimeInputsSignature({ ...profile, bands: profile.bands.map((band) => band.id === 'band-am' ? { ...band, segmentRuntimeSeconds: [361, 300] } : band) })).not.toBe(base);
+  });
+
+  it('tripRuntimeSourceIsCurrent: false for another profile; with a signature, true after a revision raise that kept the content and false after a content change; without one, true only at the same revision', () => {
+    const source = tripCalculationSource(profile);
+    expect(tripRuntimeSourceIsCurrent({ ...source, runtimeProfileId: 'profile-b' }, profile)).toBe(false);
+    expect(tripRuntimeSourceIsCurrent(source, { ...profile, calculationRevision: 5 })).toBe(true);
+    expect(tripRuntimeSourceIsCurrent(source, { ...profile, bands: profile.bands.map((band) => band.id === 'band-am' ? { ...band, segmentRuntimeSeconds: [361, 300] } : band) })).toBe(false);
+    const legacy = { runtimeProfileId: 'profile-a', runtimeCalculationRevision: 0 };
+    expect(tripRuntimeSourceIsCurrent(legacy, profile)).toBe(true);
+    expect(tripRuntimeSourceIsCurrent(legacy, { ...profile, calculationRevision: 1 })).toBe(false);
+  });
+
+  it('withRecordedRuntimeSignatures signs a Trip current by revision and leaves every other Trip as it was', () => {
+    const revised = { ...profile, id: 'profile-c', calculationRevision: 3 };
+    const trips = [
+      tripWith('legacy', { kind: 'manual', manuallyChangedFields: [], runtimeProfileId: 'profile-a', runtimeCalculationRevision: 0 }),
+      tripWith('source', { kind: 'generated', manuallyChangedFields: [], calculationSource: { runtimeProfileId: 'profile-c', runtimeCalculationRevision: 3 } }),
+      tripWith('older', { kind: 'generated', manuallyChangedFields: [], calculationSource: { runtimeProfileId: 'profile-c', runtimeCalculationRevision: 2 } }),
+      tripWith('missing', { kind: 'generated', manuallyChangedFields: [], calculationSource: { runtimeProfileId: 'profile-x', runtimeCalculationRevision: 0 } }),
+      tripWith('nosource', { kind: 'manual', manuallyChangedFields: [] }),
+      tripWith('signed', { kind: 'generated', manuallyChangedFields: [], calculationSource: { runtimeProfileId: 'profile-a', runtimeCalculationRevision: 0, runtimeInputsSignature: 'v1:kept' } }),
+    ];
+    const result = withRecordedRuntimeSignatures(trips, [profile, revised]);
+    expect(result.changedTripIds).toEqual(['legacy', 'source']);
+    expect(result.trips[0].provenance.calculationSource).toEqual({ runtimeProfileId: 'profile-a', runtimeCalculationRevision: 0, runtimeInputsSignature: runtimeInputsSignature(profile) });
+    expect(result.trips[1].provenance.calculationSource).toEqual({ runtimeProfileId: 'profile-c', runtimeCalculationRevision: 3, runtimeInputsSignature: runtimeInputsSignature(revised) });
+    result.trips.slice(2).forEach((trip, index) => expect(trip).toBe(trips[index + 2]));
   });
 });

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from '../domain/ids';
 import { AnchorBandChoiceError } from '../domain/trips';
-import type { Block, GenerateTripsRequest, RoutePattern, RuntimeAssignment, RuntimeProfile, Trip, TripGenerationSet, TripRegenerationUndo } from '../domain/types';
+import { runtimeInputsSignature } from '../domain/runtime';
+import type { Block, GenerateTripsRequest, RoutePattern, RuntimeAssignment, RuntimeProfile, Trip, TripGenerationSet } from '../domain/types';
 import { TripGenerationService, TripRecalculationConfirmationError, TripShiftStalePreviewError } from './tripGenerationService';
 import type { TripGenerationRepository } from './ports';
 
@@ -9,7 +10,6 @@ class AuthoritativeFake implements TripGenerationRepository {
   readonly sets = new Map<string, TripGenerationSet>();
   readonly trips = new Map<string, Trip>();
   readonly blocks = new Map<string, Block>();
-  undoSnapshot?: TripRegenerationUndo;
   readonly assignments: RuntimeAssignment[] = [];
   failTripChangeCommit = false;
   readonly patterns: RoutePattern[];
@@ -20,7 +20,7 @@ class AuthoritativeFake implements TripGenerationRepository {
   async saveGenerationSet(set: TripGenerationSet) { this.sets.set(set.id, set); }
   async listTrips(serviceDayId: string, generationSetIdOrProfileId?: string) { return [...this.trips.values()].filter((trip) => trip.serviceDayId === serviceDayId && (!generationSetIdOrProfileId || trip.provenance.generationSetId === generationSetIdOrProfileId || trip.tripProfileId === generationSetIdOrProfileId)); }
   async getTrip(id: string) { return this.trips.get(id); }
-  async saveTrips(values: Trip[]) { for (const trip of values) this.trips.set(trip.id, trip); if (this.undoSnapshot && values.some((trip) => this.undoSnapshot!.afterTrips.some((after) => after.id === trip.id))) this.undoSnapshot = undefined; }
+  async saveTrips(values: Trip[]) { for (const trip of values) this.trips.set(trip.id, trip); }
   async listBlocks(serviceDayId: string) { return [...this.blocks.values()].filter((block) => block.serviceDayId === serviceDayId); }
   async saveBlocks(values: Block[]) { for (const block of values) this.blocks.set(block.id, block); }
   async replaceGenerationSet() { /* historical surface */ }
@@ -28,10 +28,7 @@ class AuthoritativeFake implements TripGenerationRepository {
   async getPattern(id: string) { return this.patterns.find((pattern) => pattern.id === id); }
   async getRuntimeProfile(id: string) { return this.profiles.find((profile) => profile.id === id); }
   async insertTripsAtomically(values: Trip[]) { for (const trip of values) { if (this.trips.has(trip.id)) throw new Error('duplicate'); this.trips.set(trip.id, trip); } }
-  async saveTripChangesAtomically(values: Trip[], blocks: Block[] = []) { if (this.failTripChangeCommit) throw new Error('forced trip change failure'); for (const trip of values) this.trips.set(trip.id, trip); for (const block of blocks) this.blocks.set(block.id, block); if (this.undoSnapshot && values.some((trip) => this.undoSnapshot!.afterTrips.some((after) => after.id === trip.id))) this.undoSnapshot = undefined; }
-  async saveRegeneratedTripsWithUndo(_before: Trip[], after: Trip[], snapshot: TripRegenerationUndo) { for (const trip of after) this.trips.set(trip.id, trip); this.undoSnapshot = snapshot; }
-  async getLastTripRegenerationUndo() { return this.undoSnapshot; }
-  async restoreLastTripRegenerationUndo() { const snapshot = this.undoSnapshot; if (!snapshot) throw new Error('There is no regeneration to undo.'); for (const trip of snapshot.beforeTrips) this.trips.set(trip.id, trip); this.undoSnapshot = undefined; return snapshot.beforeTrips; }
+  async saveTripChangesAtomically(values: Trip[], blocks: Block[] = []) { if (this.failTripChangeCommit) throw new Error('forced trip change failure'); for (const trip of values) this.trips.set(trip.id, trip); for (const block of blocks) this.blocks.set(block.id, block); }
   async deleteTripsAtomically(ids: string[], blocks: Block[] = []) { for (const id of ids) this.trips.delete(id); for (const block of blocks) this.blocks.set(block.id, block); }
 }
 
@@ -63,7 +60,7 @@ describe('authoritative trip workflow', () => {
     const second = await service.generateTrips(request('p2', 0, 600));
     expect(first.trips).toHaveLength(3); expect(second.trips).toHaveLength(3); expect(repository.trips.size).toBe(6);
     expect(second.trips[0].provenance.creationMethod).toBe('generated');
-    expect(second.trips[0].provenance.calculationSource).toEqual({ runtimeProfileId: 'rp2', runtimeCalculationRevision: 0 });
+    expect(second.trips[0].provenance.calculationSource).toEqual({ runtimeProfileId: 'rp2', runtimeCalculationRevision: 0, runtimeInputsSignature: runtimeInputsSignature(profile('rp2', 'p2')) });
   });
 
   it('accepts a count-limited additive generation request', async () => {
@@ -220,26 +217,6 @@ describe('authoritative trip workflow', () => {
     expect(reads).toEqual({ pattern: 4, assignments: 2, profile: 2 });
   });
 
-  it('stores one-step regeneration undo and expires it when an affected Trip is edited', async () => {
-    const p = pattern('p1', 'Southbound 1', 0); const runtime = profile('rp1', 'p1', 10000, 1);
-    const repository = new AuthoritativeFake([p], [runtime]);
-    repository.assignments.push({ ...metadata(), id: 'a1', scenarioId: 'scenario', patternId: 'p1', serviceDayId: 'weekday', runtimeProfileId: 'rp1' });
-    const service = new TripGenerationService(repository, () => '2026-09-14T01:00:00.000Z');
-    const added = await service.addTrip({ scenarioId: 'scenario', routeId: 'route', serviceDayId: 'weekday', patternId: 'p1', directionId: 'southbound', tripProfileId: 'trip-profile', firstTrip: 1200 });
-    runtime.calculationRevision = 2;
-    runtime.bands[0].segmentRuntimeSeconds[0] = 900;
-    await service.recalculateTrips([added.trip.id]);
-    expect((await repository.getTrip(added.trip.id))?.stopTimes.at(-1)?.time).toBe(2100);
-    expect(await service.getLastTripRegenerationUndo()).toMatchObject({ afterTrips: [{ id: added.trip.id }] });
-    await service.undoLastTripRegeneration();
-    expect((await repository.getTrip(added.trip.id))?.stopTimes.at(-1)?.time).toBe(1800);
-    expect(await service.getLastTripRegenerationUndo()).toBeUndefined();
-
-    await service.recalculateTrips([added.trip.id]);
-    await repository.saveTrips([{ ...(await repository.getTrip(added.trip.id))!, updatedAt: '2026-09-14T02:00:00.000Z' }]);
-    expect(await service.getLastTripRegenerationUndo()).toBeUndefined();
-  });
-
   it('previews and applies Trips table CSV rows while retaining IDs on updates', async () => {
     const p = pattern('p1', 'Southbound 1', 0); const repository = new AuthoritativeFake([p], [profile('rp1', 'p1')]);
     const service = new TripGenerationService(repository, () => '2026-09-14T01:00:00.000Z');
@@ -285,19 +262,15 @@ describe('authoritative trip workflow', () => {
 
     await service.applyRecalculationReview(review);
     expect((await repository.getTrip(ambiguous.id))!.stopTimes.map((point) => point.time)).toEqual([3500, 3840]);
-    expect((await service.getLastTripRegenerationUndo())!.afterTrips.map((trip) => trip.id)).toEqual([first.id, second.id]);
   });
 
-  it('keeps a skipped Trip out of the write and out of the undo snapshot (Decision 0071)', async () => {
+  it('keeps a skipped Trip out of the write (Decision 0071)', async () => {
     const { repository, service, addAt } = bandedReviewFixture();
     const first = await addAt(1200); const second = await addAt(1500);
     const review = await service.reviewRecalculation([first.id, second.id], { skipTripIds: [first.id] });
     expect(review.rows.map((row) => [row.tripId, row.status])).toEqual([[first.id, 'skipped'], [second.id, 'ready']]);
     expect(review.trips.map((trip) => trip.id)).toEqual([second.id]);
     await service.applyRecalculationReview(review);
-    const undo = await service.getLastTripRegenerationUndo();
-    expect(undo?.afterTrips.map((trip) => trip.id)).toEqual([second.id]);
-    expect(undo?.beforeTrips.map((trip) => trip.id)).toEqual([second.id]);
     expect(await repository.getTrip(first.id)).toEqual(first);
   });
 

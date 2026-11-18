@@ -8,6 +8,7 @@ import type {
   ScheduledPoint,
   ServiceSeconds,
   Trip,
+  TripCalculationSource,
   ValidationFinding,
 } from './types';
 import { metadata, newId } from './ids';
@@ -38,6 +39,61 @@ export function runtimeCalculationRevision(profile: RuntimeProfile): number { re
 
 function calculationShape(profile: RuntimeProfile): string {
   return JSON.stringify({ method: profile.calculationMethod ?? 'singleBand', bands: orderedBands(profile).map((band) => ({ id: band.id, startTime: band.startTime, endTime: band.endTime, segmentRuntimeSeconds: band.segmentRuntimeSeconds })) });
+}
+
+function fnv1a(text: string, seed: number): string {
+  let hash = seed >>> 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
+/**
+ * Decision 0081 item 11 (FX7). A fingerprint of what a profile's calculated times depend on: the method and, in band order, each band's
+ * start, end, and segment runtimes. Band ids, band labels, and the profile name are not inputs, so a profile edited and edited back has
+ * its old fingerprint again.
+ */
+export function runtimeInputsSignature(profile: RuntimeProfile): string {
+  const text = JSON.stringify({ method: profile.calculationMethod ?? 'singleBand', bands: orderedBands(profile).map((band) => [band.startTime, band.endTime, band.segmentRuntimeSeconds]) });
+  return `v1:${fnv1a(text, 0x811c9dc5)}${fnv1a(text, 0x5bd1e995)}`;
+}
+
+/** The calculation source a Trip records when its times are calculated from `profile`. */
+export function tripCalculationSource(profile: RuntimeProfile): TripCalculationSource {
+  return { runtimeProfileId: profile.id, runtimeCalculationRevision: profile.calculationRevision ?? 0, runtimeInputsSignature: runtimeInputsSignature(profile) };
+}
+
+/**
+ * Whether a Trip's recorded source still matches `profile`, the profile now assigned to its Pattern and service day. A recorded signature
+ * is compared with the profile's current one; without a signature the recorded revision is compared with the profile's revision.
+ */
+export function tripRuntimeSourceIsCurrent(source: TripCalculationSource, profile: RuntimeProfile): boolean {
+  if (source.runtimeProfileId !== profile.id) return false;
+  return source.runtimeInputsSignature !== undefined
+    ? source.runtimeInputsSignature === runtimeInputsSignature(profile)
+    : source.runtimeCalculationRevision === (profile.calculationRevision ?? 0);
+}
+
+/**
+ * Dexie 14 and backup import (FX7). Each Trip that records a source without a signature, and is current by the revision rule against its
+ * source profile, gets that profile's signature. Every other Trip is returned unchanged.
+ */
+export function withRecordedRuntimeSignatures(trips: Trip[], profiles: RuntimeProfile[]): { trips: Trip[]; changedTripIds: string[] } {
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const changedTripIds: string[] = [];
+  const next = trips.map((trip) => {
+    const provenance = trip.provenance;
+    const runtimeProfileId = provenance?.calculationSource?.runtimeProfileId ?? provenance?.runtimeProfileId;
+    const runtimeCalculationRevision = provenance?.calculationSource?.runtimeCalculationRevision ?? provenance?.runtimeCalculationRevision;
+    if (!runtimeProfileId || runtimeCalculationRevision === undefined || provenance.calculationSource?.runtimeInputsSignature !== undefined) return trip;
+    const profile = profileById.get(runtimeProfileId);
+    if (!profile || (profile.calculationRevision ?? 0) !== runtimeCalculationRevision) return trip;
+    changedTripIds.push(trip.id);
+    return { ...trip, provenance: { ...provenance, calculationSource: { runtimeProfileId, runtimeCalculationRevision, runtimeInputsSignature: runtimeInputsSignature(profile) } } };
+  });
+  return { trips: next, changedTripIds };
 }
 
 /** Apply the revision rule: band bound, segment, or method changes increment; a profile rename or a band label change does not (neither is a calculation input). */

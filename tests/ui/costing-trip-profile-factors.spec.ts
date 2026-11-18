@@ -17,7 +17,7 @@ async function open(page: Page) {
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await chooseCostBasis(page, 'Estimated from running time', 'Default');
-  await expect(page.locator('.context-field__value')).toHaveText('Default');
+  await expect(page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / }).locator('.switcher__name')).toHaveText('Default');
 }
 
 const factors = (page: Page) => page.getByRole('grid', { name: 'Estimate factors' });
@@ -81,17 +81,22 @@ test('each Trip Profile keeps its own factors, and changing to another Profile w
 
   // Another Profile starts blank, and unsaved edits there are guarded when the basis changes.
   await chooseCostBasis(page, 'Estimated from running time', 'Alternative');
-  await expect(page.locator('.context-field__value')).toHaveText('Alternative');
+  await expect(page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / }).locator('.switcher__name')).toHaveText('Alternative');
   await expect(gridCell(factors(page), 'All days layover percent')).toHaveText('');
   await editGridCell(gridCell(factors(page), 'All days layover percent'), '12.2222');
-  await chooseCostBasis(page, 'Estimated from running time', 'Default');
+  // Decision 0081 (D5): the Trip profile is chosen in the breadcrumb; leaving unsaved factors asks first.
+  const pickProfile = async (name: string) => {
+    await page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / }).click();
+    await page.getByRole('menu', { name: 'Trip profile', exact: true }).getByRole('menuitemradio', { name, exact: true }).click();
+  };
+  await pickProfile('Default');
   const dialog = page.getByRole('alertdialog');
-  await expect(dialog).toContainText('Save estimate factors before changing the cost basis?');
+  await expect(dialog).toContainText(/Save (estimate factors|costing changes)/);
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await expect(page.locator('.context-field__value')).toHaveText('Alternative');
-  await chooseCostBasis(page, 'Estimated from running time', 'Default');
+  await expect(page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / }).locator('.switcher__name')).toHaveText('Alternative');
+  await pickProfile('Default');
   await page.getByRole('alertdialog').getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.locator('.context-field__value')).toHaveText('Default');
+  await expect(page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / }).locator('.switcher__name')).toHaveText('Default');
   await expect(gridCell(factors(page), 'All days layover percent')).toHaveText('22.2');
 
   const stored = await runInPage(page, 'return (await e.db.costingAssumptions.toArray())[0].tripProfileEstimateFactors.map((entry) => [entry.tripProfileId === "alternative-profile" ? "Alternative" : "Default", entry.factors.allDays.layoverFraction])');

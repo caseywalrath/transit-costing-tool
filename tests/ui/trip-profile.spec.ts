@@ -9,7 +9,7 @@ test('places Trip profile selection and lifecycle actions in the Trips header me
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
 
   const tripsSection = page.locator('[aria-label="Trips section"]');
-  const profileButton = tripsSection.locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button');
+  const profileButton = page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / });
   await expect(scopeField(page, 'Trip profile')).toHaveCount(0);
   await expect(page.locator('.trip-profile-context')).toHaveCount(0);
   const [profileControlsBox, scheduleTableBox] = await Promise.all([

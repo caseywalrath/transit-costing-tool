@@ -1,4 +1,4 @@
-// Decision 0070: after a Change pattern, Trip actions offers "Undo last pattern change (N trips)". Undo restores the Trip's Pattern, stop
+// Decision 0070, amended by Decision 0081 item 12: after a Change pattern, Trip actions offers "Undo changed the pattern of N trips". Undo restores the Trip's Pattern, stop
 // times and provenance. The saved Trip is read back from IndexedDB, as in anchored-pattern-change.spec.ts.
 import { expect, test, type Page } from '@playwright/test';
 import { goldenRaw } from './support/goldenFixture';
@@ -35,7 +35,7 @@ async function readTrip(page: Page, tripId: string): Promise<any> {
   }), tripId);
 }
 
-test('Undo last pattern change restores the Trip to its Pattern and first time', async ({ page }) => {
+test('Undo of a pattern change restores the Trip to its Pattern and first time', async ({ page }) => {
   const golden = goldenCase();
   await openGoldenTrips(page);
   await page.getByRole('checkbox', { name: `Select ${FULL}`, exact: true }).first().check();
@@ -50,17 +50,21 @@ test('Undo last pattern change restores the Trip to its Pattern and first time',
 
   // The item names the kind of change; it is the only undo item, in the same place as the regeneration undo.
   const actions = page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true });
-  await actions.click();
   const menu = page.getByRole('menu', { name: 'Trip actions' });
-  const undo = menu.getByRole('menuitem', { name: 'Undo last pattern change (1 trips)', exact: true });
-  await expect(undo).toBeEnabled();
+  const undo = menu.getByRole('menuitem', { name: 'Undo changed the pattern of 1 trip', exact: true });
+  // The item follows the reload of the Trips after the change; reopen the menu until it is there.
+  await expect(async () => {
+    if (await menu.isVisible()) await page.keyboard.press('Escape');
+    await actions.click();
+    await expect(undo).toBeEnabled({ timeout: 1000 });
+  }).toPass({ timeout: 15_000 });
   await undo.click();
 
   await expect.poll(async () => (await readTrip(page, golden.tripId)).patternId).toBe(golden.fullId);
   const restored = await readTrip(page, golden.tripId);
   expect(restored.stopTimes[0].time).toBe(golden.firstTime);
 
-  // One undo only: the item is gone once it has been used.
+  // The undo is itself recorded (Decision 0081 item 12), so the menu now offers to redo it.
   await actions.click();
-  await expect(page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: /^Undo last/ })).toHaveCount(0);
+  await expect(page.getByRole('menu', { name: 'Trip actions' }).getByRole('menuitem', { name: 'Redo changed the pattern of 1 trip', exact: true })).toBeEnabled();
 });

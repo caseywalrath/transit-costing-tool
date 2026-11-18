@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouteDefinitionService } from '../application/routeDefinitionService';
 import { duplicateRouteRecords, duplicateScenario, projectSnapshotWithScenario, snapshotForScenario, type ScenarioRecords } from '../domain/project';
 import type { RuntimeCopyPreview, TripCopyPreview } from '../domain/serviceDayCopy';
-import type { CostingAssumptions, PlannedFrequency, ProjectSnapshot, RouteStopSet, Trip, TripGenerationSet, TripRegenerationUndo } from '../domain/types';
+import type { CostingAssumptions, PlannedFrequency, ProjectSnapshot, RouteStopSet, Trip, TripGenerationSet } from '../domain/types';
 import { asSnapshot, goldenWithAltBlocking } from '../testSupport/goldenBackup';
+import { trimmedGoldenFixture } from '../testSupport/trimmedGolden';
 import { ProjectBackupService } from './backupRepository';
 import { TransitDatabase } from './database';
 import { DexieRouteDefinitionRepository } from './dexieRepository';
@@ -62,53 +63,8 @@ const implementations: { name: string; create(): Promise<Harness> }[] = [
 const byId = (left: { id: string }, right: { id: string }) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
 const expectKeyOrder = (rows: { id: string }[]) => { const ids = rows.map((row) => row.id); expect(ids.length).toBeGreaterThan(1); expect(ids).toEqual([...ids].sort()); };
 
-/**
- * The Federal BRT project with a second Trip Profile ("Alt") and a second Blocking Scenario on it, cut down to four Blocks
- * per Blocking Scenario with the Trips they use, plus the first few Trips of every day and profile. fake-indexeddb is a
- * pure-JavaScript store whose overwrites slow down sharply with row count, so the full 1,100-Trip project makes one
- * Scenario write take seconds. All the structure (Nodes, Patterns, Runtime profiles and assignments, Directions) is kept.
- */
-function fixture() {
-  const backup = goldenWithAltBlocking();
-  const scenarioId = backup.scenarios[0].id;
-  const weekday = backup.serviceDays.find((day: any) => day.kind === 'weekday').id;
-  const defaultBlockingId = backup.blockingScenarios.find((candidate: any) => candidate.name !== 'Alt Blocks').id;
-  const sourceBlocks = backup.blocks.filter((block: any) => block.blockingScenarioId === defaultBlockingId && block.serviceDayId === weekday).slice(0, 4);
-  const blocks = backup.blocks.filter((block: any) => sourceBlocks.some((source: any) => block.id === source.id || block.id === `alt-${source.id}`));
-  const tripIds = new Set<string>(blocks.flatMap((block: any) => block.activities.filter((activity: any) => activity.type === 'revenueTrip').map((activity: any) => activity.tripId)));
-  const perDay = new Map<string, number>();
-  for (const trip of backup.trips) {
-    const key = `${trip.tripProfileId}:${trip.serviceDayId}`;
-    if ((perDay.get(key) ?? 0) < 5) { perDay.set(key, (perDay.get(key) ?? 0) + 1); tripIds.add(trip.id); }
-  }
-  const { format: _format, exportSchemaVersion: _version, exportedAt: _exportedAt, ...records } = backup;
-  const base = asSnapshot({ ...records, trips: backup.trips.filter((trip: any) => tripIds.has(trip.id)), blocks });
-  // One planned frequency (Decision 0058) on the first Route's Weekday, measured at a mid-route node of its first direction.
-  const planRoute = base.routes[0];
-  const planDirection = base.directions!.find((direction) => direction.routeId === planRoute.id)!;
-  const plan: PlannedFrequency = {
-    id: 'plan-weekday', scenarioId, routeId: planRoute.id, serviceDayId: weekday, createdAt: '2026-11-05T00:00:00.000Z', updatedAt: '2026-11-05T00:00:00.000Z',
-    periods: [{ id: 'plan-p1', startTime: 6 * 3600, endTime: 8 * 3600, headwaySeconds: 1800 }, { id: 'plan-p2', startTime: 8 * 3600, endTime: 19 * 3600, headwaySeconds: 900 }],
-    measureNodeIdByDirectionId: { [planDirection.id]: planDirection.columns[1].nodeId },
-  };
-  // One Route stop set (Decision 0079) on the same Route: stop A on the first segment of the Route's first pattern.
-  const planPattern = base.patterns.find((pattern) => pattern.routeId === planRoute.id)!;
-  const planFirstPoint = [...planPattern.points].sort((left, right) => left.sequence - right.sequence)[0];
-  const routeStopSet: RouteStopSet = {
-    id: 'stop-set-plan', scenarioId, routeId: planRoute.id, roundingSeconds: 60,
-    stops: [{ id: 'stop-a', name: 'Stop A', stopCode: 'A1' }],
-    placementsByPatternId: { [planPattern.id]: [{ id: 'placement-a', stopId: 'stop-a', afterPatternPointId: planFirstPoint.id, sequence: 0, timing: 'interpolate' }] },
-    createdAt: '2026-11-16T00:00:00.000Z', updatedAt: '2026-11-16T00:00:00.000Z',
-  };
-  const snapshot: ProjectSnapshot = { ...base, plannedFrequencies: [plan], routeStopSets: [routeStopSet] };
-  const defaultProfile = snapshot.tripProfiles!.find((profile) => profile.name === 'Default')!;
-  const altProfile = snapshot.tripProfiles!.find((profile) => profile.name === 'Alt')!;
-  const trip = snapshot.trips.find((candidate) => candidate.tripProfileId === defaultProfile.id && candidate.serviceDayId === weekday)!;
-  const assignment = snapshot.runtimeAssignments[0];
-  return { snapshot, scenarioId, weekday, defaultProfile, altProfile, trip, assignment, plan, planDirection, routeStopSet, planPattern };
-}
+const fixture = trimmedGoldenFixture;
 
-const undoFor = (scenarioId: string, before: Trip[], after: Trip[]): TripRegenerationUndo => ({ id: 'last', scenarioId, tripProfileId: before[0].tripProfileId!, createdAt: '2026-10-22T00:00:00.000Z', beforeTrips: before, afterTrips: after });
 const relabel = (trip: Trip, publicLabel: string): Trip => ({ ...trip, publicLabel });
 
 describe.each(implementations)('repository contract: $name', ({ create }) => {
@@ -174,7 +130,7 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       await repository.saveProjectSnapshot(snapshot);
       const backup = new ProjectBackupService((id) => repository.getProjectSnapshot(id), (value) => repository.saveProjectSnapshot(value));
       const payload = await backup.exportProject(snapshot.project.id);
-      expect(JSON.parse(payload).exportSchemaVersion).toBe(14);
+      expect(JSON.parse(payload).exportSchemaVersion).toBe(15);
       const before = JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value);
       await backup.importProject(payload, 'replace');
       expect(JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value)).toBe(before);
@@ -299,15 +255,6 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       expect(await repository.getProject(snapshot.project.id)).toBeUndefined();
       expect(await harness.ownedCounts(scenarioId)).toEqual(Object.fromEntries(SCENARIO_OWNED.map((kind) => [kind, 0])));
       await expect(repository.deleteProject('missing')).rejects.toThrow('Project not found.');
-    });
-
-    it('deleting a Project removes the regeneration undo of its Scenarios', async () => {
-      const { snapshot, scenarioId, trip } = fixture();
-      await repository.saveProjectSnapshot(snapshot);
-      await repository.saveRegeneratedTripsWithUndo([trip], [relabel(trip, 'after')], undoFor(scenarioId, [trip], [relabel(trip, 'after')]));
-      expect(await repository.getLastTripRegenerationUndo()).toBeDefined();
-      await repository.deleteProject(snapshot.project.id);
-      expect(await repository.getLastTripRegenerationUndo()).toBeUndefined();
     });
   });
 
@@ -466,57 +413,9 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       expect(name.startsWith(original)).toBe(true);
       expect([...name.slice(original.length).matchAll(/\+[abc]/g)].map((match) => match[0]).sort()).toEqual(['+a', '+b', '+c']);
     });
-
-    it('a write rejected for costing ownership leaves the regeneration undo in place', async () => {
-      const { snapshot, scenarioId, trip } = fixture();
-      await repository.saveProjectSnapshot(snapshot);
-      const assumptions = (id: string): CostingAssumptions => ({ id, scenarioId, currencyCode: 'USD', enteredRate: 100, rateYear: 2025, sourceType: 'user', baseServiceYear: 2025, futureYearCount: 0, annualEscalation: 0.03, createdAt: '2026-10-22T00:00:00.000Z', updatedAt: '2026-10-22T00:00:00.000Z' });
-      await repository.saveCostingAssumptions(assumptions('first'));
-      await repository.saveRegeneratedTripsWithUndo([trip], [relabel(trip, 'after')], undoFor(scenarioId, [trip], [relabel(trip, 'after')]));
-      const records = (await repository.getScenarioRecords(scenarioId))!;
-      // The Trip edit would invalidate the undo, but the write is rejected before it can happen.
-      await expect(repository.saveScenarioRecords({ ...records, costingAssumptions: assumptions('second'), trips: records.trips.map((candidate) => candidate.id === trip.id ? relabel(candidate, 'changed') : candidate) }))
-        .rejects.toThrow('Scenario already has a different costing assumptions record.');
-      expect(await repository.getLastTripRegenerationUndo()).toBeDefined();
-      expect((await repository.getTrip(trip.id))?.publicLabel).toBe('after');
-    });
   });
 
   describe('Trip writes', () => {
-    it('rejects a regeneration whose before-state is stale and stores nothing', async () => {
-      const { snapshot, scenarioId, trip } = fixture();
-      await repository.saveProjectSnapshot(snapshot);
-      const stale = relabel(trip, 'stale');
-      await expect(repository.saveRegeneratedTripsWithUndo([stale], [relabel(trip, 'after')], undoFor(scenarioId, [stale], [relabel(trip, 'after')]))).rejects.toThrow('A selected Trip changed. Review regeneration again.');
-      expect(await repository.getTrip(trip.id)).toEqual(trip);
-      expect(await repository.getLastTripRegenerationUndo()).toBeUndefined();
-      await expect(repository.restoreLastTripRegenerationUndo()).rejects.toThrow('There is no regeneration to undo.');
-    });
-
-    it('rejects a regeneration whose before-state Trip no longer exists', async () => {
-      const { snapshot, scenarioId, trip } = fixture();
-      await repository.saveProjectSnapshot(snapshot);
-      await repository.deleteTripsAtomically([trip.id]);
-      await expect(repository.saveRegeneratedTripsWithUndo([trip], [relabel(trip, 'after')], undoFor(scenarioId, [trip], [relabel(trip, 'after')]))).rejects.toThrow('A selected Trip changed. Review regeneration again.');
-      expect(await repository.getTrip(trip.id)).toBeUndefined();
-    });
-
-    it('applies a regeneration, undoes it once, and refuses to undo after a later edit', async () => {
-      const { snapshot, scenarioId, trip } = fixture();
-      await repository.saveProjectSnapshot(snapshot);
-      const after = relabel(trip, 'after');
-      await repository.saveRegeneratedTripsWithUndo([trip], [after], undoFor(scenarioId, [trip], [after]));
-      expect((await repository.getTrip(trip.id))?.publicLabel).toBe('after');
-      expect(await repository.restoreLastTripRegenerationUndo()).toEqual([trip]);
-      expect(await repository.getTrip(trip.id)).toEqual(trip);
-      expect(await repository.getLastTripRegenerationUndo()).toBeUndefined();
-
-      await repository.saveRegeneratedTripsWithUndo([trip], [after], undoFor(scenarioId, [trip], [after]));
-      await repository.saveTrips([relabel(trip, 'edited later')]);
-      expect(await repository.getLastTripRegenerationUndo()).toBeUndefined();
-      await expect(repository.restoreLastTripRegenerationUndo()).rejects.toThrow('There is no regeneration to undo.');
-    });
-
     it('inserting a Trip with an existing id rejects and stores none of the batch', async () => {
       const { snapshot, trip } = fixture();
       await repository.saveProjectSnapshot(snapshot);
@@ -547,13 +446,10 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       expect((await repository.getTrip(usedTripId))?.publicLabel).toBe('changed');
       expect((await repository.listBlocks(block.serviceDayId)).find((candidate) => candidate.id === block.id)?.label).toBe('Renamed block');
 
-      const after = relabel(trip, 'after');
-      await repository.saveRegeneratedTripsWithUndo([trip], [after], undoFor(scenarioId, [trip], [after]));
       await repository.deleteTripsAtomically([usedTripId, trip.id], [{ ...block, activities: block.activities.filter((activity) => !(activity.type === 'revenueTrip' && activity.tripId === usedTripId)) }]);
       expect(await repository.getTrip(usedTripId)).toBeUndefined();
       expect(await repository.getTrip(trip.id)).toBeUndefined();
       expect((await repository.listBlocks(block.serviceDayId)).find((candidate) => candidate.id === block.id)?.activities.some((activity) => activity.type === 'revenueTrip' && activity.tripId === usedTripId)).toBe(false);
-      expect(await repository.getLastTripRegenerationUndo()).toBeUndefined();
     });
 
     it('replaces the Trips of a day and rejects a copy that reuses a Trip identifier without writing', async () => {
@@ -791,15 +687,6 @@ describe('Dexie repository: behavior the in-memory repository has no counterpart
     expect(await counts()).toEqual(before);
     expect((await harness.repository.getScenarioRecords(scenarioId))!.scenario.name).toBe(records.scenario.name);
     expect(await harness.repository.getTrip(trip.id)).toBeDefined();
-  });
-
-  it('a failed regeneration write rolls the Trips back', async () => {
-    const { snapshot, scenarioId, trip } = fixture();
-    await harness.repository.saveProjectSnapshot(snapshot);
-    vi.spyOn(db.tripRegenerationUndo, 'put').mockRejectedValue(new Error('injected failure'));
-    await expect(harness.repository.saveRegeneratedTripsWithUndo([trip], [relabel(trip, 'after')], undoFor(scenarioId, [trip], [relabel(trip, 'after')]))).rejects.toThrow('injected failure');
-    expect(await harness.repository.getTrip(trip.id)).toEqual(trip);
-    expect(await db.tripRegenerationUndo.count()).toBe(0);
   });
 
   it('a failed Trip deletion rolls the Block write back', async () => {

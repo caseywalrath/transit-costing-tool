@@ -16,13 +16,14 @@ describe('route-definition persistence', () => {
     expect(await repository.getRouteDefinition(route.id)).toEqual({ route, nodes: [], patterns: [] });
   });
 
-  it('defines IndexedDB schema version 12 with Costing, Blocking Scenario, normalized Block lookups, regeneration undo, planned frequencies, and Route stop sets', () => {
+  it('defines IndexedDB schema version 15 with Costing, Blocking Scenario, normalized Block lookups, planned frequencies, and Route stop sets, and no regeneration undo', () => {
     const database = new TransitDatabase(`transit-costing-test-${Date.now()}`);
-    expect(database.verno).toBe(12);
+    expect(database.verno).toBe(15);
     expect(database.tables.map((table) => table.name)).toContain('plannedFrequencies');
     expect(database.tables.map((table) => table.name)).toContain('routeStopSets');
     expect(database.routeStopSets.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['scenarioId', 'routeId']));
-    expect(database.tables.map((table) => table.name)).toEqual(expect.arrayContaining(['runtimeProfiles', 'runtimeAssignments', 'tripProfiles', 'blockingScenarios', 'costingAssumptions', 'tripRegenerationUndo']));
+    expect(database.tables.map((table) => table.name)).toEqual(expect.arrayContaining(['runtimeProfiles', 'runtimeAssignments', 'tripProfiles', 'blockingScenarios', 'costingAssumptions']));
+    expect(database.tables.map((table) => table.name)).not.toContain('tripRegenerationUndo');
     expect(database.runtimeAssignments.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['runtimeProfileId']));
     expect(database.blockingScenarios.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['tripProfileId', '[scenarioId+name]', '[tripProfileId+name]']));
     expect(database.trips.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['tripProfileId', '[tripProfileId+routeId]', '[tripProfileId+serviceDayId]', '[scenarioId+tripProfileId]']));
@@ -43,8 +44,8 @@ describe('route-definition persistence', () => {
     const migrated = new TransitDatabase(name);
     try {
       await migrated.open();
-      expect(migrated.verno).toBe(12);
-      expect((await indexedDB.databases()).find((database) => database.name === name)?.version).toBe(120);
+      expect(migrated.verno).toBe(15);
+      expect((await indexedDB.databases()).find((database) => database.name === name)?.version).toBe(150);
       expect(await migrated.tripProfiles.get('profile')).toBeDefined();
       expect(await migrated.trips.get('trip')).toBeDefined();
       expect(await migrated.blocks.get('placeholder')).toBeUndefined();
@@ -91,23 +92,6 @@ describe('route-definition persistence', () => {
     expect((await repository.getProjectSnapshot(project.id))?.trips).toEqual([trip]);
     await repository.saveProjectSnapshot({ ...snapshot, generationSets: [], trips: [], blocks: [] });
     expect((await repository.getProjectSnapshot(project.id))?.trips).toEqual([]);
-  });
-
-  it('preserves regeneration undo when an unrelated project snapshot is saved', async () => {
-    const repository = new InMemoryRouteDefinitionRepository();
-    const project = { id: 'project-a', name: 'Project A', distanceUnit: 'miles' as const, currencyCode: 'USD', ...metadata() };
-    const scenario = { id: 'scenario-a', projectId: project.id, name: 'Scenario A', ...metadata() };
-    const trip = { id: 'trip-a', scenarioId: scenario.id, routeId: 'route-a', serviceDayId: 'weekday-a', patternId: 'pattern-a', stopTimes: [{ patternPointId: 'point-a', sequence: 0, time: 100 }, { patternPointId: 'point-b', sequence: 1, time: 200 }], provenance: { kind: 'manual' as const, creationMethod: 'manual' as const, manuallyChangedFields: [] as Array<'patternId' | 'times'> }, ...metadata() };
-    await repository.saveProjectSnapshot({ project, scenarios: [scenario], serviceDays: [], routes: [], nodes: [], patterns: [], runtimeProfiles: [], runtimeAssignments: [], generationSets: [], trips: [trip], blocks: [] });
-    const regenerated = { ...trip, stopTimes: trip.stopTimes.map((point) => ({ ...point, time: point.time + 60 })) };
-    const undo = { id: 'last' as const, scenarioId: scenario.id, tripProfileId: 'profile-a', createdAt: new Date().toISOString(), beforeTrips: [trip], afterTrips: [regenerated] };
-    await repository.saveRegeneratedTripsWithUndo([trip], [regenerated], undo);
-
-    const otherProject = { id: 'project-b', name: 'Project B', distanceUnit: 'miles' as const, currencyCode: 'USD', ...metadata() };
-    const otherScenario = { id: 'scenario-b', projectId: otherProject.id, name: 'Scenario B', ...metadata() };
-    await repository.saveProjectSnapshot({ project: otherProject, scenarios: [otherScenario], serviceDays: [], routes: [], nodes: [], patterns: [], runtimeProfiles: [], runtimeAssignments: [], generationSets: [], trips: [], blocks: [] });
-
-    expect(await repository.getLastTripRegenerationUndo()).toEqual(undo);
   });
 
   it('atomically inserts authoritative trips', async () => {

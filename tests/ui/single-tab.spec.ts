@@ -183,7 +183,7 @@ test('Build Trips in the read-only tab is rejected with a plain message and stor
 test('Build Trips in the read-only tab stores nothing for a Trip profile the active tab deleted', async ({ browser }) => {
   const { active, readOnly } = await twoTabs(browser, goldenWithAltProfile());
   await openTripsInBothTabs(active, readOnly);
-  const profileMenu = readOnly.locator('[aria-label="Trips section"] .menu-field').filter({ hasText: 'Profile' }).getByRole('button');
+  const profileMenu = readOnly.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / });
   await profileMenu.click(); await readOnly.getByRole('menuitemradio', { name: 'Alt' }).click();
   await runInPage(active, "await e.repository.deleteTripProfile('alt-profile')");
   const before = await runInPage(active, 'return await e.db.trips.count()');

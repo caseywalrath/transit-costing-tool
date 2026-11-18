@@ -43,7 +43,7 @@ export function TripsOrSideBySide({ sideBySide, ...props }: HostProps) {
   return <SideBySideTrips {...shared} control={sideBySide} leftDirectionId={sideBySide.ids[0]} rightDirectionId={sideBySide.ids[1]} />;
 }
 
-type ContainerProps = Omit<WorkspaceProps, 'directionId' | 'pane' | 'sharedControls' | 'blockingScenarioId' | 'onBlockingScenarioChange' | 'blockingScenarioListVersion' | 'onBlockingScenarioListChanged' | 'onBeforeOpenEdit' | 'onOpenEditChange' | 'yieldToken' | 'sharedSlots' | 'viewOptions' | 'onViewOptionsChange' | 'sideBySideMenu' | 'paneContext'>
+type ContainerProps = Omit<WorkspaceProps, 'directionId' | 'pane' | 'sharedControls' | 'onBeforeOpenEdit' | 'onOpenEditChange' | 'yieldToken' | 'sharedSlots' | 'viewOptions' | 'onViewOptionsChange' | 'sideBySideMenu' | 'paneContext'>
   & { leftDirectionId: string; rightDirectionId: string; control: SideBySideControl };
 
 /**
@@ -52,11 +52,14 @@ type ContainerProps = Omit<WorkspaceProps, 'directionId' | 'pane' | 'sharedContr
  * one set of View options, and the rule that only one pane holds an open edit (an Add-trip row, a staged Shift, or the Build trips drawer).
  * The left pane draws the shared header controls into this header's slots, because they act on its own state.
  */
-export function SideBySideTrips({ leftDirectionId, rightDirectionId, control, onRegisterNavigationGuard, ...shared }: ContainerProps) {
+export function SideBySideTrips({ leftDirectionId, rightDirectionId, control, onRegisterNavigationGuard, blockingScenarioId: workingBlockingScenarioId, onBlockingScenarioChange: onWorkingBlockingScenarioChange, blockingScenarioListVersion: workingListVersion, onBlockingScenarioListChanged: onWorkingListChanged, ...shared }: ContainerProps) {
   const guards = useRef<Record<Side, RouteNavigationGuard | undefined>>({ left: undefined, right: undefined });
   const registerApp = useRef(onRegisterNavigationGuard);
   registerApp.current = onRegisterNavigationGuard;
-  const [blockingScenarioId, setBlockingScenarioId] = useState('');
+  // Decision 0081: the shell's working Blocking scenario when it gives one; otherwise the container keeps its own.
+  const [ownBlockingScenarioId, setOwnBlockingScenarioId] = useState('');
+  const blockingScenarioId = workingBlockingScenarioId ?? ownBlockingScenarioId;
+  const setBlockingScenarioId = onWorkingBlockingScenarioChange ?? setOwnBlockingScenarioId;
   // Counted by the container, so both panes reload the Blocking Scenario list after a New, Duplicate, Rename, or Delete in either pane's shared header.
   const [blockingScenarioListVersion, setBlockingScenarioListVersion] = useState(0);
   const [viewOptions, setViewOptions] = useState<TripViewOptions>(DEFAULT_VIEW_OPTIONS);
@@ -112,7 +115,7 @@ export function SideBySideTrips({ leftDirectionId, rightDirectionId, control, on
   const pane = (side: Side, directionId: string) => <TripsWorkspace {...shared} key={directionId} directionId={directionId} pane={{ side }} sharedControls={side === 'left'}
     sharedSlots={side === 'left' ? { context: contextSlot, actions: actionsSlot } : undefined}
     blockingScenarioId={blockingScenarioId} onBlockingScenarioChange={setBlockingScenarioId}
-    blockingScenarioListVersion={blockingScenarioListVersion} onBlockingScenarioListChanged={() => setBlockingScenarioListVersion((version) => version + 1)}
+    blockingScenarioListVersion={(workingListVersion ?? 0) + blockingScenarioListVersion} onBlockingScenarioListChanged={() => { setBlockingScenarioListVersion((version) => version + 1); onWorkingListChanged?.(); }}
     viewOptions={viewOptions} onViewOptionsChange={setViewOptions}
     sideBySideMenu={{ checked: true, onToggle: requestClose }} paneContext={picker(side, directionId)}
     onRegisterNavigationGuard={registerFor(directionId)} onBeforeOpenEdit={beforeOpenEdit(directionId)} yieldToken={yieldTokens[directionId] ?? 0} />;

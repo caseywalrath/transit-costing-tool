@@ -69,8 +69,8 @@ test('assigns, reassigns, and unassigns Trips from the Trips table by pill and b
 
   await schedule.getByRole('button', { name: /departing 6:00: Block 1/ }).click();
   await page.getByRole('menu', { name: /Block assignment for/ }).getByRole('menuitem', { name: 'Unassign from block', exact: true }).click();
-  const rowUnassignDialog = page.getByRole('alertdialog', { name: 'Unassign trip from block?' });
-  await rowUnassignDialog.getByRole('button', { name: 'Unassign trip', exact: true }).click();
+  // Decision 0081 (D3): the pill unassigns its one trip at once.
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect(schedule.getByRole('button', { name: /departing 6:00: Unassigned/ })).toBeVisible();
 
   await schedule.getByRole('checkbox', { name: 'Select all trips' }).click();

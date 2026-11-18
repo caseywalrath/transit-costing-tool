@@ -39,6 +39,11 @@ type Form = {
   deadheads: DeadheadRow[];
 };
 
+/** Inventory gap G17: the values of a new-scenario dialog closed without creating, per Trip profile, until the page reloads. */
+const autoBlockingDrafts = new Map<string, { form: Form; name: string; sourceId: string; shapeKey: string }>();
+/** A stored draft is used only while the Trip profile still has the same patterns, terminals, and routes. */
+const draftShapeKey = (form: Form) => `${form.patterns.map((row) => row.patternId).sort().join(',')}|${Object.keys(form.terminals).sort().join(',')}|${Object.keys(form.garages).sort().join(',')}`;
+
 const text = (value: number | undefined) => value === undefined ? '' : String(value);
 const number = (value: string) => value.trim() === '' ? undefined : Number(value);
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
@@ -127,7 +132,11 @@ export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId,
     let live = true;
     void blockingService.getAutoBlockingSetup(scenarioId, tripProfileId, minimumLayover).then((value) => {
       if (!live) return;
-      setSetup(value); setName(value.defaultName); setForm(formFromRules(value.defaultRules, value));
+      setSetup(value);
+      const defaults = formFromRules(value.defaultRules, value);
+      const draft = autoBlockingDrafts.get(tripProfileId);
+      if (draft && draft.shapeKey === draftShapeKey(defaults)) { setName(draft.name); setForm(draft.form); setSourceId(draft.sourceId); }
+      else { setName(value.defaultName); setForm(defaults); }
     }).catch((caught) => { if (live) setError(userFacingError(caught, 'Unable to open automatic blocking. Close this dialog and try again.')); });
     return () => { live = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -187,16 +196,22 @@ export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId,
   const pullSummary = `${garageCount ? `${plural(garageCount, 'garage')}` : 'No garage · blocks start and end at a terminal'} · ${terminals.length ? `${Math.max(...rules.terminals.map((row) => row.pullOutMinutes), 0)} min` : '0 min'}`;
   const sourceLabel = setup.sources.find((source) => source.blockingScenarioId === sourceId);
 
+  /** Keeps a new scenario's values for the next opening (inventory gap G17). A rebuild keeps nothing: its rules are stored on the scenario. */
+  function closeKeepingDraft() {
+    if (form && !replace) autoBlockingDrafts.set(tripProfileId, { form, name, sourceId, shapeKey: draftShapeKey(form) });
+    onClose();
+  }
+
   async function create() {
     if (!canCreate || !rules) return;
     setCreating(true); setError('');
-    try { const created = await blockingService.createAutoBlockingScenario({ scenarioId, tripProfileId, name, rules, ...(sourceId ? { sourceBlockingScenarioId: sourceId } : {}), ...(replaceId ? { replaceBlockingScenarioId: replaceId } : {}) }); await onCreated(created); }
+    try { const created = await blockingService.createAutoBlockingScenario({ scenarioId, tripProfileId, name, rules, ...(sourceId ? { sourceBlockingScenarioId: sourceId } : {}), ...(replaceId ? { replaceBlockingScenarioId: replaceId } : {}) }); autoBlockingDrafts.delete(tripProfileId); await onCreated(created); }
     catch (caught) { setError(userFacingError(caught, 'Unable to create the blocking scenario. Review the rules and try again.')); }
     finally { setCreating(false); }
   }
 
   const groupTitles: Array<[string | undefined, string]> = [['outbound', 'Outbound'], ['inbound', 'Inbound'], [undefined, 'No direction']];
-  return <DialogShell onClose={onClose} busy={creating} onSubmit={() => void create()}>
+  return <DialogShell onClose={closeKeepingDraft} busy={creating} onSubmit={() => void create()}>
     <h2>Auto-blocking</h2>
     <p className="auto-blocking-intro">{replaceId ? `Rebuilds the blocks of ${existing?.scenario.name} on the selected days` : 'Creates a new blocking scenario'} from the {tripCount} trips in trip profile {tripProfileName}. Each departure takes the vehicle that became ready most recently after its minimum layover, so spare vehicles finish early; if none is ready, a new block starts. The result is ordinary blocks that you can edit, rename or delete.</p>
     <section className="auto-blocking-body">
@@ -328,10 +343,10 @@ export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId,
         <div className="auto-blocking-aside">
           <p className="auto-blocking-side-title">Preview{previewPending ? ' · updating…' : ''}</p>
           <div className="auto-blocking-preview-table"><table aria-label="Automatic blocking preview">
-            <thead><tr><th scope="col">Day</th><th scope="col">Blocks</th><th scope="col">Peak vehicles</th><th scope="col">Revenue (h)</th><th scope="col">Layover %</th><th scope="col">Longest (h)</th><th scope="col">1 break</th><th scope="col">2+ breaks</th></tr></thead>
+            <thead><tr><th scope="col">Day</th><th scope="col">Blocks</th><th scope="col">Peak vehicles</th><th scope="col">Revenue (h)</th><th scope="col">Layover %</th><th scope="col">Longest (h)</th><th scope="col">1 break</th><th scope="col">2+ breaks</th>{replaceId && <th scope="col">Replaces</th>}</tr></thead>
             <tbody>{(preview?.result.days ?? []).map((day) => <tr key={day.serviceDayId}>
               <th scope="row">{setup.serviceDays.find((entry) => entry.day.id === day.serviceDayId)?.day.name}</th>
-              <td>{day.blockCount}</td><td>{day.peakVehicles}</td><td>{hours(day.revenueSeconds)}</td><td>{day.layoverPercent === undefined ? '–' : day.layoverPercent.toFixed(1)}</td><td>{hours(day.longestBlockSeconds)}</td><td>{day.blocksWithOneBreak}</td><td>{day.blocksWithTwoOrMoreBreaks}</td>
+              <td>{day.blockCount}</td><td>{day.peakVehicles}</td><td>{hours(day.revenueSeconds)}</td><td>{day.layoverPercent === undefined ? '–' : day.layoverPercent.toFixed(1)}</td><td>{hours(day.longestBlockSeconds)}</td><td>{day.blocksWithOneBreak}</td><td>{day.blocksWithTwoOrMoreBreaks}</td>{replaceId && <td>{preview?.replacedBlockCountByServiceDayId?.[day.serviceDayId] ?? 0}</td>}
             </tr>)}</tbody>
           </table></div>
           {findingSentences(preview?.result.findings ?? [], patterns, nodes, new Map(setup.serviceDays.map((entry) => [entry.day.id, entry.day.name]))).map((sentence) => <InlineNote key={sentence} kind="warn">{sentence}</InlineNote>)}
@@ -344,7 +359,7 @@ export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId,
     </section>
     {replaceId && existing && (existing.editedBlockCount > 0 || existing.blockCountChanged) && <InlineNote kind="warn">Blocks of {existing.scenario.name} were edited, added or deleted since the last build. Rebuilding replaces the blocks on the selected days, including those edits.</InlineNote>}
     {error && <p className="field-error">{error}</p>}
-    <div className="dialog-actions"><button type="button" onClick={onClose} disabled={creating}>Cancel</button><button type="submit" className="primary" disabled={!canCreate}>{creating ? (replaceId ? 'Rebuilding…' : 'Creating…') : replaceId ? 'Rebuild blocks' : 'Create blocking scenario'}</button></div>
+    <div className="dialog-actions"><button type="button" onClick={closeKeepingDraft} disabled={creating}>Cancel</button><button type="submit" className="primary" disabled={!canCreate}>{creating ? (replaceId ? 'Rebuilding…' : 'Creating…') : replaceId ? 'Rebuild blocks' : 'Create blocking scenario'}</button></div>
   </DialogShell>;
 }
 

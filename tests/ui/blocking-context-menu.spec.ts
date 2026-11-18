@@ -66,8 +66,9 @@ test('Show only a pattern from an Unassigned trip menu filters the list, and Cle
   // The Saturday blocks start with no Unassigned trips, so three Trips are removed from the current block first (Remove from block… on a Trip row).
   for (let removed = 0; removed < 3; removed += 1) {
     await rightClickInView(page.locator('.block-activities-table tbody tr:has(input[aria-label^="Select trip"])').first().locator('td').nth(4));
-    await contextMenu(page, 'Trip 1').getByRole('menuitem', { name: 'Remove from block…', exact: true }).click();
-    await page.getByRole('alertdialog', { name: 'Remove Trip 1?', exact: true }).getByRole('button', { name: 'Remove Trip 1', exact: true }).click();
+    const count = await page.locator('.block-activities-table tbody tr:has(input[aria-label^="Select trip"])').count();
+    await contextMenu(page, 'Trip 1').getByRole('menuitem', { name: 'Remove from block', exact: true }).click();
+    await expect(page.locator('.block-activities-table tbody tr:has(input[aria-label^="Select trip"])')).toHaveCount(count - 1);
   }
 
   const rows = page.locator('.blocking-trips-table tbody tr:has(.pattern-pill)');
@@ -79,11 +80,13 @@ test('Show only a pattern from an Unassigned trip menu filters the list, and Cle
   const pattern = await pill.getAttribute('title');
   const time = ((await first.locator('.blocking-time-column').first().textContent()) ?? '').trim();
   const heading = `${((await pill.textContent()) ?? '').trim()} · ${time}`;
+  const samePattern = await page.locator(`.blocking-trips-table tbody tr:has(.pattern-pill[title="${pattern}"])`).count();
+  expect(samePattern).toBeLessThan(before);
 
   await rightClickInView(pill);
   await contextMenu(page, heading).getByRole('menuitem', { name: `Show only ${pattern}`, exact: true }).click();
   await expect(page.locator(`.blocking-trips-table tbody .pattern-pill:not([title="${pattern}"])`)).toHaveCount(0);
-  await expect(rows).toHaveCount(1);
+  await expect(rows).toHaveCount(samePattern);
 
   await rightClickInView(rows.first().locator('.pattern-pill'));
   await page.getByRole('menu').getByRole('menuitem', { name: 'Clear filters', exact: true }).click();

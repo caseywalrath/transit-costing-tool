@@ -73,3 +73,42 @@ export function sideBySideDirectionIds(directions: ReadonlyArray<{ id: string; s
   const right = ordered.find((direction) => direction.id === rightDirectionId && direction.id !== left.id) ?? ordered.find((direction) => direction.id !== left.id)!;
   return [left.id, right.id];
 }
+
+// Working context (Decision 0081 item 6): per-device convenience state, never Scenario data and never in backups.
+/** Decision 0081 (D5): Costing costs the working Blocking scenario (blocked) or the working Trip profile (estimated), chosen per Scenario. */
+export type CostBasisKind = 'blocked' | 'estimated';
+export const COST_BASIS_KIND_KEY = 'transit-costing-tool.costing-basis.v1';
+/** The kind remembered for a Scenario. A value stored before Decision 0081 ("estimated:{id}" or "blocked:{id}") keeps its kind. */
+export function rememberedCostBasisKind(scenarioId: string): CostBasisKind {
+  return storedText(readStoredRecord(COST_BASIS_KIND_KEY)[scenarioId])?.startsWith('estimated') ? 'estimated' : 'blocked';
+}
+export function rememberCostBasisKind(scenarioId: string, kind: CostBasisKind) {
+  try { localStorage.setItem(COST_BASIS_KIND_KEY, JSON.stringify({ ...readStoredRecord(COST_BASIS_KIND_KEY), [scenarioId]: kind })); } catch { /* UI preference only. */ }
+}
+
+export const WORKING_CONTEXT_KEY = 'transit-costing-tool.working-context.v1';
+export type WorkingContext = { scenarios: Record<string, { tripProfileId?: string; serviceDayId?: string }>; routes: Record<string, { directionId?: string }> };
+
+const storedObject = (value: unknown): Record<string, unknown> | undefined => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+
+/** The remembered Trip profile and Day of each Scenario and Direction of each Route. A wrong-shaped entry or field reads as not stored. */
+export function readWorkingContext(storage?: StorageReader): WorkingContext {
+  const stored = readStoredRecord(WORKING_CONTEXT_KEY, storage);
+  const scenarios: WorkingContext['scenarios'] = {};
+  for (const [id, value] of Object.entries(storedObject(stored.scenarios) ?? {})) {
+    const entry = storedObject(value);
+    const tripProfileId = storedText(entry?.tripProfileId);
+    const serviceDayId = storedText(entry?.serviceDayId);
+    if (tripProfileId || serviceDayId) scenarios[id] = { ...(tripProfileId ? { tripProfileId } : {}), ...(serviceDayId ? { serviceDayId } : {}) };
+  }
+  const routes: WorkingContext['routes'] = {};
+  for (const [id, value] of Object.entries(storedObject(stored.routes) ?? {})) {
+    const directionId = storedText(storedObject(value)?.directionId);
+    if (directionId) routes[id] = { directionId };
+  }
+  return { scenarios, routes };
+}
+
+export function writeWorkingContext(context: WorkingContext) {
+  try { localStorage.setItem(WORKING_CONTEXT_KEY, JSON.stringify(context)); } catch { /* Storage is a convenience only. */ }
+}

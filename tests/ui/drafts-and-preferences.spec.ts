@@ -276,8 +276,8 @@ test('the remembered Blocking Scenario survives a Trip Profile change and is res
   // Trips: pick the Blocking Scenario that is not the first one listed.
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await chooseScope(page, 'Day', { label: 'Weekday' });
-  const scenarioMenu = tripsSection(page).locator('.menu-field').filter({ hasText: 'Scenario' }).getByRole('button');
-  const profileMenu = tripsSection(page).locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button');
+  const scenarioMenu = page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Blocking scenario: / });
+  const profileMenu = page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / });
   await expect(scenarioMenu).toContainText(/blocks/i, { timeout: 30_000 });
   if (!/Default/.test(await profileMenu.innerText())) { await profileMenu.click(); await page.getByRole('menu', { name: 'Trip profile' }).getByRole('menuitemradio', { name: 'Default', exact: true }).click(); await expect(profileMenu).toContainText('Default'); }
   await expect(scenarioMenu).toContainText(/Workbook Blocks|Second blocks/);
@@ -297,8 +297,7 @@ test('the remembered Blocking Scenario survives a Trip Profile change and is res
 
   // Blocking: choose the non-first Scenario, reload, and open Blocking again. It is restored, not replaced by the first one listed.
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
-  const profileSelect = page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Trip profile' });
-  await profileSelect.selectOption({ label: 'Default' });
+  await expect(profileMenu).toContainText('Default');
   await expectBlockingScenarioSelected(page);
   const shown = await selectedBlockingScenarioName(page);
   const other = shown === 'Second blocks' ? 'Workbook Blocks' : 'Second blocks';
@@ -308,9 +307,11 @@ test('the remembered Blocking Scenario survives a Trip Profile change and is res
   await expect.poll(() => selectedBlockingScenarioName(page)).toBe(other);
 
   // The remembered choice for the Default profile is kept while another Trip Profile is used in Blocking.
-  await profileSelect.selectOption({ label: 'Alt' });
+  await profileMenu.click();
+  await page.getByRole('menu', { name: 'Trip profile' }).getByRole('menuitemradio', { name: 'Alt', exact: true }).click();
   await expect.poll(() => selectedBlockingScenarioName(page)).toBe('Alt blocks');
-  await profileSelect.selectOption({ label: 'Default' });
+  await profileMenu.click();
+  await page.getByRole('menu', { name: 'Trip profile' }).getByRole('menuitemradio', { name: 'Default', exact: true }).click();
   await expect.poll(() => selectedBlockingScenarioName(page)).toBe(other);
   void TRIPS_BLOCKING_KEY;
 });

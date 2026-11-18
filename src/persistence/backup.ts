@@ -35,12 +35,12 @@ import { assertTripProfileReferences } from '../domain/trips';
 import { validateBlockingAssignments, validateBlockingBlock } from '../domain/blocking';
 import { MAX_COSTING_FUTURE_YEARS, MAX_COSTING_YEAR, MIN_COSTING_YEAR, validatePersistedCostingAssumptions } from '../domain/costing';
 import { recoverScenarioCopyNodeReferences } from '../domain/scenarioCopyRecovery';
-import { unifyRouteRuntimeCalculationMethods } from '../domain/runtime';
+import { unifyRouteRuntimeCalculationMethods, withRecordedRuntimeSignatures } from '../domain/runtime';
 import { remapEstimateFactorDays, remapRouteEstimateFactors, remapTripProfileEstimateFactors } from '../domain/estimatedCosting';
 
 export const PROJECT_BACKUP_FORMAT = 'transit-costing-tool.project' as const;
 /** Version 10 adds `plannedFrequencies` (Decision 0058); versions 1 to 9 import with no plans. Version 12 adds `routeEstimateFactors` (Decision 0077). Version 13 adds `routeStopSets` and `Node.stopCode` (Decision 0079). Version 14 moves timepoint stop IDs from `Node.stopCode` to `RouteStopSet.timepointStopCodesByPatternId` (Decision 0080); a `Node.stopCode` in an older file is moved on import. */
-export const PROJECT_BACKUP_SCHEMA_VERSION = 14 as const;
+export const PROJECT_BACKUP_SCHEMA_VERSION = 15 as const;
 export const LEGACY_PROJECT_BACKUP_SCHEMA_VERSION = 1 as const;
 
 /** Decision 0055: shape and rule checks for a stored `autoBlocking` record (backup version 8 and later; `maxVehicles` from version 9, Decision 0056). */
@@ -566,6 +566,7 @@ function validateTrips(values: unknown[], scenarioIds: Set<string>, routes: Map<
     const sourceProfile = sourceProfileId ? runtimeProfiles.find((profile) => profile.id === sourceProfileId) : undefined;
     if (sourceProfile && sourceProfile.patternId !== trip.patternId) throw new Error(`Invalid project backup: trips[${index}] runtime profile does not belong to the trip pattern`);
     if (sourceRevision !== undefined && (!Number.isInteger(sourceRevision) || sourceRevision < 0)) throw new Error(`Invalid project backup: trips[${index}] has an invalid runtime calculation revision`);
+    if (source?.runtimeInputsSignature !== undefined && (typeof source.runtimeInputsSignature !== 'string' || !source.runtimeInputsSignature)) throw new Error(`Invalid project backup: trips[${index}] has an invalid runtime inputs signature`);
     if (!Array.isArray(trip.stopTimes) || trip.stopTimes.length !== pattern.points.length) throw new Error(`Invalid project backup: trips[${index}].stopTimes`);
     const pointIds = new Set(pattern.points.map((point) => point.id));
     for (const point of trip.stopTimes) { requiredString(point.patternPointId, `trips[${index}].stopTimes.patternPointId`); if (!pointIds.has(point.patternPointId) || !Number.isInteger(point.sequence) || !Number.isInteger(point.time) || point.time < 0) throw new Error(`Invalid project backup: trips[${index}].stopTimes`); }
@@ -719,7 +720,7 @@ function parseValidatedBackup(payload: string): { snapshot: ProjectSnapshot; rep
     throw new Error('Invalid project backup: malformed JSON');
   }
   if (!isRecord(parsed)) throw new Error('Invalid project backup: root must be an object');
-  if (parsed.format !== PROJECT_BACKUP_FORMAT || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)) {
+  if (parsed.format !== PROJECT_BACKUP_FORMAT || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)) {
     throw new Error('Unsupported project backup format or schema version');
   }
   requiredString(parsed.exportedAt, 'exportedAt');
@@ -749,30 +750,30 @@ function parseValidatedBackup(payload: string): { snapshot: ProjectSnapshot; rep
   assertRuntimeGraph(runtimeProfiles, runtimeAssignments, patterns, serviceDays);
   // Current authoritative backups omit generationSets. A non-empty collection is
   // still accepted so historical Phase 2 files can be inspected and copied.
-  const suppliedTripProfiles = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTripProfiles(requiredArray(parsed.tripProfiles ?? [], 'tripProfiles'), scenarioIds) : [];
-  const generationSets = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+  const suppliedTripProfiles = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTripProfiles(requiredArray(parsed.tripProfiles ?? [], 'tripProfiles'), scenarioIds) : [];
+  const generationSets = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
     ? (parsed.generationSets === undefined ? [] : validateGenerationSets(requiredArray(parsed.generationSets, 'generationSets'), scenarioIds, routeById, patterns, serviceDays))
     : [];
-  const trips = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTrips(requiredArray(parsed.trips, 'trips'), scenarioIds, routeById, patterns, serviceDays, generationSets, runtimeProfiles) : [];
+  const trips = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTrips(requiredArray(parsed.trips, 'trips'), scenarioIds, routeById, patterns, serviceDays, generationSets, runtimeProfiles) : [];
   const provisionalTripProfiles = suppliedTripProfiles.length ? suppliedTripProfiles : scenarios.map((scenario) => ({ id: newId(), scenarioId: scenario.id, name: 'Default', ...metadata() }));
-  const blockingScenarios = [5, 6, 7, 8, 9, 10, 11, 12, 13, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
-    ? validateBlockingScenarios(requiredArray(parsed.blockingScenarios ?? [], 'blockingScenarios'), scenarioIds, provisionalTripProfiles, [8, 9, 10, 11, 12, 13, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ?{ patterns, nodes, serviceDays } : undefined)
+  const blockingScenarios = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+    ? validateBlockingScenarios(requiredArray(parsed.blockingScenarios ?? [], 'blockingScenarios'), scenarioIds, provisionalTripProfiles, [8, 9, 10, 11, 12, 13, 14, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ?{ patterns, nodes, serviceDays } : undefined)
     : [];
-  const costingAssumptions = [6, 7, 8, 9, 10, 11, 12, 13, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
-    ? validateCostingAssumptions(requiredArray(parsed.costingAssumptions, 'costingAssumptions'), scenarioIds, serviceDays, provisionalTripProfiles, [11, 12, 13, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number), routes, [12, 13, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number))
+  const costingAssumptions = [6, 7, 8, 9, 10, 11, 12, 13, 14, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+    ? validateCostingAssumptions(requiredArray(parsed.costingAssumptions, 'costingAssumptions'), scenarioIds, serviceDays, provisionalTripProfiles, [11, 12, 13, 14, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number), routes, [12, 13, 14, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number))
     : [];
-  const plannedFrequencies = [10, 11, 12, 13, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+  const plannedFrequencies = [10, 11, 12, 13, 14, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
     ? validatePlannedFrequencies(requiredArray(parsed.plannedFrequencies ?? [], 'plannedFrequencies'), { scenarioIds, routes, serviceDays, directions: directions ?? [], nodes })
     : [];
   // Decision 0079. Version 13 and later files; earlier files have no stop sets. Decision 0080: a Node's stop ID (version 13) moves to the
   // points of its Route's patterns, and the Nodes are kept without it.
-  const fileStopSets = [13, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+  const fileStopSets = [13, 14, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
     ? validateRouteStopSets(requiredArray(parsed.routeStopSets ?? [], 'routeStopSets'), { scenarioIds, routes, patterns })
     : [];
   const movedCodes = moveNodeStopCodesToPatterns({ nodes, patterns, routeStopSets: fileStopSets, now: new Date().toISOString(), makeId: newId });
   const routeStopSets = movedCodes.routeStopSets;
   // Blocks without a Blocking Scenario are pre-Phase-4 placeholders (version 3 and 4 files hold only those). They are discarded and counted.
-  const blockValues = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? requiredArray(parsed.blocks, 'blocks') : [];
+  const blockValues = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? requiredArray(parsed.blocks, 'blocks') : [];
   const keptBlockEntries = blockValues.map((value, index) => ({ value, index })).filter((entry) => !isPlaceholderBlock(entry.value));
   const validatedBlocks = validateBlocks(keptBlockEntries, scenarioIds, serviceDays, trips, blockingScenarios);
   // Files exported after a Scenario was duplicated by the older code name the source Scenario's Nodes in the copy's Blocks (Decision 0038).
@@ -794,7 +795,7 @@ function parseValidatedBackup(payload: string): { snapshot: ProjectSnapshot; rep
       if (!profile || profile.scenarioId !== block.scenarioId) throw new Error(`Invalid project backup: blocks contains an invalid Trip profile reference`);
     }
   }
-  const normalizedTrips = trips.map((trip) => ({ ...trip, tripProfileId: trip.tripProfileId ?? defaultProfileByScenario.get(trip.scenarioId) }));
+  const normalizedTrips = withRecordedRuntimeSignatures(trips.map((trip) => ({ ...trip, tripProfileId: trip.tripProfileId ?? defaultProfileByScenario.get(trip.scenarioId) })), runtimeProfiles).trips;
   const reportedReferences = new Set(recovery.findings.map((found) => `${found.entityId}\u0000${found.parameters?.activityId}\u0000${found.parameters?.end === 'from' ? 'fromNodeId' : 'toNodeId'}`));
   validateBlockContents(blocks, normalizedTrips, patterns, nodes, blockingScenarios, reportedReferences);
   // A normalized Block stores no Trip Profile of its own; it follows from its Blocking Scenario (Decision 0019 item 9).

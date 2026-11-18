@@ -27,11 +27,9 @@ test('side by side draws a pane for each direction, without Runtimes, and disabl
   await expect(scopeField(page, 'Direction')).toHaveAttribute('aria-disabled', 'true');
   await expect(pane(page, 'Southbound').locator('.schedule-table tbody tr').first()).toBeVisible();
   await expect(pane(page, 'Northbound').locator('.schedule-table tbody tr').first()).toBeVisible();
-  // Trip profile, Blocking scenario, and View are shared: they appear once, in the shared Trips header, and in neither pane.
-  const sharedHeader = page.locator('[aria-label="Trips, both directions"] > header');
+  // Trip profile and Blocking scenario are shared breadcrumb levels (Decision 0081, D6); View is shared in the Trips header.
   for (const label of ['Trip profile', 'Blocking scenario']) {
-    await expect(sharedHeader.locator('.menu-field').filter({ hasText: label })).toHaveCount(1);
-    await expect(page.locator('.menu-field').filter({ hasText: label })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: new RegExp(`^${label}: `) })).toHaveCount(1);
   }
   await expect(page.getByRole('button', { name: 'View', exact: true })).toHaveCount(1);
   await expect(pane(page, 'Southbound').getByRole('button', { name: 'Add trip', exact: true })).toHaveCount(1);
@@ -99,7 +97,9 @@ test('Switch sides swaps the panes and keeps an open Add-trip row', async ({ pag
   expect(north!.x).toBeLessThan(southBox!.x);
   await expect(draftRow(south)).toHaveCount(1);
   // The shared header controls follow the left pane, and stay in the shared header.
-  await expect(page.locator('[aria-label="Trips, both directions"] > header .menu-field').filter({ hasText: 'Trip profile' })).toHaveCount(1);
+  // Decision 0081 (D6): one breadcrumb serves both panes.
+  await expect(page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / })).toHaveCount(1);
+  await expect(page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Blocking scenario: / })).toHaveCount(1);
 });
 
 test('compact panes pin the compare columns at the right and leave out Deadhead', async ({ page }) => {

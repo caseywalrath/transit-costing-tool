@@ -34,11 +34,26 @@ export async function chooseScope(page: Page, label: ToggleScope, choice: ScopeC
   await target.click();
 }
 
-/** Chooses a Cost basis by group and name. A Blocking Scenario and a Trip Profile may share a name, so the group decides. */
+/**
+ * Chooses a Cost basis (Decision 0081, D5): Blocked costs the working Blocking scenario named `name`; Estimated costs the working Trip
+ * profile named `name`. The kind is the Cost basis radio group; the name is chosen in the breadcrumb.
+ */
 export async function chooseCostBasis(page: Page, group: 'Blocked hours' | 'Estimated from running time', name: string) {
-  const field = scopeField(page, 'Cost basis');
-  const value = await field.locator(`optgroup[label="${group}"] option`).filter({ hasText: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`) }).getAttribute('value');
-  await field.selectOption({ value: value! });
+  const kind = group === 'Blocked hours' ? 'Blocked' : 'Estimated';
+  // A Trip profile without a Blocking scenario shows Estimated whatever kind is stored, so the Trip profile is chosen first.
+  if (kind === 'Estimated' && (await tripProfileSwitcher(page).getAttribute('aria-label')) !== `Trip profile: ${name}`) await chooseTripProfile(page, name);
+  // Costing draws its scope controls into the header after it loads, so a click can land on a control that is drawn again; retry until checked.
+  const radio = scopeField(page, 'Cost basis').getByRole('radio', { name: kind, exact: true });
+  await expect(async () => { if (await radio.getAttribute('aria-checked', { timeout: 3000 }) !== 'true') await radio.click({ timeout: 3000 }); await expect(radio).toHaveAttribute('aria-checked', 'true', { timeout: 2000 }); }).toPass({ timeout: 30000 });
+  if (kind === 'Estimated') { if ((await tripProfileSwitcher(page).getAttribute('aria-label')) !== `Trip profile: ${name}`) await chooseTripProfile(page, name); return; }
+  if ((await blockingScenarioMenu(page).getAttribute('aria-label')) !== `Blocking scenario: ${name}`) await chooseBlockingScenario(page, name);
+}
+
+/** The working cost basis as "Blocked: <blocking scenario>" or "Estimated: <trip profile>". */
+export async function costBasisText(page: Page): Promise<string> {
+  const kind = await scopeField(page, 'Cost basis').locator('[role="radio"][aria-checked="true"]').textContent();
+  const name = kind === 'Blocked' ? await selectedBlockingScenarioName(page) : ((await tripProfileSwitcher(page).getAttribute('aria-label')) ?? '').replace(/^Trip profile: /, '');
+  return `${kind}: ${name}`;
 }
 
 /** The record id of the chosen Day or Direction. */
@@ -78,8 +93,16 @@ const regionToday: Record<RegionId, string> = {
   costingControls: 'Scope',
 };
 
-/** The Blocking scenario field menu trigger in the Blocking summary header (Decision 0076). Its name is "Blocking scenario: <name>". */
-export const blockingScenarioMenu = (page: Page): Locator => page.locator('[aria-label="Blocking summary"]').getByRole('button', { name: /^Blocking scenario: / });
+/** The Blocking scenario level of the scope bar's breadcrumb (Decision 0081, D6). Its name is "Blocking scenario: <name>". */
+export const blockingScenarioMenu = (page: Page): Locator => page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Blocking scenario: / });
+/** The Trip profile level of the scope bar's breadcrumb (Decision 0081, D6). Its menu is named "Trip profile". */
+export const tripProfileSwitcher = (page: Page): Locator => page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / });
+/** Chooses the working Trip profile from the breadcrumb. */
+export async function chooseTripProfile(page: Page, name: string) {
+  await openMenu(page, tripProfileSwitcher(page), 'Trip profile');
+  await page.getByRole('menu', { name: 'Trip profile', exact: true }).getByRole('menuitemradio', { name, exact: true }).click();
+  await expect(tripProfileSwitcher(page)).toHaveAccessibleName(`Trip profile: ${name}`);
+}
 
 /** The selected Blocking Scenario's name, read from the field menu trigger; '' when none is selected. */
 export async function selectedBlockingScenarioName(page: Page): Promise<string> {
@@ -187,8 +210,8 @@ const commands = {
   // Decision 0054: the Costing scope bar has an Actions menu.
   'costing.exportCsv': { menu: 'Costing actions', item: 'Export costing CSV' },
   'costing.viewSummary': { menu: 'Costing actions', item: 'View cost summary…' },
-  // A separate item, listed only while the saved undo applies. Its name is "Undo last regeneration (N trips)".
-  'trips.undoRegeneration': { menu: 'Trip actions', within: 'trips', item: 'Undo last regeneration' },
+  // A separate item, listed only while the newest trip change in view can be restored (Decision 0081 item 12). Its name is "Undo regenerated N trips".
+  'trips.undoRegeneration': { menu: 'Trip actions', within: 'trips', item: 'Undo regenerated' },
   'trips.copyDay': { menu: 'Trip actions', within: 'trips', item: 'Copy trips from another day…' },
   'trips.exportCsv': { menu: 'Trip actions', within: 'trips', item: 'Export trips CSV' },
   'trips.toggleHeadways': { menu: 'View', within: 'trips', item: 'Show headways', role: 'menuitemcheckbox' },
@@ -215,12 +238,12 @@ const commands = {
   'route.exportCsv': { menu: 'Route actions', item: 'Export route CSV (ZIP)' },
   'route.delete': { menu: 'Route actions', item: 'Delete route…' },
   // Decision 0076: the Blocking scenario field menu in the Blocking summary header ("Blocking scenario: <name>").
-  'blockingScenario.new': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingSummary', item: 'New blocking scenario…' },
-  'blockingScenario.autoBlocking': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingSummary', item: 'Auto-blocking…' },
-  'blockingScenario.rename': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingSummary', item: 'Rename blocking scenario…' },
-  'blockingScenario.duplicate': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingSummary', item: 'Duplicate blocking scenario…' },
-  'blockingScenario.delete': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingSummary', item: 'Delete blocking scenario…' },
-  'blockingScenario.exportCsv': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingSummary', item: 'Export blocking CSV (ZIP)' },
+  'blockingScenario.new': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingControls', item: 'New blocking scenario…' },
+  'blockingScenario.autoBlocking': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingControls', item: 'Auto-blocking…' },
+  'blockingScenario.rename': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingControls', item: 'Rename blocking scenario…' },
+  'blockingScenario.duplicate': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingControls', item: 'Duplicate blocking scenario…' },
+  'blockingScenario.delete': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingControls', item: 'Delete blocking scenario…' },
+  'blockingScenario.exportCsv': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingControls', item: 'Export blocking CSV (ZIP)' },
   // Decision 0076 item 10: the same lifecycle items on the Trips Blocking scenario field menu (no `within`: the trigger is unique on the Trips tab).
   'tripsBlockingScenario.new': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, item: 'New blocking scenario…' },
   'tripsBlockingScenario.duplicate': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, item: 'Duplicate blocking scenario…' },

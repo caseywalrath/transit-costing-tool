@@ -23,6 +23,8 @@ async function slowSaves(page: Page, milliseconds: number) {
     const { TransitDatabase } = await import('/src/persistence/database.ts');
     const original = TransitDatabase.prototype.transaction;
     TransitDatabase.prototype.transaction = function (...args) {
+      // A transaction opened inside another (a covered command inside its restore point transaction, Decision 0081) joins it and is not delayed.
+      if (Object.getPrototypeOf(TransitDatabase).currentTransaction) return original.apply(this, args);
       return new Promise((resolve) => setTimeout(resolve, ${milliseconds})).then(() => original.apply(this, args));
     };
   })()`);

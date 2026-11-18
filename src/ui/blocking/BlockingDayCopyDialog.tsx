@@ -81,7 +81,7 @@ export function BlockingDayCopyDialog({ blockingService, scenarioId, blockingSce
       </ul>}
       {refused && <InlineNote kind="warn">{impact.belowThreshold ? `Only ${impact.matchedTripCount} of ${impact.heldTripCount} trips in the ${sourceName} blocks match ${targetDay.name} trips. The timetables differ too much to copy blocks. Copy trips first, or build these blocks by hand.` : 'This copy cannot be made. Choose another source day.'}</InlineNote>}
       {emptySource && !refused && <InlineNote kind="warn">{sourceName} has no blocks in this blocking scenario. Copying deletes {plural(impact.replacedTargetBlockCount, `${targetDay.name} block`)}.</InlineNote>}
-      {!emptySource && !refused && impact.replacedTargetBlockCount > 0 && <p>The {plural(impact.replacedTargetBlockCount, 'block')} now on {targetDay.name} are replaced. This cannot be undone.</p>}
+      {!emptySource && !refused && impact.replacedTargetBlockCount > 0 && <p>The {plural(impact.replacedTargetBlockCount, 'block')} now on {targetDay.name} are replaced.</p>}
       {needsAcknowledgment && <label className="clear-target"><input type="checkbox" checked={acknowledged} disabled={busy} onChange={(event) => setAcknowledged(event.target.checked)} /> Copy anyway; trips that are not found are removed from their blocks</label>}
       {!refused && !needsAcknowledgment && !emptySource && impact.heldTripCount > 0 && <InlineNote kind="ok">Every trip matches a {targetDay.name} trip exactly.</InlineNote>}
     </>}

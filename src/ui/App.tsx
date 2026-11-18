@@ -1,18 +1,26 @@
 import { Component, type ChangeEvent, type ErrorInfo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { type LocalDataProtection, type SaveStatus, type SessionStatus, type SessionStatusQueries } from '../application/ports';
 import { type BlockingCommands, type BlockingQueries } from '../application/ports';
+import { RestoreConflictError, RestorePointNotFoundError, type RestorePointListing } from '../application/restorePointService';
+import { restorePointCommandLabel, restorePointContext, restorePointLabel } from './shared/messages';
+import type { TripChangeUndo } from './trips/TripsWorkspace';
+import { UndoHistoryDialog } from './shell/UndoHistoryDialog';
 import { BlockingWorkspace } from './blocking/BlockingWorkspace';
 import { CostingWorkspace } from './costing/CostingWorkspace';
 import { MenuButton, type MenuGroup } from './MenuButton';
 import { userFacingError } from './errorMessages';
-import { readSideBySidePreference, readStoredRecord, sideBySideDirectionIds, storedText, writeSideBySidePreference, type SideBySidePreference } from './preferences';
+import { rememberCostBasisKind, rememberedCostBasisKind, type CostBasisKind } from './preferences';
+import { rememberTripBlockingScenario, rememberedTripBlockingScenarios } from './trips/TripsWorkspace';
+import { ContextCrumb } from './shell/AppHeader';
+import { type ContextLevel } from './shared/ContextStamp';
+import { readWorkingContext, writeWorkingContext, type WorkingContext, readSideBySidePreference, readStoredRecord, sideBySideDirectionIds, storedText, writeSideBySidePreference, type SideBySidePreference } from './preferences';
 import { createCsvArchive } from '../application/csvDownload';
 import { ServiceDayValidationError, type RouteDefinitionApplication, type RouteEditCommitResult, type ScenarioRecords } from '../application/routeDefinitionService';
 import { type TripGenerationApplication } from '../application/tripGenerationService';
 import { type PlannedFrequencyService } from '../application/plannedFrequencyService';
 import { TripGenerationError } from '../domain/trips';
 import { isUsablePattern, orderDirections, serviceDayAbbreviation, sortServiceDays } from '../application/tripsWorkspaceView';
-import { type Project, type Route, type RouteDefinitionAggregate, type Scenario, type ServiceDayDefinition, type Trip, type ValidationFinding } from '../domain/types';
+import { type BlockingScenario, type Project, type Route, type RouteDefinitionAggregate, type Scenario, type ServiceDayDefinition, type Trip, type ValidationFinding } from '../domain/types';
 import { type CostingCommands, type CostingQueries } from '../application/ports';
 import { type NameDialog, type Confirmation, NameDialogForm, ConfirmDialog } from './shared/dialogs';
 import { type RouteNavigationGuard } from './shared/types';
@@ -24,8 +32,9 @@ import { headerStatus, routeOptionLabel } from './shell/headerStatus';
 import { ContextField } from './shared/ContextField';
 import { SegmentedControl } from './shared/SegmentedControl';import { TripsOrSideBySide, useSideBySideWidth, type SideBySideControl } from './trips/SideBySideTrips';
 
-export type Props = { service: RouteDefinitionApplication; tripService: TripGenerationApplication; blockingService: BlockingCommands & BlockingQueries; costingService: CostingCommands & CostingQueries; plannedFrequencyService: PlannedFrequencyService; session?: SessionStatusQueries };
-export type Notice = { kind: 'error' | 'success'; text: string } | undefined;
+export type Props = { service: RouteDefinitionApplication; tripService: TripGenerationApplication; blockingService: BlockingCommands & BlockingQueries; costingService: CostingCommands & CostingQueries; plannedFrequencyService: PlannedFrequencyService; session?: SessionStatusQueries; restorePoints?: import('../application/restorePointService').RestorePointCommands & import('../application/restorePointService').RestorePointQueries };
+/** `undoId` (Decision 0081): the restore point the notice's Undo button restores. */
+export type Notice = { kind: 'error' | 'success' | 'info'; text: string; undoId?: string } | undefined;
 export type ActiveTab = 'route' | 'trips' | 'blocking' | 'costing';
 export type SelectionPreference = { projectId?: string; scenarioId?: string; routeId?: string };
 export const SELECTION_PREFERENCE_KEY = 'transit-costing-tool.route-selection.v1';
@@ -40,10 +49,11 @@ export function saveSelectionPreference(preference: SelectionPreference) {
 
 /** The Route selector's last option, which adds a Route instead of selecting one (UR-16). Not a valid id. */
 const NEW_ROUTE_OPTION = '__new-route__';
+/** "Deleted route 12" → "deleted route 12", for "Undo deleted route 12". */
 
 export function formatBackupTime(iso: string) { return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); }
 
-export function App({ service, tripService, blockingService, costingService, plannedFrequencyService, session }: Props) {
+export function App({ service, tripService, blockingService, costingService, plannedFrequencyService, session, restorePoints }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState('');
   const [scenarioId, setScenarioId] = useState('');
@@ -89,39 +99,156 @@ export function App({ service, tripService, blockingService, costingService, pla
     if (!scenario) { setScenarioId(''); setRecords(undefined); setAggregate(undefined); setWorkspaceTripProfileId(''); saveSelectionPreference({ projectId: project.id }); return; }
     const nextRecords = workspace.records; setScenarioId(scenario.id); setRecords(nextRecords);
     const tripProfiles = nextRecords?.tripProfiles ?? [];
-    setWorkspaceTripProfileId((current) => current && tripProfiles.some((profile) => profile.id === current) ? current : tripProfiles[0]?.id ?? '');
+    // Decision 0081 item 6: a reload or a Scenario switch opens the Trip profile last used in that Scenario on this device. When it no longer
+    // exists the first time this Scenario opens in this page, say which one is open instead.
+    const rememberedProfileId = workingContext.current.scenarios[scenario.id]?.tripProfileId;
+    const rememberedProfile = tripProfiles.find((profile) => profile.id === rememberedProfileId);
+    if (rememberedProfileId && !rememberedProfile && tripProfiles[0] && !openedScenarios.current.has(scenario.id)) setNotice({ kind: 'info', text: `The trip profile open last time is no longer in this scenario. ${tripProfiles[0].name} is open.` });
+    openedScenarios.current.add(scenario.id);
+    setWorkspaceTripProfileId((current) => current && tripProfiles.some((profile) => profile.id === current) ? current : rememberedProfile?.id ?? tripProfiles[0]?.id ?? '');
     const route = workspace.aggregate?.route;
     setRouteId(route?.id ?? '');
     const nextAggregate = workspace.aggregate; setAggregate(nextAggregate);
     setSelectedPatternId((current) => nextAggregate?.patterns.some((pattern) => pattern.id === current) ? current : nextAggregate?.patterns[0]?.id ?? '');
     saveSelectionPreference({ projectId: project.id, scenarioId: scenario.id, routeId: route?.id });
   }
+  // Decision 0081: the newest restorable point of the open project (Project menu), whether a deleted project can be restored (empty
+  // state), and the Undo history dialog.
+  const [latestUndo, setLatestUndo] = useState<RestorePointListing>();
+  const [deletedProjectRestorable, setDeletedProjectRestorable] = useState(false);
+  const [undoHistoryOpen, setUndoHistoryOpen] = useState(false);
+  // Bumped by each restore; Costing, which keeps its own copy of the records, is rebuilt from the restored ones.
+  const [restoreVersion, setRestoreVersion] = useState(0);
+  // Decision 0081 (D5, D6): the Blocking scenario is one working choice for Trips, Blocking, and Costing, kept per Trip profile with the
+  // memory Trips already used. The list is the Scenario's; a workspace that changes it reports back through `blockingScenariosChanged`.
+  const [blockingScenarioList, setBlockingScenarioList] = useState<BlockingScenario[]>([]);
+  const [blockingScenarioListVersion, setBlockingScenarioListVersion] = useState(0);
+  const [workspaceBlockingScenarioId, setWorkspaceBlockingScenarioIdState] = useState('');
+  const [costBasisKind, setCostBasisKindState] = useState<CostBasisKind>('blocked');
+  const [crumbSlot, setCrumbSlot] = useState<HTMLElement | null>(null);
+  const blockingScenariosChanged = () => setBlockingScenarioListVersion((current) => current + 1);
+  const profileBlockingScenarios = blockingScenarioList.filter((item) => item.tripProfileId === workspaceTripProfileId);
+  // A choice the list does not hold yet (a Blocking scenario just created) waits for the list to reload instead of being replaced.
+  const awaitingBlockingList = useRef('');
+  function setWorkspaceBlockingScenarioId(id: string) {
+    setWorkspaceBlockingScenarioIdState(id);
+    if (id && scenarioId && workspaceTripProfileId) rememberTripBlockingScenario(scenarioId, workspaceTripProfileId, id);
+    if (id && !blockingScenarioList.some((item) => item.id === id)) { awaitingBlockingList.current = id; blockingScenariosChanged(); }
+  }
+  function chooseCostBasisKind(kind: CostBasisKind) { setCostBasisKindState(kind); if (scenarioId) rememberCostBasisKind(scenarioId, kind); }
+  const undoProjectRef = useRef(projectId); undoProjectRef.current = projectId;
+  // FX8: the Trips menu offers the newest restorable trip change made in the Route, Day, and Trip profile in view.
+  const tripChangeUndo: TripChangeUndo | undefined = restorePoints ? {
+    latest: async (view) => {
+      const point = await restorePoints.latestTripChange(view);
+      return point && { id: point.id, label: restorePointCommandLabel(point) };
+    },
+    undo: (pointId) => undo(pointId),
+  } : undefined;
+  function refreshUndo() {
+    if (!restorePoints) return;
+    void restorePoints.listRestorePoints().then((points) => {
+      const restorable = points.filter((point) => point.status.state === 'restorable');
+      setLatestUndo(restorable.find((point) => point.scope === 'scenario' && point.projectId === undoProjectRef.current));
+      setDeletedProjectRestorable(restorable.some((point) => point.scope === 'project'));
+    }).catch(() => undefined);
+  }
+  useEffect(() => { refreshUndo(); }, [restorePoints, projectId, records]);
+  // Every covered command, whichever workspace ran it, announces itself here once its write has committed (rule N2: non-modal, no focus).
+  useEffect(() => restorePoints?.subscribeToRestorePoints((point) => {
+    const context = point.scope === 'project' ? '' : restorePointContext(point);
+    setNotice({ kind: 'success', text: [restorePointLabel(point), context].filter(Boolean).join(' · '), undoId: point.id });
+    refreshUndo();
+  }), [restorePoints]);
+  async function undo(pointId: string) {
+    if (!restorePoints) return;
+    try {
+      const restored = await restorePoints.restore(pointId);
+      setUndoHistoryOpen(false);
+      const sameProject = restored.projectId === projectId;
+      await reload(restored.projectId, restored.scenarioId ?? (sameProject ? scenarioId : undefined), sameProject && (!restored.scenarioId || restored.scenarioId === scenarioId) ? routeId : undefined);
+      setRuntimeVersion((current) => current + 1);
+      setRestoreVersion((current) => current + 1);
+      refreshUndo();
+    } catch (error) {
+      setNotice({ kind: 'error', text: error instanceof RestoreConflictError || error instanceof RestorePointNotFoundError ? error.message : userFacingError(error, 'Unable to undo. Your data was not changed.') });
+      refreshUndo();
+    }
+  }
+  const listRestorePoints = useMemo(() => () => restorePoints ? restorePoints.listRestorePoints() : Promise.resolve([]), [restorePoints]);
+  useEffect(() => {
+    if (!scenarioId) { setBlockingScenarioList([]); return; }
+    let live = true;
+    void blockingService.listBlockingScenarios(scenarioId).then((next) => { if (!live) return; if (next.some((item) => item.id === awaitingBlockingList.current)) awaitingBlockingList.current = ''; setBlockingScenarioList(next); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [blockingService, scenarioId, blockingScenarioListVersion, restoreVersion]);
+  useEffect(() => { if (scenarioId) setCostBasisKindState(rememberedCostBasisKind(scenarioId)); }, [scenarioId]);
+  // The remembered choice of the Trip profile, else its first Blocking scenario. A remembered one that no longer exists is replaced, and
+  // the application says so once (rule N5: it reports only a change it made itself).
+  const reportedBlockingFallbacks = useRef(new Set<string>());
+  useEffect(() => {
+    if (!scenarioId || !workspaceTripProfileId || blockingScenarioList.some((item) => item.scenarioId !== scenarioId)) return;
+    if (awaitingBlockingList.current && awaitingBlockingList.current === workspaceBlockingScenarioId) return;
+    const candidates = blockingScenarioList.filter((item) => item.tripProfileId === workspaceTripProfileId);
+    if (workspaceBlockingScenarioId && candidates.some((item) => item.id === workspaceBlockingScenarioId)) return;
+    const remembered = rememberedTripBlockingScenarios(scenarioId)[workspaceTripProfileId];
+    const next = candidates.find((item) => item.id === remembered) ?? candidates[0];
+    setWorkspaceBlockingScenarioIdState(next?.id ?? '');
+    const key = `${scenarioId}:${workspaceTripProfileId}:${remembered}`;
+    // The planner's own deletion of the open one is not reported: the open one was of this Trip profile and is gone.
+    const openWasOfAnotherProfile = !workspaceBlockingScenarioId || blockingScenarioList.some((item) => item.id === workspaceBlockingScenarioId);
+    if (remembered && next && next.id !== remembered && openWasOfAnotherProfile && !reportedBlockingFallbacks.current.has(key)) {
+      reportedBlockingFallbacks.current.add(key);
+      setNotice((current) => current ?? { kind: 'info', text: `The blocking scenario open last time is no longer in this trip profile. ${next.name} is open.` });
+    }
+  }, [blockingScenarioList, scenarioId, workspaceTripProfileId, workspaceBlockingScenarioId]);
+  function requestUndo(pointId: string) { requestRouteNavigation(() => { void undo(pointId); }); }
   useEffect(() => service.subscribeToSaveStatus(setSaveStatus), [service]);
   useEffect(() => session?.subscribeToSessionStatus(setSessionStatus), [session]);
   useEffect(() => service.subscribeToLocalDataProtection(setProtection), [service]);
   useEffect(() => { const preference = loadSelectionPreference(); void reload(preference.projectId, preference.scenarioId, preference.routeId).catch((error) => { setLoadFailed(true); showError(error, 'Unable to open your saved projects. Reload this page and try again.'); }); }, []);
-  // The Day and Trip Profile last viewed in each Scenario, and the direction last viewed on each Route, for this session. A Scenario switch
-  // restores them instead of falling back to the first entry.
-  const lastViewed = useRef<Record<string, string>>({});
+  // The Day and Trip Profile last viewed in each Scenario, and the direction last viewed on each Route, kept on this device (Decision 0081
+  // item 6). A Scenario switch or a reload restores them instead of falling back to the first entry.
+  const workingContext = useRef<WorkingContext>(readWorkingContext());
+  const openedScenarios = useRef(new Set<string>());
+  function rememberContext(change: (context: WorkingContext) => void) { change(workingContext.current); writeWorkingContext(workingContext.current); }
   useEffect(() => {
     const days = sortServiceDays(records?.serviceDays ?? []);
-    if (days.some((day) => day.id === workspaceServiceDayId)) { if (records) lastViewed.current[`day:${records.scenario.id}`] = workspaceServiceDayId; return; }
-    const remembered = records ? lastViewed.current[`day:${records.scenario.id}`] : undefined;
+    if (days.some((day) => day.id === workspaceServiceDayId)) { if (records) rememberContext((context) => { context.scenarios[records.scenario.id] = { ...context.scenarios[records.scenario.id], serviceDayId: workspaceServiceDayId }; }); return; }
+    const remembered = records ? workingContext.current.scenarios[records.scenario.id]?.serviceDayId : undefined;
     setWorkspaceServiceDayId(days.find((day) => day.id === remembered)?.id ?? days[0]?.id ?? '');
   }, [records?.serviceDays, workspaceServiceDayId]);
   useEffect(() => {
     const directions = orderDirections(aggregate?.directions ?? []);
-    if (directions.some((direction) => direction.id === workspaceDirectionId)) { if (aggregate) lastViewed.current[`direction:${aggregate.route.id}`] = workspaceDirectionId; return; }
-    const remembered = aggregate ? lastViewed.current[`direction:${aggregate.route.id}`] : undefined;
+    if (directions.some((direction) => direction.id === workspaceDirectionId)) { if (aggregate) rememberContext((context) => { context.routes[aggregate.route.id] = { directionId: workspaceDirectionId }; }); return; }
+    const remembered = aggregate ? workingContext.current.routes[aggregate.route.id]?.directionId : undefined;
     setWorkspaceDirectionId(directions.find((direction) => direction.id === remembered)?.id ?? directions[0]?.id ?? '');
   }, [aggregate?.directions, workspaceDirectionId]);
   useEffect(() => {
     const profiles = records?.tripProfiles ?? [];
-    if (profiles.some((profile) => profile.id === workspaceTripProfileId)) { if (records) lastViewed.current[`profile:${records.scenario.id}`] = workspaceTripProfileId; return; }
-    const remembered = records ? lastViewed.current[`profile:${records.scenario.id}`] : undefined;
+    if (profiles.some((profile) => profile.id === workspaceTripProfileId)) { if (records) rememberContext((context) => { context.scenarios[records.scenario.id] = { ...context.scenarios[records.scenario.id], tripProfileId: workspaceTripProfileId }; }); return; }
+    const remembered = records ? workingContext.current.scenarios[records.scenario.id]?.tripProfileId : undefined;
     setWorkspaceTripProfileId(profiles.find((profile) => profile.id === remembered)?.id ?? profiles[0]?.id ?? '');
   }, [records?.tripProfiles, workspaceTripProfileId]);
+  // Decision 0081 item 6: the browser tab names the working context.
+  useEffect(() => {
+    const scenarioName = records?.scenario.name;
+    const routeName = aggregate ? aggregate.route.shortName || aggregate.route.name || 'Untitled route' : undefined;
+    const profileName = records?.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name;
+    const parts = !scenarioName ? [] : activeTab === 'costing' ? ['Costing', scenarioName] : activeTab === 'route' ? [routeName, scenarioName] : [routeName, profileName, scenarioName];
+    const label = parts.filter(Boolean).join(' · ');
+    document.title = label ? `${label} — Transit Costing Tool` : 'Transit Costing Tool';
+  }, [activeTab, records?.scenario.name, aggregate?.route.name, aggregate?.route.shortName, records?.tripProfiles, workspaceTripProfileId]);
 
+  /** Decision 0081 (rule N3): the levels a confirmation names in its context stamp, with a dot where a level has several choices. */
+  function stamp(levels: Array<'project' | 'scenario' | 'route'>): ContextLevel[] {
+    const all: Record<string, ContextLevel> = {
+      project: { kind: 'Project', name: selectedProject?.name ?? '' },
+      scenario: { kind: 'Scenario', name: records?.scenario.name ?? '', several: scenarioOptions.length > 1 },
+      route: { kind: 'Route', name: aggregate?.route.name || aggregate?.route.shortName || '' },
+    };
+    return levels.map((level) => all[level]);
+  }
   function showError(error: unknown, fallback: string) {
     if (error instanceof TripGenerationError) { setNotice({ kind: 'error', text: [...new Set(error.findings.map(userMessage))].join(' ') || fallback }); return; }
     setNotice({ kind: 'error', text: userFacingError(error, fallback) });
@@ -142,7 +269,7 @@ export function App({ service, tripService, blockingService, costingService, pla
       const summary = `${impact.scenarioCount} scenario${impact.scenarioCount === 1 ? '' : 's'}, ${impact.routeCount} route${impact.routeCount === 1 ? '' : 's'}, ${impact.patternCount} pattern${impact.patternCount === 1 ? '' : 's'}, ${impact.tripCount} trip${impact.tripCount === 1 ? '' : 's'}, and ${impact.blockCount} block${impact.blockCount === 1 ? '' : 's'}`;
       const runDelete = () => { void service.deleteProject(project.id, impact.reviewToken).then(async () => { if (project.id === projectId) { setActiveTab('route'); await reload(project.id); } else { await reload(projectId, scenarioId, routeId); } }).catch((error) => showError(error, 'Unable to delete project.')); };
       const backupNote = impact.backedUpSinceLastChange ? '' : ' No backup of this project has been exported since its last change.';
-      setConfirm({ title: 'Delete project?', text: `Delete “${project.name}” and its ${summary}? All related service days, runtime and trip profiles, blocking scenarios, and costing data will also be deleted. This cannot be undone.${backupNote}`, confirmLabel: 'Delete project', action: runDelete,
+      setConfirm({ title: 'Delete project?', text: `Delete “${project.name}” and its ${summary}? All related service days, runtime and trip profiles, blocking scenarios, and costing data will also be deleted.${backupNote}`, confirmLabel: 'Delete project', action: runDelete,
         secondary: impact.backedUpSinceLastChange ? undefined : { label: 'Back up and delete', action: () => { void exportProjectJson(project).then((ok) => { if (ok) runDelete(); }); } } });
     }).catch((error) => showError(error, 'Unable to review project deletion.'));
   }
@@ -167,7 +294,7 @@ export function App({ service, tripService, blockingService, costingService, pla
         impact.tripCount ? `${impact.tripCount} trip${impact.tripCount === 1 ? '' : 's'}` : '',
         impact.blockCount ? `${impact.blockCount} block${impact.blockCount === 1 ? '' : 's'}` : '',
       ].filter(Boolean);
-      setConfirm({ title: 'Delete scenario?', text: `Delete “${scenario.name}”${affected.length ? ` and its ${affected.join(', ')}?` : '?'} All service days and remaining scenario data will also be deleted. This cannot be undone.`, confirmLabel: 'Delete scenario', action: () => { void service.deleteScenario(scenario.id, impact.reviewToken).then(async () => { if (open) { setActiveTab('route'); await reload(projectId); } else await reload(projectId, scenarioId, routeId); }).catch((error) => showError(error, 'Unable to delete scenario.')); } });
+      setConfirm({ title: 'Delete scenario?', text: `Delete “${scenario.name}”${affected.length ? ` and its ${affected.join(', ')}?` : '?'} All service days and remaining scenario data will also be deleted.`, context: stamp(['project']), confirmLabel: 'Delete scenario', action: () => { void service.deleteScenario(scenario.id, impact.reviewToken).then(async () => { if (open) { setActiveTab('route'); await reload(projectId); } else await reload(projectId, scenarioId, routeId); }).catch((error) => showError(error, 'Unable to delete scenario.')); } });
     }).catch((error) => showError(error, 'Unable to review scenario deletion.'));
   }
   async function addRoute() { if (!records) return; try { const next = await service.addRoute(records); setRecords(next.records); await reload(projectId, scenarioId, next.route.id); } catch (error) { showError(error, 'Unable to add route.'); } }
@@ -185,9 +312,10 @@ export function App({ service, tripService, blockingService, costingService, pla
         impact.removedNonRevenueActivityCount ? `${impact.removedNonRevenueActivityCount} pull-out, pull-in, or deadhead activit${impact.removedNonRevenueActivityCount === 1 ? 'y' : 'ies'}` : '',
         impact.plannedFrequencyCount ? `planned frequencies for ${impact.plannedFrequencyCount} service day${impact.plannedFrequencyCount === 1 ? '' : 's'}` : '',
         impact.routeStopCount ? `${impact.routeStopCount} stop${impact.routeStopCount === 1 ? '' : 's'}` : '',
+        impact.routeEstimateFactorCount ? 'estimate factors for this route' : '',
       ].filter(Boolean);
       const blockNote = impact.affectedBlockCount ? ` ${impact.affectedBlockCount} block${impact.affectedBlockCount === 1 ? '' : 's'} will remain without those trips.` : '';
-      setConfirm({ title: 'Delete route?', text: `Delete “${aggregate.route.name || 'Untitled route'}”${affected.length ? ` and its ${affected.join(', ')}?` : '?'}${blockNote} This cannot be undone.`, confirmLabel: 'Delete route', action: () => { void service.deleteRoute(aggregate.route.id, impact.reviewToken).then(async () => { await reload(projectId, scenarioId); }).catch((error) => showError(error, 'Unable to delete route.')); } });
+      setConfirm({ title: 'Delete route?', text: `Delete “${aggregate.route.name || 'Untitled route'}”${affected.length ? ` and its ${affected.join(', ')}?` : '?'}${blockNote}`, context: stamp(['project', 'scenario']), confirmLabel: 'Delete route', action: () => { void service.deleteRoute(aggregate.route.id, impact.reviewToken).then(async () => { await reload(projectId, scenarioId); }).catch((error) => showError(error, 'Unable to delete route.')); } });
     }).catch((error) => showError(error, 'Unable to review route deletion.'));
   }
   /** Saves a Service day edit. A refused edit (`ServiceDayValidationError`) returns its findings so the table shows each beside its field; any other failure goes to the error banner. */
@@ -203,7 +331,7 @@ export function App({ service, tripService, blockingService, costingService, pla
         impact.affectedBlockCount ? `revenue activities in ${impact.affectedBlockCount} block${impact.affectedBlockCount === 1 ? '' : 's'}` : '',
         impact.stopPlacementCount ? `${impact.stopPlacementCount} stop placement${impact.stopPlacementCount === 1 ? '' : 's'}` : '',
       ].filter(Boolean);
-      setConfirm({ title: 'Delete pattern?',text: `Delete “${selectedPattern.name || 'Untitled pattern'}”${affected.length ? ` and remove ${affected.join(', ')}?` : '?'} This cannot be undone.`, confirmLabel: 'Delete pattern',action: () => { void service.deletePattern(selectedPattern.id, impact.reviewToken).then(async () => { setSelectedPatternId(''); await reload(projectId, scenarioId, routeId); }).catch((error) => showError(error, 'Unable to delete pattern.')); } });
+      setConfirm({ title: 'Delete pattern?',text: `Delete “${selectedPattern.name || 'Untitled pattern'}”${affected.length ? ` and remove ${affected.join(', ')}?` : '?'}`, context: stamp(['scenario', 'route']), confirmLabel: 'Delete pattern',action: () => { void service.deletePattern(selectedPattern.id, impact.reviewToken).then(async () => { setSelectedPatternId(''); await reload(projectId, scenarioId, routeId); }).catch((error) => showError(error, 'Unable to delete pattern.')); } });
     }).catch((error) => showError(error, 'Unable to review pattern deletion.'));
   }
   async function exportProjectJson(project: Project): Promise<boolean> { try { download(`${project.name}.json`, await service.exportProject(project.id), 'application/json'); return true; } catch (error) { showError(error, 'Unable to export the project backup. Your data was not changed. Try again.'); return false; } }
@@ -241,10 +369,13 @@ export function App({ service, tripService, blockingService, costingService, pla
         : 'no trips';
       const blockDetail = impact.blockCount ? ` and ${impact.blockCount} blocks${impact.blockActivityCount ? ` (${impact.blockActivityCount} activities)` : ''}` : '';
       const blockingScenarioDetail = impact.blockingScenarioCount ? `Also deletes ${impact.blockingScenarioCount} blocking scenario${impact.blockingScenarioCount === 1 ? ' and its blocks' : 's and their blocks'}. ` : '';
-      setConfirm({ title: 'Delete trip profile?',text: `Delete “${profile.name}” and its ${tripDetail}${blockDetail}? ${blockingScenarioDetail}This cannot be undone.`, confirmLabel: 'Delete trip profile',action: () => { setTripProfileBusy(true); void tripService.deleteTripProfile(profile.id, impact.previewToken).then(() => reload(projectId, scenarioId, routeId)).catch((error) => showError(error, 'Unable to delete trip profile.')).finally(() => setTripProfileBusy(false)); } });
+      const factorDetail = impact.estimateFactorEntryCount ? 'Also deletes its costing estimate factors. ' : '';
+      setConfirm({ title: 'Delete trip profile?',text: `Delete “${profile.name}” and its ${tripDetail}${blockDetail}? ${blockingScenarioDetail}${factorDetail}`.trim(), context: stamp(['project', 'scenario']), confirmLabel: 'Delete trip profile',action: () => { setTripProfileBusy(true); void tripService.deleteTripProfile(profile.id, impact.previewToken).then(() => reload(projectId, scenarioId, routeId)).catch((error) => showError(error, 'Unable to delete trip profile.')).finally(() => setTripProfileBusy(false)); } });
     }).catch((error) => showError(error, 'Unable to review trip profile deletion.'));
   }
-  function openProject(project: Project) { if (project.id !== projectId) requestRouteNavigation(() => { void reload(project.id).catch(selectionFailed); }); }
+  /** An Undo notice belongs to the context it was made in; it goes when the planner opens another Project or Scenario. */
+  function dropUndoNotice() { setNotice((current) => current?.undoId ? undefined : current); }
+  function openProject(project: Project) { if (project.id !== projectId) requestRouteNavigation(() => { dropUndoNotice(); void reload(project.id).catch(selectionFailed); }); }
   // The context menu of a project in the Projects group (Decision 0064). It acts on that project, which need not be the open one.
   const projectContextGroups = (project: Project): MenuGroup[] => [
     { items: [{ id: 'ctx-open', label: 'Open', disabled: project.id === projectId, onSelect: () => openProject(project) }] },
@@ -261,10 +392,14 @@ export function App({ service, tripService, blockingService, costingService, pla
     { label: 'Project data', items: [
       { id: 'backup-project', label: 'Back up project (JSON)', disabled: !projectId, note: [protection.lastBackupExportedAt ? `Last backup: ${formatBackupTime(protection.lastBackupExportedAt)}` : 'No backup exported yet', ...(protection.persistentStorage === 'denied' || protection.persistentStorage === 'unavailable' ? ['This browser may clear local data. Export backups regularly.'] : [])], onSelect: () => { void exportJson(); } },
       { id: 'restore-project', label: 'Restore project from backup…', onSelect: () => importRef.current?.click() },
+      ...(restorePoints ? [
+        ...(latestUndo ? [{ id: 'undo-latest', label: restorePointCommandLabel(latestUndo), wrapLabel: true, onSelect: () => requestUndo(latestUndo.id) }] : []),
+        { id: 'undo-history', label: 'Undo history…', onSelect: () => setUndoHistoryOpen(true) },
+      ] : []),
     ] },
     { items: [{ id: 'delete-project', label: 'Delete project…', disabled: !selectedProject, destructive: true, onSelect: () => requestRouteNavigation(deleteCurrentProject) }] },
   ];
-  function openScenario(scenario: Scenario) { if (scenario.id !== scenarioId) requestRouteNavigation(() => { void reload(projectId, scenario.id).catch(selectionFailed); }); }
+  function openScenario(scenario: Scenario) { if (scenario.id !== scenarioId) requestRouteNavigation(() => { dropUndoNotice(); void reload(projectId, scenario.id).catch(selectionFailed); }); }
   async function renameScenarioById(scenario: Scenario, name: string) { try { const next = await service.renameScenarioById(scenario.id, name); if (next.scenario.id === scenarioId) setRecords(next); setScenarioOptions((current) => current.map((item) => item.id === next.scenario.id ? next.scenario : item)); } catch (error) { showError(error, 'Unable to save scenario.'); } }
   async function duplicateScenarioById(scenario: Scenario, name: string) { try { const next = await service.duplicateScenarioById(scenario.id, name); requestRouteNavigation(() => { void reload(projectId, next.scenario.id).catch(selectionFailed); }); } catch (error) { showError(error, 'Unable to duplicate scenario.'); } }
   // The context menu of a scenario in the Scenarios group (Decision 0066 item 10). It acts on that scenario, which need not be the open one.
@@ -327,21 +462,43 @@ export function App({ service, tripService, blockingService, costingService, pla
   const scopeFields = records && (activeTab === 'route' || activeTab === 'trips') ? <>
     {routeSelect}
     {activeTab === 'trips' && aggregate && <>
-      <ContextField><SegmentedControl label="Day" className="segmented--days" value={workspaceServiceDayId} onChange={(next) => requestRouteNavigation(() => setWorkspaceServiceDayId(next))} options={sortServiceDays(records.serviceDays).map((day) => ({ value: day.id, text: serviceDayAbbreviation(day), title: day.name }))} /></ContextField>
-      <ContextField>{(() => { const directions = [...(aggregate.directions ?? [])].sort((left, right) => left.sequence - right.sequence); return <SegmentedControl label="Direction" disabled={Boolean(sideBySideIds)} title={sideBySideIds ? 'Both directions are shown. Close side by side to choose one.' : undefined} fallback={directions.length > 2} value={workspaceDirectionId} onChange={(next) => requestRouteNavigation(() => setWorkspaceDirectionId(next))} options={directions.map((direction) => ({ value: direction.id, text: direction.name }))} />; })()}</ContextField>
+      <ContextField><SegmentedControl compactInScopeBar label="Day" className="segmented--days" value={workspaceServiceDayId} onChange={(next) => requestRouteNavigation(() => setWorkspaceServiceDayId(next))} options={sortServiceDays(records.serviceDays).map((day) => ({ value: day.id, text: serviceDayAbbreviation(day), title: day.name }))} /></ContextField>
+      <ContextField>{(() => { const directions = [...(aggregate.directions ?? [])].sort((left, right) => left.sequence - right.sequence); return <SegmentedControl compactInScopeBar label="Direction" disabled={Boolean(sideBySideIds)} title={sideBySideIds ? 'Both directions are shown. Close side by side to choose one.' : undefined} fallback={directions.length > 2} value={workspaceDirectionId} onChange={(next) => requestRouteNavigation(() => setWorkspaceDirectionId(next))} options={directions.map((direction) => ({ value: direction.id, text: direction.name }))} />; })()}</ContextField>
     </>}
     <span className="scope-bar__spacer" />
     <MenuButton label="Actions" triggerAriaLabel="Route actions" menuLabel="Route actions" groups={routeActions} />
   </> : undefined;
+  // Decision 0081 (D6, D7): Trip profile on Trips, Blocking, and Costing; Blocking scenario on Costing with a blocked basis (Trips and
+  // Blocking draw their own Blocking scenario level, because its commands need their Blocks). A level with two or more choices has a dot.
+  const tripProfileList = records?.tripProfiles ?? [];
+  const selectedTripProfile = tripProfileList.find((profile) => profile.id === workspaceTripProfileId);
+  const openTripProfileRename = () => setNameDialog({ title: 'Rename trip profile', label: 'Name', initialValue: selectedTripProfile?.name, submitLabel: 'Rename', action: renameTripProfile });
+  const openTripProfileCopy = () => setNameDialog({ title: 'Copy trip profile', label: 'Name', initialValue: `${selectedTripProfile?.name ?? ''} Copy`, submitLabel: 'Copy', action: copyTripProfile });
+  const tripProfileMenu: MenuGroup[] = [
+    { label: 'Profiles', items: tripProfileList.map((profile) => ({ id: profile.id, label: profile.name, checked: profile.id === workspaceTripProfileId, disabled: tripProfileBusy, onSelect: () => { if (profile.id !== workspaceTripProfileId) requestRouteNavigation(() => setWorkspaceTripProfileId(profile.id)); } })) },
+    { items: [
+      { id: 'rename', label: 'Rename profile…', disabled: !selectedTripProfile || tripProfileBusy, onSelect: openTripProfileRename },
+      { id: 'copy', label: 'Copy profile…', disabled: !selectedTripProfile || tripProfileBusy, onSelect: openTripProfileCopy },
+      { id: 'delete', label: 'Delete profile…', destructive: true, disabled: !selectedTripProfile || tripProfileBusy, onSelect: () => requestRouteNavigation(deleteTripProfile) },
+    ] },
+  ];
+  const showContextLevels = Boolean(records) && (activeTab === 'trips' || activeTab === 'blocking' || activeTab === 'costing') && tripProfileList.length > 0;
+  const selectedBlockingScenario = profileBlockingScenarios.find((item) => item.id === workspaceBlockingScenarioId);
+  const costingBlockingMenu: MenuGroup[] = [{ label: 'Blocking scenarios', items: profileBlockingScenarios.map((item) => ({ id: item.id, label: item.name, checked: item.id === workspaceBlockingScenarioId, onSelect: () => requestRouteNavigation(() => setWorkspaceBlockingScenarioId(item.id)) })) }];
+  const contextCrumbs = showContextLevels ? <>
+    <ContextCrumb><Switcher kind="Trip profile" name={selectedTripProfile?.name ?? ''} groups={tripProfileMenu} identity={tripProfileList.length > 1} disabled={tripProfileBusy} /></ContextCrumb>
+    {activeTab === 'costing' && costBasisKind === 'blocked' && selectedBlockingScenario && <ContextCrumb><Switcher kind="Blocking scenario" name={selectedBlockingScenario?.name ?? ''} emptyName="No blocking scenario" groups={costingBlockingMenu} identity={profileBlockingScenarios.length > 1} /></ContextCrumb>}
+  </> : undefined;
   return <main className={sideBySideIds ? 'app-shell app-shell--full-width' : 'app-shell'}>
-    <AppHeader tabs={tabs} activeTab={activeTab} onTab={(id) => requestRouteNavigation(() => setActiveTab(id as ActiveTab))} status={headerStatus({ readOnly: sessionStatus.mode === 'readOnly', saveState: saveStatus.state, lastBackupExportedAt: protection.lastBackupExportedAt, now: Date.now() })} scopeFields={scopeFields} scopeSlotRef={setScopeSlot}
+    <AppHeader tabs={tabs} activeTab={activeTab} onTab={(id) => requestRouteNavigation(() => setActiveTab(id as ActiveTab))} status={headerStatus({ readOnly: sessionStatus.mode === 'readOnly', saveState: saveStatus.state, lastBackupExportedAt: protection.lastBackupExportedAt, now: Date.now() })} scopeFields={scopeFields} scopeSlotRef={setScopeSlot} contextCrumbs={contextCrumbs} crumbSlotRef={setCrumbSlot}
       projectSwitcher={<Switcher kind="Project" name={selectedProject?.name ?? ''} groups={projectActions} />}
-      scenarioSwitcher={<Switcher kind="Scenario" name={records?.scenario.name ?? ''} groups={scenarioActions} disabled={!projectId} />} />
+      scenarioSwitcher={<Switcher kind="Scenario" name={records?.scenario.name ?? ''} groups={scenarioActions} disabled={!projectId} identity={scenarios.length > 1} />} />
     <input ref={importRef} className="visually-hidden" tabIndex={-1} type="file" accept="application/json,.json" aria-label="Restore project JSON file" onChange={importJson} />
     {sessionStatus.mode === 'readOnly' && <div className="notice info" role="status">{sessionStatus.reason === 'databaseUpgraded' ? 'The saved data was upgraded in another tab. This tab is read-only. Reload this page to edit.' : 'This project is open in another tab. This tab is read-only.'}</div>}
-    {notice && <div className={`notice ${notice.kind}`} role="status">{notice.text}<button onClick={() => setNotice(undefined)} aria-label="Dismiss message">×</button></div>}
-    {!records ? loadFailed ? null : <section className="empty-state empty-project"><h1>No project</h1><p>Data is stored in this browser. A new project includes one scenario and four service days.</p><div className="empty-state__actions"><button type="button" className="primary" onClick={() => setNameDialog({ title: 'New project', submitLabel: 'New project', action: createNewProject })}>New project…</button><button type="button" onClick={() => importRef.current?.click()}>Restore from backup…</button></div></section> : <WorkspaceErrorBoundary resetKey={`${activeTab}:${scenarioId}:${routeId}`} screen={activeTab === 'route' ? 'Route' : activeTab === 'trips' ? 'Trips' : activeTab === 'blocking' ? 'Blocking' : 'Costing'}>
-      {activeTab === 'costing' && records ? <CostingWorkspace scopeSlot={scopeSlot} costingService={costingService} scenario={records.scenario} projectName={selectedProject?.name ?? ''} serviceDays={records.serviceDays} tripProfiles={records.tripProfiles ?? []} routes={records.routes} onRegisterNavigationGuard={(guard) => { costingNavigationGuard.current = guard; }} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update Costing.')} /> : aggregate ? <><div hidden={activeTab !== 'route'}><RouteWorkspace key={aggregate.route.id} service={service} aggregate={aggregate} findings={findings} selectedPatternId={selectedPatternId} segmentMiles={(pattern, index) => service.getSegmentMiles(pattern, index)} onRoute={saveRouteField} onServiceDay={updateServiceDay} serviceDays={records.serviceDays} onCommitted={acceptRouteEdit} onDeletePattern={deleteSelectedPattern} onSelectPattern={setSelectedPatternId} onRegisterNavigationGuard={(guard) => { routeNavigationGuard.current = guard; }} onError={(error) => showError(error, 'Unable to save route changes.')} plannedFrequencyService={plannedFrequencyService} tripProfileId={workspaceTripProfileId} active={activeTab === 'route'} /></div>{activeTab === 'trips' && <TripsOrSideBySide sideBySide={sideBySideControl}tripPatternSelections={tripPatternSelections} onTripPatternChange={(key, id) => setTripPatternSelections((current) => ({ ...current, [key]: id }))} service={service} tripService={tripService} plannedFrequencyService={plannedFrequencyService} blockingService={blockingService} aggregate={aggregate} records={records} serviceDayId={workspaceServiceDayId} directionId={workspaceDirectionId} tripProfileId={workspaceTripProfileId} tripProfileBusy={tripProfileBusy} onTripProfileChange={setWorkspaceTripProfileId} onTripProfileRename={() => setNameDialog({ title: 'Rename trip profile', label: 'Name', initialValue: records.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name, submitLabel: 'Rename', action: renameTripProfile })} onTripProfileCopy={() => setNameDialog({ title: 'Copy trip profile', label: 'Name', initialValue: `${records.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name ?? ''} Copy`, submitLabel: 'Copy', action: copyTripProfile })} onTripProfileDelete={deleteTripProfile} onRegisterNavigationGuard={(guard) => { tripNavigationGuard.current = guard; }} runtimeVersion={runtimeVersion} onRuntimeChanged={() => setRuntimeVersion((current) => current + 1)} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update trips.')} />}{activeTab === 'blocking' && <BlockingWorkspace scopeSlot={scopeSlot} blockingService={blockingService} tripService={tripService} aggregate={aggregate} records={records} routes={records.routes} routeId={routeId} onRouteChange={(nextRouteId) => requestRouteNavigation(() => { void reload(projectId, scenarioId, nextRouteId).catch(selectionFailed); })} onReload={() => reload(projectId, scenarioId, routeId)} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update Blocking.')} />}</> : records.routes.length ? <section className="empty-state"><h2>No route selected</h2><p>Select a route in the Route field, or add one.</p><div className="empty-state__actions"><button type="button" onClick={() => requestRouteNavigation(() => { void addRoute(); })}>New route</button></div></section> : <section className="empty-state"><h2>No routes</h2><p>Scenario “{records.scenario.name}” has no routes.</p><div className="empty-state__actions"><button type="button" className="primary" onClick={() => requestRouteNavigation(() => { void addRoute(); })}>New route</button></div></section>}
+    {notice && <div className={`notice ${notice.kind}`} role="status"><span className="notice__text">{notice.text}</span>{notice.undoId && <button type="button" className="notice__action" onClick={() => requestUndo(notice.undoId!)}>Undo</button>}<button onClick={() => setNotice(undefined)} aria-label="Dismiss message">×</button></div>}
+    {undoHistoryOpen && restorePoints && <UndoHistoryDialog projectId={projectId} list={listRestorePoints} onRestore={async (point) => requestUndo(point.id)} onClose={() => setUndoHistoryOpen(false)} />}
+    {!records ? loadFailed ? null : <section className="empty-state empty-project"><h1>No project</h1><p>Data is stored in this browser. A new project includes one scenario and four service days.</p><div className="empty-state__actions"><button type="button" className="primary" onClick={() => setNameDialog({ title: 'New project', submitLabel: 'New project', action: createNewProject })}>New project…</button><button type="button" onClick={() => importRef.current?.click()}>Restore from backup…</button>{deletedProjectRestorable && <button type="button" onClick={() => setUndoHistoryOpen(true)}>Restore deleted project…</button>}</div></section> : <WorkspaceErrorBoundary resetKey={`${activeTab}:${scenarioId}:${routeId}`} screen={activeTab === 'route' ? 'Route' : activeTab === 'trips' ? 'Trips' : activeTab === 'blocking' ? 'Blocking' : 'Costing'}>
+      {activeTab === 'costing' && records ? <CostingWorkspace key={`costing-${restoreVersion}`} tripProfileId={workspaceTripProfileId} blockingScenarioId={workspaceBlockingScenarioId} basisKind={costBasisKind} onBasisKindChange={chooseCostBasisKind} scopeSlot={scopeSlot} costingService={costingService} scenario={records.scenario} projectName={selectedProject?.name ?? ''} serviceDays={records.serviceDays} tripProfiles={records.tripProfiles ?? []} routes={records.routes} onRegisterNavigationGuard={(guard) => { costingNavigationGuard.current = guard; }} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update Costing.')} /> : aggregate ? <><div hidden={activeTab !== 'route'}><RouteWorkspace key={aggregate.route.id} service={service} aggregate={aggregate} findings={findings} selectedPatternId={selectedPatternId} segmentMiles={(pattern, index) => service.getSegmentMiles(pattern, index)} onRoute={saveRouteField} onServiceDay={updateServiceDay} serviceDays={records.serviceDays} onCommitted={acceptRouteEdit} onDeletePattern={deleteSelectedPattern} onSelectPattern={setSelectedPatternId} onRegisterNavigationGuard={(guard) => { routeNavigationGuard.current = guard; }} onError={(error) => showError(error, 'Unable to save route changes.')} plannedFrequencyService={plannedFrequencyService} tripProfileId={workspaceTripProfileId} active={activeTab === 'route'} /></div>{activeTab === 'trips' && <TripsOrSideBySide sideBySide={sideBySideControl} tripChangeUndo={tripChangeUndo} tripPatternSelections={tripPatternSelections} onTripPatternChange={(key, id) => setTripPatternSelections((current) => ({ ...current, [key]: id }))} service={service} tripService={tripService} plannedFrequencyService={plannedFrequencyService} blockingService={blockingService} aggregate={aggregate} records={records} serviceDayId={workspaceServiceDayId} directionId={workspaceDirectionId} tripProfileId={workspaceTripProfileId} tripProfileBusy={tripProfileBusy} onTripProfileChange={setWorkspaceTripProfileId} crumbSlot={crumbSlot} blockingScenarioId={workspaceBlockingScenarioId} onBlockingScenarioChange={setWorkspaceBlockingScenarioId} blockingScenarioListVersion={blockingScenarioListVersion} onBlockingScenarioListChanged={blockingScenariosChanged} onTripProfileRename={() => setNameDialog({ title: 'Rename trip profile', label: 'Name', initialValue: records.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name, submitLabel: 'Rename', action: renameTripProfile })} onTripProfileCopy={() => setNameDialog({ title: 'Copy trip profile', label: 'Name', initialValue: `${records.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name ?? ''} Copy`, submitLabel: 'Copy', action: copyTripProfile })} onTripProfileDelete={deleteTripProfile} onRegisterNavigationGuard={(guard) => { tripNavigationGuard.current = guard; }} runtimeVersion={runtimeVersion} onRuntimeChanged={() => setRuntimeVersion((current) => current + 1)} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update trips.')} />}{activeTab === 'blocking' && <BlockingWorkspace dataVersion={runtimeVersion} crumbSlot={crumbSlot} tripProfileId={workspaceTripProfileId} blockingScenarioId={workspaceBlockingScenarioId} onBlockingScenarioChange={setWorkspaceBlockingScenarioId} onBlockingScenariosChanged={blockingScenariosChanged} scopeSlot={scopeSlot} blockingService={blockingService} tripService={tripService} aggregate={aggregate} records={records} routes={records.routes} routeId={routeId} onRouteChange={(nextRouteId) => requestRouteNavigation(() => { void reload(projectId, scenarioId, nextRouteId).catch(selectionFailed); })} onReload={() => reload(projectId, scenarioId, routeId)} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update Blocking.')} />}</> : records.routes.length ? <section className="empty-state"><h2>No route selected</h2><p>Select a route in the Route field, or add one.</p><div className="empty-state__actions"><button type="button" onClick={() => requestRouteNavigation(() => { void addRoute(); })}>New route</button></div></section> : <section className="empty-state"><h2>No routes</h2><p>Scenario “{records.scenario.name}” has no routes.</p><div className="empty-state__actions"><button type="button" className="primary" onClick={() => requestRouteNavigation(() => { void addRoute(); })}>New route</button></div></section>}
     </WorkspaceErrorBoundary>}
     {nameDialog && <NameDialogForm dialog={nameDialog} onClose={() => setNameDialog(undefined)} />}
     {confirm && <ConfirmDialog dialog={confirm} onClose={() => setConfirm(undefined)} />}

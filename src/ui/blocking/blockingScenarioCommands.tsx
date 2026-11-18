@@ -13,7 +13,7 @@ type BlockingApplication = BlockingCommands & BlockingQueries;
 export function blockingScenarioDialogTitle(mode: BlockingScenarioDialogMode) { return mode === 'create' ? 'New blocking scenario' : mode === 'duplicate' ? 'Duplicate blocking scenario' : 'Rename blocking scenario'; }
 export function blockingScenarioSubmitLabel(mode: BlockingScenarioDialogMode) { return mode === 'duplicate' ? 'Duplicate' : mode === 'rename' ? 'Rename' : 'Create'; }
 /** The text of the delete confirmation: the Blocks and activities that the deletion removes. */
-export function blockingScenarioDeleteText(name: string, impact: Pick<BlockingScenarioDeletionImpact, 'blockCount' | 'activityCount'>) { return `Delete “${name}” with ${plural(impact.blockCount, 'block')} and ${plural(impact.activityCount, 'activity', 'activities')} across every service day? This cannot be undone.`; }
+export function blockingScenarioDeleteText(name: string, impact: Pick<BlockingScenarioDeletionImpact, 'blockCount' | 'activityCount'>) { return `Delete “${name}” with ${plural(impact.blockCount, 'block')} and ${plural(impact.activityCount, 'activity', 'activities')} across every service day?`; }
 
 export type BlockingScenarioCommandsOptions = {
   blockingService: BlockingApplication;
