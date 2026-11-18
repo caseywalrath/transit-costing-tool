@@ -1380,7 +1380,7 @@ Update `architecture_overview.md` (Persistence: restore points and Dexie 13; Und
 
 ## 17. Later packages
 
-- **FX7, staleness by content.** Opus writes the work order after FX10, against the code at that time, in the format of sections 7 and 8. Outline: a Trip's calculation source gains `runtimeInputsSignature` (a fingerprint of the profile's method, bands, and segment runtimes); a Trip is stale when the assigned profile's current signature differs; Trips without a signature keep the revision rule; Dexie 14 gives a current Trip the current signature; backup schema 15 carries the field; Route rebalancing writes the signature where it writes the revision.
+- **FX7, staleness by content.** Work order in section 19 (written 2026-11-18 against `e3468ed`).
 - **FX8, trip change history.** Opus writes the work order after FX7. Outline: Regenerate, Change pattern, the start-time edit, and Shift Done record restore points in a separate retention group (newest 10); the Trips menu offers "Undo {last trip change}" for the newest restorable one in view; the `tripRegenerationUndo` table is retired (Decisions 0046 and 0070 amended).
 - **FX9, scenario lock.** Decided after FX6 is in use.
 
@@ -1390,3 +1390,205 @@ Update `architecture_overview.md` (Persistence: restore points and Dexie 13; Und
 - Undo for ordinary field edits, draft saves, and additive commands (Build trips, Add trip, New …).
 - Restore as a copy of a Scenario (a restore point holds a difference, not a whole Scenario).
 - Synchronizing restore points between browsers, or putting them in backups.
+
+## 19. FX7: Run-time staleness by content (Haiku)
+
+Written 2026-11-18 against `e3468ed`. Section 3 applies, with one addition to rule 4 in 19.9. Decision 0081 item 11; inventory gap G9.
+
+**What changes.** A Trip records, next to the runtime profile id and revision it was calculated from, a fingerprint of that profile's calculation inputs (`runtimeInputsSignature`). A Trip with a fingerprint is stale when the assigned profile's current fingerprint differs, so reverting a runtime edit makes its Trips current again. A Trip without a fingerprint keeps the revision rule. Dexie 14 and backup import give the fingerprint to Trips that are current by the revision rule. The backup schema becomes 15. The trip CSV does not change.
+
+Files owned: `src/domain/types.ts`, `src/domain/runtime.ts` (+ `runtime.test.ts`), `src/domain/trips.ts`, `src/domain/safeRouteEditing.ts`, `src/domain/serviceDayCopy.ts`, `src/application/tripGenerationService.ts` (+ test), `src/application/routeDefinitionService.ts` (one call), `src/persistence/database.ts` (+ `database.test.ts`), `src/persistence/backup.ts` (+ `backup.test.ts`), and the existing tests named in 19.9.
+
+### 19.1 `src/domain/types.ts`
+
+Anchor: `export interface TripCalculationSource { runtimeProfileId: EntityId; runtimeCalculationRevision: number; }`. Replace the line with:
+
+```ts
+export interface TripCalculationSource { runtimeProfileId: EntityId; runtimeCalculationRevision: number;
+  /** Decision 0081 item 11 (FX7). `runtimeInputsSignature` of the profile when the Trip's times were calculated. Absent on older Trips, which keep the revision rule. */
+  runtimeInputsSignature?: string; }
+```
+
+### 19.2 `src/domain/runtime.ts`
+
+1. In the `import type { … } from './types';` block, add `TripCalculationSource,` on its own line directly below `Trip,`.
+2. Anchor: the line `/** Apply the revision rule: band bound, segment, or method changes increment; a profile rename or a band label change does not (neither is a calculation input). */`. Immediately **above** it, insert:
+
+```ts
+function fnv1a(text: string, seed: number): string {
+  let hash = seed >>> 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
+/**
+ * Decision 0081 item 11 (FX7). A fingerprint of what a profile's calculated times depend on: the method and, in band order, each band's
+ * start, end, and segment runtimes. Band ids, band labels, and the profile name are not inputs, so a profile edited and edited back has
+ * its old fingerprint again.
+ */
+export function runtimeInputsSignature(profile: RuntimeProfile): string {
+  const text = JSON.stringify({ method: profile.calculationMethod ?? 'singleBand', bands: orderedBands(profile).map((band) => [band.startTime, band.endTime, band.segmentRuntimeSeconds]) });
+  return `v1:${fnv1a(text, 0x811c9dc5)}${fnv1a(text, 0x5bd1e995)}`;
+}
+
+/** The calculation source a Trip records when its times are calculated from `profile`. */
+export function tripCalculationSource(profile: RuntimeProfile): TripCalculationSource {
+  return { runtimeProfileId: profile.id, runtimeCalculationRevision: profile.calculationRevision ?? 0, runtimeInputsSignature: runtimeInputsSignature(profile) };
+}
+
+/**
+ * Whether a Trip's recorded source still matches `profile`, the profile now assigned to its Pattern and service day. A recorded signature
+ * is compared with the profile's current one; without a signature the recorded revision is compared with the profile's revision.
+ */
+export function tripRuntimeSourceIsCurrent(source: TripCalculationSource, profile: RuntimeProfile): boolean {
+  if (source.runtimeProfileId !== profile.id) return false;
+  return source.runtimeInputsSignature !== undefined
+    ? source.runtimeInputsSignature === runtimeInputsSignature(profile)
+    : source.runtimeCalculationRevision === (profile.calculationRevision ?? 0);
+}
+
+/**
+ * Dexie 14 and backup import (FX7). Each Trip that records a source without a signature, and is current by the revision rule against its
+ * source profile, gets that profile's signature. Every other Trip is returned unchanged.
+ */
+export function withRecordedRuntimeSignatures(trips: Trip[], profiles: RuntimeProfile[]): { trips: Trip[]; changedTripIds: string[] } {
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const changedTripIds: string[] = [];
+  const next = trips.map((trip) => {
+    const provenance = trip.provenance;
+    const runtimeProfileId = provenance?.calculationSource?.runtimeProfileId ?? provenance?.runtimeProfileId;
+    const runtimeCalculationRevision = provenance?.calculationSource?.runtimeCalculationRevision ?? provenance?.runtimeCalculationRevision;
+    if (!runtimeProfileId || runtimeCalculationRevision === undefined || provenance.calculationSource?.runtimeInputsSignature !== undefined) return trip;
+    const profile = profileById.get(runtimeProfileId);
+    if (!profile || (profile.calculationRevision ?? 0) !== runtimeCalculationRevision) return trip;
+    changedTripIds.push(trip.id);
+    return { ...trip, provenance: { ...provenance, calculationSource: { runtimeProfileId, runtimeCalculationRevision, runtimeInputsSignature: runtimeInputsSignature(profile) } } };
+  });
+  return { trips: next, changedTripIds };
+}
+```
+
+### 19.3 Writers: record the signature
+
+Replace each of these exact texts with the replacement shown. Each occurs once on the line given (line numbers at `e3468ed`; find by the text).
+
+| File | Line | Text | Replacement |
+| --- | --- | --- | --- |
+| `src/domain/trips.ts` | 107, 384, 405, 435, 476 | `calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision }` | `calculationSource: tripCalculationSource(profile)` |
+| `src/domain/safeRouteEditing.ts` | 297 | `calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision }` | `calculationSource: tripCalculationSource(profile)` |
+| `src/application/tripGenerationService.ts` | 385 | `calculationSource: { runtimeProfileId: profile.id, runtimeCalculationRevision: revision }` | `calculationSource: tripCalculationSource(profile)` |
+| `src/application/tripGenerationService.ts` | 674 | `calculationSource: { runtimeProfileId: targetProfile.id, runtimeCalculationRevision: revision }` | `calculationSource: tripCalculationSource(targetProfile)` |
+
+In `trips.ts` the text occurs five times: use the edit tool's replace-all for that file only, then confirm five replacements. Imports:
+
+- `src/domain/trips.ts`: in `import { propagatePatternTimes, propagatePatternTimesWithBand, resolveSegmentStartBand, selectRuntimeBand } from './runtime';` add `, tripCalculationSource` after `selectRuntimeBand`.
+- `src/domain/safeRouteEditing.ts`: replace `import { propagatePatternTimes } from './runtime';` with `import { propagatePatternTimes, tripCalculationSource, tripRuntimeSourceIsCurrent } from './runtime';`.
+- `src/application/tripGenerationService.ts`: below the line `import { metadata, newId, withUpdatedAt } from '../domain/ids';` insert `import { tripCalculationSource, tripRuntimeSourceIsCurrent } from '../domain/runtime';`.
+
+### 19.4 Readers: the staleness checks
+
+1. `src/application/tripGenerationService.ts`, in `inspectStaleTrips`. Anchor: `if (!profile || assignment.runtimeProfileId !== sourceProfileId || (profile.calculationRevision ?? 0) !== sourceRevision) {`. Replace it with:
+
+```ts
+        if (!profile || !tripRuntimeSourceIsCurrent({ runtimeProfileId: sourceProfileId, runtimeCalculationRevision: sourceRevision, runtimeInputsSignature: trip.provenance.calculationSource?.runtimeInputsSignature }, profile)) {
+```
+
+2. `src/domain/serviceDayCopy.ts`. In the `from './types';` import nothing changes. Below the line `import { isUsablePattern } from './directions';` insert `import { tripRuntimeSourceIsCurrent } from './runtime';`. Anchor: `return Boolean(source && (!assignment || !profile || source.runtimeProfileId !== assignment.runtimeProfileId || source.runtimeCalculationRevision !== (profile.calculationRevision ?? 0)));`. Replace it with:
+
+```ts
+    return Boolean(source && (!assignment || !profile || source.runtimeProfileId !== assignment.runtimeProfileId || !tripRuntimeSourceIsCurrent(source, profile)));
+```
+
+If importing `./runtime` into `serviceDayCopy.ts` creates an import cycle that fails a test or the build, stop and report.
+
+### 19.5 Route rebalancing (`src/domain/safeRouteEditing.ts`)
+
+A Trip moves to the rebalanced profile only when it was current before the edit. With signatures, "current before" is measured against the profile before the edit.
+
+1. Anchor: `export function rebalanceTripForPattern(trip: Trip, saved: RoutePattern, proposed: RoutePattern, profileById: Map<string, RuntimeProfile>, now = new Date().toISOString()): Trip {`. Replace it with:
+
+```ts
+export function rebalanceTripForPattern(trip: Trip, saved: RoutePattern, proposed: RoutePattern, profileById: Map<string, RuntimeProfile>, now = new Date().toISOString(), previousProfileById?: Map<string, RuntimeProfile>): Trip {
+```
+
+2. Anchor (in that function): `const carryForward = profile !== undefined && revision !== undefined && recordedRevision === revision - 1 && profileReproducesTimes(proposed, stopTimes, profile);`. Replace it with:
+
+```ts
+  const previous = sourceId ? previousProfileById?.get(sourceId) : undefined;
+  const wasCurrent = previous && sourceId && recordedRevision !== undefined
+    ? tripRuntimeSourceIsCurrent({ runtimeProfileId: sourceId, runtimeCalculationRevision: recordedRevision, runtimeInputsSignature: trip.provenance.calculationSource?.runtimeInputsSignature }, previous)
+    : recordedRevision === (revision ?? 0) - 1;
+  const carryForward = profile !== undefined && revision !== undefined && wasCurrent && profileReproducesTimes(proposed, stopTimes, profile);
+```
+
+3. `src/application/routeDefinitionService.ts`, in `rebalanceDependentService`. Anchor: `? rebalanceTripForPattern(trip, savedById.get(trip.patternId)!, nextById.get(trip.patternId)!, profileById, this.now())`. Replace it with:
+
+```ts
+      ? rebalanceTripForPattern(trip, savedById.get(trip.patternId)!, nextById.get(trip.patternId)!, profileById, this.now(), previousProfileById)
+```
+
+and directly above the line `const profileById = new Map(profiles.map((profile) => [profile.id, profile]));` insert:
+
+```ts
+    const previousProfileById = new Map(records.runtimeProfiles.map((profile) => [profile.id, profile]));
+```
+
+### 19.6 Dexie 14 (`src/persistence/database.ts`)
+
+1. Replace `import { unifyRouteRuntimeCalculationMethods } from '../domain/runtime';` with `import { unifyRouteRuntimeCalculationMethods, withRecordedRuntimeSignatures } from '../domain/runtime';`.
+2. Anchor: `this.version(13).stores({ restorePoints: 'id,projectId,createdAt', restorePointPayloads: 'id' });`. Immediately **below** it, insert:
+
+```ts
+    // Version 14 changes no store. Each Trip that is current by the revision rule records its profile's runtime inputs signature
+    // (Decision 0081 item 11), so a later edit that is reverted leaves it current. Only those Trips are written. A failure leaves the data as
+    // it was (as in version 7); the Trips then keep the revision rule.
+    this.version(14).stores({}).upgrade(async (tx) => {
+      try {
+        const [trips, profiles] = await Promise.all([tx.table('trips').toArray(), tx.table('runtimeProfiles').toArray()]);
+        const signed = withRecordedRuntimeSignatures(trips, profiles);
+        if (!signed.changedTripIds.length) return;
+        const changed = new Set(signed.changedTripIds);
+        await tx.table('trips').bulkPut(signed.trips.filter((trip) => changed.has(trip.id)));
+      } catch (error) {
+        console.warn('Runtime inputs signatures were not recorded.', error);
+      }
+    });
+```
+
+### 19.7 Backup schema 15 (`src/persistence/backup.ts`)
+
+1. Replace `export const PROJECT_BACKUP_SCHEMA_VERSION = 14 as const;` with `export const PROJECT_BACKUP_SCHEMA_VERSION = 15 as const;`.
+2. Every array literal in the file that contains `13, PROJECT_BACKUP_SCHEMA_VERSION` gets `14, ` inserted before `PROJECT_BACKUP_SCHEMA_VERSION`: use replace-all of `13, PROJECT_BACKUP_SCHEMA_VERSION` with `13, 14, PROJECT_BACKUP_SCHEMA_VERSION`. Then search for `12, PROJECT_BACKUP_SCHEMA_VERSION` and `11, PROJECT_BACKUP_SCHEMA_VERSION`: each such list must also read `…, 14, PROJECT_BACKUP_SCHEMA_VERSION`; insert `13, 14, ` or `14, ` so every version from the list's first one to 15 is named. Any other comparison with the number 14 or 13 in the file: stop and report.
+3. Replace `import { unifyRouteRuntimeCalculationMethods } from '../domain/runtime';` with `import { unifyRouteRuntimeCalculationMethods, withRecordedRuntimeSignatures } from '../domain/runtime';`.
+4. In `validateTrips`, anchor: `if (sourceRevision !== undefined && (!Number.isInteger(sourceRevision) || sourceRevision < 0)) throw new Error(`Invalid project backup: trips[${index}] has an invalid runtime calculation revision`);`. Immediately below it, insert:
+
+```ts
+    if (source?.runtimeInputsSignature !== undefined && (typeof source.runtimeInputsSignature !== 'string' || !source.runtimeInputsSignature)) throw new Error(`Invalid project backup: trips[${index}] has an invalid runtime inputs signature`);
+```
+
+5. Anchor: the line beginning `  const normalizedTrips = trips.map((trip) => ({ ...trip, tripProfileId: trip.tripProfileId ?? defaultProfileByScenario.get(trip.scenarioId) }));`. Replace `const normalizedTrips = trips.map(` with `const normalizedTrips = withRecordedRuntimeSignatures(trips.map(`, and the line's final `);` with `), runtimeProfiles).trips;`. Keep the rest unchanged.
+
+### 19.8 New tests
+
+1. `src/domain/runtime.test.ts`, new `describe('runtime inputs signature (FX7)')`:
+   - the signature is the same after a rename, a band label change, and new band ids; it changes when the method, a band start, a band end, or one segment runtime changes; it starts with `v1:` and has 19 characters;
+   - `tripRuntimeSourceIsCurrent`: false for another profile id; with a signature, true after a revision raise that kept the content, false after a content change; without a signature, true only when the revisions are equal;
+   - `withRecordedRuntimeSignatures`: signs a Trip current by revision (legacy `runtimeProfileId`/`runtimeCalculationRevision` fields only, and `calculationSource` only); leaves alone a Trip with an older revision, a missing profile, no source, or an existing signature; `changedTripIds` lists only the signed Trips.
+2. `src/application/tripGenerationService.test.ts`, in `describe('listStaleTrips (I-081, 4-024)')`, after the test `'does not hide a programming error as a stale Trip'`: "a Trip that records a signature is current when its profile's revision moved but its inputs are as recorded, and stale when they differ". Use the file's `profile` and `trip` helpers: record `tripCalculationSource(profile('outbound-profile', 'outbound', 4))` on two Trips; store `profile('outbound-profile', 'outbound', 6)` (same content); expect no stale Trip; then store a revision-7 profile whose `segmentRuntimeSeconds` is `[660]` and expect both stale. Also add one test that a Trip built by `addTrip` (or the file's existing creation helper) records `runtimeInputsSignature` equal to `runtimeInputsSignature(` its profile `)`.
+3. `src/persistence/database.test.ts`: `HISTORY` has 12 entries (versions 1 to 12). Append a 13th entry, `{ restorePoints: 'id,projectId,createdAt', restorePointPayloads: 'id' }`, after the last `{},` of the array. New test "version 14 records the runtime inputs signature of each Trip that is current by revision, and no other": seed at 13, give `s1-t0` a `calculationSource` at the profile's revision, `s1-t1` one at an older revision, leave `s2` Trips without a source; open `TransitDatabase`; expect `verno` 14, `s1-t0` signed with `runtimeInputsSignature(` the stored profile `)`, `s1-t1` and the `s2` Trips byte-for-byte unchanged.
+4. `src/persistence/backup.test.ts`: (a) a version 14 file whose Trip is current by revision imports with the signature added, and one at an older revision imports unchanged; (b) a version 15 file with `runtimeInputsSignature: 7` is refused with `Invalid project backup: trips[0] has an invalid runtime inputs signature`; (c) export, import, export again: the Trip's signature is kept and the file says `exportSchemaVersion` 15. Model the file on the nearest existing version test in that file.
+
+### 19.9 Existing tests that change
+
+Only these lines change, with exactly these edits:
+
+- Every `expect(…verno).toBe(13)` in `src/persistence/database.test.ts` and `src/persistence/repository.test.ts` becomes `toBe(14)`.
+- Every `exportSchemaVersion).toBe(14)` in `src/persistence/*.test.ts` becomes `toBe(15)`.
+- **Addition to rule 4.** An existing assertion that fails only because a Trip's `calculationSource` now also has `runtimeInputsSignature` may add that key, with the value `runtimeInputsSignature(<the profile the test used>)`, to the expected object. Nothing else in that assertion changes. List every such line in the commit message. Any other failing existing test: stop and report.
+
+### 19.10 Verification and commit
+
+Run, in order: `pnpm typecheck`; `pnpm exec vitest run src/domain/runtime.test.ts src/application/tripGenerationService.test.ts src/persistence/database.test.ts src/persistence/backup.test.ts`; `pnpm test`; `pnpm build`. Do not run the browser suite (Opus runs it at review: Dexie 14 changes app startup). Commit `FX7: Run-time staleness by content: runtime inputs signature, Dexie 14, backup schema 15 (Decision 0081)`. Gate: Opus reviews the diff, updates `architecture_overview.md`, `docs/data-schema.md`, and the inventory, and runs the full browser suite.
