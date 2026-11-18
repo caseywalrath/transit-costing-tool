@@ -39,6 +39,8 @@ Trapeze attaches stops to routes and patterns, and its Stop Trips process gives 
 14. **Formats.** Dexie version 11 adds the table `routeStopSets` (`id,scenarioId,routeId`). JSON backup schema 13 adds the `routeStopSets` array (omitted when empty) and `Node.stopCode`; versions 1 to 12 import with no stops.
 15. **Screens.** Stops are edited in a drawer opened from the pattern editor's Actions menu on the Route tab. Stop trips are viewed, and timing rules and rounding edited, in a drawer opened from the Trips Actions menu, one pattern at a time. Neither changes the Trips table.
 
+16. **Reusing a stop by its stop ID (2026-11-18 correction).** Stops belong to the Route, not to a Node or a pattern, so every pattern of the Route, including a branch that starts at another Node, reuses the same stop record. Because a stop ID is unique within the Route (item 2), a Stop ID typed on a new row in the drawer that matches a saved stop links the row to that stop instead of creating a second stop. A name alone never links to a coded stop, because two physical stops can share a name and differ by stop ID. Two new stops with one stop ID in the same draft are still a validation error.
+
 ## Alternatives considered
 
 - **Stop times generated and stored per Trip.** Rejected: stored times go out of date after every shift, regeneration, or pattern change, and they raise the question of how to copy them between service days and Trip Profiles. Derived times answer both automatically.
