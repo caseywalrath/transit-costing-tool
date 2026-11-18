@@ -30,22 +30,20 @@ test('database version 10 preserves a Dexie version 4 project and adds operation
 
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'Project: Migration Project', exact: true })).toBeVisible();
-  const migrated = await page.evaluate(async () => new Promise<{ version: number; stores: string[]; projectCount: number; scenarioCount: number; assumptionsCount: number; undoCount: number; legacyCostPlanCount: number; tripProfileCount: number; blockCount: number }>((resolve, reject) => {
+  const migrated = await page.evaluate(async () => new Promise<{ version: number; stores: string[]; projectCount: number; scenarioCount: number; assumptionsCount: number; legacyCostPlanCount: number; tripProfileCount: number; blockCount: number }>((resolve, reject) => {
     const request = indexedDB.open('transit-costing-tool');
     request.onsuccess = () => {
       const database = request.result;
-      const transaction = database.transaction(['projects', 'scenarios', 'costingAssumptions', 'tripRegenerationUndo', 'costPlans', 'tripProfiles', 'blocks'], 'readonly');
+      const transaction = database.transaction(['projects', 'scenarios', 'costingAssumptions', 'costPlans', 'tripProfiles', 'blocks'], 'readonly');
       const projects = transaction.objectStore('projects').count();
       const scenarios = transaction.objectStore('scenarios').count();
       const assumptions = transaction.objectStore('costingAssumptions').count();
-      const undo = transaction.objectStore('tripRegenerationUndo').count();
       const legacyCostPlans = transaction.objectStore('costPlans').count();
       const tripProfiles = transaction.objectStore('tripProfiles').count();
       const blocks = transaction.objectStore('blocks').count();
       let projectCount = 0;
       let scenarioCount = 0;
       let assumptionsCount = 0;
-      let undoCount = 0;
       let legacyCostPlanCount = 0;
       let tripProfileCount = 0;
       let blockCount = 0;
@@ -53,12 +51,11 @@ test('database version 10 preserves a Dexie version 4 project and adds operation
       projects.onsuccess = () => { projectCount = projects.result; };
       scenarios.onsuccess = () => { scenarioCount = scenarios.result; };
       assumptions.onsuccess = () => { assumptionsCount = assumptions.result; };
-      undo.onsuccess = () => { undoCount = undo.result; };
       legacyCostPlans.onsuccess = () => { legacyCostPlanCount = legacyCostPlans.result; };
       tripProfiles.onsuccess = () => { tripProfileCount = tripProfiles.result; };
       blocks.onsuccess = () => { blockCount = blocks.result; };
       transaction.oncomplete = () => {
-        resolve({ version: database.version, stores: [...database.objectStoreNames], projectCount, scenarioCount, assumptionsCount, undoCount, legacyCostPlanCount, tripProfileCount, blockCount });
+        resolve({ version: database.version, stores: [...database.objectStoreNames], projectCount, scenarioCount, assumptionsCount, legacyCostPlanCount, tripProfileCount, blockCount });
         database.close();
       };
     };
@@ -69,11 +66,11 @@ test('database version 10 preserves a Dexie version 4 project and adds operation
   expect(migrated.stores).toContain('plannedFrequencies');
   expect(migrated.stores).toContain('costingAssumptions');
   expect(migrated.stores).toContain('costPlans');
-  expect(migrated.stores).toContain('tripRegenerationUndo');
+  // Version 15 deletes the regeneration undo store of version 6 (Decision 0081 item 12).
+  expect(migrated.stores).not.toContain('tripRegenerationUndo');
   expect(migrated.projectCount).toBe(1);
   expect(migrated.scenarioCount).toBe(1);
   expect(migrated.assumptionsCount).toBe(0);
-  expect(migrated.undoCount).toBe(0);
   expect(migrated.legacyCostPlanCount).toBe(1);
   // A real version 4 database skips the version 3 and 4 upgrades.
   expect(migrated.tripProfileCount).toBe(0);
