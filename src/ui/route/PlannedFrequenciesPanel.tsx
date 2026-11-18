@@ -1,6 +1,8 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { MenuButton, type MenuGroup } from '../MenuButton';
 import { SupportPanel } from '../shared/surfaces';
+import { SegmentedControl } from '../shared/SegmentedControl';
+import { serviceDayAbbreviation } from '../../application/tripsWorkspaceView';
 import { SaveBar } from '../shared/bars';
 import { TrashIcon } from '../shared/icons';
 import { DiscardRouteDraftDialog } from '../shared/dialogs';
@@ -205,7 +207,6 @@ export const PlannedFrequenciesPanel = forwardRef<PlannedFrequenciesHandle, {
     if (dirty) setPendingDay(id); else setDayId(id);
   }
 
-  const dayMenu: MenuGroup[] = [{ items: sortedDays.map((item) => ({ id: item.id, label: item.name, checked: item.id === day?.id, onSelect: () => requestDay(item.id) })) }];
   const hasPlan = Boolean(plan);
   const actionMenu: MenuGroup[] = [{ items: [
     { id: 'copy-day', label: 'Copy from another day…', onSelect: () => setDialog('copyDay'), disabled: !sortedDays.some((item) => item.id !== day?.id && plans[item.id]), title: 'Another service day of this route needs a plan to copy from.' },
@@ -224,7 +225,9 @@ export const PlannedFrequenciesPanel = forwardRef<PlannedFrequenciesHandle, {
   }
   const savedIds = new Set(plan?.periods.map((period) => period.id));
   const aside = <div className="planned-toolbar">
-    <MenuButton label={day.name} menuLabel="Service day" fieldLabel="Service day" groups={dayMenu} menuAlign="start" />
+    {/* Choices only, so a segmented toggle (docs/ui-conventions.md, "Choosers"); a select beyond four days. */}
+    <SegmentedControl label="Service day" className="segmented--days" fallback={sortedDays.length > 4} value={day.id} onChange={requestDay}
+      options={sortedDays.map((item) => ({ value: item.id, text: serviceDayAbbreviation(item), title: item.name }))} />
     <MenuButton label="Actions" menuLabel="Planned frequency actions" groups={actionMenu} />
   </div>;
 

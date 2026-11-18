@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { createRouteWithPattern } from './support/tripsWorkspace';
-import { costBasisText, editGridCell, gridCell, scopeField } from './support/ui';
+import { costBasisText, editGridCell, gridCell, runCommand } from './support/ui';
 
 test.setTimeout(90_000);
 
@@ -50,10 +50,10 @@ test('the setup line is gone once the Route has a usable Pattern, and the Route 
   await expect(page.getByRole('navigation', { name: 'Route setup' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Add pattern', exact: true })).not.toHaveClass(/primary/);
 
-  await scopeField(page, 'Route').selectOption({ label: '+ New route' });
+  // Decision 0082 item 4: New route is a command of the Route switcher.
+  await runCommand(page, 'route.new');
   await expect.poll(() => runInPage(page, 'return await e.db.routes.count()')).toBe(2);
   await expect(page.getByRole('navigation', { name: 'Route setup' })).toBeVisible();
-  await expect(scopeField(page, 'Route')).not.toHaveValue('__new-route__');
 });
 
 test('Costing without a blocking scenario opens on the estimated cost basis of the Trip profile (Decision 0051)', async ({ page }) => {

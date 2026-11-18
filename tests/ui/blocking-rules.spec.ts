@@ -128,7 +128,7 @@ test('a Block label is unique on its service day, and New Block proposes the fir
   // Delete the second Block: the next proposed label is the first free number, not the count plus one.
   await currentBlock.getByRole('button', { name: /^Block 3/ }).click();
   await page.getByRole('menuitemradio', { name: 'Block 2', exact: true }).click();
-  await currentBlock.getByRole('button', { name: 'Current block actions', exact: true }).click();
+  await currentBlock.locator('.menu-field').getByRole('button').first().click();
   await page.getByRole('menuitem', { name: 'Delete block…' }).click();
   await page.getByRole('alertdialog', { name: 'Delete block?' }).getByRole('button', { name: /^Delete/ }).last().click();
   await expect(page.getByRole('alertdialog', { name: 'Delete block?' })).toBeHidden();
@@ -140,7 +140,7 @@ test('a Block label is unique on its service day, and New Block proposes the fir
   expect(await blockNames()).toEqual(['Block 1', 'Block 2', 'Block 3']);
 
   // A rename to another Block's label is refused; the Block keeps its name.
-  await currentBlock.getByRole('button', { name: 'Current block actions', exact: true }).click();
+  await currentBlock.locator('.menu-field').getByRole('button').first().click();
   await page.getByRole('menuitem', { name: 'Rename block…' }).click();
   const rename = page.getByRole('dialog', { name: 'Rename block' });
   await rename.getByLabel('Name').fill('Block 1');

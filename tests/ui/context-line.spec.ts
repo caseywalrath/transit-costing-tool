@@ -32,7 +32,8 @@ test('Trips, Blocking, and Costing share the Trip profile and Blocking scenario 
   await page.getByRole('radiogroup', { name: 'Cost basis' }).getByRole('radio', { name: 'Blocked' }).click();
   await expect(crumb(page, 'Blocking scenario')).toContainText(blocking!);
   await page.getByRole('radiogroup', { name: 'Cost basis' }).getByRole('radio', { name: 'Estimated' }).click();
-  await expect(crumb(page, 'Blocking scenario')).toHaveCount(0);
+  // The level stays in place, disabled, so the header does not shift.
+  await expect(crumb(page, 'Blocking scenario')).toBeDisabled();
 
   // A Trip profile chosen on Costing is the one Trips opens.
   await crumb(page, 'Trip profile').click();

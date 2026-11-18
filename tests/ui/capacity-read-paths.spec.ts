@@ -22,7 +22,7 @@ async function openCapacityProject(page: Page, options: CapacityOpts) {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await seedSnapshot(page, { ...capacityBackup(options), generationSets: [] });
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Route actions', exact: true })).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByRole('button', { name: /^Route: / })).toBeVisible({ timeout: 120_000 });
 }
 
 /** Counts reads of the Trips store (`getAll` on the store or on one of its indexes) from now on. */

@@ -1,4 +1,4 @@
-import type { AutoBlockingPreview, AutoBlockingRequest, AutoBlockingSetup, AutoBlockingStatus, BlockingCommands, BlockingDayCopyReview, BlockingQueries, BlockingRepository } from './ports';
+import type { AutoBlockingFillPreview, AutoBlockingFillRequest, AutoBlockingPreview, AutoBlockingRequest, AutoBlockingSetup, AutoBlockingStatus, BlockingCommands, BlockingDayCopyReview, BlockingQueries, BlockingRepository } from './ports';
 import { autoBlockingEditedCount, buildAutoBlocks, checkAgainstBuiltBlocks, defaultAutoBlockingRules, measureBuiltBlocks, summarizeAutoBlockingRules, validateAutoBlockingRules, type AutoBlockingCheck, type AutoBlockingContext, type AutoBlockingMeasurement, type AutoBlockingRules } from '../domain/autoBlocking';
 import { patternTotalMiles } from '../domain/patterns';
 import { sortServiceDays } from '../domain/serviceDays';
@@ -318,7 +318,7 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
     return { scenarioId, routes, patterns, nodes, directions, serviceDays, trips };
   }
 
-  async getAutoBlockingSetup(scenarioId: string, tripProfileId: string, preference?: MinimumLayoverRules): Promise<AutoBlockingSetup> {
+  async getAutoBlockingSetup(scenarioId: string, tripProfileId: string, preference?: MinimumLayoverRules, fillBlockingScenarioId?: string): Promise<AutoBlockingSetup> {
     const context = await this.loadAutoContext(scenarioId, tripProfileId);
     const trips = context.trips.filter((trip) => trip.scenarioId === scenarioId && trip.tripProfileId === tripProfileId);
     const patternTripCounts: Record<string, number> = {};
@@ -347,7 +347,45 @@ export class BlockingApplicationService implements BlockingCommands, BlockingQue
       milesIncompletePatternIds: patterns.filter((pattern) => patternTotalMiles(pattern) === undefined).map((pattern) => pattern.id),
       defaultRules: defaultAutoBlockingRules(context, tripProfileId, preference),
       defaultName, sources,
+      ...(fillBlockingScenarioId ? { unassignedTripCounts: await this.unassignedTripCounts(fillBlockingScenarioId, trips) } : {}),
     };
+  }
+
+  // --- Auto-block unassigned trips (Decision 0083) ---
+
+  private async unassignedTripCounts(blockingScenarioId: string, trips: Trip[]): Promise<Record<string, number>> {
+    const blocks = await this.repository.listBlockingBlocks(blockingScenarioId);
+    const assigned = new Set(blocks.flatMap((block) => block.activities.flatMap((activity) => activity.type === 'revenueTrip' ? [activity.tripId] : [])));
+    const counts: Record<string, number> = {};
+    trips.filter((trip) => !assigned.has(trip.id)).forEach((trip) => { counts[trip.serviceDayId] = (counts[trip.serviceDayId] ?? 0) + 1; });
+    return counts;
+  }
+
+  private async buildFill(request: Omit<AutoBlockingFillRequest, 'sourceSignature'>, now: string) {
+    const scenario = await this.repository.getBlockingScenario(request.blockingScenarioId);
+    if (!scenario) throw new Error('Blocking Scenario not found.');
+    const [context, existingBlocks] = await Promise.all([this.loadAutoContext(scenario.scenarioId, scenario.tripProfileId), this.repository.listBlockingBlocks(scenario.id)]);
+    const ruleFindings = validateAutoBlockingRules(request.rules, { patterns: context.patterns, nodes: context.nodes, serviceDayIds: context.serviceDays.map((day) => day.id) });
+    const result = buildAutoBlocks({ ...context, blockingScenario: scenario, rules: request.rules, now, existingBlocks });
+    return { context, scenario, existingBlocks, result, ruleFindings };
+  }
+
+  async previewFillUnassigned(request: Omit<AutoBlockingFillRequest, 'sourceSignature'>): Promise<AutoBlockingFillPreview> {
+    const { result, ruleFindings } = await this.buildFill(request, new Date().toISOString());
+    return { result, ruleFindings };
+  }
+
+  async fillUnassignedTrips(request: AutoBlockingFillRequest): Promise<{ blocks: BlockingBlock[] }> {
+    const { context, scenario, existingBlocks, result, ruleFindings } = await this.buildFill(request, new Date().toISOString());
+    const refused = ruleFindings.filter((item) => item.severity === 'error');
+    if (refused.length) throw new BlockingValidationError(refused.map((item) => item.messageKey).join(', '), refused);
+    if (!result.blocks.length) throw new Error('No unassigned trips on the chosen service days, so no blocks were added.');
+    const patterns = new Map(context.patterns.map((pattern) => [pattern.id, pattern]));
+    const trips = new Map(context.trips.map((trip) => [trip.id, trip]));
+    result.blocks.forEach((block) => assertStructurallyValidBlock(block, { scenario: { id: scenario.scenarioId }, blockingScenario: scenario, trips, patterns }));
+    // The stored Blocks are written back unchanged with the new ones; the signature check refuses the write if they changed since review.
+    await this.repository.saveBlockingBlocksAtomically([...existingBlocks, ...result.blocks], request.sourceSignature, scenario.id);
+    return { blocks: result.blocks };
   }
 
   /** Validates rules and name, then builds in memory. Used by both the preview and the create command. */

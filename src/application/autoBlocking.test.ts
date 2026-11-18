@@ -234,3 +234,48 @@ describe('Automatic blocking application service (Decision 0055)', () => {
     await expect(service.getAutoBlockingSetup(first.scenarioId, first.profile.id)).rejects.toThrow('not available');
   });
 });
+
+describe('Auto-block unassigned trips (Decision 0083)', () => {
+  async function builtWithOneBlockDeleted() {
+    const { first, service } = setup();
+    const rules = (await service.getAutoBlockingSetup(first.scenarioId, first.profile.id)).defaultRules;
+    const built = await service.createAutoBlockingScenario({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'Auto 1', rules });
+    const blocks = await service.listBlockingBlocks(built.id);
+    const removed = blocks.find((block) => block.label === 'Block 2')!;
+    await service.deleteBlock(built.id, removed.id, createBlockingScenarioSourceSignature(built, blocks));
+    const kept = await service.listBlockingBlocks(built.id);
+    const signature = createBlockingScenarioSourceSignature(built, kept);
+    const tripsOf = (block: { activities: Array<{ type: string; tripId?: string }> }) => block.activities.flatMap((activity) => activity.type === 'revenueTrip' ? [activity.tripId!] : []);
+    return { first, service, rules, built, kept, removed, signature, tripsOf, peak: (await service.previewAutoBlocking({ scenarioId: first.scenarioId, tripProfileId: first.profile.id, name: 'x', rules })).result.days[0].peakVehicles };
+  }
+
+  it('counts unassigned trips per day in the setup', async () => {
+    const { first, service, built, removed, tripsOf } = await builtWithOneBlockDeleted();
+    const value = await service.getAutoBlockingSetup(first.scenarioId, first.profile.id, undefined, built.id);
+    expect(value.unassignedTripCounts).toEqual({ [first.id('weekday')]: tripsOf(removed).length });
+  });
+
+  it('previews and adds blocks for only the unassigned trips, with free labels, leaving stored blocks unchanged', async () => {
+    const { service, rules, built, kept, removed, signature, tripsOf, peak } = await builtWithOneBlockDeleted();
+    const preview = await service.previewFillUnassigned({ blockingScenarioId: built.id, rules });
+    expect(preview.result.days[0].tripCount).toBe(tripsOf(removed).length);
+    // Peak vehicles count the stored blocks with the new ones.
+    expect(preview.result.days[0].peakVehicles).toBe(peak);
+    const { blocks } = await service.fillUnassignedTrips({ blockingScenarioId: built.id, rules, sourceSignature: signature });
+    expect(blocks.flatMap(tripsOf).sort()).toEqual(tripsOf(removed).sort());
+    const keptLabels = new Set(kept.map((block) => block.label));
+    expect(blocks.every((block) => !keptLabels.has(block.label))).toBe(true);
+    expect(blocks.map((block) => block.label)).toContain('Block 2');
+    const stored = await service.listBlockingBlocks(built.id);
+    expect(stored).toHaveLength(kept.length + blocks.length);
+    kept.forEach((block) => expect(stored.find((candidate) => candidate.id === block.id)).toEqual(block));
+  });
+
+  it('refuses when no trip is unassigned, and when the blocks changed since review', async () => {
+    const { service, rules, built, signature } = await builtWithOneBlockDeleted();
+    await expect(service.fillUnassignedTrips({ blockingScenarioId: built.id, rules, sourceSignature: 'stale' })).rejects.toThrow();
+    await service.fillUnassignedTrips({ blockingScenarioId: built.id, rules, sourceSignature: signature });
+    const now = createBlockingScenarioSourceSignature(built, await service.listBlockingBlocks(built.id));
+    await expect(service.fillUnassignedTrips({ blockingScenarioId: built.id, rules, sourceSignature: now })).rejects.toThrow('No unassigned trips');
+  });
+});

@@ -187,7 +187,7 @@ test.describe('Costing estimate display (U06 criteria 2 to 5)', () => {
     await expect(page.getByText('Calculating estimate…')).toHaveCount(0);
   });
 
-  test('the Total row has no daily columns, the blocked basis shows no trips or running hours, and no rounding note shows', async ({ page }) => {
+  test('the Total row has no daily columns, the blocked basis shows the trips and running hours of its blocks, and no rounding note shows', async ({ page }) => {
     await seedCostingFixture(page);
     await page.reload();
     await page.getByRole('button', { name: 'Costing', exact: true }).click();
@@ -197,14 +197,14 @@ test.describe('Costing estimate display (U06 criteria 2 to 5)', () => {
     // Days, Trips, Blocks, four daily columns, Annual Revenue Hours, Annual Platform Hours, Annual Cost.
     await expect(cells).toHaveCount(10);
     await expect(cells.nth(0)).toHaveText('364');
-    await expect(cells.nth(1)).toHaveText('—');
+    await expect(cells.nth(1)).toHaveText(/^\d+$/);
     await expect(cells.nth(2)).toHaveText('1');
     for (const index of [3, 4, 5, 6]) await expect(cells.nth(index)).toHaveText('');
     await expect(cells.nth(7)).toHaveText('260');
     await expect(cells.nth(9)).toHaveText('$40,170');
     const row = page.locator('.costing-results-table tbody tr.costing-route-day-row').first().locator('td');
-    await expect(row.nth(1)).toHaveText('—');
-    await expect(row.nth(3)).toHaveText('—');
+    await expect(row.nth(1)).toHaveText(/^\d+$/);
+    await expect(row.nth(3)).toHaveText(/^\d[\d,]*\.\d{2}$/);
     await expect(page.getByText(/Totals are computed before rounding/)).toHaveCount(0);
   });
 

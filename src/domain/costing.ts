@@ -108,6 +108,10 @@ export interface CostingDailyResult {
   eligibleBlockCount: number;
   excludedBlockCount: number;
   unassignedTripCount: number;
+  /** Revenue Trips in the day's eligible Blocks. */
+  tripCount?: number;
+  /** First departure to last arrival of those Trips, summed (the Block summaries' running hours). */
+  runningHoursPerDay?: number;
   revenueHoursPerDay: number;
   platformHoursPerDay: number;
   annualRevenueHours: number;
@@ -405,6 +409,8 @@ export function calculateCosting(input: CostingCalculationInput): CostingCalcula
       eligibleBlockCount: row.eligibleBlockCount,
       excludedBlockCount: row.excludedBlocks.length,
       unassignedTripCount: row.unassignedTripCount,
+      tripCount: row.tripCount,
+      runningHoursPerDay: row.runningSeconds / 3600,
       revenueHoursPerDay: row.revenueHoursPerDay,
       platformHoursPerDay: row.platformHoursPerDay,
       annualRevenueHours,
@@ -503,11 +509,15 @@ interface DayCoverage {
   platformHoursPerDay: number;
   excludedBlocks: CostingBlockExclusion[];
   unassignedTripCount: number;
+  tripCount: number;
+  runningSeconds: number;
 }
 
 /** Decision 0077. One Route's share of one service day. `null` Route is the Unattributed row. */
 interface RouteDayCoverage {
   blockCount: number;
+  tripCount: number;
+  runningSeconds: number;
   revenueSeconds: number;
   platformSeconds: number;
   unassignedTripCount: number;
@@ -534,6 +544,8 @@ function buildCoverage(input: CostingCalculationInput, serviceDayIds: ReadonlySe
     platformHoursPerDay: 0,
     excludedBlocks: [],
     unassignedTripCount: 0,
+    tripCount: 0,
+    runningSeconds: 0,
   }]));
   const summariesByBlock = new Map<string, BlockSummary[]>();
   for (const summary of input.blockSummaries) summariesByBlock.set(summary.blockId, [...(summariesByBlock.get(summary.blockId) ?? []), summary]);
@@ -545,7 +557,7 @@ function buildCoverage(input: CostingCalculationInput, serviceDayIds: ReadonlySe
     routeDays.set(routeId, byDay);
     let row = byDay.get(serviceDayId);
     if (!row) {
-      row = { blockCount: 0, revenueSeconds: 0, platformSeconds: 0, unassignedTripCount: 0 };
+      row = { blockCount: 0, tripCount: 0, runningSeconds: 0, revenueSeconds: 0, platformSeconds: 0, unassignedTripCount: 0 };
       byDay.set(serviceDayId, row);
     }
     return row;
@@ -569,10 +581,14 @@ function buildCoverage(input: CostingCalculationInput, serviceDayIds: ReadonlySe
     const platformSeconds = summary.platformSeconds ?? Math.round(summary.platformHours! * 3600);
     day.revenueSecondsPerDay += revenueSeconds;
     day.platformSecondsPerDay += platformSeconds;
+    const runningSeconds = Math.round(summary.runningHours * 3600);
+    day.runningSeconds += runningSeconds;
+    let tripCount = 0;
     // Decision 0077 item 3.2 (interim rule): a Block whose revenue Trips all belong to one Route is that Route's; otherwise it is Unattributed.
     const revenueRouteIds = new Set<string>();
     for (const activity of block.activities) {
       if (activity.type !== 'revenueTrip') continue;
+      tripCount += 1;
       const routeId = routeIdByTrip.get(activity.tripId);
       if (routeId !== undefined) revenueRouteIds.add(routeId);
     }
@@ -581,7 +597,10 @@ function buildCoverage(input: CostingCalculationInput, serviceDayIds: ReadonlySe
     }
     const [onlyRouteId] = revenueRouteIds;
     const attributed = routeDay(revenueRouteIds.size === 1 ? onlyRouteId : null, block.serviceDayId);
+    day.tripCount += tripCount;
     attributed.blockCount += 1;
+    attributed.tripCount += tripCount;
+    attributed.runningSeconds += runningSeconds;
     attributed.revenueSeconds += revenueSeconds;
     attributed.platformSeconds += platformSeconds;
   }
@@ -629,7 +648,7 @@ function blockedRouteRows(input: CostingCalculationInput, coverage: Coverage, ap
     routeId,
     ...(routeId !== null && routeNames.has(routeId) ? { routeName: routeNames.get(routeId) } : {}),
     days: days.map((day): CostingRouteDayResult => {
-      const row = byDay.get(day.id) ?? { blockCount: 0, revenueSeconds: 0, platformSeconds: 0, unassignedTripCount: 0 };
+      const row = byDay.get(day.id) ?? { blockCount: 0, tripCount: 0, runningSeconds: 0, revenueSeconds: 0, platformSeconds: 0, unassignedTripCount: 0 };
       const revenueHoursPerDay = row.revenueSeconds / 3600;
       const platformHoursPerDay = row.platformSeconds / 3600;
       return {
@@ -637,6 +656,8 @@ function blockedRouteRows(input: CostingCalculationInput, coverage: Coverage, ap
         serviceDayName: day.name,
         annualServiceDays: day.annualServiceDays,
         blockCount: row.blockCount,
+        tripCount: row.tripCount,
+        runningHoursPerDay: row.runningSeconds / 3600,
         unassignedTripCount: row.unassignedTripCount,
         revenueHoursPerDay,
         platformHoursPerDay,

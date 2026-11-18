@@ -39,12 +39,17 @@ test('the scope row holds each tab\'s selectors', async ({ page }) => {
   await openGolden(page);
   // Each field's name: its visible label, or, for Day and Direction, which have none (Decision 0059), the control's aria-label.
   const names = async () => scopeBar(page).locator('.context-field').evaluateAll((fields) => fields.map((field) => field.querySelector('.context-field__label')?.textContent ?? `(${field.querySelector('[aria-label]')?.getAttribute('aria-label')})`));
-  expect(await names()).toEqual(['Route']);
+  // Decision 0082 item 4: Route is a switcher before the scope fields, on Route, Trips, and Blocking.
+  const route = scopeBar(page).getByRole('button', { name: /^Route: / });
+  await expect(route).toBeVisible();
+  expect(await names()).toEqual([]);
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await expect.poll(names).toEqual(['Route', '(Day)', '(Direction)']);
+  await expect.poll(names).toEqual(['(Day)', '(Direction)']);
+  await expect(route).toBeVisible();
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   // Decision 0081 (D6): the Trip profile is a breadcrumb level, not a scope field.
-  await expect.poll(names).toEqual(['Route', '(Day)']);
+  await expect.poll(names).toEqual(['(Day)']);
+  await expect(route).toBeVisible();
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await expect.poll(names).toEqual(['Cost basis', 'View year']);
 });
@@ -135,8 +140,16 @@ test('a route with a short name shows only the short name, and its full name is 
   await seedCostingFixture(page);
   await page.setViewportSize({ width: 1024, height: 900 });
   await page.reload();
-  const route = scopeBar(page).getByLabel('Route', { exact: true });
+  const route = scopeBar(page).getByRole('button', { name: /^Route: / });
   await expect(route).toBeVisible();
-  await expect(route.locator('option:checked')).toHaveText('31');
+  await expect(route).toHaveAccessibleName('Route: 31');
   await expect(route).toHaveAttribute('title', 'Federal Boulevard');
+  // Decision 0082 item 4: Route commands are on the Route tab only; on another tab the menu lists the Routes alone.
+  await route.click();
+  await expect(page.getByRole('menu', { name: 'Route', exact: true }).getByRole('menuitem', { name: 'New route', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Blocking', exact: true }).click();
+  await route.click();
+  await expect(page.getByRole('menu', { name: 'Route', exact: true }).getByRole('menuitemradio')).toHaveCount(1);
+  await expect(page.getByRole('menu', { name: 'Route', exact: true }).getByRole('menuitem')).toHaveCount(0);
 });

@@ -22,7 +22,7 @@ async function openRegenerateDialog(page: Page, width = 1600) {
   await page.setViewportSize({ width, height: 1000 });
   await seedSnapshot(page, { ...capacityBackup({ allOutbound: true, calculationMethod: 'blendSegments' }), generationSets: [] });
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Route actions', exact: true })).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByRole('button', { name: /^Route: / })).toBeVisible({ timeout: 120_000 });
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await expect.poll(() => page.locator('.schedule-table tbody tr').count(), { timeout: 120_000 }).toBeGreaterThanOrEqual(100);
   await page.locator('.schedule-table thead input[type=checkbox]').first().check();

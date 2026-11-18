@@ -62,7 +62,7 @@ test('a Route rename in the active tab survives a Short name edit attempted in t
 
 test('a Route added in the active tab survives an annual-count edit attempted in the read-only tab', async ({ browser }) => {
   const { active, readOnly } = await twoTabs(browser);
-  await active.getByRole('button', { name: 'Route actions', exact: true }).click();
+  await active.getByRole('button', { name: /^Route: / }).click();
   await active.getByRole('menuitem', { name: 'New route', exact: true }).click();
   await expect.poll(() => runInPage(active, 'return await e.db.routes.count()')).toBe(2);
 

@@ -10,7 +10,7 @@ test('keeps Node and Pattern drafts local until their explicit saves', async ({ 
   await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Draft verification');
   await page.getByRole('button', { name: 'New project', exact: true }).last().click();
-  await page.getByRole('button', { name: 'Route actions', exact: true }).click();
+  await page.getByRole('button', { name: /^Route: / }).click();
   await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
 
   await page.getByRole('button', { name: 'New node', exact: true }).click();
@@ -69,7 +69,7 @@ test('renames and duplicates a Route from the module Actions menu', async ({ pag
   await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Route lifecycle');
   await page.getByRole('button', { name: 'New project', exact: true }).last().click();
-  const routeActions = page.getByRole('button', { name: 'Route actions', exact: true });
+  const routeActions = page.getByRole('button', { name: /^Route: / });
   await routeActions.click();
   await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
 
@@ -77,21 +77,40 @@ test('renames and duplicates a Route from the module Actions menu', async ({ pag
   await page.getByRole('menuitem', { name: 'Rename route', exact: true }).click();
   await page.getByRole('dialog', { name: 'Rename route' }).getByLabel('Route name').fill('Federal');
   await page.getByRole('dialog', { name: 'Rename route' }).getByRole('button', { name: 'Rename', exact: true }).click();
-  const routeSelect = page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Route' });
-  await expect(routeSelect).toHaveValue(/.+/);
-  await expect(routeSelect.locator('option:checked')).toHaveText('Federal');
+  // Decision 0082 item 4: the Route switcher names the Route and lists the Routes as radio items.
+  await expect(routeActions).toHaveAccessibleName('Route: Federal');
+  const routeItems = page.getByRole('menu', { name: 'Route', exact: true }).getByRole('menuitemradio');
 
   await routeActions.click();
   await page.getByRole('menuitem', { name: 'Duplicate route', exact: true }).click();
   await page.getByRole('dialog', { name: 'Duplicate route' }).getByRole('button', { name: 'Duplicate', exact: true }).click();
-  // "No route selected", the two Routes, and "+ New route" (UR-16).
-  await expect(routeSelect.locator('option')).toHaveCount(4);
-  await expect(routeSelect.locator('option:checked')).toHaveText('Federal Copy');
+  await expect(routeActions).toHaveAccessibleName('Route: Federal Copy');
+  await routeActions.click();
+  await expect(routeItems.filter({ hasText: /^✓?Federal$/ })).toHaveCount(1);
+  await expect(routeItems.filter({ hasText: /^✓?Federal Copy$/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(routeItems).toHaveCount(2);
+  await page.keyboard.press('Escape');
 
   // Both Routes are stored, and the selection survives a reload.
   expect(await runInPage(page, 'return (await e.db.routes.toArray()).map((route) => route.name).sort()')).toEqual(['Federal', 'Federal Copy']);
   await page.reload();
-  // "No route selected", the two Routes, and "+ New route" (UR-16).
-  await expect(routeSelect.locator('option')).toHaveCount(4);
-  await expect(routeSelect.locator('option:checked')).toHaveText('Federal Copy');
+  await expect(routeActions).toHaveAccessibleName('Route: Federal Copy');
+
+  // Type-ahead moves among the Routes; the Route commands are on the Route tab only.
+  // The menu order of two Routes created in the same second is not fixed, so the check reads the focused item's title: repeating
+  // the letter moves to the other Route that starts with it.
+  await routeActions.click();
+  await expect(routeItems).toHaveCount(2);
+  // ArrowDown moves focus from the trigger (whose title is also the Route name) to the first item.
+  const focusedItem = () => page.evaluate(() => { const element = document.activeElement as HTMLElement | null; return element?.getAttribute('role') === 'menuitemradio' ? element.getAttribute('title') ?? '' : ''; });
+  await page.keyboard.press('ArrowDown');
+  await expect.poll(focusedItem).toMatch(/^Federal( Copy)?$/);
+  const first = await focusedItem();
+  const other = first === 'Federal' ? 'Federal Copy' : 'Federal';
+  await page.keyboard.type('f');
+  await expect.poll(focusedItem).toBe(other);
+  // The checked Route is reachable too: its ✓ mark does not hide its first letter.
+  await page.keyboard.type('f');
+  await expect.poll(focusedItem).toBe(first);
+  await page.keyboard.press('Escape');
 });

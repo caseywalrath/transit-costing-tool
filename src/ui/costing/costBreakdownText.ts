@@ -24,13 +24,13 @@ export function breakdownRows(result: CostingResult, selectedYear: number): { ro
       annualRevenue: row.annualRevenueHours, annualPlatform: row.annualPlatformHours, annualCost: cost?.annualCostUsd,
     }; })
     : result.dailyRows.map((row) => { const cost = row.yearCosts.find((item) => item.serviceYear === selectedYear); return {
-      key: row.serviceDayId, name: row.serviceDayName, days: row.annualServiceDays, blocks: row.eligibleBlockCount,
-      revenue: row.revenueHoursPerDay, platform: row.platformHoursPerDay, dailyCost: cost?.costPerDayUsd,
+      key: row.serviceDayId, name: row.serviceDayName, days: row.annualServiceDays, trips: row.tripCount, blocks: row.eligibleBlockCount,
+      running: row.runningHoursPerDay, revenue: row.revenueHoursPerDay, platform: row.platformHoursPerDay, dailyCost: cost?.costPerDayUsd,
       annualRevenue: row.annualRevenueHours, annualPlatform: row.annualPlatformHours, annualCost: cost?.annualCostUsd,
     }; });
   const total: BreakdownRow = {
     key: 'total', name: 'Total', days: rows.reduce((total, row) => total + row.days, 0),
-    ...(result.basis === 'estimated' ? { trips: result.tripCount } : { blocks: result.eligibleBlockCount }),
+    ...(result.basis === 'estimated' ? { trips: result.tripCount } : { trips: sum(rows.map((row) => row.trips)), blocks: result.eligibleBlockCount }),
     annualRevenue: year ? year.annualRevenueHours : sum(rows.map((row) => row.annualRevenue)),
     annualPlatform: year ? year.annualPlatformHours : sum(rows.map((row) => row.annualPlatform)),
     annualCost: year?.annualCostUsd,
@@ -55,7 +55,7 @@ export function routeBreakdownRows(result: CostingResult, selectedYear: number):
       const cost = day.yearCosts.find((item) => item.serviceYear === selectedYear);
       return {
         key: `${route.routeId ?? 'unattributed'}:${day.serviceDayId}`, name: day.serviceDayName, days: day.annualServiceDays,
-        ...(estimated ? { trips: day.tripCount, running: day.runningHoursPerDay } : { blocks: day.blockCount }),
+        trips: day.tripCount, running: day.runningHoursPerDay, ...(estimated ? {} : { blocks: day.blockCount }),
         revenue: day.revenueHoursPerDay, platform: day.platformHoursPerDay, dailyCost: cost?.costPerDayUsd,
         annualRevenue: day.annualRevenueHours, annualPlatform: day.annualPlatformHours, annualCost: cost?.annualCostUsd,
       };
@@ -65,7 +65,7 @@ export function routeBreakdownRows(result: CostingResult, selectedYear: number):
       key: route.routeId ?? 'unattributed', routeId: route.routeId,
       name: route.routeId === null ? UNATTRIBUTED_ROUTE_NAME : route.routeName || 'Untitled route',
       days: dayRows.reduce((acc, row) => acc + row.days, 0),
-      ...(estimated ? { trips: sum(dayRows.map((row) => row.trips)) } : { blocks: sum(dayRows.map((row) => row.blocks)) }),
+      trips: sum(dayRows.map((row) => row.trips)), ...(estimated ? {} : { blocks: sum(dayRows.map((row) => row.blocks)) }),
       annualRevenue: sum(dayRows.map((row) => row.annualRevenue)), annualPlatform: sum(dayRows.map((row) => row.annualPlatform)),
       annualCost: dayRows.length ? sum(dayRows.map((row) => row.annualCost)) : undefined,
       ...(unassigned ? { unassignedTrips: unassigned } : {}),

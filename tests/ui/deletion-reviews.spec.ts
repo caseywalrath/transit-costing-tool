@@ -12,7 +12,7 @@ const error = (page: Page) => page.locator('.notice.error');
 
 async function openRouteDelete(page: Page) {
   await page.getByRole('button', { name: 'Route', exact: true }).click();
-  await page.getByRole('button', { name: 'Route actions', exact: true }).click();
+  await page.getByRole('button', { name: /^Route: / }).click();
   await page.getByRole('menuitem', { name: 'Delete route…', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Delete route?' })).toBeVisible();
 }

@@ -198,6 +198,12 @@ export interface AutoBlockingBuildInput extends AutoBlockingContext {
   rules: AutoBlockingRules;
   now: string;
   newId?: () => EntityId;
+  /**
+   * Decision 0083 (fill unassigned trips). The Blocking Scenario's stored Blocks. When given, Trips already in one of them are left out,
+   * new Block labels skip the labels each day already uses, and peak vehicles and the vehicle limit count these Blocks too. The result
+   * holds only the new Blocks; these Blocks are not changed.
+   */
+  existingBlocks?: BlockingBlock[];
 }
 export interface AutoBlockingDaySummary {
   serviceDayId: EntityId; tripCount: number; blockCount: number; peakVehicles: number;
@@ -375,7 +381,9 @@ export function buildAutoBlocks(input: AutoBlockingBuildInput): AutoBlockingResu
   const groups = patternDirectionGroups(input.patterns, input.directions);
   const findings: ValidationFinding[] = [];
   const dayIds = new Set(rules.serviceDayIds);
-  const inScope = input.trips.filter((trip) => trip.scenarioId === input.scenarioId && trip.tripProfileId === blockingScenario.tripProfileId && dayIds.has(trip.serviceDayId));
+  const existing = input.existingBlocks ?? [];
+  const assigned = new Set(existing.flatMap((block) => block.activities.flatMap((activity) => activity.type === 'revenueTrip' ? [activity.tripId] : [])));
+  const inScope = input.trips.filter((trip) => trip.scenarioId === input.scenarioId && trip.tripProfileId === blockingScenario.tripProfileId && dayIds.has(trip.serviceDayId) && !assigned.has(trip.id));
 
   const facts: TripFact[] = [];
   for (const trip of [...inScope].sort((left, right) => left.id.localeCompare(right.id))) {
@@ -414,6 +422,22 @@ export function buildAutoBlocks(input: AutoBlockingBuildInput): AutoBlockingResu
     end: vehicle.lastArrival + (terminalOf.get(vehicle.items.at(-1)!.fact.destination)?.pullInMinutes ?? 0) * 60,
   });
 
+  /** Decision 0083: the in-service intervals of the stored Blocks of one day, from their first and last timed Trips and their pull minutes. */
+  const tripsById = new Map(input.trips.map((trip) => [trip.id, trip]));
+  const existingIntervals = (dayId: EntityId) => existing.filter((block) => block.serviceDayId === dayId).flatMap((block) => {
+    const timed = block.activities.flatMap((activity) => {
+      if (activity.type !== 'revenueTrip') return [];
+      const trip = tripsById.get(activity.tripId); const fact = trip ? tripFact(trip, patterns) : undefined;
+      return fact ? [fact] : [];
+    });
+    if (!timed.length) return [];
+    const pullOut = block.activities.find((activity) => activity.type === 'pullOut');
+    const pullIn = block.activities.find((activity) => activity.type === 'pullIn');
+    const before = pullOut?.type === 'pullOut' ? pullOut.minutesBeforeFirstTrip ?? 0 : 0;
+    const after = pullIn?.type === 'pullIn' ? pullIn.minutesAfterLastTrip ?? 0 : 0;
+    return [{ start: Math.min(...timed.map((fact) => fact.dep)) - before * 60, end: Math.max(...timed.map((fact) => fact.arr)) + after * 60 }];
+  });
+
   /** Builds one service day (all Routes, with the break rebuilding passes) with one vehicle choice. Findings are returned, not recorded. */
   const buildDay = (dayId: EntityId, choice: AutoBlockingChoice) => {
     const dayVehicles: Array<{ route: Route; vehicle: Vehicle }> = [];
@@ -444,7 +468,7 @@ export function buildAutoBlocks(input: AutoBlockingBuildInput): AutoBlockingResu
       }
       result.vehicles.forEach((vehicle) => dayVehicles.push({ route, vehicle }));
     }
-    return { dayVehicles, dayFindings, dayPasses, peak: peakVehicles(dayVehicles.map(({ vehicle }) => vehicleInterval(vehicle))), revenueSeconds: dayVehicles.reduce((sum, { vehicle }) => sum + vehicle.lastArrival - vehicle.firstDeparture, 0) };
+    return { dayVehicles, dayFindings, dayPasses, peak: peakVehicles([...existingIntervals(dayId), ...dayVehicles.map(({ vehicle }) => vehicleInterval(vehicle))]), revenueSeconds: dayVehicles.reduce((sum, { vehicle }) => sum + vehicle.lastArrival - vehicle.firstDeparture, 0) };
   };
 
   for (const day of sortServiceDays(input.serviceDays).filter((candidate) => dayIds.has(candidate.id))) {
@@ -465,8 +489,13 @@ export function buildAutoBlocks(input: AutoBlockingBuildInput): AutoBlockingResu
     const order = [...dayVehicles].sort((left, right) =>
       routes.indexOf(left.route) - routes.indexOf(right.route) || left.vehicle.firstDeparture - right.vehicle.firstDeparture || left.vehicle.index - right.vehicle.index);
     const dayBlocks: BlockingBlock[] = [];
-    order.forEach(({ route, vehicle }, position) => {
-      const label = `Block ${position + 1}`;
+    // Decision 0083: a new label never repeats one the day already uses. The check ignores case, so it is stricter than the trimmed
+    // exact match of `block.labelUnique` and avoids "Block 1" beside "block 1".
+    const taken = new Set(existing.filter((block) => block.serviceDayId === day.id).map((block) => block.label.trim().toLowerCase()));
+    let counter = 0;
+    const nextLabel = () => { do counter += 1; while (taken.has(`block ${counter}`)); return `Block ${counter}`; };
+    order.forEach(({ route, vehicle }) => {
+      const label = nextLabel();
       if (!env.ruleOf(vehicle.lastPatternId).canEnd) findings.push(autoFinding('autoBlocking.endNotAllowed', 'warning', ownerId, { blockLabel: label, patternId: vehicle.lastPatternId }));
       const first = vehicle.items[0].fact; const last = vehicle.items.at(-1)!.fact;
       const garage = garageOf.get(route.id);
@@ -501,7 +530,6 @@ export function buildAutoBlocks(input: AutoBlockingBuildInput): AutoBlockingResu
     });
   }
 
-  const tripsById = new Map(input.trips.map((trip) => [trip.id, trip]));
   const blockFindings = blocks.flatMap((block) => validateBlockingBlock(block, { scenario: { id: input.scenarioId }, blockingScenario, trips: tripsById, patterns }));
   return { blocks, days, findings, blockFindings, passes };
 }

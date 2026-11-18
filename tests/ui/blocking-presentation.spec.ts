@@ -65,7 +65,7 @@ test('Delete Block shows what it removes, deletes with the reviewed source, and 
   await selectBlock(page, '26');
   const counts = await runInPage(page, "const day = (await e.db.serviceDays.toArray()).find((item) => item.kind === 'weekday'); const block = (await e.db.blocks.toArray()).find((item) => item.label === '26' && item.serviceDayId === day.id); return { trips: block.activities.filter((a) => a.type === 'revenueTrip').length, deadheads: block.activities.filter((a) => a.type === 'deadhead').length, activities: block.activities.length };");
   const confirm = page.getByRole('alertdialog');
-  const open = async () => { await currentBlock(page).getByRole('button', { name: 'Current block actions', exact: true }).click(); await page.getByRole('menuitem', { name: 'Delete block…', exact: true }).click(); };
+  const open = async () => { await currentBlock(page).locator('.menu-field').getByRole('button').first().click(); await page.getByRole('menuitem', { name: 'Delete block…', exact: true }).click(); };
 
   await open();
   await expect(confirm.getByRole('heading', { name: 'Delete block?' })).toBeVisible();
@@ -94,7 +94,7 @@ test('Delete Block uses the source it reviewed, even when the screen was loaded 
   await selectBlock(page, '27');
   // Another path changes a Block after the screen loaded it. The review reads the stored data, so deleting what was reviewed works.
   await runInPage(page, "const day = (await e.db.serviceDays.toArray()).find((item) => item.kind === 'weekday'); const block = (await e.db.blocks.toArray()).find((item) => item.label === '26' && item.serviceDayId === day.id); await e.db.blocks.put({ ...block, notes: 'Changed before the review' });");
-  await currentBlock(page).getByRole('button', { name: 'Current block actions', exact: true }).click();
+  await currentBlock(page).locator('.menu-field').getByRole('button').first().click();
   await page.getByRole('menuitem', { name: 'Delete block…', exact: true }).click();
   const confirm = page.getByRole('alertdialog');
   await confirm.getByRole('button', { name: 'Delete block', exact: true }).click();

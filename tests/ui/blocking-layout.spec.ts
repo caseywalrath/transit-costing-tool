@@ -208,7 +208,7 @@ test('"+ Add pull-out" and "+ Add pull-in" are table rows that disappear once th
   await expect(block.getByRole('button', { name: '+ Add pull-in', exact: true })).toBeVisible();
 });
 
-test('the Current block header shows the subtitle, New block, and a menu with Rename, Edit notes and Delete', async ({ page }) => {
+test('the Current block header shows the subtitle, New block, and one Block menu with the Blocks, New, Rename, Edit notes and Delete', async ({ page }) => {
   await openGoldenBlocking(page);
   await currentBlock(page).locator('.menu-field').getByRole('button').first().click();
   await page.getByRole('menuitemradio', { name: '26', exact: true }).click();
@@ -216,8 +216,10 @@ test('the Current block header shows the subtitle, New block, and a menu with Re
   await expect(header.getByRole('heading', { name: 'Current block' })).toBeVisible();
   await expect(header.locator('.work-surface__subtitle')).toContainText(/^\d+ trips · \d+:\d\d(:\d\d)? – \d+:\d\d(:\d\d)? · Revenue [\d.]+ h · Layover [\d.]+%$/);
   await expect(header.getByRole('button', { name: 'New block', exact: true })).toBeVisible();
-  await header.getByRole('button', { name: 'Current block actions', exact: true }).click();
-  await expect(page.getByRole('menu', { name: 'Current block actions' }).getByRole('menuitem')).toHaveText(['Rename block…', 'Edit notes…', 'Delete block…']);
+  // Decision 0082 item 5: the Block menu holds the commands; there is no separate actions menu.
+  await expect(header.getByRole('button', { name: 'Current block actions', exact: true })).toHaveCount(0);
+  await currentBlock(page).locator('.menu-field').getByRole('button').first().click();
+  await expect(page.getByRole('menu', { name: 'Current block' }).getByRole('menuitem')).toHaveText(['New block…', 'Rename block…', 'Edit notes…', 'Delete block…']);
 });
 
 test('Decision 0076: Blocking summary comes first, holds the scenario menu and Blocks actions, and the scope bar has no Actions menu', async ({ page }) => {

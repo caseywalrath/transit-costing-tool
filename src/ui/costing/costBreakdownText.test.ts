@@ -75,12 +75,12 @@ describe('costBreakdownText', () => {
     expect(weekday).toBeDefined();
     // A service-day row leaves the Route cell empty.
     expect(weekday![0]).toBe('');
-    // A blocked basis has no trip count, so the Trips cell is a dash, and the block count is shown.
+    // A blocked basis shows the trips in its eligible Blocks and the block count.
     expect(weekday![2]).toBe('260');
-    expect(weekday![3]).toBe('—');
+    expect(weekday![3]).toMatch(/^\d[\d,]*$/);
     expect(weekday![4]).toBe(String(result.dailyRows.find((row) => row.serviceDayName === 'Weekday')!.eligibleBlockCount));
-    // A blocked basis has no running hours (a dash), but it has revenue hours.
-    expect(weekday![5]).toBe('—');
+    // A blocked basis shows the running hours of those trips, and its revenue hours.
+    expect(weekday![5]).toMatch(/^\d[\d,]*\.\d{2}$/);
     expect(weekday![6]).toMatch(/^\d[\d,]*\.\d{2}$/);
     expect(weekday![8]).toMatch(/^\$[\d,]+$/);
     const total = cells.at(-1)!;
