@@ -11,11 +11,10 @@ async function open(page: Page) {
   await expect(page.getByLabel('Weekday annual service days')).toBeVisible({ timeout: 30_000 });
   return page.getByRole('region', { name: 'Planned frequencies', exact: true });
 }
-const dayButton = (panel: Locator) => panel.getByRole('button', { name: /^Service day: / });
-async function chooseDay(panel: Locator, page: Page, name: string) {
-  await dayButton(panel).click();
-  await page.getByRole('menuitemradio', { name, exact: true }).click();
-  await expect(dayButton(panel)).toContainText(name);
+async function chooseDay(panel: Locator, _page: Page, name: string) {
+  const segment = panel.getByRole('radiogroup', { name: 'Service day' }).getByRole('radio', { name, exact: true });
+  await segment.click();
+  await expect(segment).toBeChecked();
 }
 async function action(panel: Locator, page: Page, item: string) {
   await panel.getByRole('button', { name: 'Planned frequency actions' }).click();
