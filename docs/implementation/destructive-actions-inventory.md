@@ -1,6 +1,6 @@
 # Destructive Actions Inventory
 
-Status: Review complete. Fixes are planned in `docs/implementation/undo-and-context.md` (Decision 0081, accepted 2026-11-17).
+Status: Review complete. Fixes are implemented through FX6 of `docs/implementation/undo-and-context.md` (Decision 0081); the status of each gap is at the end of section 8. G8 and G9 remain for FX8 and FX7.
 Date: 2026-11-17.
 Code reviewed: `main` at commit `33bc716` (after PR #66, Decision 0080).
 
@@ -245,6 +245,31 @@ These gaps are inputs to the fix step. Each names the items it concerns.
 | G16 | Annual service day edits change Costing totals on another tab with no indication; a blank count saves 0. | R19, C5 |
 | G17 | Rules typed in a new Auto-blocking dialog are lost on Cancel or Escape. | B16 |
 | G18 | The in-memory undos do not indicate that a reload ends them. | R10, R16, T15 |
+
+### Status of each gap (FX10 closeout, 2026-11-18)
+
+Every High-risk item (section 6) now stores a restore point and can be undone from its notice, the Project menu, or Undo history (FX1, FX2, FX2R, FX4). "Cannot be undone" gaps are therefore closed by removing the phrase, not by adding it.
+
+| ID | Status | Resolved by |
+| --- | --- | --- |
+| G1 | Closed: every listed item can be undone; no backup prompt is added (Decision 0081 item 5) | FX2, FX4 |
+| G2 | Closed: a new point order warns before the save, and the reset is undoable | FX3, FX2 |
+| G3 | Closed: the save review names the timepoints it rewrites; danger button | FX3 |
+| G4 | Closed: node deletion is undoable | FX2, FX4 |
+| G5 | Closed: Copy trips names the Blocking scenarios it changes and uses a danger button when it replaces trips; undoable | FX2, FX3 |
+| G6 | Closed: trip deletion names the deadheads and the Blocking scenarios it changes | FX2, FX3 |
+| G7 | Closed: Route and Trip profile deletion name their Costing estimate factors | FX2, FX3 |
+| G8 | Open: the start-time edit still replaces the stored regeneration or pattern-change undo | FX8 |
+| G9 | Open: the "Run times changed" marks still follow the revision, not the content | FX7 |
+| G10 | Closed: Blocking "Move to block" names the deadheads that leave | FX2, FX3 |
+| G11 | Closed: "Apply to all similar trips" states how many connections it changes; undoable | FX3, FX2 |
+| G12 | Closed: a rebuild states how many Blocks it replaces on each day; undoable | FX2, FX3 |
+| G13 | Closed: the bulk pull-out and pull-in replace is undoable | FX2, FX4 |
+| G14 | Accepted without change (D9) | — |
+| G15 | Closed: Runtime profile deletion is undoable and uses the danger button | FX2, FX3 |
+| G16 | Accepted without change (D9) | — |
+| G17 | Closed: a new Auto-blocking dialog closed without creating keeps its values until reload | FX3 |
+| G18 | Accepted without change (D9) | — |
 
 ## 9. Points to confirm during the fix step
 

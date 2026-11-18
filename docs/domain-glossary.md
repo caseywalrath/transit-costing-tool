@@ -14,6 +14,14 @@ An independently editable service-plan alternative within a project. Routes, tri
 
 Cloning a scenario creates an independent copy. Later changes do not flow between the source and clone.
 
+### Restore point
+
+A local record, stored with a destructive change in the same transaction, from which the change can be undone (Decision 0081). It holds the rows the change removed, the previous versions of the rows it changed, and the ids of the rows it added; a project deletion holds the whole project. A restore is refused when a record it would touch has changed since. Restore points are operational data on this device: they are not part of a project backup and are not copied with a scenario or project.
+
+### Working context
+
+The Project, Scenario, Trip profile, and Blocking scenario the planner is working in, shown as the context line in the scope bar (Decision 0081). Trips, Blocking, and Costing share one working Trip profile and Blocking scenario.
+
 ## Route definition
 
 ### Route

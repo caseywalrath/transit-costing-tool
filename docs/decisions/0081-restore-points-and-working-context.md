@@ -1,6 +1,6 @@
 # Decision 0081: Restore Points and Working Context
 
-- Status: Accepted (user, 2026-11-17: every recommendation D1 to D9 of `docs/implementation/undo-and-context.md`); not yet implemented
+- Status: Accepted (user, 2026-11-17: every recommendation D1 to D9 of `docs/implementation/undo-and-context.md`); items 1 to 10 implemented (FX1 to FX6, closeout `docs/implementation/undo-and-context-closeout.md`, 2026-11-18); items 11 and 12 not yet implemented (FX7, FX8)
 - Date: 2026-11-17
 - Supersedes, when the named package lands: Decision 0076 on the placement of the Blocking scenario field menu and of the Trips Trip profile and Blocking scenario menus (FX6); Decision 0051 on the per-Scenario cost basis preference (FX6); Decisions 0046 and 0070 on the single regeneration undo slot (FX8)
 - Related: Decision 0036 (writes re-read stored data), Decision 0037 (single writing tab), Decision 0041 (review tokens), `docs/implementation/destructive-actions-inventory.md`

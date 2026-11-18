@@ -11,6 +11,7 @@ import { RouteDefinitionService } from './routeDefinitionService';
 import { TripGenerationService } from './tripGenerationService';
 import { RestoreConflictError, RestorePointService } from './restorePointService';
 import { ProjectBackupService } from '../persistence/backupRepository';
+import { exportProjectJson, parseProjectBackup } from '../persistence/backup';
 import { DexieBlockingRepository } from '../persistence/blockingRepository';
 import { TransitDatabase } from '../persistence/database';
 import { DexieRouteDefinitionRepository } from '../persistence/dexieRepository';
@@ -283,6 +284,28 @@ describe('every covered command can be restored to the exact records before it',
     await h.plannedFrequencies.savePlan({ ...sourcePlan, periods: sourcePlan.periods.map((period) => ({ ...period, headwaySeconds: 600 })) } as never);
     // The source plan now differs from the target's, so the copy changes a row.
     await roundTrip(h, 'copyPlansFromScenario', async () => h.plannedFrequencies.applyCopyFromScenario(await h.plannedFrequencies.previewCopyFromScenario({ sourceScenarioId: copy.scenario.id, sourceRouteId: sourceRoute.id, targetRouteId: routeId })));
+  }));
+});
+
+describe('closeout (FX10): delete, undo, and a backup round trip on the golden project', () => {
+  it('a restored Route exports and re-imports to the same project as before the deletion, with no restore point in the file', () => withHarness(async (h) => {
+    const projectId = h.fixture.snapshot.project.id;
+    const exportedBefore = exportProjectJson((await h.repository.getProjectSnapshot(projectId))!);
+    const route = h.fixture.snapshot.routes[0];
+    await h.routeDefinition.deleteRoute(route.id, (await h.routeDefinition.getRouteDeletionImpact(route.id)).reviewToken);
+    const [point] = await h.service.listRestorePoints();
+    await h.service.restore(point.id);
+    const exportedAfter = exportProjectJson((await h.repository.getProjectSnapshot(projectId))!);
+    expect(exportedAfter).not.toContain('restorePoint');
+    const { scenarios: scenariosAfter, project: projectAfter, ...restAfter } = sortedSnapshot(parseProjectBackup(exportedAfter))!;
+    const { scenarios: scenariosBefore, project: projectBefore, ...restBefore } = sortedSnapshot(parseProjectBackup(exportedBefore))!;
+    expect(restAfter).toEqual(restBefore);
+    // Only the Scenario's and Project's save times may move.
+    const withoutTimes = (value: unknown) => JSON.parse(JSON.stringify(value), (key, item) => key === 'updatedAt' ? undefined : item);
+    expect(withoutTimes(scenariosAfter)).toEqual(withoutTimes(scenariosBefore));
+    expect(withoutTimes(projectAfter)).toEqual(withoutTimes(projectBefore));
+    await h.repository.saveProjectSnapshot(parseProjectBackup(exportedAfter));
+    expect(exportProjectJson((await h.repository.getProjectSnapshot(projectId))!).replace(/"exportedAt": "[^"]*"/, '')).toBe(exportedAfter.replace(/"exportedAt": "[^"]*"/, ''));
   }));
 });
 
