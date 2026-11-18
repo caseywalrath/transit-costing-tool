@@ -48,7 +48,18 @@ Three source edits were made outside the file-edit tool, against `AGENTS.md`: a 
 
 ## 6. Verification
 
-VERIFICATION_PLACEHOLDER
+Run on 2026-11-18, in the order of plan section 6, row FX10:
+
+| Check | Result |
+| --- | --- |
+| `pnpm typecheck` | Passed |
+| `pnpm test` | 98 files, 1640 tests passed (includes the new closeout test) |
+| `pnpm build` | Passed |
+| Full browser suite with the visual tour (`UI_TOUR=1`, 4 workers) | 391 tests: 390 passed, 1 failed (`impact-dialogs.spec.ts:111`, a known load flake; the file passes alone, 6 of 6) |
+| Visual tour at 1024 and 1440 px | Inspected; the context line fits row 2 at 1024 px and truncates Project first |
+| Backup round trip | New test: delete a Route on the golden project, Undo, export, re-import; the records equal those before the deletion apart from save times, and the file holds no restore point |
+| Delete → Undo on the golden project | `undo-history.spec.ts` (4 tests, golden project with an Alt Trip profile) passed in the full run; the unit round trips cover every covered command |
+| After the deadhead dialog fix | `pnpm typecheck`, the four Blocking specs that delete deadheads (32 passed), `pnpm test`, `pnpm build` |
 
 ## 7. Next
 
