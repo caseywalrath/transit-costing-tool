@@ -224,7 +224,7 @@ export const PlannedFrequenciesPanel = forwardRef<PlannedFrequenciesHandle, {
   }
   const savedIds = new Set(plan?.periods.map((period) => period.id));
   const aside = <div className="planned-toolbar">
-    <MenuButton label={day.name} menuLabel="Service day" fieldLabel="Service day" groups={dayMenu} menuAlign="start" />
+    <MenuButton label={day.name} menuLabel="Service day" triggerAriaLabel={`Service day: ${day.name}`} groups={dayMenu} menuAlign="start" />
     <MenuButton label="Actions" menuLabel="Planned frequency actions" groups={actionMenu} />
   </div>;
 

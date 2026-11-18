@@ -11,7 +11,7 @@ async function open(page: Page) {
   await expect(page.getByLabel('Weekday annual service days')).toBeVisible({ timeout: 30_000 });
   return page.getByRole('region', { name: 'Planned frequencies', exact: true });
 }
-const dayButton = (panel: Locator) => panel.locator('.menu-field button');
+const dayButton = (panel: Locator) => panel.getByRole('button', { name: /^Service day: / });
 async function chooseDay(panel: Locator, page: Page, name: string) {
   await dayButton(panel).click();
   await page.getByRole('menuitemradio', { name, exact: true }).click();

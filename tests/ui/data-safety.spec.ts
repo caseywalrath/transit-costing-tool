@@ -141,10 +141,16 @@ test('a failed startup shows the error banner, not the empty start screen, and n
 
 test('selection reloads and exports that fail show the error banner with a next step', async ({ page }) => {
   await openGolden(page);
+  // A second Route, so the Route field has another choice that reloads the selection.
+  const routeActions = page.getByRole('button', { name: 'Route actions', exact: true });
+  await routeActions.click();
+  await page.getByRole('menuitem', { name: 'Duplicate route', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Duplicate route' }).getByRole('button', { name: 'Duplicate', exact: true }).click();
+  await expect(scopeField(page, 'Route').locator('option')).toHaveCount(3);
   // Delete the database under the open page: its connection closes, so every later read fails with a browser error.
   await runInPage(page, 'e.db.close(); await e.db.delete();');
 
-  await scopeField(page, 'Route').selectOption({ label: 'No route selected' });
+  await scopeField(page, 'Route').selectOption({ index: 0 });
   await expect(banner(page).filter({ hasText: 'Unable to load that selection. Reload this page and try again.' })).toHaveCount(1);
   await expect(banner(page).filter({ hasText: /Dexie|IndexedDB|database|closed/i }).filter({ hasNotText: 'upgraded in another tab' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Dismiss message' }).click();

@@ -84,14 +84,14 @@ test('renames and duplicates a Route from the module Actions menu', async ({ pag
   await routeActions.click();
   await page.getByRole('menuitem', { name: 'Duplicate route', exact: true }).click();
   await page.getByRole('dialog', { name: 'Duplicate route' }).getByRole('button', { name: 'Duplicate', exact: true }).click();
-  // "No route selected", the two Routes, and "+ New route" (UR-16).
-  await expect(routeSelect.locator('option')).toHaveCount(4);
+  // The two Routes and "+ New route" (UR-16); "No route selected" shows only while no Route is selected.
+  await expect(routeSelect.locator('option')).toHaveCount(3);
   await expect(routeSelect.locator('option:checked')).toHaveText('Federal Copy');
 
   // Both Routes are stored, and the selection survives a reload.
   expect(await runInPage(page, 'return (await e.db.routes.toArray()).map((route) => route.name).sort()')).toEqual(['Federal', 'Federal Copy']);
   await page.reload();
-  // "No route selected", the two Routes, and "+ New route" (UR-16).
-  await expect(routeSelect.locator('option')).toHaveCount(4);
+  // The two Routes and "+ New route" (UR-16); "No route selected" shows only while no Route is selected.
+  await expect(routeSelect.locator('option')).toHaveCount(3);
   await expect(routeSelect.locator('option:checked')).toHaveText('Federal Copy');
 });

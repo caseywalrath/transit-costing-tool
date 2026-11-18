@@ -29,7 +29,8 @@ test('the cost basis lists blocked and estimated choices, and Weekday factors fr
   // Decision 0081 (D5): Blocked or Estimated; the names are the breadcrumb's Blocking scenario and Trip profile.
   await expect(scopeField(page, 'Cost basis').getByRole('radio')).toHaveText(['Blocked', 'Estimated']);
   await expect.poll(() => costBasisText(page)).toBe('Estimated: Default');
-  await expect(blockingScenarioMenu(page)).toHaveCount(0);
+  // The Blocking scenario level stays in place, disabled, so the header does not shift.
+  await expect(blockingScenarioMenu(page)).toBeDisabled();
   await expect(page.locator('.costing-results-table thead th')).toHaveText(['Route', 'Days', 'Trips', 'Blocks', 'Daily running (h)', 'Daily revenue (h)', 'Daily platform (h)', 'Daily cost', 'Annual revenue (h)', 'Annual platform (h)', 'Annual cost']);
   // The estimated basis has no blocks.
   await expect(resultRow(page, 'Weekday').locator('td').nth(2)).toHaveText('—');
