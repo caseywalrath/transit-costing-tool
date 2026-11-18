@@ -17,6 +17,7 @@ import { createCostingContextQueries } from './application/costingContext';
 import { LocalDataProtectionService, SaveStatusPublisher } from './application/saveStatus';
 import { LocalStorageDataProtectionStore } from './persistence/localDataProtectionStore';
 import { DexieRestorePoints } from './persistence/restorePointPersistence';
+import { RestorePointService } from './application/restorePointService';
 import { BLOCKING_COVERAGE, PLANNED_FREQUENCY_COVERAGE, ROUTE_DEFINITION_COVERAGE, TRIP_GENERATION_COVERAGE, withRestorePoints, type RestorePointLookup } from './application/restorePointCoverage';
 
 async function start() {
@@ -81,8 +82,15 @@ async function start() {
   }), repository, undefined, saveStatus);
 
   const plannedFrequencies = withRestorePoints(new PlannedFrequencyService(repository, undefined, saveStatus), PLANNED_FREQUENCY_COVERAGE, restorePoints, restorePoints, saveStatus, restoreLookup);
+  const restoreService = new RestorePointService(restorePoints, restorePoints, {
+    getScenarioRecords: (id) => repository.getScenarioRecords(id),
+    saveScenarioRecords: (records) => repository.saveScenarioRecords(records),
+    getProjectSnapshot: (id) => repository.getProjectSnapshot(id),
+    saveProjectSnapshot: (snapshot) => repository.saveProjectSnapshot(snapshot),
+    projectExists: async (id) => Boolean(await repository.db.projects.get(id)),
+  }, saveStatus, () => routeDefinitionCore.forgetCopyUndos());
 
-  createRoot(document.getElementById('root')!).render(<React.StrictMode><App service={routeDefinition} tripService={tripGeneration} blockingService={blocking} costingService={costing} plannedFrequencyService={plannedFrequencies} session={tabGuard} /></React.StrictMode>);
+  createRoot(document.getElementById('root')!).render(<React.StrictMode><App service={routeDefinition} tripService={tripGeneration} blockingService={blocking} costingService={costing} plannedFrequencyService={plannedFrequencies} session={tabGuard} restorePoints={restoreService} /></React.StrictMode>);
 }
 
 void start();

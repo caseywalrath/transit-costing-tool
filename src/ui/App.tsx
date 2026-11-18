@@ -24,7 +24,7 @@ import { headerStatus, routeOptionLabel } from './shell/headerStatus';
 import { ContextField } from './shared/ContextField';
 import { SegmentedControl } from './shared/SegmentedControl';import { TripsOrSideBySide, useSideBySideWidth, type SideBySideControl } from './trips/SideBySideTrips';
 
-export type Props = { service: RouteDefinitionApplication; tripService: TripGenerationApplication; blockingService: BlockingCommands & BlockingQueries; costingService: CostingCommands & CostingQueries; plannedFrequencyService: PlannedFrequencyService; session?: SessionStatusQueries };
+export type Props = { service: RouteDefinitionApplication; tripService: TripGenerationApplication; blockingService: BlockingCommands & BlockingQueries; costingService: CostingCommands & CostingQueries; plannedFrequencyService: PlannedFrequencyService; session?: SessionStatusQueries; restorePoints?: import('../application/restorePointService').RestorePointCommands & import('../application/restorePointService').RestorePointQueries };
 export type Notice = { kind: 'error' | 'success'; text: string } | undefined;
 export type ActiveTab = 'route' | 'trips' | 'blocking' | 'costing';
 export type SelectionPreference = { projectId?: string; scenarioId?: string; routeId?: string };
