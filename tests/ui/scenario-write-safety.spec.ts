@@ -80,7 +80,7 @@ test('New route keeps Trips built after load', async ({ page }) => {
   await open(page);
   const built = await buildThreeTrips(page);
   const routesBefore = await runInPage(page, 'return await e.db.routes.count()');
-  await page.getByRole('button', { name: 'Route actions', exact: true }).click();
+  await page.getByRole('button', { name: /^Route: / }).click();
   await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
   await expect.poll(() => runInPage(page, 'return await e.db.routes.count()')).toBe(routesBefore + 1);
   expect(await tripCount(page)).toBe(built);
@@ -90,7 +90,7 @@ test('Duplicate route keeps Trips built after load and copies them with the Rout
   await open(page);
   const built = await buildThreeTrips(page);
   const originalRouteIds: string[] = await runInPage(page, 'return (await e.db.routes.toArray()).map((route) => route.id)');
-  await page.getByRole('button', { name: 'Route actions', exact: true }).click();
+  await page.getByRole('button', { name: /^Route: / }).click();
   await page.getByRole('menuitem', { name: 'Duplicate route', exact: true }).click();
   await page.getByRole('dialog', { name: 'Duplicate route' }).getByRole('button', { name: 'Duplicate', exact: true }).click();
   await expect.poll(() => runInPage(page, 'return await e.db.routes.count()')).toBe(originalRouteIds.length + 1);

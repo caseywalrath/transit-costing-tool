@@ -24,9 +24,27 @@ export function moveMenuFocus(event: KeyboardEvent, container: HTMLElement | nul
   const items = [...container?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)') ?? []];
   const current = items.indexOf(document.activeElement as HTMLButtonElement);
   const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : event.key === 'ArrowDown' ? (current + 1 + items.length) % items.length : event.key === 'ArrowUp' ? (current - 1 + items.length) % items.length : undefined;
-  if (next === undefined) return false;
+  if (next === undefined) return typeAhead(event, items, current);
   event.preventDefault();
   items[next]?.focus();
+  return true;
+}
+
+/** Decision 0082: typed characters move to the next item whose text starts with them (WAI-ARIA menu type-ahead); the buffer clears after 600 ms. */
+let typed = { text: '', at: 0 };
+function typeAhead(event: KeyboardEvent, items: HTMLButtonElement[], current: number): boolean {
+  if (event.key.length !== 1 || event.ctrlKey || event.metaKey || event.altKey || (event.key === ' ' && !typed.text)) return false;
+  const now = Date.now();
+  typed = { text: (now - typed.at > 600 ? '' : typed.text) + event.key.toLowerCase(), at: now };
+  // Repeating one letter cycles through the items that start with it.
+  const query = [...typed.text].every((char) => char === typed.text[0]) ? typed.text[0]! : typed.text;
+  const start = query.length === 1 ? current + 1 : Math.max(current, 0);
+  const label = (item: HTMLButtonElement) => (item.textContent ?? '').trim().toLowerCase();
+  const order = [...items.slice(start), ...items.slice(0, start)];
+  const match = order.find((item) => label(item).startsWith(query));
+  if (!match) return false;
+  event.preventDefault();
+  match.focus();
   return true;
 }
 

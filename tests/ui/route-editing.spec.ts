@@ -10,7 +10,7 @@ test('keeps Node and Pattern drafts local until their explicit saves', async ({ 
   await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Draft verification');
   await page.getByRole('button', { name: 'New project', exact: true }).last().click();
-  await page.getByRole('button', { name: 'Route actions', exact: true }).click();
+  await page.getByRole('button', { name: /^Route: / }).click();
   await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
 
   await page.getByRole('button', { name: 'New node', exact: true }).click();
@@ -69,7 +69,7 @@ test('renames and duplicates a Route from the module Actions menu', async ({ pag
   await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill('Route lifecycle');
   await page.getByRole('button', { name: 'New project', exact: true }).last().click();
-  const routeActions = page.getByRole('button', { name: 'Route actions', exact: true });
+  const routeActions = page.getByRole('button', { name: /^Route: / });
   await routeActions.click();
   await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
 
@@ -77,21 +77,27 @@ test('renames and duplicates a Route from the module Actions menu', async ({ pag
   await page.getByRole('menuitem', { name: 'Rename route', exact: true }).click();
   await page.getByRole('dialog', { name: 'Rename route' }).getByLabel('Route name').fill('Federal');
   await page.getByRole('dialog', { name: 'Rename route' }).getByRole('button', { name: 'Rename', exact: true }).click();
-  const routeSelect = page.getByRole('region', { name: 'Scope' }).getByRole('combobox', { name: 'Route' });
-  await expect(routeSelect).toHaveValue(/.+/);
-  await expect(routeSelect.locator('option:checked')).toHaveText('Federal');
+  // Decision 0082 item 4: the Route switcher names the Route and lists the Routes as radio items.
+  await expect(routeActions).toHaveAccessibleName('Route: Federal');
+  const routeItems = page.getByRole('menu', { name: 'Route', exact: true }).getByRole('menuitemradio');
 
   await routeActions.click();
   await page.getByRole('menuitem', { name: 'Duplicate route', exact: true }).click();
   await page.getByRole('dialog', { name: 'Duplicate route' }).getByRole('button', { name: 'Duplicate', exact: true }).click();
-  // The two Routes and "+ New route" (UR-16); "No route selected" shows only while no Route is selected.
-  await expect(routeSelect.locator('option')).toHaveCount(3);
-  await expect(routeSelect.locator('option:checked')).toHaveText('Federal Copy');
+  await expect(routeActions).toHaveAccessibleName('Route: Federal Copy');
+  await routeActions.click();
+  await expect(routeItems).toHaveText(['Federal', 'Federal Copy']);
+  await page.keyboard.press('Escape');
 
   // Both Routes are stored, and the selection survives a reload.
   expect(await runInPage(page, 'return (await e.db.routes.toArray()).map((route) => route.name).sort()')).toEqual(['Federal', 'Federal Copy']);
   await page.reload();
-  // The two Routes and "+ New route" (UR-16); "No route selected" shows only while no Route is selected.
-  await expect(routeSelect.locator('option')).toHaveCount(3);
-  await expect(routeSelect.locator('option:checked')).toHaveText('Federal Copy');
+  await expect(routeActions).toHaveAccessibleName('Route: Federal Copy');
+
+  // Type-ahead moves among the Routes; the Route commands are on the Route tab only.
+  await routeActions.click();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.type('f');
+  await expect(routeItems.nth(1)).toBeFocused();
+  await page.keyboard.press('Escape');
 });

@@ -27,7 +27,7 @@ import { type RouteNavigationGuard } from './shared/types';
 import { download, downloadBlob } from './shared/download';
 import { userMessage } from './shared/messages';
 import { RouteWorkspace } from './route/RouteWorkspace';
-import { AppHeader, Switcher, type HeaderTab } from './shell/AppHeader';
+import { AppHeader, RouteSwitcher, Switcher, type HeaderTab } from './shell/AppHeader';
 import { headerStatus, routeOptionLabel } from './shell/headerStatus';
 import { ContextField } from './shared/ContextField';
 import { SegmentedControl } from './shared/SegmentedControl';import { TripsOrSideBySide, useSideBySideWidth, type SideBySideControl } from './trips/SideBySideTrips';
@@ -48,7 +48,6 @@ export function saveSelectionPreference(preference: SelectionPreference) {
 }
 
 /** The Route selector's last option, which adds a Route instead of selecting one (UR-16). Not a valid id. */
-const NEW_ROUTE_OPTION = '__new-route__';
 /** "Deleted route 12" → "deleted route 12", for "Undo deleted route 12". */
 
 export function formatBackupTime(iso: string) { return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); }
@@ -440,7 +439,9 @@ export function App({ service, tripService, blockingService, costingService, pla
     { id: 'costing', label: 'Costing', disabled: !records, title: !records ? 'Select a scenario before costing service.' : undefined },
   ];
   const selectedRoute = records?.routes.find((route) => route.id === routeId);
-  const routeSelect = records && <ContextField label="Route" maxWidth={190}><select aria-label="Route" value={routeId} title={selectedRoute?.name || undefined} onChange={(event) => { const next = event.target.value; if (next === NEW_ROUTE_OPTION) { event.target.value = routeId; requestRouteNavigation(() => { void addRoute(); }); return; } requestRouteNavigation(() => { void reload(projectId, scenarioId, next).catch(selectionFailed); }); }}>{!routeId && <option value="">No route selected</option>}{records.routes.map((route) => <option key={route.id} value={route.id}>{routeOptionLabel(route, records.routes)}</option>)}<option value={NEW_ROUTE_OPTION}>+ New route</option></select></ContextField>;
+  // Decision 0082 item 4: Routes are created, edited, and deleted only on the Route tab, so only there does the switcher hold their commands.
+  const routeSelect = records && <RouteSwitcher routes={records.routes} routeId={routeId} commands={activeTab === 'route' ? routeActions : []}
+    onChoose={(next) => requestRouteNavigation(() => { void reload(projectId, scenarioId, next).catch(selectionFailed); })} />;
   // Side-by-side Trips (Decision 0060): on from the stored preference, for a route with two or more directions, in a window wide enough.
   // A window that becomes too narrow shows the single table again; the stored preference stays on for the next wide window (item 12).
   const [sideBySidePreference, setSideBySidePreference] = useState(readSideBySidePreference);
@@ -465,8 +466,6 @@ export function App({ service, tripService, blockingService, costingService, pla
       <ContextField><SegmentedControl compactInScopeBar label="Day" className="segmented--days" value={workspaceServiceDayId} onChange={(next) => requestRouteNavigation(() => setWorkspaceServiceDayId(next))} options={sortServiceDays(records.serviceDays).map((day) => ({ value: day.id, text: serviceDayAbbreviation(day), title: day.name }))} /></ContextField>
       <ContextField>{(() => { const directions = [...(aggregate.directions ?? [])].sort((left, right) => left.sequence - right.sequence); return <SegmentedControl compactInScopeBar label="Direction" disabled={Boolean(sideBySideIds)} title={sideBySideIds ? 'Both directions are shown. Close side by side to choose one.' : undefined} fallback={directions.length > 2} value={workspaceDirectionId} onChange={(next) => requestRouteNavigation(() => setWorkspaceDirectionId(next))} options={directions.map((direction) => ({ value: direction.id, text: direction.name }))} />; })()}</ContextField>
     </>}
-    <span className="scope-bar__spacer" />
-    <MenuButton label="Actions" triggerAriaLabel="Route actions" menuLabel="Route actions" groups={routeActions} />
   </> : undefined;
   // Decision 0081 (D6, D7): Trip profile on Trips, Blocking, and Costing; Blocking scenario on Costing with a blocked basis (Trips and
   // Blocking draw their own Blocking scenario level, because its commands need their Blocks). A level with two or more choices has a dot.

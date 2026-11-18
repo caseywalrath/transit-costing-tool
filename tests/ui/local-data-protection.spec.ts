@@ -211,15 +211,15 @@ test('the browser is asked once to keep the store, after the first successful sa
   await expect.poll(record).toMatchObject({ persistentStorage: 'granted' });
 
   // More saves ask nothing more.
-  await page.getByRole('button', { name: 'Route actions', exact: true }).click();
+  await page.getByRole('button', { name: /^Route: / }).click();
   await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
   await expect.poll(() => runInPage(page, 'return await e.db.routes.count()')).toBe(1);
   expect(await calls()).toBe(1);
 
   // A later visit of the same browser profile does not ask again.
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Route actions', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Route actions', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^Route: / })).toBeVisible();
+  await page.getByRole('button', { name: /^Route: / }).click();
   await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
   await expect.poll(() => runInPage(page, 'return await e.db.routes.count()')).toBe(2);
   expect(await calls()).toBe(0);

@@ -176,6 +176,8 @@ type Command = {
   menu: string;
   /** The trigger's accessible name when it differs from the menu's: the header switchers read "Project: <name>". */
   trigger?: RegExp;
+  /** The trigger is the panel's field menu (`.menu-field`), whose name is the chosen item's: Current block (Decision 0082 item 5). */
+  field?: true;
   /** The panel that holds the trigger. Omitted when the trigger is unique on the page. */
   within?: RegionId;
   item: string;
@@ -232,11 +234,12 @@ const commands = {
   'scenario.delete': { menu: 'Scenario actions', trigger: /^Scenario: /, item: 'Delete scenario…' },
   'pattern.duplicate': { menu: 'Pattern actions', item: 'Duplicate pattern' },
   'pattern.delete': { menu: 'Pattern actions', item: 'Delete pattern…' },
-  'route.new': { menu: 'Route actions', item: 'New route' },
-  'route.rename': { menu: 'Route actions', item: 'Rename route' },
-  'route.duplicate': { menu: 'Route actions', item: 'Duplicate route' },
-  'route.exportCsv': { menu: 'Route actions', item: 'Export route CSV (ZIP)' },
-  'route.delete': { menu: 'Route actions', item: 'Delete route…' },
+  // Decision 0082 item 4: the Route switcher holds the Route commands, on the Route tab only.
+  'route.new': { menu: 'Route', trigger: /^Route: /, item: 'New route' },
+  'route.rename': { menu: 'Route', trigger: /^Route: /, item: 'Rename route' },
+  'route.duplicate': { menu: 'Route', trigger: /^Route: /, item: 'Duplicate route' },
+  'route.exportCsv': { menu: 'Route', trigger: /^Route: /, item: 'Export route CSV (ZIP)' },
+  'route.delete': { menu: 'Route', trigger: /^Route: /, item: 'Delete route…' },
   // Decision 0076: the Blocking scenario field menu in the Blocking summary header ("Blocking scenario: <name>").
   'blockingScenario.new': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingControls', item: 'New blocking scenario…' },
   'blockingScenario.autoBlocking': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, within: 'blockingControls', item: 'Auto-blocking…' },
@@ -250,9 +253,9 @@ const commands = {
   'tripsBlockingScenario.rename': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, item: 'Rename blocking scenario…' },
   'tripsBlockingScenario.delete': { menu: 'Blocking scenario', trigger: /^Blocking scenario: /, item: 'Delete blocking scenario…' },
   'blocks.copyDay': { menu: 'Blocks actions', within: 'blockingSummary', item: 'Copy blocks from another day…' },
-  'block.rename': { menu: 'Current block actions', within: 'currentBlock', item: 'Rename block…' },
-  'block.notes': { menu: 'Current block actions', within: 'currentBlock', item: 'Edit notes…' },
-  'block.delete': { menu: 'Current block actions', within: 'currentBlock', item: 'Delete block…' },
+  'block.rename': { menu: 'Current block', field: true, within: 'currentBlock', item: 'Rename block…' },
+  'block.notes': { menu: 'Current block', field: true, within: 'currentBlock', item: 'Edit notes…' },
+  'block.delete': { menu: 'Current block', field: true, within: 'currentBlock', item: 'Delete block…' },
   'unassigned.minimumLayover': { menu: 'Unassigned trip actions', within: 'unassignedTrips', item: 'Minimum layover…' },
 } satisfies Record<string, Command>;
 
@@ -286,6 +289,7 @@ export async function runCommand(page: Page, id: CommandId) {
   }
   const command: Command = commands[id as keyof typeof commands];
   const scope = command.within ? region(page, command.within) : page;
-  await openMenu(page, scope.getByRole('button', command.trigger ? { name: command.trigger } : { name: command.menu, exact: true }), command.menu);
+  const trigger = 'field' in command ? scope.locator('.menu-field').getByRole('button').first() : scope.getByRole('button', 'trigger' in command && command.trigger ? { name: command.trigger } : { name: command.menu, exact: true });
+  await openMenu(page, trigger, command.menu);
   await page.getByRole('menu', { name: command.menu, exact: true }).getByRole(command.role ?? 'menuitem', { name: command.item, exact: id !== 'trips.undoRegeneration' }).click();
 }

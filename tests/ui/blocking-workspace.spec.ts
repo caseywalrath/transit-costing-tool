@@ -141,10 +141,10 @@ test('creates an empty Blocking Scenario and an empty Block, then exposes its Tr
   await expect(page.getByText('Assign after', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Insert before activity', { exact: true })).toHaveCount(0);
   await page.setViewportSize({ width: 600, height: 800 });
-  await page.getByLabel('Current block').getByRole('button', { name: 'Current block actions', exact: true }).click();
+  await page.getByLabel('Current block').locator('.menu-field').getByRole('button').first().click();
   await expect(page.getByRole('menuitem', { name: 'Delete block…', exact: true })).toBeVisible();
   // At 600 px the Current block menu opens inside the viewport and the page itself does not scroll sideways.
-  const narrowMenu = page.getByRole('menu', { name: 'Current block actions' });
+  const narrowMenu = page.getByRole('menu', { name: 'Current block' });
   const menuBox = await narrowMenu.boundingBox();
   expect(menuBox).not.toBeNull();
   expect(menuBox!.x).toBeGreaterThanOrEqual(0);

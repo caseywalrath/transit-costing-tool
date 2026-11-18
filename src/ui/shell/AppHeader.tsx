@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import { MenuButton, type MenuGroup } from '../MenuButton';
 import { blockColorToken } from '../shared/chips';
 import { BrandMark } from './BrandMark';
-import { type HeaderStatus } from './headerStatus';
+import { routeOptionLabel, type HeaderStatus } from './headerStatus';
+import type { Route } from '../../domain/types';
 
 export type HeaderTab = { id: string; label: string; disabled?: boolean; title?: string };
 
@@ -20,13 +21,26 @@ function AppBar({ tabs, activeTab, onTab, status }: { tabs: HeaderTab[]; activeT
  * Project or Scenario switcher: a menu button whose trigger shows a caption and the current name. The caption is hidden on narrow
  * windows (it stays in the accessible name). The menu lists the choices as radio items, then the actions on the current item.
  */
-export function Switcher({ kind, name, groups, disabled, identity, emptyName }: { kind: 'Project' | 'Scenario' | 'Trip profile' | 'Blocking scenario'; name: string; groups: MenuGroup[]; disabled?: boolean; identity?: boolean; emptyName?: string }) {
+export function Switcher({ kind, name, groups, disabled, identity, emptyName, title }: { kind: 'Project' | 'Scenario' | 'Trip profile' | 'Blocking scenario' | 'Route'; name: string; groups: MenuGroup[]; disabled?: boolean; identity?: boolean; emptyName?: string; title?: string }) {
   const shown = name || emptyName || `Select ${kind.toLowerCase()}`;
   const modifier = kind.toLowerCase().replace(' ', '-');
   // The Trip profile and Blocking scenario menus keep the names they had as field menus on the Trips and Blocking screens.
   const menuLabel = kind === 'Project' || kind === 'Scenario' ? `${kind} actions` : kind;
-  return <MenuButton label={shown} triggerAriaLabel={`${kind}: ${name || 'none selected'}`} menuLabel={menuLabel} groups={groups} disabled={disabled} menuAlign="start"
+  return <MenuButton label={shown} triggerAriaLabel={`${kind}: ${name || 'none selected'}`} menuLabel={menuLabel} groups={groups} disabled={disabled} menuAlign="start" triggerTitle={title}
     triggerClassName={`switcher switcher--${modifier}`} triggerContent={<><small className="switcher__caption">{kind}</small>{identity && name && <IdentityDot name={name} />}<span className="switcher__name">{shown}</span></>} />;
+}
+
+/**
+ * Decision 0082 item 4: the Route chooser in the switcher style, as the first scope field after the breadcrumb (not a breadcrumb level).
+ * The menu lists the Routes as radio items (type-ahead moves among them); `commands` are the Route commands, passed on the Route tab only.
+ */
+export function RouteSwitcher({ routes, routeId, onChoose, commands = [], disabled }: { routes: Pick<Route, 'id' | 'name' | 'shortName'>[]; routeId: string; onChoose: (id: string) => void; commands?: MenuGroup[]; disabled?: boolean }) {
+  const selected = routes.find((route) => route.id === routeId);
+  const groups: MenuGroup[] = [
+    { label: 'Routes', items: routes.map((route) => ({ id: `route-${route.id}`, label: routeOptionLabel(route, routes), title: route.name || undefined, checked: route.id === routeId, wrapLabel: true, onSelect: () => { if (route.id !== routeId) onChoose(route.id); } })) },
+    ...commands,
+  ];
+  return <Switcher kind="Route" name={selected ? routeOptionLabel(selected, routes) : ''} emptyName="No route selected" groups={groups} disabled={disabled} title={selected?.name || undefined} />;
 }
 
 /** Decision 0081 (D7): a colour dot for a context level with two or more choices, from the name's hash. The name always shows beside it. */

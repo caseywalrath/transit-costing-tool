@@ -17,7 +17,7 @@ export async function createRouteWithPattern(page: Page, projectName: string) {
   await page.getByRole('menuitem', { name: 'New project…', exact: true }).click();
   await page.locator('#dialog-name').fill(projectName);
   await page.getByRole('button', { name: 'New project', exact: true }).last().click();
-  await page.getByRole('button', { name: 'Route actions', exact: true }).click();
+  await page.getByRole('button', { name: /^Route: / }).click();
   await page.getByRole('menuitem', { name: 'New route', exact: true }).click();
 
   const saveNodes = page.getByRole('button', { name: 'Save nodes', exact: true });

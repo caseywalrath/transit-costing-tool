@@ -135,8 +135,16 @@ test('a route with a short name shows only the short name, and its full name is 
   await seedCostingFixture(page);
   await page.setViewportSize({ width: 1024, height: 900 });
   await page.reload();
-  const route = scopeBar(page).getByLabel('Route', { exact: true });
+  const route = scopeBar(page).getByRole('button', { name: /^Route: / });
   await expect(route).toBeVisible();
-  await expect(route.locator('option:checked')).toHaveText('31');
+  await expect(route).toHaveAccessibleName('Route: 31');
   await expect(route).toHaveAttribute('title', 'Federal Boulevard');
+  // Decision 0082 item 4: Route commands are on the Route tab only; on another tab the menu lists the Routes alone.
+  await route.click();
+  await expect(page.getByRole('menu', { name: 'Route', exact: true }).getByRole('menuitem', { name: 'New route', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Blocking', exact: true }).click();
+  await route.click();
+  await expect(page.getByRole('menu', { name: 'Route', exact: true }).getByRole('menuitemradio')).toHaveCount(1);
+  await expect(page.getByRole('menu', { name: 'Route', exact: true }).getByRole('menuitem')).toHaveCount(0);
 });
