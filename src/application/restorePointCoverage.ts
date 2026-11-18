@@ -91,6 +91,13 @@ export const ROUTE_DEFINITION_COVERAGE: Coverage = {
   } },
 };
 
+/** FX8. A trip change: the Scenario, Route, Day, and Trip profile of its first Trip, and the number of Trips. Nothing is recorded without Trips. */
+async function tripChange(lookup: RestorePointLookup, tripIds: readonly string[], kind: RestorePointKind): Promise<CoverageTarget | undefined> {
+  const first = tripIds[0];
+  const trip = first === undefined ? undefined : await lookup.getTrip(first);
+  return trip && { scope: 'scenario', kind, scenarioId: trip.scenarioId, quantity: tripIds.length, refs: { routeId: trip.routeId, serviceDayId: trip.serviceDayId, ...(trip.tripProfileId ? { tripProfileId: trip.tripProfileId } : {}) } };
+}
+
 export const TRIP_GENERATION_COVERAGE: Coverage = {
   deleteTrips: { kind: 'deleteTrips', resolve: async ([tripIds], lookup) => {
     const first = (tripIds as string[])[0];
@@ -101,6 +108,16 @@ export const TRIP_GENERATION_COVERAGE: Coverage = {
     const request = (preview as { request: { scenarioId: string; routeId: string; tripProfileId: string; sourceServiceDayId: string; targetServiceDayId: string } }).request;
     return { scope: 'scenario', scenarioId: request.scenarioId, refs: { routeId: request.routeId, tripProfileId: request.tripProfileId, serviceDayId: request.targetServiceDayId, sourceServiceDayId: request.sourceServiceDayId } };
   } },
+  applyRecalculationPreview: { kind: 'regenerateTrips', resolve: async ([preview], lookup) => {
+    const value = preview as { trips: Array<{ id: string }>; anchorTimeByTripId?: Record<string, number> };
+    const startTime = Object.keys(value.anchorTimeByTripId ?? {}).length > 0;
+    return tripChange(lookup, value.trips.map((trip) => trip.id), startTime ? 'changeTripStartTime' : 'regenerateTrips');
+  } },
+  applyRecalculationReview: { kind: 'regenerateTrips', resolve: async ([review], lookup) => tripChange(lookup, (review as { trips: Array<{ id: string }> }).trips.map((trip) => trip.id), 'regenerateTrips') },
+  recalculateTrips: { kind: 'regenerateTrips', resolve: async ([tripIds], lookup) => tripChange(lookup, tripIds as string[], 'regenerateTrips') },
+  changeTripPattern: { kind: 'changeTripPattern', resolve: async ([review], lookup) => tripChange(lookup, [(review as { tripId: string }).tripId], 'changeTripPattern') },
+  applyBatchPatternChange: { kind: 'changeTripPattern', resolve: async ([preview], lookup) => tripChange(lookup, (preview as { eligibleTripIds: string[] }).eligibleTripIds, 'changeTripPattern') },
+  applyStagedTripShift: { kind: 'shiftTrips', resolve: async ([preview], lookup) => tripChange(lookup, (preview as { selectedTripIds: string[] }).selectedTripIds, 'shiftTrips') },
   deleteTripProfile: { kind: 'deleteTripProfile', resolve: async ([profileId], lookup) => {
     const profile = await lookup.getTripProfile(profileId as string);
     return profile && { scope: 'scenario', scenarioId: profile.scenarioId, refs: { tripProfileId: profileId as string } };

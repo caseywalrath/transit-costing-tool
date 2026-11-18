@@ -180,6 +180,43 @@ describe('every covered command can be restored to the exact records before it',
     })));
   }));
 
+  // FX8: the trip changes. Each records the Route, Day, and Trip profile of its first Trip.
+  const directionOf = (h: Harness, patternId: string) => h.fixture.snapshot.patterns.find((pattern) => pattern.id === patternId)!.directionId!;
+
+  it('trip generation: applyStagedTripShift (shiftTrips), with the refs of its Trip', () => withHarness(async (h) => {
+    const { trip } = h.fixture;
+    await roundTrip(h, 'shiftTrips', async () => h.tripGeneration.applyStagedTripShift(await h.tripGeneration.previewStagedTripShift({
+      scenarioId: h.scenarioId, routeId: trip.routeId, serviceDayId: trip.serviceDayId, directionId: directionOf(h, trip.patternId), tripProfileId: trip.tripProfileId, tripIds: [trip.id], offsetSeconds: 120,
+    })));
+    // The recorded restore keeps the refs, so the Trips menu can offer to redo it in the same view.
+    const view = { scenarioId: h.scenarioId, routeId: trip.routeId, serviceDayId: trip.serviceDayId, tripProfileId: trip.tripProfileId! };
+    const points = await h.restorePoints.listRestorePoints();
+    for (const point of points) expect(point.refs).toMatchObject({ routeId: trip.routeId, serviceDayId: trip.serviceDayId, tripProfileId: trip.tripProfileId });
+    expect(await h.service.latestTripChange(view)).toMatchObject({ kind: 'restore', restoredKind: 'shiftTrips' });
+    expect(await h.service.latestTripChange({ ...view, serviceDayId: 'another-day' })).toBeUndefined();
+  }));
+
+  it('trip generation: applyRecalculationPreview with a new start time (changeTripStartTime)', () => withHarness(async (h) => {
+    const { trip } = h.fixture;
+    const first = trip.stopTimes[0];
+    await roundTrip(h, 'changeTripStartTime', async () => h.tripGeneration.applyRecalculationPreview(
+      await h.tripGeneration.previewRecalculateTrips([trip.id], { [trip.id]: first.patternPointId }, {}, { [trip.id]: first.time + 120 }), true));
+  }));
+
+  it('trip generation: applyRecalculationReview (regenerateTrips)', () => withHarness(async (h) => {
+    const { trip } = h.fixture;
+    // Move the stored times off the profile first, so regenerating changes them.
+    await h.repository.saveTrips([{ ...trip, stopTimes: trip.stopTimes.map((point) => ({ ...point, time: point.time + 60 })) }]);
+    await roundTrip(h, 'regenerateTrips', async () => h.tripGeneration.applyRecalculationReview(await h.tripGeneration.reviewRecalculation([trip.id]), true));
+  }));
+
+  it('trip generation: applyBatchPatternChange (changeTripPattern)', () => withHarness(async (h) => {
+    const { trip } = h.fixture;
+    const direction = directionOf(h, trip.patternId);
+    const target = h.fixture.snapshot.patterns.find((pattern) => pattern.routeId === trip.routeId && pattern.directionId === direction && pattern.id !== trip.patternId)!;
+    await roundTrip(h, 'changeTripPattern', async () => h.tripGeneration.applyBatchPatternChange(await h.tripGeneration.previewBatchPatternChange({ tripIds: [trip.id], targetPatternId: target.id })));
+  }));
+
   it('trip generation: deleteTripProfile', () => withHarness(async (h) => {
     const profileId = h.fixture.altProfile.id;
     await roundTrip(h, 'deleteTripProfile', async () => h.tripGeneration.deleteTripProfile(profileId, (await h.tripGeneration.previewTripProfileDeletion(profileId)).previewToken));

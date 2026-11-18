@@ -1,5 +1,5 @@
 import type { ScenarioRecords } from '../domain/project';
-import { collectionRows, planRestore, type RestoreConflict } from '../domain/restorePoints';
+import { collectionRows, isTripChange, planRestore, type RestoreConflict } from '../domain/restorePoints';
 import type { ProjectSnapshot, RecordCollection, RestorePointPayload, RestorePointSummary } from '../domain/types';
 import type { RestorePointRecorder, RestorePointStore } from './ports';
 import type { SaveStatusPublisher } from './saveStatus';
@@ -19,6 +19,8 @@ export interface RestorePointQueries {
   listRestorePoints(): Promise<RestorePointListing[]>;
   /** The newest restore point that can be restored now, of `projectId` when given. */
   latestRestorable(projectId?: string): Promise<RestorePointListing | undefined>;
+  /** FX8. The newest restorable trip change made in this Scenario, Route, Service day, and Trip profile. */
+  latestTripChange(view: { scenarioId: string; routeId: string; serviceDayId: string; tripProfileId: string }): Promise<RestorePointListing | undefined>;
   subscribeToRestorePoints(listener: (point: RestorePointSummary) => void): () => void;
 }
 
@@ -101,13 +103,18 @@ export class RestorePointService implements RestorePointQueries, RestorePointCom
     return (await this.listRestorePoints()).find((point) => point.status.state === 'restorable' && (projectId === undefined || point.projectId === projectId));
   }
 
+  async latestTripChange(view: { scenarioId: string; routeId: string; serviceDayId: string; tripProfileId: string }): Promise<RestorePointListing | undefined> {
+    return (await this.listRestorePoints()).find((point) => point.status.state === 'restorable' && isTripChange(point) && point.scenarioId === view.scenarioId
+      && point.refs?.routeId === view.routeId && point.refs?.serviceDayId === view.serviceDayId && point.refs?.tripProfileId === view.tripProfileId);
+  }
+
   async restore(id: string): Promise<{ projectId: string; scenarioId?: string }> {
     const point = (await this.store.listRestorePoints()).find((candidate) => candidate.id === id);
     if (!point) throw new RestorePointNotFoundError();
     const result = await this.saveStatus.run(async () => {
       if (point.scope === 'project') return this.restoreProject(point);
       return this.recorder.recordScenarioChange(
-        { kind: 'restore', scenarioId: point.scenarioId!, restoredKind: point.kind, extraNames: point.names, ...(point.quantity === undefined ? {} : { quantity: point.quantity }), ...(point.detail ? { detail: point.detail } : {}) },
+        { kind: 'restore', scenarioId: point.scenarioId!, restoredKind: point.kind, ...(point.refs ? { refs: point.refs } : {}), extraNames: point.names, ...(point.quantity === undefined ? {} : { quantity: point.quantity }), ...(point.detail ? { detail: point.detail } : {}) },
         () => this.restoreScenario(point),
       );
     });

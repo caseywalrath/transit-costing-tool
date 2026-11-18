@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ScenarioRecords } from './project';
-import { changeCounts, diffScenarioRecords, isEmptyChange, planRestore, restorePointNames, restorePointsToPrune, rowStamp } from './restorePoints';
+import { changeCounts, diffScenarioRecords, isEmptyChange, isTripChange, planRestore, restorePointNames, restorePointsToPrune, restorePointsToPruneByGroup, rowStamp } from './restorePoints';
 
 const stamp = '2026-11-01T00:00:00.000Z';
 const NOW = '2026-11-17T12:00:00.000Z';
@@ -155,6 +155,19 @@ describe('restore point rules', () => {
     expect(restorePointsToPrune(sized, NOW, { maxCount: 20, maxAgeDays: 30, maxTotalSize: 10 })).toEqual(['p1', 'p2']);
     const single = [{ id: 'big', createdAt: at(0), sizeEstimate: 100 }];
     expect(restorePointsToPrune(single, NOW, { maxCount: 20, maxAgeDays: 30, maxTotalSize: 10 })).toEqual([]);
+  });
+
+  it('prunes trip changes as their own group of ten, with a recorded restore counted in the group of what it restored (FX8)', () => {
+    const at = (minutes: number) => new Date(Date.parse(NOW) - minutes * 60_000).toISOString();
+    const other = Array.from({ length: 25 }, (_value, index) => ({ id: `o${index}`, kind: 'deleteTrips' as const, createdAt: at(index * 2), sizeEstimate: 1 }));
+    const trips = Array.from({ length: 15 }, (_value, index) => ({ id: `t${index}`, kind: 'shiftTrips' as const, createdAt: at(index * 2 + 1), sizeEstimate: 1 }));
+    const dropped = restorePointsToPruneByGroup([...other, ...trips], NOW);
+    expect(dropped.filter((id) => id.startsWith('o')).sort()).toEqual(other.slice(20).map((point) => point.id).sort());
+    expect(dropped.filter((id) => id.startsWith('t')).sort()).toEqual(trips.slice(10).map((point) => point.id).sort());
+    expect(isTripChange({ kind: 'restore', restoredKind: 'regenerateTrips' })).toBe(true);
+    expect(isTripChange({ kind: 'restore', restoredKind: 'deleteTrips' })).toBe(false);
+    const old = new Date(Date.parse(NOW) - 40 * 86_400_000).toISOString();
+    expect(restorePointsToPruneByGroup([{ id: 'oldTrip', kind: 'changeTripPattern', createdAt: old, sizeEstimate: 1 }, { id: 'oldOther', kind: 'deleteRoute', createdAt: old, sizeEstimate: 1 }], NOW)).toEqual([]);
   });
 
   it('stamps equal rows equally and differs when one field changes', () => {

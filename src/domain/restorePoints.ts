@@ -1,7 +1,7 @@
 // Decision 0081. Pure rules of restore points: the difference one command made to one Scenario's records, how to put it back, the names a
 // restore point keeps, and which restore points to drop. No React, no IndexedDB.
 import type { ScenarioRecords } from './project';
-import type { RecordChange, RecordCollection, RestorePointCounts, RestorePointNames, RestorePointRefs, RestorePointSummary } from './types';
+import type { RecordChange, RecordCollection, RestorePointCounts, RestorePointKind, RestorePointNames, RestorePointRefs, RestorePointSummary } from './types';
 
 type Row = { id: string };
 
@@ -160,6 +160,23 @@ export function restorePointNames(projectName: string, sources: Array<ScenarioRe
 }
 
 export const RESTORE_POINT_POLICY = { maxCount: 20, maxAgeDays: 30, maxTotalSize: 50_000_000 } as const;
+
+/** FX8. The trip changes form their own retention group, so a run of trip edits cannot push other restore points out. */
+export const TRIP_CHANGE_KINDS: ReadonlySet<RestorePointKind> = new Set<RestorePointKind>(['regenerateTrips', 'changeTripStartTime', 'changeTripPattern', 'shiftTrips']);
+export const TRIP_CHANGE_POLICY = { maxCount: 10, maxAgeDays: 30, maxTotalSize: 50_000_000 } as const;
+
+/** A recorded restore belongs to the group of the kind it restored. */
+export function isTripChange(point: Pick<RestorePointSummary, 'kind' | 'restoredKind'>): boolean {
+  return TRIP_CHANGE_KINDS.has(point.kind === 'restore' && point.restoredKind ? point.restoredKind : point.kind);
+}
+
+/** The ids to drop, each group pruned by its own policy. */
+export function restorePointsToPruneByGroup(points: ReadonlyArray<Pick<RestorePointSummary, 'id' | 'createdAt' | 'sizeEstimate' | 'kind' | 'restoredKind'>>, now: string): string[] {
+  return [
+    ...restorePointsToPrune(points.filter((point) => !isTripChange(point)), now, RESTORE_POINT_POLICY),
+    ...restorePointsToPrune(points.filter(isTripChange), now, TRIP_CHANGE_POLICY),
+  ];
+}
 
 /** Newest first by `createdAt`, then by `id` descending, so the order is total. */
 export function sortNewestFirst<T extends Pick<RestorePointSummary, 'id' | 'createdAt'>>(points: readonly T[]): T[] {

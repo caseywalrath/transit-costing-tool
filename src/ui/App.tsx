@@ -3,7 +3,6 @@ import { type LocalDataProtection, type SaveStatus, type SessionStatus, type Ses
 import { type BlockingCommands, type BlockingQueries } from '../application/ports';
 import { RestoreConflictError, RestorePointNotFoundError, type RestorePointListing } from '../application/restorePointService';
 import { restorePointCommandLabel, restorePointContext, restorePointLabel } from './shared/messages';
-import { isTripChange } from '../domain/restorePoints';
 import type { TripChangeUndo } from './trips/TripsWorkspace';
 import { UndoHistoryDialog } from './shell/UndoHistoryDialog';
 import { BlockingWorkspace } from './blocking/BlockingWorkspace';
@@ -141,8 +140,7 @@ export function App({ service, tripService, blockingService, costingService, pla
   // FX8: the Trips menu offers the newest restorable trip change made in the Route, Day, and Trip profile in view.
   const tripChangeUndo: TripChangeUndo | undefined = restorePoints ? {
     latest: async (view) => {
-      const point = (await restorePoints.listRestorePoints()).find((candidate) => candidate.status.state === 'restorable' && isTripChange(candidate) && candidate.scenarioId === view.scenarioId
-        && candidate.refs?.routeId === view.routeId && candidate.refs?.serviceDayId === view.serviceDayId && candidate.refs?.tripProfileId === view.tripProfileId);
+      const point = await restorePoints.latestTripChange(view);
       return point && { id: point.id, label: restorePointCommandLabel(point) };
     },
     undo: (pointId) => undo(pointId),

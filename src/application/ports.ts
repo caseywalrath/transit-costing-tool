@@ -119,9 +119,6 @@ export interface TripGenerationRepository {
   /** Added by the authoritative trip workflow; optional only for historical test doubles. */
   insertTripsAtomically?(trips: Trip[]): Promise<void>;
   saveTripChangesAtomically?(trips: Trip[], blocks?: Block[]): Promise<void>;
-  saveRegeneratedTripsWithUndo?(beforeTrips: Trip[], afterTrips: Trip[], snapshot: import('../domain/types').TripRegenerationUndo): Promise<void>;
-  getLastTripRegenerationUndo?(): Promise<import('../domain/types').TripRegenerationUndo | undefined>;
-  restoreLastTripRegenerationUndo?(): Promise<Trip[]>;
   /** Atomically removes trips and updates blocks from which their activities were removed. */
   deleteTripsAtomically?(tripIds: string[], blocks?: Block[]): Promise<void>;
   listTripProfiles?(scenarioId: string): Promise<import('../domain/types').TripProfile[]>;

@@ -1,6 +1,6 @@
 import type { RestorePointRecorder, RestorePointStore, ScenarioChangeRequest } from '../application/ports';
 import { newId } from '../domain/ids';
-import { changeCounts, diffScenarioRecords, isEmptyChange, restorePointNames, restorePointsToPrune, sortNewestFirst } from '../domain/restorePoints';
+import { changeCounts, diffScenarioRecords, isEmptyChange, restorePointNames, restorePointsToPruneByGroup, sortNewestFirst } from '../domain/restorePoints';
 import type { RestorePointPayload, RestorePointSummary } from '../domain/types';
 import type { TransitDatabase } from './database';
 import type { DexieRouteDefinitionRepository } from './dexieRepository';
@@ -37,6 +37,7 @@ export class DexieRestorePoints implements RestorePointRecorder, RestorePointSto
         ...(request.quantity === undefined ? {} : { quantity: request.quantity }),
         ...(request.detail ? { detail: request.detail } : {}),
         ...(request.restoredKind ? { restoredKind: request.restoredKind } : {}),
+        ...(request.refs ? { refs: request.refs } : {}),
         sizeEstimate: JSON.stringify(payload).length,
       };
       await this.store(summary, payload);
@@ -80,7 +81,7 @@ export class DexieRestorePoints implements RestorePointRecorder, RestorePointSto
   private async store(summary: RestorePointSummary, payload: RestorePointPayload): Promise<void> {
     await this.db.restorePoints.put(summary);
     await this.db.restorePointPayloads.put(payload);
-    const pruned = restorePointsToPrune(await this.db.restorePoints.toArray(), this.now());
+    const pruned = restorePointsToPruneByGroup(await this.db.restorePoints.toArray(), this.now());
     if (pruned.length) {
       await this.db.restorePoints.bulkDelete(pruned);
       await this.db.restorePointPayloads.bulkDelete(pruned);

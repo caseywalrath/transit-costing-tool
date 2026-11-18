@@ -4,15 +4,15 @@ import { TransitDatabase } from './database';
 import { runtimeInputsSignature } from '../domain/runtime';
 
 describe('application database schema', () => {
-  it('includes scenario assumptions and local regeneration undo', () => {
+  it('includes scenario assumptions, and no regeneration undo since version 15', () => {
     const db = new TransitDatabase('transit-costing-schema-contract');
-    expect(db.verno).toBe(14);
+    expect(db.verno).toBe(15);
     expect(db.tables.map((table) => table.name)).toContain('plannedFrequencies');
     expect(db.plannedFrequencies.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['scenarioId', 'routeId', '[routeId+serviceDayId]']));
     expect(db.tables.map((table) => table.name)).toContain('routeStopSets');
     expect(db.routeStopSets.schema.indexes.map((index) => index.name)).toEqual(expect.arrayContaining(['scenarioId', 'routeId']));
     expect(db.tables.map((table) => table.name)).toContain('costingAssumptions');
-    expect(db.tables.map((table) => table.name)).toContain('tripRegenerationUndo');
+    expect(db.tables.map((table) => table.name)).not.toContain('tripRegenerationUndo');
     expect(db.tables.map((table) => table.name)).toContain('costPlans');
     expect(db.tables.map((table) => table.name)).toEqual(expect.arrayContaining(['restorePoints', 'restorePointPayloads']));
     db.close();
@@ -35,6 +35,7 @@ const HISTORY: Record<string, string>[] = [
   { routeStopSets: 'id,scenarioId,routeId' },
   {},
   { restorePoints: 'id,projectId,createdAt', restorePointPayloads: 'id' },
+  {},
 ];
 
 const stamp ={ createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' };
@@ -86,8 +87,8 @@ describe('database upgrades from every earlier schema version', () => {
       await db.open();
       const after: Record<string, number> = {};
       for (const table of db.tables) after[table.name] = await table.count();
-      expect(db.verno).toBe(14);
-      expect((await indexedDB.databases()).find((database) => database.name === name)?.version).toBe(140);
+      expect(db.verno).toBe(15);
+      expect((await indexedDB.databases()).find((database) => database.name === name)?.version).toBe(150);
 
       // Scheduling records are untouched.
       for (const kept of ['projects', 'scenarios', 'serviceDays', 'routes', 'nodes', 'patterns', 'runtimeProfiles', 'runtimeAssignments', 'trips', 'generationSets', 'costPlans', 'appMetadata'] as const) expect(after[kept]).toBe(before[kept]);
@@ -120,9 +121,9 @@ describe('database upgrades from every earlier schema version', () => {
         expect(after.blockingScenarios).toBe(0);
       }
 
-      // Versions 5 and 6 add stores. Existing assumptions and the stored undo record are kept; new stores start empty.
+      // Version 5 adds a store; existing assumptions are kept. Version 15 deletes the regeneration undo store of version 6 (Decision 0081 item 12).
       expect(after.costingAssumptions).toBe(seedVersion >= 5 ? 2 : 0);
-      expect(after.tripRegenerationUndo).toBe(seedVersion >= 6 ? 1 : 0);
+      expect(after.tripRegenerationUndo).toBeUndefined();
 
       // Version 10 adds an empty plannedFrequencies store whose compound index works.
       expect(after.plannedFrequencies).toBe(0);
@@ -133,6 +134,30 @@ describe('database upgrades from every earlier schema version', () => {
       expect(after.routeStopSets).toBe(0);
       await db.routeStopSets.put({ id: 'rss', scenarioId: 's1', routeId: 's1-r', roundingSeconds: 60, stops: [], placementsByPatternId: {}, ...stamp });
       expect(await db.routeStopSets.where('routeId').equals('s1-r').count()).toBe(1);
+    } finally {
+      db.close();
+      await Dexie.delete(name);
+    }
+  });
+});
+
+describe('database version 15: regeneration undo store removed (FX8)', () => {
+  it('deletes the regeneration undo store and keeps every other record', async () => {
+    const name = `transit-costing-upgrade-v15-${Date.now()}`;
+    await seed(name, 14);
+    const legacy = new Dexie(name);
+    for (let version = 1; version <= 14; version += 1) legacy.version(version).stores(HISTORY[version - 1]);
+    await legacy.open();
+    expect(await legacy.table('tripRegenerationUndo').count()).toBe(1);
+    const tripsBefore = JSON.stringify((await legacy.table('trips').toArray()).sort((a, b) => a.id.localeCompare(b.id)));
+    legacy.close();
+
+    const db = new TransitDatabase(name);
+    try {
+      await db.open();
+      expect(db.verno).toBe(15);
+      expect(db.tables.map((table) => table.name)).not.toContain('tripRegenerationUndo');
+      expect(JSON.stringify((await db.trips.toArray()).sort((a, b) => a.id.localeCompare(b.id)))).toBe(tripsBefore);
     } finally {
       db.close();
       await Dexie.delete(name);
@@ -160,7 +185,7 @@ describe('database version 14: runtime inputs signature (FX7)', () => {
     const db = new TransitDatabase(name);
     try {
       await db.open();
-      expect(db.verno).toBe(14);
+      expect(db.verno).toBe(15);
       expect((await db.trips.get('s1-t0'))?.provenance.calculationSource).toEqual({ runtimeProfileId: 's1-rp', runtimeCalculationRevision: 2, runtimeInputsSignature: runtimeInputsSignature(profile) });
       const others = (await db.trips.toArray()).filter((trip) => trip.id !== 's1-t0');
       expect(byId(others)).toBe(byId(tripsBefore.filter((trip) => trip.id !== 's1-t0')));
@@ -194,7 +219,7 @@ describe('database version 8: Trip Profile index and placeholder Block clean-up'
     const db = new TransitDatabase(name);
     try {
       await db.open();
-      expect(db.verno).toBe(14);
+      expect(db.verno).toBe(15);
       expect((await db.blocks.toArray()).map((block) => block.id).sort()).toEqual(['s1-blk', 's2-blk']);
       expect(JSON.stringify((await db.blocks.toArray()).sort((a, b) => a.id.localeCompare(b.id)))).toBe(keptJson);
       expect(JSON.stringify((await db.trips.toArray()).sort((a, b) => a.id.localeCompare(b.id)))).toBe(tripsJson);
@@ -226,7 +251,7 @@ describe('database version 8: Trip Profile index and placeholder Block clean-up'
     const db = new TransitDatabase(name);
     try {
       await db.open();
-      expect(db.verno).toBe(14);
+      expect(db.verno).toBe(15);
       const profiles = Object.fromEntries((await db.runtimeProfiles.toArray()).map((profile) => [profile.id, [profile.calculationMethod, profile.calculationRevision]]));
       expect(profiles).toEqual({ 's1-rp': [undefined, undefined], 's1-rp2': ['singleBand', 1], 's1-rp3': ['singleBand', 5], 's2-rp': [undefined, undefined] });
       expect(JSON.stringify((await db.trips.toArray()).sort((a, b) => a.id.localeCompare(b.id)))).toBe(tripsJson);
@@ -253,7 +278,7 @@ describe('database version 8: Trip Profile index and placeholder Block clean-up'
     const db = new TransitDatabase(name);
     try {
       await db.open();
-      expect(db.verno).toBe(14);
+      expect(db.verno).toBe(15);
       expect((await db.nodes.toArray()).filter((node) => 'stopCode' in node)).toEqual([]);
       const sets = Object.fromEntries((await db.routeStopSets.toArray()).map((set) => [set.routeId, set]));
       expect(sets['s1-r']).toMatchObject({ scenarioId: 's1', roundingSeconds: 60, stops: [], placementsByPatternId: {}, timepointStopCodesByPatternId: { 's1-p': { 's1-pa': 'A1' } } });

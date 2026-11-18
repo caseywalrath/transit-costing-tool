@@ -2,7 +2,7 @@ import type { TripGenerationRepository } from './ports';
 import type { GenerateTripsPreview, PatternChangePreview, RecalculationPreview, RecalculationReview, RecalculationReviewInputs, TripReviewRow } from '../domain/trips';
 import { adjustBlockReferences, ANCHOR_DIAGNOSIS_RULE_IDS, AnchorBandChoiceError, applyPatternChange, calculateRecalculationConnections, calculateRecalculationImpact, createAuthoritativeTrip, findExactTripDuplicates, generateAuthoritativeTrips, generateTrips, markTripRecalculated, previewPatternChange, recalculateTripWithAnchor, sharedAnchorNodes, shiftTrips, TripGenerationError, validateGenerateTripsRequest, validateTrip, type RecalculationBandSelection } from '../domain/trips';
 import { diagnoseAnchor, type AnchorDiagnosis } from '../domain/anchorDiagnosis';
-import type { AddTripRequest, Block, BlockingScenario, GenerateTripsRequest, ServiceSeconds, RuntimeAssignment, RuntimeProfile, RoutePattern, Trip, TripGenerationSet, TripProfile, TripRegenerationUndo, TripTableImportRow, ValidationFinding } from '../domain/types';
+import type { AddTripRequest, Block, BlockingScenario, GenerateTripsRequest, ServiceSeconds, RuntimeAssignment, RuntimeProfile, RoutePattern, Trip, TripGenerationSet, TripProfile, TripTableImportRow, ValidationFinding } from '../domain/types';
 import type { TripTableImportPreview } from './ports';
 import { assertReviewCurrent, fingerprint } from './reviewToken';
 import { publishWrites, SaveStatusPublisher } from './saveStatus';
@@ -80,7 +80,7 @@ function tripTableImportSignature(trips: Trip[], patterns: Map<string, RoutePatt
 /** The `TripGenerationRepository` methods that write. Every call to one is published through the save-status publisher. */
 export const TRIP_GENERATION_WRITE_METHODS: readonly string[] = [
   'saveGenerationSet', 'saveTrips', 'replaceGenerationSet', 'insertTripsAtomically', 'saveTripChangesAtomically',
-  'saveRegeneratedTripsWithUndo', 'restoreLastTripRegenerationUndo', 'deleteTripsAtomically', 'saveTripProfile', 'copyTripProfileAtomically',
+  'deleteTripsAtomically', 'saveTripProfile', 'copyTripProfileAtomically',
   'deleteTripProfile', 'commitRuntimeCopyAtomically', 'replaceTripsForDayAtomically',
 ];
 
@@ -227,24 +227,6 @@ export class TripGenerationService {
     return this.repository.deleteTripsAtomically.bind(this.repository);
   }
 
-  /** Writes Trips and the one-step undo snapshot together (Decision 0070): a regeneration or a pattern change replaces the saved undo. */
-  private async persistWithUndo(beforeTrips: Trip[], afterTrips: Trip[], kind: NonNullable<TripRegenerationUndo['kind']>): Promise<void> {
-    if (!this.repository.saveRegeneratedTripsWithUndo) { await this.atomicChanges()(afterTrips); return; }
-    const firstTrip = beforeTrips[0];
-    if (!firstTrip?.tripProfileId) { await this.atomicChanges()(afterTrips); return; }
-    const snapshot: TripRegenerationUndo = { id: 'last', scenarioId: firstTrip.scenarioId, tripProfileId: firstTrip.tripProfileId, createdAt: this.now(), beforeTrips, afterTrips, kind };
-    await this.repository.saveRegeneratedTripsWithUndo(beforeTrips, afterTrips, snapshot);
-  }
-
-  async getLastTripRegenerationUndo(): Promise<TripRegenerationUndo | undefined> {
-    return this.repository.getLastTripRegenerationUndo?.();
-  }
-
-  async undoLastTripRegeneration(): Promise<Trip[]> {
-    if (!this.repository.restoreLastTripRegenerationUndo) throw new Error('Regeneration undo is unavailable in this storage provider.');
-    return this.repository.restoreLastTripRegenerationUndo();
-  }
-
   async previewTripTableImport(context: TripTableImportPreview['context'], rows: TripTableImportRow[]): Promise<TripTableImportPreview> {
     if (!rows.length) throw new Error('The CSV contains no Trip rows.');
     const source = await this.readTripTableImportSource(context, rows.map((row) => row.patternId));
@@ -384,7 +366,7 @@ export class TripGenerationService {
     const updated = applyPatternChange(trip, target, recalculated, this.now());
     const revision = profile.calculationRevision ?? 0;
     const sourced = { ...updated, provenance: { ...updated.provenance, creationMethod: updated.provenance.creationMethod ?? updated.provenance.kind, runtimeProfileId: profile.id, runtimeCalculationRevision: revision, calculationSource: tripCalculationSource(profile) } };
-    await this.persistWithUndo([trip], [sourced], 'patternChange');
+    await this.atomicChanges()([sourced]);
     return sourced;
   }
 
@@ -474,7 +456,7 @@ export class TripGenerationService {
     if (current.impact.requiresConfirmation && !confirm) throw new TripRecalculationConfirmationError(current);
     const beforeTrips = (await Promise.all(current.trips.map((trip) => this.repository.getTrip(trip.id)))).filter((trip): trip is Trip => Boolean(trip));
     if (beforeTrips.length !== current.trips.length) throw new Error('A selected Trip changed. Review regeneration again.');
-    await this.persistWithUndo(beforeTrips, current.trips, 'regeneration');
+    await this.atomicChanges()(current.trips);
     return current;
   }
 
@@ -553,7 +535,7 @@ export class TripGenerationService {
     if (current.impact.requiresConfirmation && !confirm) throw new TripRecalculationConfirmationError(current);
     const beforeTrips = (await Promise.all(current.trips.map((trip) => this.repository.getTrip(trip.id)))).filter((trip): trip is Trip => Boolean(trip));
     if (beforeTrips.length !== current.trips.length) throw new Error('A selected Trip changed. Review regeneration again.');
-    await this.persistWithUndo(beforeTrips, current.trips, 'regeneration');
+    await this.atomicChanges()(current.trips);
     return current;
   }
 
@@ -563,7 +545,7 @@ export class TripGenerationService {
     if (preview.impact.requiresConfirmation && !confirm) throw new TripRecalculationConfirmationError(preview);
     const beforeTrips = (await Promise.all(preview.trips.map((trip) => this.repository.getTrip(trip.id)))).filter((trip): trip is Trip => Boolean(trip));
     if (beforeTrips.length !== preview.trips.length) throw new Error('A selected Trip changed. Review regeneration again.');
-    await this.persistWithUndo(beforeTrips, preview.trips, 'regeneration');
+    await this.atomicChanges()(preview.trips);
     return preview;
   }
 
@@ -674,8 +656,7 @@ export class TripGenerationService {
       const revision = targetProfile.calculationRevision ?? 0;
       return { ...changed, provenance: { ...changed.provenance, creationMethod: changed.provenance.creationMethod ?? changed.provenance.kind, runtimeProfileId: targetProfile.id, runtimeCalculationRevision: revision, calculationSource: tripCalculationSource(targetProfile) } };
     });
-    const befores = updated.map((trip) => currentById.get(trip.id)!);
-    await this.persistWithUndo(befores, updated, 'patternChange');
+    await this.atomicChanges()(updated);
     return context.preview;
   }
 
@@ -867,4 +848,4 @@ export class TripShiftStalePreviewError extends Error {
 }
 
 // Keep the historical application surface while exposing the authoritative trip commands.
-export type TripGenerationApplication = Pick<TripGenerationService, 'getGenerationSet' | 'listGenerationSets' | 'previewTripShift' | 'previewStagedTripShift' | 'applyStagedTripShift' | 'previewPatternChange' | 'applyPatternChange' | 'listServiceDayTrips' | 'listRouteDayTrips' | 'resolveRuntimeProfile' | 'previewGenerateTrips' | 'generateTrips' | 'addTrip' | 'previewTripPatternChange' | 'changeTripPattern' | 'listSharedAnchorNodes' | 'previewRecalculateTrips' | 'applyRecalculationPreview' | 'reviewRecalculation' | 'applyRecalculationReview' | 'recalculateTrips' | 'getLastTripRegenerationUndo' | 'undoLastTripRegeneration' | 'previewTripTableImport' | 'applyTripTableImport' | 'previewTripDeletion' | 'describeTripBlockImpact' | 'deleteTrips' | 'listStaleTrips' | 'inspectStaleTrips' | 'listScheduleTrips' | 'listTripProfiles' | 'renameTripProfile' | 'copyTripProfile' | 'previewTripProfileDeletion' | 'deleteTripProfile' | 'previewRuntimeCopy' | 'applyRuntimeCopy' | 'previewTripCopy' | 'applyTripCopy' | 'previewBatchPatternChange' | 'applyBatchPatternChange'>;
+export type TripGenerationApplication = Pick<TripGenerationService, 'getGenerationSet' | 'listGenerationSets' | 'previewTripShift' | 'previewStagedTripShift' | 'applyStagedTripShift' | 'previewPatternChange' | 'applyPatternChange' | 'listServiceDayTrips' | 'listRouteDayTrips' | 'resolveRuntimeProfile' | 'previewGenerateTrips' | 'generateTrips' | 'addTrip' | 'previewTripPatternChange' | 'changeTripPattern' | 'listSharedAnchorNodes' | 'previewRecalculateTrips' | 'applyRecalculationPreview' | 'reviewRecalculation' | 'applyRecalculationReview' | 'recalculateTrips' | 'previewTripTableImport' | 'applyTripTableImport' | 'previewTripDeletion' | 'describeTripBlockImpact' | 'deleteTrips' | 'listStaleTrips' | 'inspectStaleTrips' | 'listScheduleTrips' | 'listTripProfiles' | 'renameTripProfile' | 'copyTripProfile' | 'previewTripProfileDeletion' | 'deleteTripProfile' | 'previewRuntimeCopy' | 'applyRuntimeCopy' | 'previewTripCopy' | 'applyTripCopy' | 'previewBatchPatternChange' | 'applyBatchPatternChange'>;
