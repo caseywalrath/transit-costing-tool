@@ -139,7 +139,8 @@ export function CostingWorkspace({ tripProfileId: workingTripProfileId, blocking
   const [vehicleRequirementOpen, setVehicleRequirementOpen] = useState(storedVehicleRequirementOpen);
   function setVehicleRequirementSectionOpen(open: boolean) { setVehicleRequirementOpen(open); rememberVehicleRequirementOpen(open); }
   // Decision 0081 (D5): a blocked basis needs a working Blocking scenario; without one the estimate uses the working Trip profile.
-  const blockedAvailable = basisOptions.some((option) => option.kind === 'blocked' && option.id === workingBlockingScenarioId);
+  // The shell holds a working Blocking scenario only when the Trip profile has one, so the header and this screen agree on the basis.
+  const blockedAvailable = Boolean(workingBlockingScenarioId);
   const basisValue = basisKind === 'blocked' && blockedAvailable ? `blocked:${workingBlockingScenarioId}` : `estimated:${workingTripProfileId}`;
   const [assumptions, setAssumptions] = useState<CostingAssumptionsInput>(() => initialAssumptions());
   const [loadedAssumptions, setLoadedAssumptions] = useState<CostingAssumptionsInput>();

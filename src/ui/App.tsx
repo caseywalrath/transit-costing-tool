@@ -479,7 +479,7 @@ export function App({ service, tripService, blockingService, costingService, pla
   const costingBlockingMenu: MenuGroup[] = [{ label: 'Blocking scenarios', items: profileBlockingScenarios.map((item) => ({ id: item.id, label: item.name, checked: item.id === workspaceBlockingScenarioId, onSelect: () => requestRouteNavigation(() => setWorkspaceBlockingScenarioId(item.id)) })) }];
   const contextCrumbs = showContextLevels ? <>
     <ContextCrumb><Switcher kind="Trip profile" name={selectedTripProfile?.name ?? ''} groups={tripProfileMenu} identity={tripProfileList.length > 1} disabled={tripProfileBusy} /></ContextCrumb>
-    {activeTab === 'costing' && costBasisKind === 'blocked' && <ContextCrumb><Switcher kind="Blocking scenario" name={selectedBlockingScenario?.name ?? ''} emptyName="No blocking scenario" groups={costingBlockingMenu} identity={profileBlockingScenarios.length > 1} /></ContextCrumb>}
+    {activeTab === 'costing' && costBasisKind === 'blocked' && selectedBlockingScenario && <ContextCrumb><Switcher kind="Blocking scenario" name={selectedBlockingScenario?.name ?? ''} emptyName="No blocking scenario" groups={costingBlockingMenu} identity={profileBlockingScenarios.length > 1} /></ContextCrumb>}
   </> : undefined;
   return <main className={sideBySideIds ? 'app-shell app-shell--full-width' : 'app-shell'}>
     <AppHeader tabs={tabs} activeTab={activeTab} onTab={(id) => requestRouteNavigation(() => setActiveTab(id as ActiveTab))} status={headerStatus({ readOnly: sessionStatus.mode === 'readOnly', saveState: saveStatus.state, lastBackupExportedAt: protection.lastBackupExportedAt, now: Date.now() })} scopeFields={scopeFields} scopeSlotRef={setScopeSlot} contextCrumbs={contextCrumbs} crumbSlotRef={setCrumbSlot}
