@@ -50,11 +50,11 @@ test('the Runtime profile line names two Service days with "and", and one Servic
   await expect(page.locator('.profile-usage')).toHaveText('Used by Weekday for Southbound: Wagon Road to Evans.');
 });
 
-test('the Trips selectors are labeled "Trip profile" and "Blocking scenario"', async ({ page }) => {
+test('the Trip profile and Blocking scenario are breadcrumb levels named "Trip profile" and "Blocking scenario"', async ({ page }) => {
   await openGoldenTripsAfter(page, '');
-  const labels = await tripsSection(page).locator('.menu-field-label').allTextContents();
-  expect(labels).toEqual(['Trip profile', 'Blocking scenario']);
-  await expect(tripsSection(page).locator('.menu-field').filter({ hasText: 'Blocking scenario' }).getByRole('button')).toBeVisible();
+  // Decision 0081 (D6): they left the Trips header for the scope bar.
+  await expect(tripsSection(page).locator('.menu-field-label')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Scope', exact: true }).locator('.switcher__caption')).toHaveText(['Project', 'Scenario', 'Trip profile', 'Blocking scenario']);
   // The Runtimes section names its profile selector "Runtime profile".
   await expect(runtimeSection(page).locator('.menu-field-label')).toHaveText(['Runtime profile']);
 });

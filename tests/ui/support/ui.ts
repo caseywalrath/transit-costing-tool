@@ -40,7 +40,11 @@ export async function chooseScope(page: Page, label: ToggleScope, choice: ScopeC
  */
 export async function chooseCostBasis(page: Page, group: 'Blocked hours' | 'Estimated from running time', name: string) {
   const kind = group === 'Blocked hours' ? 'Blocked' : 'Estimated';
-  await scopeField(page, 'Cost basis').getByRole('radio', { name: kind, exact: true }).click();
+  // A Trip profile without a Blocking scenario shows Estimated whatever kind is stored, so the Trip profile is chosen first.
+  if (kind === 'Estimated' && (await tripProfileSwitcher(page).getAttribute('aria-label')) !== `Trip profile: ${name}`) await chooseTripProfile(page, name);
+  // Costing draws its scope controls into the header after it loads, so a click can land on a control that is drawn again; retry until checked.
+  const radio = scopeField(page, 'Cost basis').getByRole('radio', { name: kind, exact: true });
+  await expect(async () => { if (await radio.getAttribute('aria-checked', { timeout: 3000 }) !== 'true') await radio.click({ timeout: 3000 }); await expect(radio).toHaveAttribute('aria-checked', 'true', { timeout: 2000 }); }).toPass({ timeout: 30000 });
   if (kind === 'Estimated') { if ((await tripProfileSwitcher(page).getAttribute('aria-label')) !== `Trip profile: ${name}`) await chooseTripProfile(page, name); return; }
   if ((await blockingScenarioMenu(page).getAttribute('aria-label')) !== `Blocking scenario: ${name}`) await chooseBlockingScenario(page, name);
 }

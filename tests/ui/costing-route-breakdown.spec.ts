@@ -20,7 +20,7 @@ async function open(page: Page, twoRoutes: boolean) {
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
   await chooseCostBasis(page, 'Estimated from running time', 'Default');
-  await expect(page.locator('.context-field__value')).toHaveText('Default');
+  await expect(page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / }).locator('.switcher__name')).toHaveText('Default');
 }
 
 const breakdown = (page: Page) => page.getByRole('region', { name: 'Cost breakdown' });
@@ -106,7 +106,9 @@ test('Group by is hidden with one Route (Decision 0078)', async ({ page }) => {
 
 test('Group by Service day nests Routes under each day, keeps column positions and matches the totals (Decision 0078)', async ({ page }) => {
   await open(page, true);
-  const totalBefore = await breakdown(page).locator('tfoot').textContent();
+  // The estimate recalculates after the basis is chosen; read the total once it has settled.
+  let totalBefore: string | null = null;
+  await expect(async () => { const first = await breakdown(page).locator('tfoot').textContent(); await page.waitForTimeout(500); totalBefore = await breakdown(page).locator('tfoot').textContent(); expect(totalBefore).toBe(first); }).toPass({ timeout: 20000 });
   const columns = await headerBoxes(page);
   await openMenu(page, breakdown(page).getByRole('button', { name: 'Group by: Route' }), 'Group by');
   await page.getByRole('menuitemradio', { name: 'Service day' }).click();
