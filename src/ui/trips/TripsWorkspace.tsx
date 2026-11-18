@@ -11,7 +11,7 @@ import { staleTripNotice, staleTripNoticeText, type StaleTripNotice } from '../s
 import { readStoredRecord, storedText, storedTextMap } from '../preferences';
 import { singleFlight } from '../singleFlight';
 import { type RouteDefinitionApplication, type ScenarioRecords } from '../../application/routeDefinitionService';
-import { TripShiftStalePreviewError, type TripGenerationApplication } from '../../application/tripGenerationService';
+import { TripShiftStalePreviewError, type TripBlockImpact, type TripGenerationApplication } from '../../application/tripGenerationService';
 import { TripShiftValidationError, type TripShiftPreview } from '../../domain/tripShift';
 import { TripGenerationError, type RecalculationPreview } from '../../domain/trips';
 import { formatNetShift, formatShiftStep, isUsablePattern, orderDirections, parseShiftSeconds, regenerationUndoApplies, reverseRuntimeCandidates, routeRuntimeCalculationMethod, sortServiceDays, summarizeTripTable, usableDirectionPatterns, type RuntimeCalculationMethod } from '../../application/tripsWorkspaceView';
@@ -136,7 +136,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   const [tripsWithChangedRuntimes, setTripsWithChangedRuntimes] = useState<Trip[]>([]);
   const [staleReasons, setStaleReasons] = useState<StaleTripNotice>();
   const [selectedTripIds, setSelectedTripIds] = useState<string[]>([]);
-  const [tripDeletion, setTripDeletion] = useState<{ tripIds: string[]; affectedBlockIds: string[]; reviewToken: string }>();
+  const [tripDeletion, setTripDeletion] = useState<{ tripIds: string[]; affectedBlockIds: string[]; reviewToken: string; blockImpact?: TripBlockImpact }>();
   const [recalculationTripIds, setRecalculationTripIds] = useState<string[]>([]);
   const [buildOpen, setBuildOpen] = useState(false);
   // Decision 0079 (ST6): the Stop trips drawer, whether its timing rules or rounding are unsaved, and the action waiting on its prompt.
@@ -684,7 +684,8 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   async function requestTripDeletion(tripIds: string[]) {
     try {
       const preview = await tripService.previewTripDeletion(tripIds);
-      setTripDeletion({ tripIds: preview.deletedTripIds, affectedBlockIds: preview.affectedBlockIds, reviewToken: preview.reviewToken });
+      const blockImpact = preview.affectedBlockIds.length ? await tripService.describeTripBlockImpact(serviceDayId, preview.deletedTripIds) : undefined;
+      setTripDeletion({ tripIds: preview.deletedTripIds, affectedBlockIds: preview.affectedBlockIds, reviewToken: preview.reviewToken, ...(blockImpact ? { blockImpact } : {}) });
     } catch (error) { onError(error); }
   }
   async function deleteTrips() {
@@ -971,7 +972,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     {stopTripsOpen && <StopTripsDrawer ref={stopTripsRef} service={service} aggregate={aggregate} patterns={patterns} nodes={aggregate.nodes} trips={trips} selectedTripIds={selectedTripIds} onDirtyChange={setStopTripsDirty} onClose={closeStopTrips} />}
     {stopTripsLeaveAction && <StopTripsClosePrompt onCancel={() => setStopTripsLeaveAction(undefined)} onDiscard={() => { const action = stopTripsLeaveAction; setStopTripsLeaveAction(undefined); stopTripsRef.current?.discard(); setStopTripsDirty(false); action(); }} onSave={() => { const action = stopTripsLeaveAction; setStopTripsLeaveAction(undefined); void stopTripsRef.current?.save().then((saved) => { if (saved) action(); }); }} />}
     {buildOpen && <BuildTripsDrawer tripService={tripService} plannedFrequencyService={plannedFrequencyService} scenarioId={records.scenario.id} routeId={aggregate.route.id} serviceDayId={serviceDayId} tripProfileId={tripProfileId} patterns={patterns} nodes={aggregate.nodes} profileName={selectedProfile?.name} initialValues={buildValues.current} onValuesChange={(values) => { buildValues.current = values; }} onDone={async (changedTripIds) => { buildValues.current = EMPTY_BUILD_VALUES; closeBuildDrawer(); setChangedMarks((previous) => markTrips(previous, changedTripIds)); clearTripShiftHistory(); await loadTrips(); }} onClose={closeBuildDrawer} />}
-    {tripDeletion && <DeleteTripsDialog tripCount={tripDeletion.tripIds.length} affectedBlockCount={tripDeletion.affectedBlockIds.length} onDelete={() => void deleteTrips()} onClose={() => setTripDeletion(undefined)} busy={busy} />}
+    {tripDeletion && <DeleteTripsDialog tripCount={tripDeletion.tripIds.length} affectedBlockCount={tripDeletion.affectedBlockIds.length} blockImpact={tripDeletion.blockImpact} onDelete={() => void deleteTrips()} onClose={() => setTripDeletion(undefined)} busy={busy} />}
     {startTimeReview && <StartTimeChangeDialog patternName={startTimeReview.patternName} fromSeconds={startTimeReview.fromSeconds} toSeconds={startTimeReview.toSeconds} preview={startTimeReview.preview} busy={busy} onApply={() => void applyStartTimeChange(startTimeReview.preview)} onClose={() => setStartTimeReview(undefined)} />}
     {recalculationTripIds.length > 0 && <TripRecalculationDialog tripService={tripService} tripIds={recalculationTripIds} trips={trips} context={reviewContext} onDone={finishRecalculation} onClose={() => setRecalculationTripIds([])} />}
     {runtimeCopyOpen && selectedDay && <RuntimeDayCopyDialog tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} routeName={aggregate.route.name || 'Untitled route'} targetDay={selectedDay} days={days} patterns={aggregate.patterns.filter(isUsablePattern)} onDone={completeRuntimeCopy} onClose={closeRuntimeCopy} onError={onError} />}

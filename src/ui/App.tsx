@@ -185,6 +185,7 @@ export function App({ service, tripService, blockingService, costingService, pla
         impact.removedNonRevenueActivityCount ? `${impact.removedNonRevenueActivityCount} pull-out, pull-in, or deadhead activit${impact.removedNonRevenueActivityCount === 1 ? 'y' : 'ies'}` : '',
         impact.plannedFrequencyCount ? `planned frequencies for ${impact.plannedFrequencyCount} service day${impact.plannedFrequencyCount === 1 ? '' : 's'}` : '',
         impact.routeStopCount ? `${impact.routeStopCount} stop${impact.routeStopCount === 1 ? '' : 's'}` : '',
+        impact.routeEstimateFactorCount ? 'estimate factors for this route' : '',
       ].filter(Boolean);
       const blockNote = impact.affectedBlockCount ? ` ${impact.affectedBlockCount} block${impact.affectedBlockCount === 1 ? '' : 's'} will remain without those trips.` : '';
       setConfirm({ title: 'Delete route?', text: `Delete “${aggregate.route.name || 'Untitled route'}”${affected.length ? ` and its ${affected.join(', ')}?` : '?'}${blockNote} This cannot be undone.`, confirmLabel: 'Delete route', action: () => { void service.deleteRoute(aggregate.route.id, impact.reviewToken).then(async () => { await reload(projectId, scenarioId); }).catch((error) => showError(error, 'Unable to delete route.')); } });
@@ -241,7 +242,8 @@ export function App({ service, tripService, blockingService, costingService, pla
         : 'no trips';
       const blockDetail = impact.blockCount ? ` and ${impact.blockCount} blocks${impact.blockActivityCount ? ` (${impact.blockActivityCount} activities)` : ''}` : '';
       const blockingScenarioDetail = impact.blockingScenarioCount ? `Also deletes ${impact.blockingScenarioCount} blocking scenario${impact.blockingScenarioCount === 1 ? ' and its blocks' : 's and their blocks'}. ` : '';
-      setConfirm({ title: 'Delete trip profile?',text: `Delete “${profile.name}” and its ${tripDetail}${blockDetail}? ${blockingScenarioDetail}This cannot be undone.`, confirmLabel: 'Delete trip profile',action: () => { setTripProfileBusy(true); void tripService.deleteTripProfile(profile.id, impact.previewToken).then(() => reload(projectId, scenarioId, routeId)).catch((error) => showError(error, 'Unable to delete trip profile.')).finally(() => setTripProfileBusy(false)); } });
+      const factorDetail = impact.estimateFactorEntryCount ? 'Also deletes its costing estimate factors. ' : '';
+      setConfirm({ title: 'Delete trip profile?',text: `Delete “${profile.name}” and its ${tripDetail}${blockDetail}? ${blockingScenarioDetail}${factorDetail}This cannot be undone.`, confirmLabel: 'Delete trip profile',action: () => { setTripProfileBusy(true); void tripService.deleteTripProfile(profile.id, impact.previewToken).then(() => reload(projectId, scenarioId, routeId)).catch((error) => showError(error, 'Unable to delete trip profile.')).finally(() => setTripProfileBusy(false)); } });
     }).catch((error) => showError(error, 'Unable to review trip profile deletion.'));
   }
   function openProject(project: Project) { if (project.id !== projectId) requestRouteNavigation(() => { void reload(project.id).catch(selectionFailed); }); }
