@@ -393,6 +393,26 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     setTripBlockAssignment({ operation, tripIds: displayedTripIds, destinationBlockId, source, blockingScenarioId: selectedBlockingScenario.id, tripProfileId, serviceDayId, sourceSignature: createBlockingScenarioSourceSignature(selectedBlockingScenario, tripBlockingBlocks) });
   }
 
+  /** Decision 0081 (D3): the Block pill unassigns its one trip at once; the Undo notice names it and undoes it. */
+  async function unassignTripNow(tripId: string, focusTarget?: HTMLElement | null) {
+    if (!selectedBlockingScenario || !tripBlockingScenarioId || !tripBlockByTripId.has(tripId)) return;
+    setBusy(true);
+    setTripBlockAssignmentError('');
+    setTripBlockAssignmentStatus('');
+    try {
+      await blockingService.removeTrips(selectedBlockingScenario.id, serviceDayId, [tripId], createBlockingScenarioSourceSignature(selectedBlockingScenario, tripBlockingBlocks));
+      setTripBlockingBlocks(await blockingService.listBlockingBlocks(selectedBlockingScenario.id));
+      setSelectedTripIds((ids) => ids.filter((id) => id !== tripId));
+      setTripBlockAssignmentStatus('Unassigned 1 trip.');
+    } catch (error) {
+      setTripBlockAssignmentStatus(userFacingError(error, 'Unable to unassign the trip. Reopen Blocking to check the blocks, then try again.'));
+      void blockingService.listBlockingBlocks(selectedBlockingScenario.id).then(setTripBlockingBlocks).catch(() => undefined);
+    } finally {
+      setBusy(false);
+      window.setTimeout(() => focusTarget?.focus());
+    }
+  }
+
   function closeTripBlockAssignment() {
     setTripBlockAssignment(undefined);
     setTripBlockAssignmentError('');
@@ -957,7 +977,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
       {tripsWithChangedRuntimes.length > 0 && <InlineNote kind="warn"><b>Run times have changed</b> for {tripsWithChangedRuntimes.length} {tripsWithChangedRuntimes.length === 1 ? 'trip' : 'trips'}. <button type="button" className="small" disabled={busy || tripProfileBusy} onClick={selectTripsWithChangedRuntimes}>Select these trips</button></InlineNote>}
       {staleReasons && <InlineNote kind="warn" live>{staleTripNoticeText(staleReasons)}</InlineNote>}
       {tripBlockAssignmentStatus && <InlineNote kind="ok" live>{tripBlockAssignmentStatus}</InlineNote>}
-      <ScheduleTable compact={Boolean(pane)} selectionBar={renderSelectionBar} planGaps={planGaps} onStartTimeChange={tripProfileBusy || shiftDrawerOpen || shiftOperations.length > 0 ? undefined : changeTripStartTime} trips={trips} previewTrips={shiftPreview?.shiftedTrips} stagedShiftSeconds={shiftPreview?.netOffsetSeconds} draft={draftTrip} patterns={patterns} direction={directions.find((direction) => directionId === direction.id)!} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} showRuntimeBands={showRuntimeBands} showHeadways={showHeadways} roundDisplayedTimes={roundDisplayedTimes} blockAssignments={tripBlockByTripId} tripConnections={tripConnections} totals={tableTotals} blockWarnings={tripBlockWarnings} blockOptions={tripBlockOptions} blockAssignmentDisabled={busy || tripProfileBusy || tripBlockingBlocksBusy || shiftOperations.length > 0 || shiftDrawerOpen || Boolean(tripBlockAssignment)} onAssignBlock={(trip, blockId, trigger) => openTripBlockAssignment([trip.id], blockId, 'pill', trigger)} onUnassignBlock={(trip, trigger) => openTripBlockAssignment([trip.id], '', 'pill', trigger, 'unassign')} selectedIds={selectedTripIds} changedRuntimeTripIds={changedRuntimeTripIds} changedMarks={changedMarks} onToggle={toggleTrip} rowContextMenu={rowContextMenu} headerContextGroups={viewMenu} onSelectAll={(selected) => requestShiftScopeChange(() => { selectionAnchorId.current = undefined; setSelectedTripIds(selected ? trips.map((trip) => trip.id) : []); })} onSelectBy={selectTripsBy} onDelete={(trip) => requestShiftScopeChange(() => void requestTripDeletion([trip.id]))} onDraftChange={setDraftTrip} onDraftSave={() => void saveDraftTrip()} onDraftCancel={() => setDraftTrip(undefined)} busy={busy || tripProfileBusy} />
+      <ScheduleTable compact={Boolean(pane)} selectionBar={renderSelectionBar} planGaps={planGaps} onStartTimeChange={tripProfileBusy || shiftDrawerOpen || shiftOperations.length > 0 ? undefined : changeTripStartTime} trips={trips} previewTrips={shiftPreview?.shiftedTrips} stagedShiftSeconds={shiftPreview?.netOffsetSeconds} draft={draftTrip} patterns={patterns} direction={directions.find((direction) => directionId === direction.id)!} nodes={aggregate.nodes} runtimeProfiles={activeRuntimeProfiles} showRuntimeBands={showRuntimeBands} showHeadways={showHeadways} roundDisplayedTimes={roundDisplayedTimes} blockAssignments={tripBlockByTripId} tripConnections={tripConnections} totals={tableTotals} blockWarnings={tripBlockWarnings} blockOptions={tripBlockOptions} blockAssignmentDisabled={busy || tripProfileBusy || tripBlockingBlocksBusy || shiftOperations.length > 0 || shiftDrawerOpen || Boolean(tripBlockAssignment)} onAssignBlock={(trip, blockId, trigger) => openTripBlockAssignment([trip.id], blockId, 'pill', trigger)} onUnassignBlock={(trip, trigger) => { void unassignTripNow(trip.id, trigger); }} selectedIds={selectedTripIds} changedRuntimeTripIds={changedRuntimeTripIds} changedMarks={changedMarks} onToggle={toggleTrip} rowContextMenu={rowContextMenu} headerContextGroups={viewMenu} onSelectAll={(selected) => requestShiftScopeChange(() => { selectionAnchorId.current = undefined; setSelectedTripIds(selected ? trips.map((trip) => trip.id) : []); })} onSelectBy={selectTripsBy} onDelete={(trip) => requestShiftScopeChange(() => void requestTripDeletion([trip.id]))} onDraftChange={setDraftTrip} onDraftSave={() => void saveDraftTrip()} onDraftCancel={() => setDraftTrip(undefined)} busy={busy || tripProfileBusy} />
       {dayLine && <InlineNote>{dayLine}</InlineNote>}
     </WorkSurface>
     {tripBlockAssignment?.operation === 'assign' && <TripBlockAssignmentDialog draft={tripBlockAssignment} blockingScenarioName={selectedBlockingScenario?.name ?? 'blocking scenario'} serviceDayName={selectedDay?.name ?? 'selected service day'} blocks={dayBlockingBlocks} blockOptions={tripBlockOptions} currentAssignments={tripBlockByTripId} onConfirm={(destinationId) => void confirmTripBlockAssignment(destinationId)} onClose={closeTripBlockAssignment} busy={busy} error={tripBlockAssignmentError} />}

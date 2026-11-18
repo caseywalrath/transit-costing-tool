@@ -1,6 +1,9 @@
 import { Component, type ChangeEvent, type ErrorInfo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { type LocalDataProtection, type SaveStatus, type SessionStatus, type SessionStatusQueries } from '../application/ports';
 import { type BlockingCommands, type BlockingQueries } from '../application/ports';
+import { RestoreConflictError, RestorePointNotFoundError, type RestorePointListing } from '../application/restorePointService';
+import { restorePointContext, restorePointLabel } from './shared/messages';
+import { UndoHistoryDialog } from './shell/UndoHistoryDialog';
 import { BlockingWorkspace } from './blocking/BlockingWorkspace';
 import { CostingWorkspace } from './costing/CostingWorkspace';
 import { MenuButton, type MenuGroup } from './MenuButton';
@@ -25,7 +28,8 @@ import { ContextField } from './shared/ContextField';
 import { SegmentedControl } from './shared/SegmentedControl';import { TripsOrSideBySide, useSideBySideWidth, type SideBySideControl } from './trips/SideBySideTrips';
 
 export type Props = { service: RouteDefinitionApplication; tripService: TripGenerationApplication; blockingService: BlockingCommands & BlockingQueries; costingService: CostingCommands & CostingQueries; plannedFrequencyService: PlannedFrequencyService; session?: SessionStatusQueries; restorePoints?: import('../application/restorePointService').RestorePointCommands & import('../application/restorePointService').RestorePointQueries };
-export type Notice = { kind: 'error' | 'success'; text: string } | undefined;
+/** `undoId` (Decision 0081): the restore point the notice's Undo button restores. */
+export type Notice = { kind: 'error' | 'success'; text: string; undoId?: string } | undefined;
 export type ActiveTab = 'route' | 'trips' | 'blocking' | 'costing';
 export type SelectionPreference = { projectId?: string; scenarioId?: string; routeId?: string };
 export const SELECTION_PREFERENCE_KEY = 'transit-costing-tool.route-selection.v1';
@@ -40,10 +44,12 @@ export function saveSelectionPreference(preference: SelectionPreference) {
 
 /** The Route selector's last option, which adds a Route instead of selecting one (UR-16). Not a valid id. */
 const NEW_ROUTE_OPTION = '__new-route__';
+/** "Deleted route 12" → "deleted route 12", for "Undo deleted route 12". */
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 
 export function formatBackupTime(iso: string) { return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); }
 
-export function App({ service, tripService, blockingService, costingService, plannedFrequencyService, session }: Props) {
+export function App({ service, tripService, blockingService, costingService, plannedFrequencyService, session, restorePoints }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState('');
   const [scenarioId, setScenarioId] = useState('');
@@ -96,6 +102,43 @@ export function App({ service, tripService, blockingService, costingService, pla
     setSelectedPatternId((current) => nextAggregate?.patterns.some((pattern) => pattern.id === current) ? current : nextAggregate?.patterns[0]?.id ?? '');
     saveSelectionPreference({ projectId: project.id, scenarioId: scenario.id, routeId: route?.id });
   }
+  // Decision 0081: the newest restorable point of the open project (Project menu), whether a deleted project can be restored (empty
+  // state), and the Undo history dialog.
+  const [latestUndo, setLatestUndo] = useState<RestorePointListing>();
+  const [deletedProjectRestorable, setDeletedProjectRestorable] = useState(false);
+  const [undoHistoryOpen, setUndoHistoryOpen] = useState(false);
+  const undoProjectRef = useRef(projectId); undoProjectRef.current = projectId;
+  function refreshUndo() {
+    if (!restorePoints) return;
+    void restorePoints.listRestorePoints().then((points) => {
+      const restorable = points.filter((point) => point.status.state === 'restorable');
+      setLatestUndo(restorable.find((point) => point.scope === 'scenario' && point.projectId === undoProjectRef.current));
+      setDeletedProjectRestorable(restorable.some((point) => point.scope === 'project'));
+    }).catch(() => undefined);
+  }
+  useEffect(() => { refreshUndo(); }, [restorePoints, projectId, records]);
+  // Every covered command, whichever workspace ran it, announces itself here once its write has committed (rule N2: non-modal, no focus).
+  useEffect(() => restorePoints?.subscribeToRestorePoints((point) => {
+    const context = point.scope === 'project' ? '' : restorePointContext(point);
+    setNotice({ kind: 'success', text: [restorePointLabel(point), context].filter(Boolean).join(' · '), undoId: point.id });
+    refreshUndo();
+  }), [restorePoints]);
+  async function undo(pointId: string) {
+    if (!restorePoints) return;
+    try {
+      const restored = await restorePoints.restore(pointId);
+      setUndoHistoryOpen(false);
+      const sameProject = restored.projectId === projectId;
+      await reload(restored.projectId, restored.scenarioId ?? (sameProject ? scenarioId : undefined), sameProject && (!restored.scenarioId || restored.scenarioId === scenarioId) ? routeId : undefined);
+      setRuntimeVersion((current) => current + 1);
+      refreshUndo();
+    } catch (error) {
+      setNotice({ kind: 'error', text: error instanceof RestoreConflictError || error instanceof RestorePointNotFoundError ? error.message : userFacingError(error, 'Unable to undo. Your data was not changed.') });
+      refreshUndo();
+    }
+  }
+  const listRestorePoints = useMemo(() => () => restorePoints ? restorePoints.listRestorePoints() : Promise.resolve([]), [restorePoints]);
+  function requestUndo(pointId: string) { requestRouteNavigation(() => { void undo(pointId); }); }
   useEffect(() => service.subscribeToSaveStatus(setSaveStatus), [service]);
   useEffect(() => session?.subscribeToSessionStatus(setSessionStatus), [session]);
   useEffect(() => service.subscribeToLocalDataProtection(setProtection), [service]);
@@ -142,7 +185,7 @@ export function App({ service, tripService, blockingService, costingService, pla
       const summary = `${impact.scenarioCount} scenario${impact.scenarioCount === 1 ? '' : 's'}, ${impact.routeCount} route${impact.routeCount === 1 ? '' : 's'}, ${impact.patternCount} pattern${impact.patternCount === 1 ? '' : 's'}, ${impact.tripCount} trip${impact.tripCount === 1 ? '' : 's'}, and ${impact.blockCount} block${impact.blockCount === 1 ? '' : 's'}`;
       const runDelete = () => { void service.deleteProject(project.id, impact.reviewToken).then(async () => { if (project.id === projectId) { setActiveTab('route'); await reload(project.id); } else { await reload(projectId, scenarioId, routeId); } }).catch((error) => showError(error, 'Unable to delete project.')); };
       const backupNote = impact.backedUpSinceLastChange ? '' : ' No backup of this project has been exported since its last change.';
-      setConfirm({ title: 'Delete project?', text: `Delete “${project.name}” and its ${summary}? All related service days, runtime and trip profiles, blocking scenarios, and costing data will also be deleted. This cannot be undone.${backupNote}`, confirmLabel: 'Delete project', action: runDelete,
+      setConfirm({ title: 'Delete project?', text: `Delete “${project.name}” and its ${summary}? All related service days, runtime and trip profiles, blocking scenarios, and costing data will also be deleted.${backupNote}`, confirmLabel: 'Delete project', action: runDelete,
         secondary: impact.backedUpSinceLastChange ? undefined : { label: 'Back up and delete', action: () => { void exportProjectJson(project).then((ok) => { if (ok) runDelete(); }); } } });
     }).catch((error) => showError(error, 'Unable to review project deletion.'));
   }
@@ -167,7 +210,7 @@ export function App({ service, tripService, blockingService, costingService, pla
         impact.tripCount ? `${impact.tripCount} trip${impact.tripCount === 1 ? '' : 's'}` : '',
         impact.blockCount ? `${impact.blockCount} block${impact.blockCount === 1 ? '' : 's'}` : '',
       ].filter(Boolean);
-      setConfirm({ title: 'Delete scenario?', text: `Delete “${scenario.name}”${affected.length ? ` and its ${affected.join(', ')}?` : '?'} All service days and remaining scenario data will also be deleted. This cannot be undone.`, confirmLabel: 'Delete scenario', action: () => { void service.deleteScenario(scenario.id, impact.reviewToken).then(async () => { if (open) { setActiveTab('route'); await reload(projectId); } else await reload(projectId, scenarioId, routeId); }).catch((error) => showError(error, 'Unable to delete scenario.')); } });
+      setConfirm({ title: 'Delete scenario?', text: `Delete “${scenario.name}”${affected.length ? ` and its ${affected.join(', ')}?` : '?'} All service days and remaining scenario data will also be deleted.`, confirmLabel: 'Delete scenario', action: () => { void service.deleteScenario(scenario.id, impact.reviewToken).then(async () => { if (open) { setActiveTab('route'); await reload(projectId); } else await reload(projectId, scenarioId, routeId); }).catch((error) => showError(error, 'Unable to delete scenario.')); } });
     }).catch((error) => showError(error, 'Unable to review scenario deletion.'));
   }
   async function addRoute() { if (!records) return; try { const next = await service.addRoute(records); setRecords(next.records); await reload(projectId, scenarioId, next.route.id); } catch (error) { showError(error, 'Unable to add route.'); } }
@@ -188,7 +231,7 @@ export function App({ service, tripService, blockingService, costingService, pla
         impact.routeEstimateFactorCount ? 'estimate factors for this route' : '',
       ].filter(Boolean);
       const blockNote = impact.affectedBlockCount ? ` ${impact.affectedBlockCount} block${impact.affectedBlockCount === 1 ? '' : 's'} will remain without those trips.` : '';
-      setConfirm({ title: 'Delete route?', text: `Delete “${aggregate.route.name || 'Untitled route'}”${affected.length ? ` and its ${affected.join(', ')}?` : '?'}${blockNote} This cannot be undone.`, confirmLabel: 'Delete route', action: () => { void service.deleteRoute(aggregate.route.id, impact.reviewToken).then(async () => { await reload(projectId, scenarioId); }).catch((error) => showError(error, 'Unable to delete route.')); } });
+      setConfirm({ title: 'Delete route?', text: `Delete “${aggregate.route.name || 'Untitled route'}”${affected.length ? ` and its ${affected.join(', ')}?` : '?'}${blockNote}`, confirmLabel: 'Delete route', action: () => { void service.deleteRoute(aggregate.route.id, impact.reviewToken).then(async () => { await reload(projectId, scenarioId); }).catch((error) => showError(error, 'Unable to delete route.')); } });
     }).catch((error) => showError(error, 'Unable to review route deletion.'));
   }
   /** Saves a Service day edit. A refused edit (`ServiceDayValidationError`) returns its findings so the table shows each beside its field; any other failure goes to the error banner. */
@@ -204,7 +247,7 @@ export function App({ service, tripService, blockingService, costingService, pla
         impact.affectedBlockCount ? `revenue activities in ${impact.affectedBlockCount} block${impact.affectedBlockCount === 1 ? '' : 's'}` : '',
         impact.stopPlacementCount ? `${impact.stopPlacementCount} stop placement${impact.stopPlacementCount === 1 ? '' : 's'}` : '',
       ].filter(Boolean);
-      setConfirm({ title: 'Delete pattern?',text: `Delete “${selectedPattern.name || 'Untitled pattern'}”${affected.length ? ` and remove ${affected.join(', ')}?` : '?'} This cannot be undone.`, confirmLabel: 'Delete pattern',action: () => { void service.deletePattern(selectedPattern.id, impact.reviewToken).then(async () => { setSelectedPatternId(''); await reload(projectId, scenarioId, routeId); }).catch((error) => showError(error, 'Unable to delete pattern.')); } });
+      setConfirm({ title: 'Delete pattern?',text: `Delete “${selectedPattern.name || 'Untitled pattern'}”${affected.length ? ` and remove ${affected.join(', ')}?` : '?'}`, confirmLabel: 'Delete pattern',action: () => { void service.deletePattern(selectedPattern.id, impact.reviewToken).then(async () => { setSelectedPatternId(''); await reload(projectId, scenarioId, routeId); }).catch((error) => showError(error, 'Unable to delete pattern.')); } });
     }).catch((error) => showError(error, 'Unable to review pattern deletion.'));
   }
   async function exportProjectJson(project: Project): Promise<boolean> { try { download(`${project.name}.json`, await service.exportProject(project.id), 'application/json'); return true; } catch (error) { showError(error, 'Unable to export the project backup. Your data was not changed. Try again.'); return false; } }
@@ -243,10 +286,12 @@ export function App({ service, tripService, blockingService, costingService, pla
       const blockDetail = impact.blockCount ? ` and ${impact.blockCount} blocks${impact.blockActivityCount ? ` (${impact.blockActivityCount} activities)` : ''}` : '';
       const blockingScenarioDetail = impact.blockingScenarioCount ? `Also deletes ${impact.blockingScenarioCount} blocking scenario${impact.blockingScenarioCount === 1 ? ' and its blocks' : 's and their blocks'}. ` : '';
       const factorDetail = impact.estimateFactorEntryCount ? 'Also deletes its costing estimate factors. ' : '';
-      setConfirm({ title: 'Delete trip profile?',text: `Delete “${profile.name}” and its ${tripDetail}${blockDetail}? ${blockingScenarioDetail}${factorDetail}This cannot be undone.`, confirmLabel: 'Delete trip profile',action: () => { setTripProfileBusy(true); void tripService.deleteTripProfile(profile.id, impact.previewToken).then(() => reload(projectId, scenarioId, routeId)).catch((error) => showError(error, 'Unable to delete trip profile.')).finally(() => setTripProfileBusy(false)); } });
+      setConfirm({ title: 'Delete trip profile?',text: `Delete “${profile.name}” and its ${tripDetail}${blockDetail}? ${blockingScenarioDetail}${factorDetail}`.trim(), confirmLabel: 'Delete trip profile',action: () => { setTripProfileBusy(true); void tripService.deleteTripProfile(profile.id, impact.previewToken).then(() => reload(projectId, scenarioId, routeId)).catch((error) => showError(error, 'Unable to delete trip profile.')).finally(() => setTripProfileBusy(false)); } });
     }).catch((error) => showError(error, 'Unable to review trip profile deletion.'));
   }
-  function openProject(project: Project) { if (project.id !== projectId) requestRouteNavigation(() => { void reload(project.id).catch(selectionFailed); }); }
+  /** An Undo notice belongs to the context it was made in; it goes when the planner opens another Project or Scenario. */
+  function dropUndoNotice() { setNotice((current) => current?.undoId ? undefined : current); }
+  function openProject(project: Project) { if (project.id !== projectId) requestRouteNavigation(() => { dropUndoNotice(); void reload(project.id).catch(selectionFailed); }); }
   // The context menu of a project in the Projects group (Decision 0064). It acts on that project, which need not be the open one.
   const projectContextGroups = (project: Project): MenuGroup[] => [
     { items: [{ id: 'ctx-open', label: 'Open', disabled: project.id === projectId, onSelect: () => openProject(project) }] },
@@ -263,10 +308,14 @@ export function App({ service, tripService, blockingService, costingService, pla
     { label: 'Project data', items: [
       { id: 'backup-project', label: 'Back up project (JSON)', disabled: !projectId, note: [protection.lastBackupExportedAt ? `Last backup: ${formatBackupTime(protection.lastBackupExportedAt)}` : 'No backup exported yet', ...(protection.persistentStorage === 'denied' || protection.persistentStorage === 'unavailable' ? ['This browser may clear local data. Export backups regularly.'] : [])], onSelect: () => { void exportJson(); } },
       { id: 'restore-project', label: 'Restore project from backup…', onSelect: () => importRef.current?.click() },
+      ...(restorePoints ? [
+        ...(latestUndo ? [{ id: 'undo-latest', label: latestUndo.kind === 'restore' && latestUndo.restoredKind ? `Redo ${lowerFirst(restorePointLabel({ ...latestUndo, kind: latestUndo.restoredKind }))}` : `Undo ${lowerFirst(restorePointLabel(latestUndo))}`, wrapLabel: true, onSelect: () => requestUndo(latestUndo.id) }] : []),
+        { id: 'undo-history', label: 'Undo history…', onSelect: () => setUndoHistoryOpen(true) },
+      ] : []),
     ] },
     { items: [{ id: 'delete-project', label: 'Delete project…', disabled: !selectedProject, destructive: true, onSelect: () => requestRouteNavigation(deleteCurrentProject) }] },
   ];
-  function openScenario(scenario: Scenario) { if (scenario.id !== scenarioId) requestRouteNavigation(() => { void reload(projectId, scenario.id).catch(selectionFailed); }); }
+  function openScenario(scenario: Scenario) { if (scenario.id !== scenarioId) requestRouteNavigation(() => { dropUndoNotice(); void reload(projectId, scenario.id).catch(selectionFailed); }); }
   async function renameScenarioById(scenario: Scenario, name: string) { try { const next = await service.renameScenarioById(scenario.id, name); if (next.scenario.id === scenarioId) setRecords(next); setScenarioOptions((current) => current.map((item) => item.id === next.scenario.id ? next.scenario : item)); } catch (error) { showError(error, 'Unable to save scenario.'); } }
   async function duplicateScenarioById(scenario: Scenario, name: string) { try { const next = await service.duplicateScenarioById(scenario.id, name); requestRouteNavigation(() => { void reload(projectId, next.scenario.id).catch(selectionFailed); }); } catch (error) { showError(error, 'Unable to duplicate scenario.'); } }
   // The context menu of a scenario in the Scenarios group (Decision 0066 item 10). It acts on that scenario, which need not be the open one.
@@ -341,8 +390,9 @@ export function App({ service, tripService, blockingService, costingService, pla
       scenarioSwitcher={<Switcher kind="Scenario" name={records?.scenario.name ?? ''} groups={scenarioActions} disabled={!projectId} />} />
     <input ref={importRef} className="visually-hidden" tabIndex={-1} type="file" accept="application/json,.json" aria-label="Restore project JSON file" onChange={importJson} />
     {sessionStatus.mode === 'readOnly' && <div className="notice info" role="status">{sessionStatus.reason === 'databaseUpgraded' ? 'The saved data was upgraded in another tab. This tab is read-only. Reload this page to edit.' : 'This project is open in another tab. This tab is read-only.'}</div>}
-    {notice && <div className={`notice ${notice.kind}`} role="status">{notice.text}<button onClick={() => setNotice(undefined)} aria-label="Dismiss message">×</button></div>}
-    {!records ? loadFailed ? null : <section className="empty-state empty-project"><h1>No project</h1><p>Data is stored in this browser. A new project includes one scenario and four service days.</p><div className="empty-state__actions"><button type="button" className="primary" onClick={() => setNameDialog({ title: 'New project', submitLabel: 'New project', action: createNewProject })}>New project…</button><button type="button" onClick={() => importRef.current?.click()}>Restore from backup…</button></div></section> : <WorkspaceErrorBoundary resetKey={`${activeTab}:${scenarioId}:${routeId}`} screen={activeTab === 'route' ? 'Route' : activeTab === 'trips' ? 'Trips' : activeTab === 'blocking' ? 'Blocking' : 'Costing'}>
+    {notice && <div className={`notice ${notice.kind}`} role="status"><span className="notice__text">{notice.text}</span>{notice.undoId && <button type="button" className="notice__action" onClick={() => requestUndo(notice.undoId!)}>Undo</button>}<button onClick={() => setNotice(undefined)} aria-label="Dismiss message">×</button></div>}
+    {undoHistoryOpen && restorePoints && <UndoHistoryDialog projectId={projectId} list={listRestorePoints} onRestore={async (point) => requestUndo(point.id)} onClose={() => setUndoHistoryOpen(false)} />}
+    {!records ? loadFailed ? null : <section className="empty-state empty-project"><h1>No project</h1><p>Data is stored in this browser. A new project includes one scenario and four service days.</p><div className="empty-state__actions"><button type="button" className="primary" onClick={() => setNameDialog({ title: 'New project', submitLabel: 'New project', action: createNewProject })}>New project…</button><button type="button" onClick={() => importRef.current?.click()}>Restore from backup…</button>{deletedProjectRestorable && <button type="button" onClick={() => setUndoHistoryOpen(true)}>Restore deleted project…</button>}</div></section> : <WorkspaceErrorBoundary resetKey={`${activeTab}:${scenarioId}:${routeId}`} screen={activeTab === 'route' ? 'Route' : activeTab === 'trips' ? 'Trips' : activeTab === 'blocking' ? 'Blocking' : 'Costing'}>
       {activeTab === 'costing' && records ? <CostingWorkspace scopeSlot={scopeSlot} costingService={costingService} scenario={records.scenario} projectName={selectedProject?.name ?? ''} serviceDays={records.serviceDays} tripProfiles={records.tripProfiles ?? []} routes={records.routes} onRegisterNavigationGuard={(guard) => { costingNavigationGuard.current = guard; }} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update Costing.')} /> : aggregate ? <><div hidden={activeTab !== 'route'}><RouteWorkspace key={aggregate.route.id} service={service} aggregate={aggregate} findings={findings} selectedPatternId={selectedPatternId} segmentMiles={(pattern, index) => service.getSegmentMiles(pattern, index)} onRoute={saveRouteField} onServiceDay={updateServiceDay} serviceDays={records.serviceDays} onCommitted={acceptRouteEdit} onDeletePattern={deleteSelectedPattern} onSelectPattern={setSelectedPatternId} onRegisterNavigationGuard={(guard) => { routeNavigationGuard.current = guard; }} onError={(error) => showError(error, 'Unable to save route changes.')} plannedFrequencyService={plannedFrequencyService} tripProfileId={workspaceTripProfileId} active={activeTab === 'route'} /></div>{activeTab === 'trips' && <TripsOrSideBySide sideBySide={sideBySideControl}tripPatternSelections={tripPatternSelections} onTripPatternChange={(key, id) => setTripPatternSelections((current) => ({ ...current, [key]: id }))} service={service} tripService={tripService} plannedFrequencyService={plannedFrequencyService} blockingService={blockingService} aggregate={aggregate} records={records} serviceDayId={workspaceServiceDayId} directionId={workspaceDirectionId} tripProfileId={workspaceTripProfileId} tripProfileBusy={tripProfileBusy} onTripProfileChange={setWorkspaceTripProfileId} onTripProfileRename={() => setNameDialog({ title: 'Rename trip profile', label: 'Name', initialValue: records.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name, submitLabel: 'Rename', action: renameTripProfile })} onTripProfileCopy={() => setNameDialog({ title: 'Copy trip profile', label: 'Name', initialValue: `${records.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name ?? ''} Copy`, submitLabel: 'Copy', action: copyTripProfile })} onTripProfileDelete={deleteTripProfile} onRegisterNavigationGuard={(guard) => { tripNavigationGuard.current = guard; }} runtimeVersion={runtimeVersion} onRuntimeChanged={() => setRuntimeVersion((current) => current + 1)} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update trips.')} />}{activeTab === 'blocking' && <BlockingWorkspace scopeSlot={scopeSlot} blockingService={blockingService} tripService={tripService} aggregate={aggregate} records={records} routes={records.routes} routeId={routeId} onRouteChange={(nextRouteId) => requestRouteNavigation(() => { void reload(projectId, scenarioId, nextRouteId).catch(selectionFailed); })} onReload={() => reload(projectId, scenarioId, routeId)} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update Blocking.')} />}</> : records.routes.length ? <section className="empty-state"><h2>No route selected</h2><p>Select a route in the Route field, or add one.</p><div className="empty-state__actions"><button type="button" onClick={() => requestRouteNavigation(() => { void addRoute(); })}>New route</button></div></section> : <section className="empty-state"><h2>No routes</h2><p>Scenario “{records.scenario.name}” has no routes.</p><div className="empty-state__actions"><button type="button" className="primary" onClick={() => requestRouteNavigation(() => { void addRoute(); })}>New route</button></div></section>}
     </WorkspaceErrorBoundary>}
     {nameDialog && <NameDialogForm dialog={nameDialog} onClose={() => setNameDialog(undefined)} />}

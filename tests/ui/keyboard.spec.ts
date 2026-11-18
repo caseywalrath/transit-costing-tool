@@ -185,6 +185,17 @@ test('every dialog opened from the screens has an accessible name, and the axe d
   expect(await axeViolations(page)).toEqual([]);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  // Decision 0081: a notice with Undo, and the Undo history dialog.
+  await runCommand(page, 'trips.delete');
+  await page.getByRole('alertdialog').getByRole('button', { name: /^Delete/ }).click();
+  await expect(page.locator('.notice.success').getByRole('button', { name: 'Undo', exact: true })).toBeVisible();
+  expect(await axeViolations(page)).toEqual([]);
+  await page.getByRole('button', { name: /^Project: / }).click();
+  await page.getByRole('menuitem', { name: 'Undo history…', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Undo history' }).getByRole('button', { name: /^Restore: / }).first()).toBeVisible();
+  expect(await axeViolations(page)).toEqual([]);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Undo history' })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Scope' })).toBeVisible();

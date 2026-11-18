@@ -29,44 +29,31 @@ async function selectBlock(page: Page, label: string) {
 /** The activities of the Block with this label on the Weekday, from the stored data. */
 const storedBlock = (page: Page, label: string) => runInPage(page, "const day = (await e.db.serviceDays.toArray()).find((item) => item.kind === 'weekday'); const block = (await e.db.blocks.toArray()).find((item) => item.label === arg && item.serviceDayId === day.id); return block ? { id: block.id, types: block.activities.map((activity) => activity.type), updatedAt: block.updatedAt } : undefined;", label);
 
-test('removing a Trip, a Pull-out, or a Pull-in asks first and names the activity', async ({ page }) => {
+test('removing a Trip, a Pull-out, or a Pull-in happens at once and can be undone', async ({ page }) => {
   await openBlocking(page);
   await selectBlock(page, '26');
   const before = await storedBlock(page, '26');
   expect(before.types).toContain('pullOut');
   expect(before.types).toContain('pullIn');
-  const confirm = page.getByRole('alertdialog');
-
-  // A Trip: the dialog names it and the Block; Cancel keeps everything.
-  await currentBlock(page).getByRole('button', { name: 'Remove Trip 3', exact: true }).click();
-  await expect(confirm).toBeVisible();
-  await expect(confirm.getByRole('heading', { name: 'Remove Trip 3?' })).toBeVisible();
-  await expect(confirm).toContainText('Remove Trip 3 from block “26”');
-  await confirm.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await expect(confirm).toHaveCount(0);
-  expect((await storedBlock(page, '26')).types).toEqual(before.types);
-
-  // A Pull-out: asking, then Cancel.
+  // Decision 0081 (D3): each removal happens at once, with no confirmation, and the Undo notice names it.
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await currentBlock(page).getByRole('button', { name: 'Remove Pull-out', exact: true }).click();
-  await expect(confirm.getByRole('heading', { name: 'Remove pull-out?' })).toBeVisible();
-  await expect(confirm).toContainText('Remove the pull-out from block “26”');
-  await confirm.getByRole('button', { name: 'Cancel', exact: true }).click();
-  expect((await storedBlock(page, '26')).types).toEqual(before.types);
-
-  // Confirming removes exactly that activity.
-  await currentBlock(page).getByRole('button', { name: 'Remove Pull-out', exact: true }).click();
-  await confirm.getByRole('button', { name: 'Remove pull-out', exact: true }).click();
-  await expect(confirm).toHaveCount(0);
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect.poll(async () => (await storedBlock(page, '26')).types).toEqual(before.types.filter((type: string) => type !== 'pullOut'));
+  await expect(page.locator('.notice.success')).toContainText('Removed the pull-out from 26');
 
+  // Undo puts it back.
+  await page.locator('.notice.success').getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(async () => (await storedBlock(page, '26')).types).toEqual(before.types);
+
+  await currentBlock(page).getByRole('button', { name: 'Remove Pull-out', exact: true }).click();
+  await expect.poll(async () => (await storedBlock(page, '26')).types).toEqual(before.types.filter((type: string) => type !== 'pullOut'));
   await currentBlock(page).getByRole('button', { name: 'Remove Pull-in', exact: true }).click();
-  await expect(confirm.getByRole('heading', { name: 'Remove pull-in?' })).toBeVisible();
-  await confirm.getByRole('button', { name: 'Remove pull-in', exact: true }).click();
   await expect.poll(async () => (await storedBlock(page, '26')).types).toEqual(before.types.filter((type: string) => type !== 'pullOut' && type !== 'pullIn'));
 
   await currentBlock(page).getByRole('button', { name: 'Remove Trip 3', exact: true }).click();
-  await confirm.getByRole('button', { name: 'Remove Trip 3', exact: true }).click();
   await expect.poll(async () => (await storedBlock(page, '26')).types.filter((type: string) => type === 'revenueTrip').length).toBe(before.types.filter((type: string) => type === 'revenueTrip').length - 1);
+  await expect(page.locator('.notice.success')).toContainText('Unassigned 1 trip');
 });
 
 test('Delete Block shows what it removes, deletes with the reviewed source, and is refused if the Block changed after the review', async ({ page }) => {

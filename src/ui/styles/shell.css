@@ -57,6 +57,16 @@ nav { display: flex; gap: 2px; }
 .notice.success { background: var(--color-ok-soft); border-color: var(--color-ok); }
 .notice.info { background: var(--color-accent-soft); border-color: var(--color-accent); }
 .notice button { border: 0; background: transparent; font-size: var(--font-size-title); }
+/* Decision 0081: the Undo action sits after the text, before the dismiss button. */
+.notice__text { flex: 1 1 auto; min-width: 0; }
+.notice .notice__action { font-size: inherit; font-weight: 600; color: var(--color-accent); text-decoration: underline; padding: 2px var(--space-2); min-height: 24px; }
+.undo-history { width: min(560px, calc(100vw - 32px)); }
+.undo-history__list { list-style: none; margin: 0 0 var(--space-3); padding: 0; max-height: 60vh; overflow-y: auto; }
+.undo-history__row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--color-border); }
+.undo-history__text { display: flex; flex-direction: column; min-width: 0; }
+.undo-history__label { font-weight: 600; overflow-wrap: anywhere; }
+.undo-history__meta, .undo-history__reason { color: var(--color-text-muted); font-size: var(--font-size-note); }
+.undo-history__reason { max-width: 45%; text-align: right; }
 
 .empty-state { max-width: 620px; margin: 72px auto; border: 1px solid var(--color-border); background: var(--color-surface); padding: var(--space-5); }
 .empty-state p { margin: 10px 0 18px; line-height: 1.45; color: var(--color-text-muted); }

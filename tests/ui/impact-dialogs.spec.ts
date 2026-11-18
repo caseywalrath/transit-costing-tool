@@ -115,6 +115,6 @@ test('the Trip profile delete confirmation uses the singular for one Blocking Sc
 
 test('the Trip profile delete confirmation shows no such line for a profile without a Blocking Scenario', async ({ page }) => {
   const dialog = await openTripProfileDeletion(page, goldenWithAltProfile(), 'Alt');
-  await expect(dialog).toContainText('This cannot be undone.');
+  await expect(dialog).toContainText('Delete “Alt”');
   await expect(dialog).not.toContainText('blocking scenario');
 });

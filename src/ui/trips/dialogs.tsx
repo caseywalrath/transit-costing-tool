@@ -239,7 +239,7 @@ export function DeleteTripsDialog({ tripCount, affectedBlockCount, blockImpact, 
   const deadheads = blockImpact?.removedDeadheadCount ?? 0;
   const where = blockImpact?.blockingScenarios.length ? `, in ${blockImpact.blockingScenarios.map((entry) => `${entry.name} (${entry.blockCount})`).join(', ')}` : '';
   const blocksText = affectedBlockCount ? `This will also remove their revenue activities from ${affectedBlockCount} block${affectedBlockCount === 1 ? '' : 's'}${deadheads ? ` and ${deadheads} adjacent deadhead${deadheads === 1 ? '' : 's'}` : ''}${where}.` : 'These trips are not assigned to a block.';
-  return <ModalDialog role="alertdialog" labelledBy="delete-trips-title" className="confirm-dialog" onClose={onClose} busy={busy}><h2 id="delete-trips-title">Delete {tripCount === 1 ? 'trip' : `${tripCount} trips`}?</h2><p>{blocksText} This cannot be undone.</p><div className="dialog-actions"><button onClick={onClose} disabled={busy}>Cancel</button><button className="danger" onClick={onDelete} disabled={busy}>{busy ? 'Deleting…' : 'Delete'}</button></div></ModalDialog>;
+  return <ModalDialog role="alertdialog" labelledBy="delete-trips-title" className="confirm-dialog" onClose={onClose} busy={busy}><h2 id="delete-trips-title">Delete {tripCount === 1 ? 'trip' : `${tripCount} trips`}?</h2><p>{blocksText}</p><div className="dialog-actions"><button onClick={onClose} disabled={busy}>Cancel</button><button className="danger" onClick={onDelete} disabled={busy}>{busy ? 'Deleting…' : 'Delete'}</button></div></ModalDialog>;
 }
 
 export function formatPreviewTime(value: number | undefined): string {

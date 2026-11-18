@@ -1,6 +1,6 @@
 import { formatServiceTime } from '../../domain/time';
 import type { AnchorDiagnosis, AnchorSolution } from '../../domain/anchorDiagnosis';
-import { type Node, type Route, type Trip, type ValidationFinding } from '../../domain/types';
+import { type Node, type RestorePointSummary, type Route, type Trip, type ValidationFinding } from '../../domain/types';
 
 export function messages(findings: ValidationFinding[], entityId: string, field?: string) {
   return findings
@@ -215,4 +215,46 @@ export function explainTripProblem(input: TripProblemInput): TripProblemExplanat
     openRuntimes: runtimeProblem,
     actions: [...keepStart, ...skip],
   };
+}
+
+const count = (value: number | undefined, singular: string, pluralForm = `${singular}s`) => `${value ?? 0} ${value === 1 ? singular : pluralForm}`;
+
+/** Decision 0081: what a restore point undoes, as the Undo notice and the Undo history name it. */
+export function restorePointLabel(point: Pick<RestorePointSummary, 'kind' | 'names' | 'counts' | 'quantity' | 'detail' | 'restoredKind'>): string {
+  const { names } = point;
+  const boundary = point.detail === 'pullIn' ? 'pull-in' : 'pull-out';
+  switch (point.kind) {
+    case 'deleteProject': return `Deleted project ${names.project}`;
+    case 'deleteScenario': return `Deleted scenario ${names.scenario}`;
+    case 'deleteRoute': return `Deleted route ${names.route ?? ''}`.trim();
+    case 'deletePattern': return `Deleted pattern ${names.pattern ?? ''}`.trim();
+    case 'resetPatternService': return `Removed the service of pattern ${names.pattern ?? ''}`.trim();
+    case 'rebalancePattern': return `Saved pattern ${names.pattern ?? ''}`.trim();
+    case 'deleteNodes': return `Deleted ${count(point.counts.nodes?.removed, 'node')}`;
+    case 'deleteRuntimeProfile': return `Deleted runtime profile ${names.runtimeProfile ?? ''}`.trim();
+    case 'deleteTrips': return `Deleted ${count(point.quantity, 'trip')}`;
+    case 'copyTripsFromDay': return `Copied ${names.sourceServiceDay ?? ''} trips to ${names.serviceDay ?? ''}`;
+    case 'deleteTripProfile': return `Deleted trip profile ${names.tripProfile ?? ''}`.trim();
+    case 'unassignTrips': return `Unassigned ${count(point.quantity, 'trip')}`;
+    case 'moveTripsToBlock': return `Moved ${count(point.quantity, 'trip')} to ${names.block ?? 'another block'}`;
+    case 'deleteBlockingScenario': return `Deleted blocking scenario ${names.blockingScenario ?? ''}`.trim();
+    case 'deleteBlocks': return `Deleted ${count(point.counts.blocks?.removed, 'block')}`;
+    case 'copyBlocksFromDay': return `Copied ${names.sourceServiceDay ?? ''} blocks to ${names.serviceDay ?? ''}`;
+    case 'rebuildAutoBlocks': return `Rebuilt the blocks of ${names.blockingScenario ?? 'the blocking scenario'}`;
+    case 'replaceBoundaryActivities': return `Updated ${boundary}s in ${count(point.counts.blocks?.changed, 'block')}`;
+    case 'removeBlockActivity': return `Removed the ${boundary} from ${names.block ?? 'the block'}`;
+    case 'deleteDeadheads': return `Deleted ${count(point.quantity, 'deadhead')}`;
+    case 'clearPlan': return `Cleared the ${names.serviceDay ?? ''} plan`;
+    case 'copyPlanFromDay': return `Copied the ${names.sourceServiceDay ?? ''} plan to ${names.serviceDay ?? ''}`;
+    case 'copyPlansFromScenario': return `Copied plans from ${names.sourceScenario ?? 'another scenario'}`;
+    case 'restore': return `Undid: ${point.restoredKind ? restorePointLabel({ ...point, kind: point.restoredKind, restoredKind: undefined }) : 'a change'}`;
+  }
+}
+
+/** Decision 0081, rule N3: where a restore point's change happened, leaving out what its label already names. */
+export function restorePointContext(point: Pick<RestorePointSummary, 'kind' | 'names' | 'counts' | 'quantity' | 'detail' | 'restoredKind'>): string {
+  const label = restorePointLabel(point);
+  const { names } = point;
+  const parts = point.kind === 'deleteProject' ? [] : [names.scenario, names.route, names.tripProfile, names.blockingScenario, names.serviceDay];
+  return parts.filter((part): part is string => Boolean(part) && !label.includes(part!)).filter((part, index, all) => all.indexOf(part) === index).join(' · ');
 }
