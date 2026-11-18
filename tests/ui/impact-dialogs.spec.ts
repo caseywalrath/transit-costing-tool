@@ -83,7 +83,7 @@ async function openTripProfileDeletion(page: Page, raw: any, profileName: string
   await page.goto('/');
   await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30000 });
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  const profileButton = page.locator('[aria-label="Trips section"]').locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button');
+  const profileButton = page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / });
   await expect(profileButton).toBeVisible();
   if (!(await profileButton.textContent())?.includes(profileName)) {
     await profileButton.click();

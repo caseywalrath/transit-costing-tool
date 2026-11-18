@@ -211,9 +211,9 @@ test('the labels are exact: Move Trip counts Trips only, "No current issues." is
   expect(await noIssues.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe('rgb(255, 248, 233)');
   expect(await noIssues.evaluate((element) => getComputedStyle(element).borderLeftWidth)).toBe('0px');
 
-  await expect(scopeField(page, 'Trip profile')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / })).toBeVisible();
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  await page.locator('[aria-label="Trips section"] .menu-field').filter({ hasText: 'Profile' }).getByRole('button').click();
+  await page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / }).click();
   await expect(page.locator('[role="menu"][aria-label="Trip profile"]')).toHaveCount(1);
   expect(await page.locator('select[aria-label="Trip profile"]').count()).toBe(0);
 });

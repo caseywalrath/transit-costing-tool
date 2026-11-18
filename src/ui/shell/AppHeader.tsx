@@ -23,7 +23,9 @@ function AppBar({ tabs, activeTab, onTab, status }: { tabs: HeaderTab[]; activeT
 export function Switcher({ kind, name, groups, disabled, identity, emptyName }: { kind: 'Project' | 'Scenario' | 'Trip profile' | 'Blocking scenario'; name: string; groups: MenuGroup[]; disabled?: boolean; identity?: boolean; emptyName?: string }) {
   const shown = name || emptyName || `Select ${kind.toLowerCase()}`;
   const modifier = kind.toLowerCase().replace(' ', '-');
-  return <MenuButton label={shown} triggerAriaLabel={`${kind}: ${name || emptyName || 'none selected'}`} menuLabel={`${kind} actions`} groups={groups} disabled={disabled} menuAlign="start"
+  // The Trip profile and Blocking scenario menus keep the names they had as field menus on the Trips and Blocking screens.
+  const menuLabel = kind === 'Project' || kind === 'Scenario' ? `${kind} actions` : kind;
+  return <MenuButton label={shown} triggerAriaLabel={`${kind}: ${name || 'none selected'}`} menuLabel={menuLabel} groups={groups} disabled={disabled} menuAlign="start"
     triggerClassName={`switcher switcher--${modifier}`} triggerContent={<><small className="switcher__caption">{kind}</small>{identity && name && <IdentityDot name={name} />}<span className="switcher__name">{shown}</span></>} />;
 }
 

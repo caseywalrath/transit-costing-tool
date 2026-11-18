@@ -18,7 +18,7 @@ test('Trips, Blocking, and Costing share the Trip profile and Blocking scenario 
   await expect(crumb(page, 'Trip profile')).toHaveCount(0);
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await crumb(page, 'Trip profile').click();
-  await page.getByRole('menu', { name: 'Trip profile actions' }).getByRole('menuitemradio', { name: 'Default' }).click();
+  await page.getByRole('menu', { name: 'Trip profile', exact: true }).getByRole('menuitemradio', { name: 'Default' }).click();
   await expect(crumb(page, 'Trip profile')).toContainText('Default');
   const blocking = (await crumb(page, 'Blocking scenario').textContent())?.replace(/^Blocking scenario/, '').replace('▾', '').trim();
   expect(blocking).toBeTruthy();
@@ -36,7 +36,7 @@ test('Trips, Blocking, and Costing share the Trip profile and Blocking scenario 
 
   // A Trip profile chosen on Costing is the one Trips opens.
   await crumb(page, 'Trip profile').click();
-  await page.getByRole('menu', { name: 'Trip profile actions' }).getByRole('menuitemradio', { name: 'Alt' }).click();
+  await page.getByRole('menu', { name: 'Trip profile', exact: true }).getByRole('menuitemradio', { name: 'Alt' }).click();
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await expect(crumb(page, 'Trip profile')).toContainText('Alt');
 });

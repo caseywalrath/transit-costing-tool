@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { runInPage } from './support/dexieEnv';
 import { createRouteWithPattern } from './support/tripsWorkspace';
-import { editGridCell, gridCell, scopeField } from './support/ui';
+import { costBasisText, editGridCell, gridCell, scopeField } from './support/ui';
 
 test.setTimeout(90_000);
 
@@ -63,6 +63,6 @@ test('Costing without a blocking scenario opens on the estimated cost basis of t
   await page.reload();
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
   await page.getByRole('button', { name: 'Costing', exact: true }).click();
-  await expect(scopeField(page, 'Cost basis').locator('option:checked')).toHaveText('Default');
+  await expect.poll(() => costBasisText(page)).toBe('Estimated: Default');
   await expect(page.getByRole('button', { name: 'Open Blocking', exact: true })).toHaveCount(0);
 });

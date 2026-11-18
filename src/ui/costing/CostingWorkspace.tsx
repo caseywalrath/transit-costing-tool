@@ -429,8 +429,8 @@ export function CostingWorkspace({ tripProfileId: workingTripProfileId, blocking
   return <div className="costing-workspace">
     <h1 className="visually-hidden">Cost estimate</h1>
     {scopeSlot && createPortal(<>
-      <ContextField label="Cost basis"><SegmentedControl label="Cost basis" value={basisValue.startsWith('blocked') ? 'blocked' : 'estimated'} onChange={(next) => chooseBasisKind(next as 'blocked' | 'estimated')}
-        options={[{ value: 'blocked', text: 'Blocked', title: blockedAvailable ? 'Blocked hours of the working blocking scenario' : 'Blocked: this trip profile has no blocking scenario' }, { value: 'estimated', text: 'Estimated', title: 'Estimated from running time of the working trip profile' }]} /></ContextField>
+      <ContextField><span className="context-field__label" aria-hidden="true">Cost basis</span><SegmentedControl label="Cost basis" value={basisValue.startsWith('blocked') ? 'blocked' : 'estimated'} onChange={(next) => chooseBasisKind(next as 'blocked' | 'estimated')}
+        options={[{ value: 'blocked', text: 'Blocked' }, { value: 'estimated', text: 'Estimated' }]} /></ContextField>
       <ContextField label="View year"><select aria-label="View year" value={selectedYear} onChange={(event) => setViewYear(Number(event.target.value))}>{years.map((year) => <option key={year}>{year}</option>)}</select></ContextField>
       <span className="scope-bar__spacer" /><MenuButton label="Actions" triggerAriaLabel="Costing actions" menuLabel="Costing actions" groups={costingActionsMenu} />
     </>, scopeSlot)}

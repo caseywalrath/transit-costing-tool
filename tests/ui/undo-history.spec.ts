@@ -17,7 +17,7 @@ async function open(page: Page) {
 /** Deletes the Trip profile named `name` from the Trips tab. */
 async function deleteTripProfile(page: Page, name: string) {
   await page.getByRole('button', { name: 'Trips', exact: true }).click();
-  const profileButton = page.locator('[aria-label="Trips section"]').locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button');
+  const profileButton = page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / });
   await expect(profileButton).toBeVisible();
   if (!(await profileButton.textContent())?.includes(name)) {
     await profileButton.click();

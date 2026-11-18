@@ -99,7 +99,9 @@ test('Switch sides swaps the panes and keeps an open Add-trip row', async ({ pag
   expect(north!.x).toBeLessThan(southBox!.x);
   await expect(draftRow(south)).toHaveCount(1);
   // The shared header controls follow the left pane, and stay in the shared header.
-  await expect(page.locator('[aria-label="Trips, both directions"] > header .menu-field').filter({ hasText: 'Trip profile' })).toHaveCount(1);
+  // Decision 0081 (D6): one breadcrumb serves both panes.
+  await expect(page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / })).toHaveCount(1);
+  await expect(page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Blocking scenario: / })).toHaveCount(1);
 });
 
 test('compact panes pin the compare columns at the right and leave out Deadhead', async ({ page }) => {

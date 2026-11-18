@@ -8,7 +8,7 @@ import { chooseScope, scopeText } from './support/ui';
 test.setTimeout(120_000);
 
 const STORAGE_KEY = 'transit-costing-tool.working-context.v1';
-const profileButton = (page: Page) => page.locator('[aria-label="Trips section"]').locator('.menu-field').filter({ hasText: 'Profile' }).getByRole('button');
+const profileButton = (page: Page) => page.getByRole('region', { name: 'Scope', exact: true }).getByRole('button', { name: /^Trip profile: / });
 const fallbackNotice = (page: Page) => page.getByText('The trip profile open last time is no longer in this scenario.');
 
 async function open(page: Page) {

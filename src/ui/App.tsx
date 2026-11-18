@@ -128,9 +128,12 @@ export function App({ service, tripService, blockingService, costingService, pla
   const [crumbSlot, setCrumbSlot] = useState<HTMLElement | null>(null);
   const blockingScenariosChanged = () => setBlockingScenarioListVersion((current) => current + 1);
   const profileBlockingScenarios = blockingScenarioList.filter((item) => item.tripProfileId === workspaceTripProfileId);
+  // A choice the list does not hold yet (a Blocking scenario just created) waits for the list to reload instead of being replaced.
+  const awaitingBlockingList = useRef('');
   function setWorkspaceBlockingScenarioId(id: string) {
     setWorkspaceBlockingScenarioIdState(id);
     if (id && scenarioId && workspaceTripProfileId) rememberTripBlockingScenario(scenarioId, workspaceTripProfileId, id);
+    if (id && !blockingScenarioList.some((item) => item.id === id)) { awaitingBlockingList.current = id; blockingScenariosChanged(); }
   }
   function chooseCostBasisKind(kind: CostBasisKind) { setCostBasisKindState(kind); if (scenarioId) rememberCostBasisKind(scenarioId, kind); }
   const undoProjectRef = useRef(projectId); undoProjectRef.current = projectId;
@@ -168,7 +171,7 @@ export function App({ service, tripService, blockingService, costingService, pla
   useEffect(() => {
     if (!scenarioId) { setBlockingScenarioList([]); return; }
     let live = true;
-    void blockingService.listBlockingScenarios(scenarioId).then((next) => { if (live) setBlockingScenarioList(next); }).catch(() => undefined);
+    void blockingService.listBlockingScenarios(scenarioId).then((next) => { if (!live) return; if (next.some((item) => item.id === awaitingBlockingList.current)) awaitingBlockingList.current = ''; setBlockingScenarioList(next); }).catch(() => undefined);
     return () => { live = false; };
   }, [blockingService, scenarioId, blockingScenarioListVersion, restoreVersion]);
   useEffect(() => { if (scenarioId) setCostBasisKindState(rememberedCostBasisKind(scenarioId)); }, [scenarioId]);
@@ -177,6 +180,7 @@ export function App({ service, tripService, blockingService, costingService, pla
   const reportedBlockingFallbacks = useRef(new Set<string>());
   useEffect(() => {
     if (!scenarioId || !workspaceTripProfileId || blockingScenarioList.some((item) => item.scenarioId !== scenarioId)) return;
+    if (awaitingBlockingList.current && awaitingBlockingList.current === workspaceBlockingScenarioId) return;
     const candidates = blockingScenarioList.filter((item) => item.tripProfileId === workspaceTripProfileId);
     if (workspaceBlockingScenarioId && candidates.some((item) => item.id === workspaceBlockingScenarioId)) return;
     const remembered = rememberedTripBlockingScenarios(scenarioId)[workspaceTripProfileId];
