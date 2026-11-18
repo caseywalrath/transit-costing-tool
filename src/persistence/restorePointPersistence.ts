@@ -1,5 +1,6 @@
 import type { RestorePointRecorder, RestorePointStore, ScenarioChangeRequest } from '../application/ports';
 import { newId } from '../domain/ids';
+import type { ScenarioRecords } from '../domain/project';
 import { changeCounts, diffScenarioRecords, isEmptyChange, restorePointNames, restorePointsToPruneByGroup, sortNewestFirst } from '../domain/restorePoints';
 import type { RestorePointPayload, RestorePointSummary } from '../domain/types';
 import type { TransitDatabase } from './database';
@@ -20,13 +21,31 @@ export class DexieRestorePoints implements RestorePointRecorder, RestorePointSto
 
   async recordScenarioChange<T>(request: ScenarioChangeRequest, write: () => Promise<T>): Promise<T> {
     let stored: RestorePointSummary | undefined;
+    if (request.separate) {
+      // FX8: the command runs in its own transactions; the restore point is stored only after it has succeeded.
+      const before = await this.repository.getScenarioRecords(request.scenarioId);
+      const value = await write();
+      const after = await this.repository.getScenarioRecords(request.scenarioId);
+      stored = await this.db.transaction('rw', [this.db.projects, this.db.restorePoints, this.db.restorePointPayloads], () => this.capture(request, before, after));
+      if (stored) this.notify(stored);
+      return value;
+    }
     const result = await this.db.transaction('rw', this.db.tables, async () => {
       const before = await this.repository.getScenarioRecords(request.scenarioId);
       const value = await write();
       const after = await this.repository.getScenarioRecords(request.scenarioId);
+      stored = await this.capture(request, before, after);
+      return value;
+    });
+    if (stored) this.notify(stored);
+    return result;
+  }
+
+  /** Stores the restore point of one Scenario change, inside the caller's transaction; nothing for an empty or unkept change. */
+  private async capture(request: ScenarioChangeRequest, before: ScenarioRecords | undefined, after: ScenarioRecords | undefined): Promise<RestorePointSummary | undefined> {
       const change = diffScenarioRecords(before, after);
       const scenario = before?.scenario ?? after?.scenario;
-      if (!scenario || isEmptyChange(change) || (request.keep && !request.keep(change))) return value;
+      if (!scenario || isEmptyChange(change) || (request.keep && !request.keep(change))) return undefined;
       const project = await this.db.projects.get(scenario.projectId);
       const id = newId();
       const payload: RestorePointPayload = { id, change };
@@ -41,11 +60,7 @@ export class DexieRestorePoints implements RestorePointRecorder, RestorePointSto
         sizeEstimate: JSON.stringify(payload).length,
       };
       await this.store(summary, payload);
-      stored = summary;
-      return value;
-    });
-    if (stored) this.notify(stored);
-    return result;
+      return summary;
   }
 
   async recordProjectDeletion<T>(projectId: string, write: () => Promise<T>): Promise<T> {

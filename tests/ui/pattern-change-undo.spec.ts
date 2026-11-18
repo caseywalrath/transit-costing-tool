@@ -50,10 +50,14 @@ test('Undo of a pattern change restores the Trip to its Pattern and first time',
 
   // The item names the kind of change; it is the only undo item, in the same place as the regeneration undo.
   const actions = page.locator('[aria-label="Trips section"]').getByRole('button', { name: 'Trip actions', exact: true });
-  await actions.click();
   const menu = page.getByRole('menu', { name: 'Trip actions' });
   const undo = menu.getByRole('menuitem', { name: 'Undo changed the pattern of 1 trip', exact: true });
-  await expect(undo).toBeEnabled();
+  // The item follows the reload of the Trips after the change; reopen the menu until it is there.
+  await expect(async () => {
+    if (await menu.isVisible()) await page.keyboard.press('Escape');
+    await actions.click();
+    await expect(undo).toBeEnabled({ timeout: 1000 });
+  }).toPass({ timeout: 15_000 });
   await undo.click();
 
   await expect.poll(async () => (await readTrip(page, golden.tripId)).patternId).toBe(golden.fullId);

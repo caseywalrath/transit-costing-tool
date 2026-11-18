@@ -61,6 +61,20 @@ Run on 2026-11-18, in the order of plan section 6, row FX10:
 | Delete → Undo on the golden project | `undo-history.spec.ts` (4 tests, golden project with an Alt Trip profile) passed in the full run; the unit round trips cover every covered command |
 | After the deadhead dialog fix | `pnpm typecheck`, the four Blocking specs that delete deadheads (32 passed), `pnpm test`, `pnpm build` |
 
-## 7. Next
+## 7. Later packages
 
-FX7 (run-time staleness by content): Opus writes the work order against the current code; Haiku executes. Then FX8. FX9 (scenario lock) is decided after the context line has been in use.
+| Package | Executed by | Commits | Result |
+| --- | --- | --- | --- |
+| FX7 | Haiku from plan section 19; Opus finished | `471e999` (work order), `e8e21c1`, `8331cdf` | Runtime inputs signature on Trips; staleness by content; Dexie 14; backup schema 15; G9 closed |
+| FX8a | Haiku from plan section 20; Opus finished | `a574682` (work order), `fb8ec04`, `35cf805`, and the FX8 closeout commit | Trip changes store restore points in their own retention group; `refs` on restore points; regeneration undo store removed; Dexie 15 |
+| FX8b | Opus | `c9b94f1` and the FX8 closeout commit | Trips menu "Undo/Redo {label}" for the newest trip change in view; labels; specs; docs; G8 closed |
+
+Both Haiku runs stopped correctly on existing tests their work orders did not list (IndexedDB version assertions in FX7; tests of the removed undo store in FX8). Opus made those changes and wrote the FX8 tests Haiku had not reached.
+
+The full browser run of FX8 found a defect the unit tests could not: a 480-trip regeneration inside the restore point's transaction failed with `PrematureCommitError`. Trip changes now store their restore point after the command succeeds (Decision 0081, Consequences).
+
+A fourth rule deviation: one `sed` edit of `docs/implementation/undo-and-context.md` (removing a stale outline sentence from section 17).
+
+## 8. Next
+
+FX9 (scenario lock) is decided after the context line has been in use. The open items of section 4 (context stamp on the copy and route-edit dialogs, the stamp in Undo notices, unused Costing helpers) remain.

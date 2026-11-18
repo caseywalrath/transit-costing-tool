@@ -95,7 +95,7 @@ export const ROUTE_DEFINITION_COVERAGE: Coverage = {
 async function tripChange(lookup: RestorePointLookup, tripIds: readonly string[], kind: RestorePointKind): Promise<CoverageTarget | undefined> {
   const first = tripIds[0];
   const trip = first === undefined ? undefined : await lookup.getTrip(first);
-  return trip && { scope: 'scenario', kind, scenarioId: trip.scenarioId, quantity: tripIds.length, refs: { routeId: trip.routeId, serviceDayId: trip.serviceDayId, ...(trip.tripProfileId ? { tripProfileId: trip.tripProfileId } : {}) } };
+  return trip && { scope: 'scenario', kind, separate: true, scenarioId: trip.scenarioId, quantity: tripIds.length, refs: { routeId: trip.routeId, serviceDayId: trip.serviceDayId, ...(trip.tripProfileId ? { tripProfileId: trip.tripProfileId } : {}) } };
 }
 
 export const TRIP_GENERATION_COVERAGE: Coverage = {

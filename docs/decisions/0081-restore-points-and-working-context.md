@@ -41,6 +41,7 @@ The user also asked for better awareness of the working context. Scheduling syst
 - Dexie version 13 adds two tables. The JSON backup schema does not change for items 1 to 10.
 - Verified on 2026-11-17 on `fake-indexeddb` with a throwaway test: a `db.transaction('rw', db.tables, …)` wrapped around service commands (`renameScenarioById`, `deleteScenario` through `saveProjectSnapshot`, `copyTripProfile`, `deleteBlockingScenario`) joins their own transactions; a throw rolls all of them back, including the save-status wrapper path. FX1 turns this check into a permanent test.
 - A covered command reads the Scenario's records twice more. Only covered commands pay this.
+- Exception (FX8, 2026-11-18): the trip-change commands (item 12) capture separately (`ScenarioChangeRequest.separate`). They read the records before and after the command and store the restore point once it has succeeded, in a transaction of their own. Holding one transaction around a 480-trip regeneration failed with Dexie's `PrematureCommitError` (the review's long asynchronous computation lost the transaction), found by `recalculation-capacity.spec.ts`. A restore point still never exists without its change; if storing it fails after the change, that change has no undo. One writing tab and the screen's one write at a time keep other writes out of the gap.
 - The header gains an Undo entry point and an Undo history dialog; "This cannot be undone." leaves covered dialogs.
 - Items 7 and 8 move controls and must fit header row 2 at 1024 px; they need mock-ups and a user gate.
 

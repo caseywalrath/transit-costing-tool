@@ -369,6 +369,12 @@ export interface ScenarioChangeRequest {
   detail?: string;
   restoredKind?: import('../domain/types').RestorePointKind;
   keep?: (change: import('../domain/types').RecordChange) => boolean;
+  /**
+   * FX8. Read the records before and after the command, and store the restore point once it has succeeded, instead of holding one
+   * transaction around the command. For commands with long computations between their reads (a 480-trip regeneration), which IndexedDB
+   * would otherwise commit early. A restore point still never exists without its change.
+   */
+  separate?: boolean;
 }
 /** Decision 0081. Runs a write and stores its restore point in the same transaction. */
 export interface RestorePointRecorder {
