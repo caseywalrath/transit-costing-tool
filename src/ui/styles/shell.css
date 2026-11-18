@@ -27,20 +27,35 @@ nav { display: flex; gap: 2px; }
 .scope-bar__divider { align-self: stretch; width: 1px; margin: var(--space-2) 0; background: var(--color-border); flex: none; }
 .scope-switchers { display: flex; align-items: center; gap: var(--space-1); flex: 0 1 auto; min-width: 0; }
 .scope-switchers__sep { color: var(--color-text-subtle); flex: none; }
-.scope-switchers .menu-button { flex: 0 1 auto; min-width: 0; }
-.menu-trigger.switcher { display: inline-flex; align-items: baseline; gap: var(--space-inline); width: 100%; min-width: 96px; border-color: transparent; background: transparent; padding: var(--space-1) var(--space-2); font-weight: var(--font-weight-semibold); }
+.scope-switchers__slot { display: contents; }
+/* Decision 0081 (Gate C): when the row runs out of room, Project gives way first, then Scenario. Trip profile and Blocking scenario never
+   shrink below their cap, because they are the levels a planner most needs to read. Below 1280 px the caps are smaller. */
+.scope-switchers .menu-button { flex: 0 1 auto; min-width: 64px; }
+.scope-switchers .menu-button:has(> .switcher--project) { flex-shrink: 3; max-width: 260px; }
+.scope-switchers .menu-button:has(> .switcher--scenario) { flex-shrink: 1; max-width: 240px; }
+.scope-switchers .menu-button:has(> .switcher--trip-profile) { flex-shrink: 0; max-width: 200px; }
+.scope-switchers .menu-button:has(> .switcher--blocking-scenario) { flex-shrink: 0; max-width: 220px; }
+.menu-trigger.switcher { display: inline-flex; align-items: baseline; gap: var(--space-inline); width: 100%; min-width: 0; border-color: transparent; background: transparent; padding: var(--space-1) var(--space-2); font-weight: var(--font-weight-semibold); }
 .menu-trigger.switcher:hover:not(:disabled) { border-color: var(--color-border); background: var(--color-surface); }
-.menu-trigger.switcher--project { max-width: 260px; }
-.menu-trigger.switcher--scenario { max-width: 220px; }
 .switcher__caption { flex: none; color: var(--color-text-subtle); font-size: var(--font-size-caption); font-weight: var(--font-weight-semibold); }
-.switcher__name { flex: 0 1 auto; min-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.switcher__name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.identity-dot { flex: none; align-self: center; width: 8px; height: 8px; border-radius: 50%; }
+.context-stamp { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); margin: 0 0 var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-note); }
+.context-stamp__level { display: inline-flex; align-items: center; gap: var(--space-1); }
+.context-stamp__sep { color: var(--color-text-subtle); }
 .menu-chevron { flex: none; color: var(--color-text-subtle); font-size: var(--font-size-caption); }
 .action-menu--start { left: 0; right: auto; }
 /* Decision 0064. A context menu is placed by window position (inline left and top) above any open menu. */
 /* Doubled class: it must beat the later `.action-menu { position: absolute }`, because the menu is placed by window coordinates. */
 .action-menu.action-menu--context { position: fixed; z-index: 30; right: auto; width: max-content; }
 .action-menu .action-menu-heading { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; color: var(--color-text); }
-@media (max-width: 1279px) { .switcher__caption { display: none; } }
+@media (max-width: 1279px) {
+  .switcher__caption { display: none; }
+  .scope-switchers .menu-button:has(> .switcher--project) { max-width: 150px; }
+  .scope-switchers .menu-button:has(> .switcher--scenario) { max-width: 170px; }
+  .scope-switchers .menu-button:has(> .switcher--trip-profile) { max-width: 150px; }
+  .scope-switchers .menu-button:has(> .switcher--blocking-scenario) { max-width: 160px; }
+}
 
 /* A select in a work surface header (the Runtimes Pattern select) is drawn the same way, so no browser draws a native control outside its box. */
 .scope-bar .context-field select, .work-surface__actions .context-field select { min-height: var(--control-height); max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--color-text); font-size: var(--font-size-body); appearance: none; border-color: var(--color-border); border-radius: var(--radius-control); background-color: var(--color-surface); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m1 1.5 5 5 5-5' fill='none' stroke='%233c5665' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-position: right 9px center; background-repeat: no-repeat; padding: 3px 28px 3px var(--space-2); }

@@ -6,8 +6,11 @@ export type SegmentOption = { value: string; text: string; title?: string };
 /** The scope bar's narrow layout (responsive.css), below which a segmented control falls back to a native select (Decision 0059, rule 6). */
 const NARROW_QUERY = '(max-width: 680px)';
 
-function useNarrowLayout() {
-  const query = typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia(NARROW_QUERY) : undefined;
+/** Decision 0081 (Gate C): below this width the scope bar holds four context levels, so its Day and Direction use the select. */
+const SCOPE_COMPACT_QUERY = '(max-width: 1279px)';
+
+function useNarrowLayout(mediaQuery = NARROW_QUERY) {
+  const query = typeof window !== 'undefined' && typeof window.matchMedia === 'function' ? window.matchMedia(mediaQuery) : undefined;
   const [narrow, setNarrow] = useState(() => query?.matches ?? false);
   useEffect(() => {
     if (!query) return;
@@ -24,8 +27,8 @@ function useNarrowLayout() {
  * ends; Home and End go to the first and last segment. `onChange` may be refused by the caller (an unsaved-draft prompt); the checked
  * segment always follows `value`. Below the narrow layout, or when `fallback` is set, the native select is shown instead.
  */
-export function SegmentedControl({ label, options, value, onChange, fallback = false, className, disabled = false, title }: { disabled?: boolean; title?: string; label: string; options: SegmentOption[]; value: string; onChange: (value: string) => void; fallback?: boolean; className?: string }) {
-  const narrow = useNarrowLayout();
+export function SegmentedControl({ label, options, value, onChange, fallback = false, className, disabled = false, title, compactInScopeBar = false }: { disabled?: boolean; title?: string; label: string; options: SegmentOption[]; value: string; onChange: (value: string) => void; fallback?: boolean; className?: string; compactInScopeBar?: boolean }) {
+  const narrow = useNarrowLayout(compactInScopeBar ? SCOPE_COMPACT_QUERY : NARROW_QUERY);
   const buttons = useRef<Array<HTMLButtonElement | null>>([]);
   if (fallback || narrow) {
     return <select className="segmented-fallback" aria-label={label} disabled={disabled} title={title} value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option.value} value={option.value}>{option.title ?? option.text}</option>)}</select>;

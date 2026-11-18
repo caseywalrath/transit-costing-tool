@@ -14,6 +14,7 @@ import { RateCombobox } from './RateCombobox';
 import { EstimateFactorsGrid } from './EstimateFactorsGrid';
 import { createCsvArchive } from '../../application/csvDownload';
 import { ContextField } from '../shared/ContextField';
+import { SegmentedControl } from '../shared/SegmentedControl';
 import { InlineNote, SupportPanel, WorkSurface } from '../shared/surfaces';
 import { SaveBar } from '../shared/bars';
 import { countAssumptionChanges, countEstimateFactorChanges } from '../../application/draftChangeCounts';
@@ -28,6 +29,11 @@ import { tableToTsv } from '../tableText';
 import { useContextMenu } from '../useContextMenu';
 
 type Props = {
+  /** Decision 0081 (D5): the basis is the working Blocking scenario (blocked) or the working Trip profile (estimated), chosen in the header. */
+  tripProfileId: string;
+  blockingScenarioId: string;
+  basisKind: 'blocked' | 'estimated';
+  onBasisKindChange: (kind: 'blocked' | 'estimated') => void;
   /** The element in the header's scope bar that receives the scope selectors (UR-5). */
   scopeSlot: HTMLElement | null;
   costingService: CostingCommands & CostingQueries;
@@ -128,11 +134,13 @@ function listText(names: string[]): string {
   return names.length <= 2 ? names.join(' and ') : `${names.slice(0, -1).join(', ')}, and ${names.at(-1)}`;
 }
 
-export function CostingWorkspace({ scopeSlot, costingService, scenario, projectName, serviceDays, tripProfiles, routes, onError, onRegisterNavigationGuard }: Props) {
+export function CostingWorkspace({ tripProfileId: workingTripProfileId, blockingScenarioId: workingBlockingScenarioId, basisKind, onBasisKindChange, scopeSlot, costingService, scenario, projectName, serviceDays, tripProfiles, routes, onError, onRegisterNavigationGuard }: Props) {
   const [basisOptions, setBasisOptions] = useState<CostBasisOption[]>([]);
   const [vehicleRequirementOpen, setVehicleRequirementOpen] = useState(storedVehicleRequirementOpen);
   function setVehicleRequirementSectionOpen(open: boolean) { setVehicleRequirementOpen(open); rememberVehicleRequirementOpen(open); }
-  const [basisValue, setBasisValue] = useState('');
+  // Decision 0081 (D5): a blocked basis needs a working Blocking scenario; without one the estimate uses the working Trip profile.
+  const blockedAvailable = basisOptions.some((option) => option.kind === 'blocked' && option.id === workingBlockingScenarioId);
+  const basisValue = basisKind === 'blocked' && blockedAvailable ? `blocked:${workingBlockingScenarioId}` : `estimated:${workingTripProfileId}`;
   const [assumptions, setAssumptions] = useState<CostingAssumptionsInput>(() => initialAssumptions());
   const [loadedAssumptions, setLoadedAssumptions] = useState<CostingAssumptionsInput>();
   const [persisted, setPersisted] = useState<CostingAssumptions>();
@@ -212,11 +220,6 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
       .then(([options, stored]) => {
         if (!current) return;
         setBasisOptions(options);
-        const values = options.map(optionValue);
-        const remembered = rememberedBasis(scenario.id);
-        setBasisValue((selected) => values.includes(selected) ? selected
-          : remembered && values.includes(remembered) ? remembered
-            : optionValue(options.find((option) => option.kind === 'blocked') ?? options[0] ?? { kind: 'estimated', id: '', name: '', tripProfileId: '', tripProfileName: '' }));
         const next = stored ? toInput(stored) : initialAssumptions();
         setPersisted(stored);
         persistedRef.current = stored;
@@ -273,15 +276,8 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
     setAssumptions((current) => ({ ...current, [key]: value }));
   }
 
-  function chooseBasis(value: string) {
-    // Unsaved factors belong to one Trip Profile; a basis of another Trip Profile asks to save or discard them first (Decision 0062).
-    const next = basisOptions.find((option) => optionValue(option) === value);
-    if (hasUnsavedFactors && next && next.tripProfileId !== factorProfileId) {
-      setNavigationDialog({ action: () => applyBasis(value), factorsOnly: 'basis' });
-      return;
-    }
-    applyBasis(value);
-  }
+  /** Blocked and Estimated share the working Trip profile, so a change of kind keeps that profile's unsaved factors. */
+  function chooseBasisKind(kind: 'blocked' | 'estimated') { if (kind !== basisKind) applyBasis(kind); }
 
   /** Decision 0077 item 2.5 and RC4: unsaved factors belong to one level; another Route asks to save or discard them first. */
   function chooseFactorRoute(routeId: string) {
@@ -290,9 +286,8 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
     setFactorRouteChoice(routeId);
   }
 
-  function applyBasis(value: string) {
-    setBasisValue(value);
-    rememberBasis(scenario.id, value);
+  function applyBasis(kind: 'blocked' | 'estimated') {
+    onBasisKindChange(kind);
     window.setTimeout(() => estimateHeading.current?.focus(), 0);
   }
 
@@ -434,11 +429,8 @@ export function CostingWorkspace({ scopeSlot, costingService, scenario, projectN
   return <div className="costing-workspace">
     <h1 className="visually-hidden">Cost estimate</h1>
     {scopeSlot && createPortal(<>
-      <ContextField label="Cost basis" maxWidth={280}><select aria-label="Cost basis" value={basisValue} onChange={(event) => chooseBasis(event.target.value)}>
-        {blockedOptions.length > 0 && <optgroup label="Blocked hours">{blockedOptions.map((option) => <option key={optionValue(option)} value={optionValue(option)}>{optionLabel(option)}</option>)}</optgroup>}
-        {estimatedOptions.length > 0 && <optgroup label="Estimated from running time">{estimatedOptions.map((option) => <option key={optionValue(option)} value={optionValue(option)}>{optionLabel(option)}</option>)}</optgroup>}
-      </select></ContextField>
-      <ContextField label="Trip profile"><span className="context-field__value">{tripProfileName ?? 'Unavailable'}</span></ContextField>
+      <ContextField label="Cost basis"><SegmentedControl label="Cost basis" value={basisValue.startsWith('blocked') ? 'blocked' : 'estimated'} onChange={(next) => chooseBasisKind(next as 'blocked' | 'estimated')}
+        options={[{ value: 'blocked', text: 'Blocked', title: blockedAvailable ? 'Blocked hours of the working blocking scenario' : 'Blocked: this trip profile has no blocking scenario' }, { value: 'estimated', text: 'Estimated', title: 'Estimated from running time of the working trip profile' }]} /></ContextField>
       <ContextField label="View year"><select aria-label="View year" value={selectedYear} onChange={(event) => setViewYear(Number(event.target.value))}>{years.map((year) => <option key={year}>{year}</option>)}</select></ContextField>
       <span className="scope-bar__spacer" /><MenuButton label="Actions" triggerAriaLabel="Costing actions" menuLabel="Costing actions" groups={costingActionsMenu} />
     </>, scopeSlot)}

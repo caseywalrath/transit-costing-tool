@@ -4,6 +4,7 @@ import { type RouteDefinitionApplication, type SegmentRuntimePreview } from '../
 import { type BandPairs } from '../../domain/segmentRuntimeMatching';
 import { userFacingError } from '../errorMessages';
 import { ModalDialog } from '../ModalDialog';
+import { ContextStamp, type ContextLevel } from '../shared/ContextStamp';
 import { type TripBlockImpact, type TripGenerationApplication } from '../../application/tripGenerationService';
 import { type RuntimeCopyPreview, type TripCopyPreview } from '../../domain/serviceDayCopy';
 import { TripGenerationError, type AnchorBandChoice, type RecalculationPreview } from '../../domain/trips';
@@ -234,12 +235,12 @@ export function SegmentRuntimeDialog({ service, mode, profileId, onDone, onClose
     <div className="dialog-actions"><button autoFocus={!copy} type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="primary" type="button" onClick={() => void apply()} disabled={!preview || preview.changes.length === 0 || busy}>{busy ? 'Saving…' : copy ? 'Replace runtimes' : 'Fill runtimes'}</button></div>
   </ModalDialog>;
 }
-export function DeleteTripsDialog({ tripCount, affectedBlockCount, blockImpact, onDelete, onClose, busy }: { tripCount: number; affectedBlockCount: number; blockImpact?: TripBlockImpact; onDelete: () => void; onClose: () => void; busy: boolean }) {
+export function DeleteTripsDialog({ tripCount, affectedBlockCount, blockImpact, onDelete, onClose, busy, context }: { tripCount: number; affectedBlockCount: number; blockImpact?: TripBlockImpact; onDelete: () => void; onClose: () => void; busy: boolean; context?: ContextLevel[] }) {
   // Inventory gap G6: name the deadheads and the Blocking scenarios the deletion also changes.
   const deadheads = blockImpact?.removedDeadheadCount ?? 0;
   const where = blockImpact?.blockingScenarios.length ? `, in ${blockImpact.blockingScenarios.map((entry) => `${entry.name} (${entry.blockCount})`).join(', ')}` : '';
   const blocksText = affectedBlockCount ? `This will also remove their revenue activities from ${affectedBlockCount} block${affectedBlockCount === 1 ? '' : 's'}${deadheads ? ` and ${deadheads} adjacent deadhead${deadheads === 1 ? '' : 's'}` : ''}${where}.` : 'These trips are not assigned to a block.';
-  return <ModalDialog role="alertdialog" labelledBy="delete-trips-title" className="confirm-dialog" onClose={onClose} busy={busy}><h2 id="delete-trips-title">Delete {tripCount === 1 ? 'trip' : `${tripCount} trips`}?</h2><p>{blocksText}</p><div className="dialog-actions"><button onClick={onClose} disabled={busy}>Cancel</button><button className="danger" onClick={onDelete} disabled={busy}>{busy ? 'Deleting…' : 'Delete'}</button></div></ModalDialog>;
+  return <ModalDialog role="alertdialog" labelledBy="delete-trips-title" className="confirm-dialog" onClose={onClose} busy={busy}><h2 id="delete-trips-title">Delete {tripCount === 1 ? 'trip' : `${tripCount} trips`}?</h2>{context && <ContextStamp levels={context} />}<p>{blocksText}</p><div className="dialog-actions"><button onClick={onClose} disabled={busy}>Cancel</button><button className="danger" onClick={onDelete} disabled={busy}>{busy ? 'Deleting…' : 'Delete'}</button></div></ModalDialog>;
 }
 
 export function formatPreviewTime(value: number | undefined): string {

@@ -75,6 +75,17 @@ export function sideBySideDirectionIds(directions: ReadonlyArray<{ id: string; s
 }
 
 // Working context (Decision 0081 item 6): per-device convenience state, never Scenario data and never in backups.
+/** Decision 0081 (D5): Costing costs the working Blocking scenario (blocked) or the working Trip profile (estimated), chosen per Scenario. */
+export type CostBasisKind = 'blocked' | 'estimated';
+export const COST_BASIS_KIND_KEY = 'transit-costing-tool.costing-basis.v1';
+/** The kind remembered for a Scenario. A value stored before Decision 0081 ("estimated:{id}" or "blocked:{id}") keeps its kind. */
+export function rememberedCostBasisKind(scenarioId: string): CostBasisKind {
+  return storedText(readStoredRecord(COST_BASIS_KIND_KEY)[scenarioId])?.startsWith('estimated') ? 'estimated' : 'blocked';
+}
+export function rememberCostBasisKind(scenarioId: string, kind: CostBasisKind) {
+  try { localStorage.setItem(COST_BASIS_KIND_KEY, JSON.stringify({ ...readStoredRecord(COST_BASIS_KIND_KEY), [scenarioId]: kind })); } catch { /* UI preference only. */ }
+}
+
 export const WORKING_CONTEXT_KEY = 'transit-costing-tool.working-context.v1';
 export type WorkingContext = { scenarios: Record<string, { tripProfileId?: string; serviceDayId?: string }>; routes: Record<string, { directionId?: string }> };
 
