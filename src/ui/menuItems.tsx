@@ -39,7 +39,8 @@ function typeAhead(event: KeyboardEvent, items: HTMLButtonElement[], current: nu
   // Repeating one letter cycles through the items that start with it.
   const query = [...typed.text].every((char) => char === typed.text[0]) ? typed.text[0]! : typed.text;
   const start = query.length === 1 ? current + 1 : Math.max(current, 0);
-  const label = (item: HTMLButtonElement) => (item.textContent ?? '').trim().toLowerCase();
+  // A checked item's text starts with its ✓ mark; leading marks and spaces are skipped so the checked item can be reached too.
+  const label = (item: HTMLButtonElement) => (item.textContent ?? '').replace(/^[^\p{L}\p{N}]+/u, '').toLowerCase();
   const order = [...items.slice(start), ...items.slice(0, start)];
   const match = order.find((item) => label(item).startsWith(query));
   if (!match) return false;

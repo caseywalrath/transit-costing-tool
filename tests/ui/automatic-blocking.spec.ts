@@ -64,9 +64,12 @@ test('auto-blocks the unassigned trips into new blocks of the selected blocking 
   await page.getByRole('button', { name: 'Blocking', exact: true }).click();
   await expectBlockingScenarioSelected(page);
   const scenarioName = await selectedBlockingScenarioName(page);
-  const rows = page.locator('.blocking-blocks-table tbody tr');
-  await expect(rows.first()).toBeVisible({ timeout: 30_000 });
-  const before = await rows.count();
+  // Block rows only (not the "No blocks" row), counted once the Blocks have loaded: the footer total matches the rows.
+  const rows = page.locator('.blocking-blocks-table tbody tr:has(.blocking-block-name)');
+  const total = page.locator('.blocking-blocks-table tfoot th').first();
+  await expect(total).toHaveText(/Total · [1-9]\d* blocks?/, { timeout: 30_000 });
+  const before = Number((await total.textContent())!.match(/(\d+) block/)![1]);
+  await expect(rows).toHaveCount(before);
 
   await runCommand(page, 'block.delete');
   await page.getByRole('alertdialog', { name: 'Delete block?', exact: true }).getByRole('button', { name: 'Delete block', exact: true }).click();

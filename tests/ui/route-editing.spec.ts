@@ -97,9 +97,20 @@ test('renames and duplicates a Route from the module Actions menu', async ({ pag
   await expect(routeActions).toHaveAccessibleName('Route: Federal Copy');
 
   // Type-ahead moves among the Routes; the Route commands are on the Route tab only.
+  // The menu order of two Routes created in the same second is not fixed, so the check reads the focused item's title: repeating
+  // the letter moves to the other Route that starts with it.
   await routeActions.click();
+  await expect(routeItems).toHaveCount(2);
+  // ArrowDown moves focus from the trigger (whose title is also the Route name) to the first item.
+  const focusedItem = () => page.evaluate(() => { const element = document.activeElement as HTMLElement | null; return element?.getAttribute('role') === 'menuitemradio' ? element.getAttribute('title') ?? '' : ''; });
   await page.keyboard.press('ArrowDown');
+  await expect.poll(focusedItem).toMatch(/^Federal( Copy)?$/);
+  const first = await focusedItem();
+  const other = first === 'Federal' ? 'Federal Copy' : 'Federal';
   await page.keyboard.type('f');
-  await expect(routeItems.nth(1)).toBeFocused();
+  await expect.poll(focusedItem).toBe(other);
+  // The checked Route is reachable too: its ✓ mark does not hide its first letter.
+  await page.keyboard.type('f');
+  await expect.poll(focusedItem).toBe(first);
   await page.keyboard.press('Escape');
 });
