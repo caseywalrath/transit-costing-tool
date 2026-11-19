@@ -114,4 +114,15 @@
 .pattern-stops-add .ghost { margin-left: var(--space-3); padding-left: var(--space-1); font-weight: var(--font-weight-semibold); }
 .pattern-stops-error td { padding-top: 0; }
 .pattern-stops-error .field-error { padding-left: var(--space-3); }
+/* Decision 0085: the Show locations expansion widens the drawer for three number columns. */
+.shift-drawer.pattern-stops-drawer--locations { width: min(860px, 84vw); }
+.pattern-stops-table thead th.pattern-stops-location { width: 7.5em; }
+.pattern-stops-table thead th.pattern-stops-location:nth-child(5) { width: 6em; }
+.pattern-stops-drawer--locations .pattern-stops-table thead th:nth-child(6) { width: 36px; }
+.pattern-stops-drawer--locations .pattern-stops-table thead th:nth-child(7) { width: 64px; }
+.pattern-stops-drawer--locations .pattern-stops-table thead th:nth-child(8) { width: 40px; }
+.pattern-stops-location input { text-align: right; }
+.pattern-stops-error--timepoint td { padding-top: 0; background: var(--color-surface-2); }
+.stop-location-import-dialog caption { padding-bottom: var(--space-1); color: var(--color-text); font-weight: var(--font-weight-semibold); text-align: left; }
+.stop-location-import-note { color: var(--color-text-muted); font-size: var(--font-size-note); }
 @media (max-width: 680px) { .shift-drawer.pattern-stops-drawer { width: 100vw; } }
