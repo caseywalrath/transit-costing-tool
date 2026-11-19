@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
-import { applyStopPlacementPlan, planStopCopy, planStopFill, stopCopyCandidatePatternIds } from './stopPlacementMatching';
+import { applyStopPlacementPlan, applyTimepointLocationPlan, planStopCopy, planStopFill, stopCopyCandidatePatternIds } from './stopPlacementMatching';
 import type { PatternPoint, PatternStopPlacement, RoutePattern, StopTimingRule } from './types';
 
 const T = metadata('2026-01-01T00:00:00.000Z');
@@ -144,5 +144,102 @@ describe('applyStopPlacementPlan', () => {
       { id: 'new-2', stopId: 'S2', timing: I, afterPatternPointId: 'B-0', sequence: 1 },
       { id: 's8', stopId: 'S8', timing: I, afterPatternPointId: 'B-2', sequence: 0 },
     ]);
+  });
+});
+
+// Timepoint locations (Decision 0085 item 6). OUT, SAME and SAME2 share a direction; REV has the same nodes in another direction.
+function directed(value: RoutePattern, directionId: string): RoutePattern {
+  return { ...value, directionId };
+}
+const OUT = directed(pattern('OUT', ['N1', 'N2', 'N3']), 'd1');
+const SAME = directed(pattern('SAME', ['N1', 'N2', 'N3']), 'd1');
+const SAME2 = directed(pattern('SAME2', ['N1', 'N2', 'N3']), 'd1');
+const REV = directed(pattern('REV', ['N1', 'N2', 'N3']), 'd2');
+const DOUBLE = directed(pattern('DBL', ['N1', 'N2', 'N1']), 'd1');
+const LOCN = { latitude: 39.9, longitude: -105 };
+const LOC2 = { latitude: 39.95, longitude: -105.1 };
+
+describe('timepoint location copy (Decision 0085 item 6)', () => {
+  it('writes the open location to the same-direction point on the same Node and ignores the other direction', () => {
+    const plan = planStopCopy({ openPattern: OUT, openPlacements: [], patterns: [OUT, SAME, REV], placementsByPatternId: {}, openLocations: { 'OUT-1': LOCN } });
+    expect(plan.locationChanges).toEqual([{ patternId: 'SAME', patternPointId: 'SAME-1', nodeId: 'N2', next: LOCN, sourcePatternIds: ['OUT'] }]);
+    expect(plan.locationSkips).toEqual([]);
+  });
+
+  it('writes nothing when the value is identical', () => {
+    const plan = planStopCopy({ openPattern: OUT, openPlacements: [], patterns: [OUT, SAME], placementsByPatternId: {}, openLocations: { 'OUT-1': LOCN }, locationsByPatternId: { SAME: { 'SAME-1': { ...LOCN } } } });
+    expect(plan.locationChanges).toEqual([]);
+    expect(plan.affectedPatterns).toEqual([]);
+  });
+
+  it('counts an overwrite of a different stored location', () => {
+    const plan = planStopCopy({ openPattern: OUT, openPlacements: [], patterns: [OUT, SAME], placementsByPatternId: {}, openLocations: { 'OUT-1': LOCN }, locationsByPatternId: { SAME: { 'SAME-1': LOC2 } } });
+    expect(plan.locationChanges).toEqual([{ patternId: 'SAME', patternPointId: 'SAME-1', nodeId: 'N2', previous: LOC2, next: LOCN, sourcePatternIds: ['OUT'] }]);
+    expect(plan.affectedPatterns).toEqual([{ patternId: 'SAME', changeCount: 1, overwriteCount: 1 }]);
+  });
+
+  it('never clears a stored location when the open pattern has none', () => {
+    const plan = planStopCopy({ openPattern: OUT, openPlacements: [], patterns: [OUT, SAME], placementsByPatternId: {}, openLocations: {}, locationsByPatternId: { SAME: { 'SAME-1': LOCN } } });
+    expect(plan.locationChanges).toEqual([]);
+    expect(plan.affectedPatterns).toEqual([]);
+  });
+
+  it('reports an ambiguous Node on another pattern and writes nothing there', () => {
+    const plan = planStopCopy({ openPattern: OUT, openPlacements: [], patterns: [OUT, DOUBLE], placementsByPatternId: {}, openLocations: { 'OUT-0': LOCN } });
+    expect(plan.locationChanges).toEqual([]);
+    expect(plan.locationSkips).toContainEqual({ patternId: 'DBL', nodeId: 'N1', reason: 'ambiguous' });
+  });
+
+  it('plans nothing for an excluded pattern', () => {
+    const plan = planStopCopy({ openPattern: OUT, openPlacements: [], patterns: [OUT, SAME], placementsByPatternId: {}, openLocations: { 'OUT-1': LOCN }, excludedPatternIds: ['SAME'] });
+    expect(plan.locationChanges).toEqual([]);
+  });
+
+  it('ignores a same-node pattern of the other direction', () => {
+    const plan = planStopCopy({ openPattern: OUT, openPlacements: [], patterns: [OUT, REV], placementsByPatternId: {}, openLocations: { 'OUT-1': LOCN } });
+    expect(plan.locationChanges).toEqual([]);
+  });
+
+  it('applyTimepointLocationPlan writes the new location and returns only the changed pattern', () => {
+    const plan = planStopCopy({ openPattern: OUT, openPlacements: [], patterns: [OUT, SAME], placementsByPatternId: {}, openLocations: { 'OUT-1': LOCN }, locationsByPatternId: { SAME: { 'SAME-1': LOC2 } } });
+    expect(applyTimepointLocationPlan([OUT, SAME], { SAME: { 'SAME-1': LOC2 } }, plan)).toEqual({ SAME: { 'SAME-1': LOCN } });
+  });
+});
+
+describe('timepoint location fill (Decision 0085 item 6)', () => {
+  it('fills an empty draft point from a same-direction pattern and ignores the other direction', () => {
+    const plan = planStopFill({ openPattern: OUT, openPlacements: [], patterns: [OUT, SAME, REV], placementsByPatternId: {}, locationsByPatternId: { SAME: { 'SAME-1': LOCN }, REV: { 'REV-1': LOC2 } } });
+    expect(plan.locationChanges).toEqual([{ patternId: 'OUT', patternPointId: 'OUT-1', nodeId: 'N2', next: LOCN, sourcePatternIds: ['SAME'] }]);
+    expect(plan.locationSkips).toEqual([]);
+  });
+
+  it('fills when the sources agree, listing every source sorted', () => {
+    const plan = planStopFill({ openPattern: OUT, openPlacements: [], patterns: [OUT, SAME, SAME2], placementsByPatternId: {}, locationsByPatternId: { SAME: { 'SAME-1': LOCN }, SAME2: { 'SAME2-1': LOCN } } });
+    expect(plan.locationChanges).toEqual([{ patternId: 'OUT', patternPointId: 'OUT-1', nodeId: 'N2', next: LOCN, sourcePatternIds: ['SAME', 'SAME2'] }]);
+  });
+
+  it('reports a conflict when sources disagree and lists each value with its patterns', () => {
+    const plan = planStopFill({ openPattern: OUT, openPlacements: [], patterns: [OUT, SAME, SAME2], placementsByPatternId: {}, locationsByPatternId: { SAME: { 'SAME-1': LOCN }, SAME2: { 'SAME2-1': LOC2 } } });
+    expect(plan.locationChanges).toEqual([]);
+    expect(plan.locationSkips).toEqual([{
+      patternId: 'OUT',
+      nodeId: 'N2',
+      reason: 'conflict',
+      candidates: [
+        { location: LOCN, patternIds: ['SAME'] },
+        { location: LOC2, patternIds: ['SAME2'] },
+      ],
+    }]);
+  });
+
+  it('does not overwrite a location already on the draft point', () => {
+    const plan = planStopFill({ openPattern: OUT, openPlacements: [], patterns: [OUT, SAME], placementsByPatternId: {}, openLocations: { 'OUT-1': LOC2 }, locationsByPatternId: { SAME: { 'SAME-1': LOCN } } });
+    expect(plan.locationChanges).toEqual([]);
+  });
+
+  it('reports an ambiguous Node in the draft and fills the other points', () => {
+    const plan = planStopFill({ openPattern: DOUBLE, openPlacements: [], patterns: [OUT, DOUBLE], placementsByPatternId: {}, locationsByPatternId: { OUT: { 'OUT-0': LOCN, 'OUT-1': LOC2 } } });
+    expect(plan.locationSkips).toContainEqual({ patternId: 'DBL', nodeId: 'N1', reason: 'ambiguous' });
+    expect(plan.locationChanges).toEqual([{ patternId: 'DBL', patternPointId: 'DBL-1', nodeId: 'N2', next: LOC2, sourcePatternIds: ['OUT'] }]);
   });
 });

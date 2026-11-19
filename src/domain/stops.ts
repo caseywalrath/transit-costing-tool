@@ -6,8 +6,10 @@ import type {
   RoutePattern,
   RouteStop,
   RouteStopSet,
+  StopLocation,
   StopTimeRoundingSeconds,
   StopTimingRule,
+  TimepointLocations,
   TimepointStopCodes,
   ValidationFinding,
   ValidationSeverity,
@@ -54,6 +56,52 @@ export function normalizeTimepointStopCodes(pattern: RoutePattern, codes: Readon
   return result;
 }
 
+const finiteOrUndefined = (value: number | undefined): number | undefined => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
+
+/**
+ * Section 4.2. A location as it is stored: each field is kept only when it is a finite number, in the order latitude, longitude, speed
+ * limit. Returns undefined when no field is kept (an empty location is never stored).
+ */
+export function normalizeStopLocation(value: StopLocation | undefined): StopLocation | undefined {
+  if (!value) return undefined;
+  const latitude = finiteOrUndefined(value.latitude);
+  const longitude = finiteOrUndefined(value.longitude);
+  const speedLimitMph = finiteOrUndefined(value.speedLimitMph);
+  if (latitude === undefined && longitude === undefined && speedLimitMph === undefined) return undefined;
+  return {
+    ...(latitude === undefined ? {} : { latitude }),
+    ...(longitude === undefined ? {} : { longitude }),
+    ...(speedLimitMph === undefined ? {} : { speedLimitMph }),
+  };
+}
+
+/**
+ * Section 4.2 (Decision 0085). A pattern's timepoint locations as they are stored: entries whose point is not on the pattern are left out,
+ * each value is normalized, and empty values are dropped. In point order.
+ */
+export function normalizeTimepointLocations(pattern: RoutePattern, locations: Readonly<Partial<Record<EntityId, StopLocation>>> | undefined): TimepointLocations {
+  const result: TimepointLocations = {};
+  if (!locations) return result;
+  for (const point of sortedPoints(pattern)) {
+    const location = normalizeStopLocation(locations[point.id]);
+    if (location !== undefined) result[point.id] = location;
+  }
+  return result;
+}
+
+/** Section 4.2. True when both normalized locations are empty, or all three fields are equal (absent equals absent). */
+export function sameLocation(left?: StopLocation, right?: StopLocation): boolean {
+  const a = normalizeStopLocation(left);
+  const b = normalizeStopLocation(right);
+  if (a === undefined || b === undefined) return a === b;
+  return a.latitude === b.latitude && a.longitude === b.longitude && a.speedLimitMph === b.speedLimitMph;
+}
+
+/** Section 4.2. True when latitude and longitude are both finite numbers. */
+export function hasCoordinates(value?: { latitude?: number; longitude?: number }): value is { latitude: number; longitude: number } {
+  return value !== undefined && finiteOrUndefined(value.latitude) !== undefined && finiteOrUndefined(value.longitude) !== undefined;
+}
+
 /** Section 4.5. */
 export function normalizePlacements(pattern: RoutePattern, placements: readonly PatternStopPlacement[]): PatternStopPlacement[] {
   return placementsBySegment(pattern, placements).flatMap((segment) => segment.map((placement, sequence) => ({ ...placement, sequence })));
@@ -78,6 +126,22 @@ function finding(
   };
 }
 
+/**
+ * Decision 0085 item 3 (section 4.3). The location rules of one stop or timepoint. `entityType` and `entityId` name the owner of the fields;
+ * `parameters` are added to each finding when given.
+ */
+function locationFindings(location: StopLocation, entityType: string, entityId: EntityId, parameters?: Record<string, string | number>): ValidationFinding[] {
+  const findings: ValidationFinding[] = [];
+  const { latitude, longitude, speedLimitMph } = location;
+  const hasLatitude = typeof latitude === 'number';
+  const hasLongitude = typeof longitude === 'number';
+  if (hasLatitude !== hasLongitude) findings.push(finding('stopLocation.incomplete', 'error', entityType, entityId, 'latitude', parameters));
+  if (latitude !== undefined && (!Number.isFinite(latitude) || latitude < -90 || latitude > 90)) findings.push(finding('stopLocation.latitudeRange', 'error', entityType, entityId, 'latitude', parameters));
+  if (longitude !== undefined && (!Number.isFinite(longitude) || longitude < -180 || longitude > 180)) findings.push(finding('stopLocation.longitudeRange', 'error', entityType, entityId, 'longitude', parameters));
+  if (speedLimitMph !== undefined && (!Number.isFinite(speedLimitMph) || speedLimitMph <= 0 || speedLimitMph > 100)) findings.push(finding('stopLocation.speedLimitInvalid', 'error', entityType, entityId, 'speedLimitMph', parameters));
+  return findings;
+}
+
 /** Section 4.4. `patterns` are the Route's patterns; entries for other patterns are ignored. */
 export function validateRouteStopSet(set: RouteStopSet, patterns: readonly RoutePattern[]): ValidationFinding[] {
   const findings: ValidationFinding[] = [];
@@ -95,6 +159,7 @@ export function validateRouteStopSet(set: RouteStopSet, patterns: readonly Route
       if (codes.has(key)) findings.push(finding('routeStop.codeDuplicate', 'error', 'routeStop', stop.id, 'stopCode', { stopCode }));
       codes.add(key);
     }
+    findings.push(...locationFindings(stop, 'routeStop', stop.id));
   }
 
   for (const pattern of patterns) {
@@ -116,10 +181,16 @@ export function validateRouteStopSet(set: RouteStopSet, patterns: readonly Route
         }
       });
     });
+    for (const [pointId, location] of Object.entries(set.timepointLocationsByPatternId?.[pattern.id] ?? {})) {
+      findings.push(...locationFindings(location, 'timepointLocation', pointId, { patternId: pattern.id }));
+    }
   }
 
-  if (set.roundingSeconds !== 30 && set.roundingSeconds !== 60) {
+  if (set.roundingSeconds !== 1 && set.roundingSeconds !== 30 && set.roundingSeconds !== 60) {
     findings.push(finding('routeStopSet.roundingInvalid', 'error', 'routeStopSet', set.id, 'roundingSeconds'));
+  }
+  if (set.interpolation !== undefined && set.interpolation !== 'equal' && set.interpolation !== 'distance') {
+    findings.push(finding('routeStopSet.interpolationInvalid', 'error', 'routeStopSet', set.id, 'interpolation'));
   }
   return findings;
 }
@@ -158,11 +229,27 @@ export function pruneRouteStopSets(sets: RouteStopSet[], owners: { routes: reado
       timepointStopCodesByPatternId[patternId] = normalized;
     }
     const hasCodes = Object.keys(timepointStopCodesByPatternId).length > 0;
-    if (stops.length === 0 && !hasCodes) { changed = true; continue; }
-    if (!placementsChanged && !codesChanged && stops.length === set.stops.length) { next.push(set); continue; }
+    let locationsChanged = false;
+    const timepointLocationsByPatternId: Record<EntityId, TimepointLocations> = {};
+    for (const [patternId, locations] of Object.entries(set.timepointLocationsByPatternId ?? {})) {
+      const pattern = patternById.get(patternId);
+      const normalized = pattern && pattern.routeId === set.routeId ? normalizeTimepointLocations(pattern, locations) : {};
+      if (Object.keys(normalized).length === 0) { locationsChanged = true; continue; }
+      if (JSON.stringify(normalized) !== JSON.stringify(locations)) locationsChanged = true;
+      timepointLocationsByPatternId[patternId] = normalized;
+    }
+    const hasLocations = Object.keys(timepointLocationsByPatternId).length > 0;
+    if (stops.length === 0 && !hasCodes && !hasLocations) { changed = true; continue; }
+    if (!placementsChanged && !codesChanged && !locationsChanged && stops.length === set.stops.length) { next.push(set); continue; }
     changed = true;
-    const { timepointStopCodesByPatternId: _previousCodes, ...rest } = set;
-    next.push({ ...rest, stops, placementsByPatternId, ...(hasCodes ? { timepointStopCodesByPatternId } : {}) });
+    const { timepointStopCodesByPatternId: _previousCodes, timepointLocationsByPatternId: _previousLocations, ...rest } = set;
+    next.push({
+      ...rest,
+      stops,
+      placementsByPatternId,
+      ...(hasCodes ? { timepointStopCodesByPatternId } : {}),
+      ...(hasLocations ? { timepointLocationsByPatternId } : {}),
+    });
   }
   return changed ? next : sets;
 }
@@ -218,6 +305,20 @@ export function reconcileTimepointStopCodes(saved: RoutePattern, next: RoutePatt
   }
   const result = normalizeTimepointStopCodes(next, kept);
   return { codes: result, removedCount: Object.keys(normalizeTimepointStopCodes(saved, codes)).length - Object.keys(result).length };
+}
+
+/**
+ * Decision 0085. Reconciles a pattern's timepoint locations with the pattern after an edit, by the same rule as Decision 0080: a location
+ * stays only while its point remains and still stands on the same Node.
+ */
+export function reconcileTimepointLocations(saved: RoutePattern, next: RoutePattern, locations: Readonly<Partial<TimepointLocations>>): { locations: TimepointLocations; removedCount: number } {
+  const savedNodeByPoint = new Map(saved.points.map((point) => [point.id, point.nodeId] as const));
+  const kept: Partial<TimepointLocations> = {};
+  for (const point of next.points) {
+    if (locations[point.id] !== undefined && savedNodeByPoint.get(point.id) === point.nodeId) kept[point.id] = locations[point.id];
+  }
+  const result = normalizeTimepointLocations(next, kept);
+  return { locations: result, removedCount: Object.keys(normalizeTimepointLocations(saved, locations)).length - Object.keys(result).length };
 }
 
 /**
@@ -290,7 +391,19 @@ export function remapRouteStopSet(
     }
     if (Object.keys(mapped).length > 0) timepointStopCodesByPatternId[targetPatternId] = mapped;
   }
-  const { timepointStopCodesByPatternId: _sourceCodes, ...rest } = set;
+  // Decision 0085: timepoint locations follow their pattern and point, as the stop IDs do.
+  const timepointLocationsByPatternId: Record<EntityId, TimepointLocations> = {};
+  for (const [patternId, locations] of Object.entries(set.timepointLocationsByPatternId ?? {})) {
+    const targetPatternId = target.patternIds.get(patternId);
+    if (targetPatternId === undefined) continue;
+    const mapped: TimepointLocations = {};
+    for (const [pointId, location] of Object.entries(locations)) {
+      const targetPointId = target.pointIds.get(pointId);
+      if (targetPointId !== undefined) mapped[targetPointId] = { ...location };
+    }
+    if (Object.keys(mapped).length > 0) timepointLocationsByPatternId[targetPatternId] = mapped;
+  }
+  const { timepointStopCodesByPatternId: _sourceCodes, timepointLocationsByPatternId: _sourceLocations, ...rest } = set;
   return {
     ...rest,
     id: target.id,
@@ -298,6 +411,7 @@ export function remapRouteStopSet(
     routeId: target.routeId,
     placementsByPatternId,
     ...(Object.keys(timepointStopCodesByPatternId).length ? { timepointStopCodesByPatternId } : {}),
+    ...(Object.keys(timepointLocationsByPatternId).length ? { timepointLocationsByPatternId } : {}),
     stops: set.stops.map((stop): RouteStop => ({ ...stop })),
     createdAt: now,
     updatedAt: now,
