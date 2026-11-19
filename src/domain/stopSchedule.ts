@@ -28,6 +28,9 @@ export interface StopScheduleColumn {
 }
 export interface StopScheduleDirection { directionId: EntityId; name: string; rows: StopScheduleRow[]; columns: StopScheduleColumn[]; orderConflict: boolean; }
 
+/** Gate A (Decision 0084 item 8): runtime band edges this close to a plan edge are not period boundaries. */
+export const BAND_EDGE_SNAP_SECONDS = 15 * 60;
+
 /** A Trip with a usable departure. `position` is its 0-based place in the pattern's departure order (step 3). */
 interface Departure { trip: Trip; departure: ServiceSeconds; position: number; }
 
@@ -53,11 +56,20 @@ export function buildStopSchedule(input: StopScheduleInput): StopScheduleDirecti
 }
 
 function buildDirection(input: StopScheduleInput, direction: RouteDirection): StopScheduleDirection | undefined {
-  const patterns: PatternRows[] = [];
-  for (const pattern of orderPatterns(input.patterns, direction.id)) {
-    const departures = departuresOf(pattern, input.trips);
-    if (departures.length > 0) patterns.push(patternRows(input, pattern, departures));
+  const used = orderPatterns(input.patterns, direction.id).map((pattern) => ({ pattern, departures: departuresOf(pattern, input.trips) })).filter((item) => item.departures.length > 0);
+  // Gate A: a timepoint with no stop ID on one pattern joins the row of the same Node when the direction's other patterns give that Node
+  // exactly one stop ID. Without this, the Node is listed twice: once under its stop ID and once under the Node.
+  const codesByNode = new Map<string, Set<string>>();
+  for (const { pattern } of used) {
+    for (const row of stopTimeRows({ pattern, set: input.set, nodes: input.nodes })) {
+      const code = row.stopCode?.trim();
+      if (row.kind !== 'timepoint' || !code || !row.nodeId) continue;
+      const codes = codesByNode.get(row.nodeId) ?? new Set<string>();
+      codes.add(code.toLowerCase());
+      codesByNode.set(row.nodeId, codes);
+    }
   }
+  const patterns = used.map(({ pattern, departures }) => patternRows(input, pattern, departures, codesByNode));
   if (patterns.length === 0) return undefined;
 
   // The spine is the pattern with the most exported rows; the first pattern in order wins a tie.
@@ -118,22 +130,24 @@ function buildDirection(input: StopScheduleInput, direction: RouteDirection): St
 }
 
 /** Step 2. Rows of one pattern with their keys, and the rows that survive timepoint omission. */
-function patternRows(input: StopScheduleInput, pattern: RoutePattern, departures: Departure[]): PatternRows {
+function patternRows(input: StopScheduleInput, pattern: RoutePattern, departures: Departure[], codesByNode: ReadonlyMap<string, ReadonlySet<string>>): PatternRows {
   const full = stopTimeRows({ pattern, set: input.set, nodes: input.nodes });
   const counts = new Map<string, number>();
   const keys = full.map((row) => {
-    const base = baseKey(row);
+    const base = baseKey(row, codesByNode);
     const count = (counts.get(base) ?? 0) + 1;
     counts.set(base, count);
     return count === 1 ? base : `${base}#${count}`;
   });
-  const kept = full.flatMap((row, index) => (input.omitTimepointsWithoutStopId && row.kind === 'timepoint' && !row.stopCode?.trim() ? [] : [index]));
+  const kept = full.flatMap((row, index) => (input.omitTimepointsWithoutStopId && row.kind === 'timepoint' && keys[index].startsWith('node:') ? [] : [index]));
   return { pattern, departures, bands: bandsOf(input, pattern.id), full, keys, kept, distanceByIndex: distancesOf(pattern, full, kept) };
 }
 
-function baseKey(row: StopTimeRow): string {
+function baseKey(row: StopTimeRow, codesByNode: ReadonlyMap<string, ReadonlySet<string>>): string {
   const code = row.stopCode?.trim() ?? '';
   if (code !== '') return `code:${code.toLowerCase()}`;
+  const nodeCodes = row.kind === 'timepoint' && row.nodeId ? codesByNode.get(row.nodeId) : undefined;
+  if (nodeCodes?.size === 1) return `code:${[...nodeCodes][0]}`;
   return row.kind === 'stop' ? `stop:${row.stopId ?? ''}` : `node:${row.nodeId ?? ''}`;
 }
 
@@ -227,10 +241,11 @@ function columnsOf(input: StopScheduleInput, item: PatternRows, merged: string[]
   }
 
   // Step 6. Boundaries of the plan's periods and the pattern's runtime bands. Window n holds the Trips with n boundaries at or before them.
-  const boundaries = [...new Set([
-    ...(input.plan?.periods ?? []).flatMap((period) => [period.startTime, period.endTime]),
-    ...bands.flatMap((band) => [band.startTime, band.endTime]),
-  ])].sort((a, b) => a - b);
+  // Gate A: a band edge within BAND_EDGE_SNAP_SECONDS of a plan edge is dropped, so odd band edges (5:47 next to a 6:00 plan edge) do
+  // not make one-trip sliver columns.
+  const planEdges = (input.plan?.periods ?? []).flatMap((period) => [period.startTime, period.endTime]);
+  const bandEdges = bands.flatMap((band) => [band.startTime, band.endTime]).filter((edge) => !planEdges.some((planEdge) => Math.abs(planEdge - edge) <= BAND_EDGE_SNAP_SECONDS));
+  const boundaries = [...new Set([...planEdges, ...bandEdges])].sort((a, b) => a - b);
   const windows = new Map<number, Departure[]>();
   for (const departure of departures) {
     const index = boundaries.filter((boundary) => boundary <= departure.departure).length;

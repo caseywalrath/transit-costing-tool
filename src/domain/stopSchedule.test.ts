@@ -157,4 +157,27 @@ describe('buildStopSchedule (Decision 0084, section 4.7)', () => {
     const result = buildStopSchedule(baseInput({ directions: [...directions, northbound], patterns: [north, south, full, idle] }));
     expect(result.map((dir) => dir.name)).toEqual(['Southbound']);
   });
+
+  it('joins a timepoint without a stop ID to the row of the same Node when the direction gives that Node one stop ID (Gate A)', () => {
+    const set = stopSet();
+    set.timepointStopCodesByPatternId = { 'pat-full': { 'f-a': '100' } };
+    const dir = southbound({ set });
+    expect(dir.rows.filter((row) => row.name === 'Alpha').map((row) => row.key)).toEqual(['code:100']);
+    expect(columnsOf(dir, 'pat-north')[0].times[0]).toBe(hm(4));
+    expect(southbound({ set, omitTimepointsWithoutStopId: true }).rows.map((row) => row.key)).toContain('code:100');
+  });
+
+  it('keeps a Node with two different stop IDs as two rows', () => {
+    const set = stopSet();
+    set.timepointStopCodesByPatternId = { 'pat-north': { 'n-a': '200' }, 'pat-full': { 'f-a': '100' } };
+    expect(southbound({ set }).rows.filter((row) => row.name === 'Alpha').map((row) => row.key)).toEqual(['code:200', 'code:100']);
+  });
+
+  it('drops a runtime band edge within 15 minutes of a plan edge, so no sliver column is made (Gate A)', () => {
+    const profiles = runtimeProfiles().map((profile) => ({ ...profile, bands: [band('early', 'Early', hm(4), hm(4, 50)), band('peak', 'Peak', hm(4, 50), hm(10))] }));
+    const north = columnsOf(southbound({ runtimeProfiles: profiles }), 'pat-north');
+    expect(north.map((column) => [column.startTime, column.endTime])).toEqual([[hm(4), hm(5)], [hm(5), hm(10)]]);
+    const far = runtimeProfiles().map((profile) => ({ ...profile, bands: [band('early', 'Early', hm(4), hm(4, 20)), band('peak', 'Peak', hm(4, 20), hm(10))] }));
+    expect(columnsOf(southbound({ runtimeProfiles: far }), 'pat-north').map((column) => column.startTime)).toEqual([hm(4), hm(4, 20), hm(5)]);
+  });
 });
