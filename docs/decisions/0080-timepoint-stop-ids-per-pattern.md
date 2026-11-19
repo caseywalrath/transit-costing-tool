@@ -4,6 +4,7 @@
 - Date: 2026-11-16 (user review of Decision 0079)
 - Supersedes: Decision 0079 item 12 (`Node.stopCode`)
 - Related: Decision 0079 (Route stops and derived stop times), Decision 0065 (copy and fill between patterns), Decision 0036 (writes re-read stored data)
+- Extended by: Decision 0085 (timepoint locations are stored, reconciled, copied, and filled the same way; not yet implemented)
 
 ## Context
 

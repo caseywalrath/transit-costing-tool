@@ -3,6 +3,7 @@
 - Status: Accepted and implemented (2026-11-16; closeout: `docs/implementation/stop-trips-closeout.md`)
 - Date: 2026-11-16 (user design discussion; plan: `docs/implementation/stop-trips.md`)
 - Related: Decision 0036 (writes re-read stored data), Decision 0044 (Trips CSV is output only), Decision 0049 and Decision 0065 (node-pair matching for copy and fill), Decision 0058 (the precedent for a new Scenario-owned table)
+- Amended by: Decision 0086 (items 5 and 6: distance spacing and 1-second rounding, not yet implemented). Extended by Decision 0084 (wide stop schedule export) and Decision 0085 (stop locations).
 
 ## Context
 
