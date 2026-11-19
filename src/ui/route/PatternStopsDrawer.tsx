@@ -8,7 +8,7 @@ import { MenuButton } from '../MenuButton';
 import { ModalDialog } from '../ModalDialog';
 import { SaveBar } from '../shared/bars';
 import { DiscardRouteDraftDialog } from '../shared/dialogs';
-import { TrashIcon } from '../shared/icons';
+import { LinkIcon, TrashIcon } from '../shared/icons';
 import { messages } from '../shared/messages';
 
 export type PatternStopsService = Pick<RouteDefinitionApplication, 'getRouteStopSet' | 'saveRouteStops' | 'previewStopFill' | 'applyStopFill' | 'previewStopCopy' | 'applyStopCopy' | 'getStopCopyUndo' | 'undoStopCopy'>;
@@ -218,13 +218,13 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
     <div className="shift-drawer-body pattern-stops-drawer__body">
       {!loaded && !error && <p role="status">Loading stops…</p>}
       {loaded && <table className="pattern-stops-table" aria-label={`Stops of ${pattern.name || 'this pattern'}`}>
-        <thead><tr><th scope="col">Stop</th><th scope="col">Stop ID</th><th scope="col"><span className="visually-hidden">Order</span></th><th scope="col"><span className="visually-hidden">Remove</span></th></tr></thead>
+        <thead><tr><th scope="col">Stop</th><th scope="col">Stop ID</th><th scope="col"><span className="visually-hidden">Shared</span></th><th scope="col"><span className="visually-hidden">Order</span></th><th scope="col"><span className="visually-hidden">Remove</span></th></tr></thead>
         <tbody>{points.map((point, index) => {
           const node = nodeById.get(point.nodeId);
           const segment = segments[index];
           const nextNode = points[index + 1] ? nodeById.get(points[index + 1].nodeId) : undefined;
           return <Fragment key={point.id}>
-            <tr className="pattern-stops-timepoint"><th scope="row" colSpan={1}><span className="pattern-stops-timepoint__name"><span className="pattern-stops-timepoint__mark" aria-hidden="true" />{node?.name || 'Untitled node'}</span></th><td><input className="pattern-stops-code" value={draft.codes[point.id] ?? ''} aria-label={`Timepoint stop ID, ${node?.name || 'Untitled node'}${points.filter((other) => other.nodeId === point.nodeId).length > 1 ? ` (point ${index + 1})` : ''}`} disabled={busy} onChange={(event) => updateCode(point.id, event.target.value)} /></td><td colSpan={2} /></tr>
+            <tr className="pattern-stops-timepoint"><th scope="row" colSpan={1}><span className="pattern-stops-timepoint__name"><span className="pattern-stops-timepoint__mark" aria-hidden="true" />{node?.name || 'Untitled node'}</span></th><td><input className="pattern-stops-code" value={draft.codes[point.id] ?? ''} aria-label={`Timepoint stop ID, ${node?.name || 'Untitled node'}${points.filter((other) => other.nodeId === point.nodeId).length > 1 ? ` (point ${index + 1})` : ''}`} disabled={busy} onChange={(event) => updateCode(point.id, event.target.value)} /></td><td colSpan={3} /></tr>
             {index < points.length - 1 && segment.map((placement, position) => {
               const stop = stopById.get(placement.stopId);
               const label = stopLabel(placement.stopId);
@@ -235,13 +235,14 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
               const last = index === points.length - 2 && position === segment.length - 1;
               const isNew = !savedStopIds.has(placement.stopId);
               return <Fragment key={placement.id}><tr className={moved?.id === placement.id ? `pattern-stops-stop row-moved row-moved--${moved.tick % 2}` : 'pattern-stops-stop'}>
-                <td><div className="pattern-stops-name"><input ref={(element) => { if (element) nameInputs.current.set(placement.id, element); else nameInputs.current.delete(placement.id); }} value={stop?.name ?? ''} placeholder="Stop name" list={isNew ? listId : undefined} aria-label={`Stop name, ${label}`} aria-invalid={errors.length > 0} aria-describedby={errorId} disabled={busy} onChange={(event) => updateStop(placement.stopId, { name: event.target.value })} onBlur={(event) => linkIfSuggested(placement.id, placement.stopId, event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') linkIfSuggested(placement.id, placement.stopId, event.currentTarget.value); }} />{uses > 1 && <span className="chip" title={`Used by ${uses} patterns of this route`}>{uses} patterns</span>}</div></td>
+                <td><div className="pattern-stops-name"><input ref={(element) => { if (element) nameInputs.current.set(placement.id, element); else nameInputs.current.delete(placement.id); }} value={stop?.name ?? ''} placeholder="Stop name" list={isNew ? listId : undefined} aria-label={`Stop name, ${label}`} aria-invalid={errors.length > 0} aria-describedby={errorId} disabled={busy} onChange={(event) => updateStop(placement.stopId, { name: event.target.value })} onBlur={(event) => linkIfSuggested(placement.id, placement.stopId, event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') linkIfSuggested(placement.id, placement.stopId, event.currentTarget.value); }} /></div></td>
                 <td><input className="pattern-stops-code" value={stop?.stopCode ?? ''} aria-label={`Stop ID, ${label}`} aria-invalid={errors.length > 0} aria-describedby={errorId} disabled={busy} onChange={(event) => updateStop(placement.stopId, { stopCode: event.target.value || undefined })} onBlur={(event) => linkIfSavedCode(placement.id, placement.stopId, event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') linkIfSavedCode(placement.id, placement.stopId, event.currentTarget.value); }} /></td>
+                <td className="pattern-stops-shared">{uses > 1 && <span className="pattern-stops-shared__mark" role="img" aria-label={`Used by ${uses} patterns of this route`} title={`Used by ${uses} patterns of this route`}><LinkIcon />{uses}</span>}</td>
                 <td className="pattern-stops-order"><button type="button" className="icon-button" disabled={busy || first} aria-label={`Move ${label} up`} title="Move up" onClick={() => moveStop(index, position, -1)}>↑</button><button type="button" className="icon-button" disabled={busy || last} aria-label={`Move ${label} down`} title="Move down" onClick={() => moveStop(index, position, 1)}>↓</button></td>
                 <td><button type="button" className="icon-button icon-button--danger" disabled={busy} aria-label={`Remove ${label}`} title={`Remove ${label}`} onClick={() => removeStop(placement.id)}><TrashIcon /></button></td>
-              </tr>{errors.length > 0 && <tr className="pattern-stops-error"><td colSpan={4}><span className="field-error" id={errorId}>{errors.join(' ')}</span></td></tr>}</Fragment>;
+              </tr>{errors.length > 0 && <tr className="pattern-stops-error"><td colSpan={5}><span className="field-error" id={errorId}>{errors.join(' ')}</span></td></tr>}</Fragment>;
             })}
-            {index < points.length - 1 && <tr className="pattern-stops-add"><td colSpan={4}><button type="button" className="ghost" disabled={busy} aria-label={`Add stop between ${node?.name || 'this timepoint'} and ${nextNode?.name || 'the next timepoint'}`} onClick={() => addStop(index)}><span aria-hidden="true">+ </span>Add stop</button></td></tr>}
+            {index < points.length - 1 && <tr className="pattern-stops-add"><td colSpan={5}><button type="button" className="ghost" disabled={busy} aria-label={`Add stop between ${node?.name || 'this timepoint'} and ${nextNode?.name || 'the next timepoint'}`} onClick={() => addStop(index)}><span aria-hidden="true">+ </span>Add stop</button></td></tr>}
           </Fragment>;
         })}</tbody>
       </table>}
