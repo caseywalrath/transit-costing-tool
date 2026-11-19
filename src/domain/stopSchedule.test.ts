@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
+import { greatCircleMiles } from './geo';
 import { buildStopSchedule, type StopScheduleColumn, type StopScheduleDirection, type StopScheduleInput } from './stopSchedule';
 import type { Node, PatternPoint, PatternStopPlacement, PlannedFrequency, RouteDirection, RoutePattern, RouteStopSet, RuntimeAssignment, RuntimeBand, RuntimeProfile, Trip } from './types';
 
@@ -179,5 +180,65 @@ describe('buildStopSchedule (Decision 0084, section 4.7)', () => {
     expect(north.map((column) => [column.startTime, column.endTime])).toEqual([[hm(4), hm(5)], [hm(5), hm(10)]]);
     const far = runtimeProfiles().map((profile) => ({ ...profile, bands: [band('early', 'Early', hm(4), hm(4, 20)), band('peak', 'Peak', hm(4, 20), hm(10))] }));
     expect(columnsOf(southbound({ runtimeProfiles: far }), 'pat-north').map((column) => column.startTime)).toEqual([hm(4), hm(4, 20), hm(5)]);
+  });
+});
+
+describe('locations and distances in the stop schedule (Decision 0085, section 4.9)', () => {
+  const A = { latitude: 39.912274, longitude: -104.99353 };
+  const B = { latitude: 39.914169, longitude: -105.006705 };
+  const S1 = { latitude: 39.913, longitude: -105 };
+  // The stop set of the fixture, with coordinates on A, B, and stop s1. C has none, so the B-C piece falls back to its segment miles.
+  const located = (): RouteStopSet => ({
+    ...stopSet(),
+    stops: [{ id: 's1', name: 'Stop One', stopCode: '101', ...S1, speedLimitMph: 35 }, { id: 's2', name: 'Stop Two' }],
+    timepointLocationsByPatternId: { 'pat-full': { 'f-a': A, 'f-b': B } },
+  });
+  const rowOf = (dir: StopScheduleDirection, key: string) => dir.rows.find((row) => row.key === key);
+
+  it('takes a stop row\'s coordinates and speed limit from its stop record', () => {
+    expect(rowOf(southbound({ set: located() }), 'code:101')).toMatchObject({ latitude: S1.latitude, longitude: S1.longitude, speedLimitMph: 35 });
+  });
+
+  it('uses a stop row\'s speed limit alone when it has no coordinates', () => {
+    const set = located();
+    set.stops = [{ id: 's1', name: 'Stop One', stopCode: '101', latitude: S1.latitude, speedLimitMph: 25 }, { id: 's2', name: 'Stop Two' }];
+    const row = rowOf(southbound({ set }), 'code:101');
+    expect(row?.latitude).toBeUndefined();
+    expect(row?.longitude).toBeUndefined();
+    expect(row?.speedLimitMph).toBe(25);
+  });
+
+  it('takes a timepoint row\'s location from the spine pattern\'s own point, not from a shorter pattern', () => {
+    const set: RouteStopSet = { ...located(), timepointLocationsByPatternId: { 'pat-full': { 'f-b': B }, 'pat-north': { 'n-b': { latitude: 1, longitude: 1 } } } };
+    expect(rowOf(southbound({ set }), 'node:nb')).toMatchObject({ latitude: B.latitude, longitude: B.longitude });
+  });
+
+  it('scales the straight-line pieces of a segment so that they add up to the segment miles (rule 1)', () => {
+    // Segment A-B of Full is 2 miles; the stop s1 sits between A and B, so the two pieces are A-s1 and s1-B.
+    const dir = southbound({ set: located() });
+    const total = (rowOf(dir, 'code:100')?.distanceMiles ?? NaN) + (rowOf(dir, 'code:101')?.distanceMiles ?? NaN);
+    expect(total).toBeCloseTo(2, 9);
+    expect(rowOf(dir, 'code:100')?.distanceMiles).toBeGreaterThan(0);
+  });
+
+  it('uses the straight-line miles across a segment of 0 miles between two located rows (rule 2)', () => {
+    const zeroPattern = pattern('pat-zero', 'Zero', 'dir-south', 4, [point('z-p', 'na', 0, 0), point('z-q', 'nb', 1, 0)]);
+    const set: RouteStopSet = {
+      ...metadata(at), id: 'set', scenarioId: 's', routeId: 'r', roundingSeconds: 60,
+      stops: [{ id: 's1', name: 'Stop One', ...S1 }],
+      placementsByPatternId: { 'pat-zero': [placement('pz', 's1', 'z-p')] },
+      timepointLocationsByPatternId: { 'pat-zero': { 'z-p': A, 'z-q': B } },
+    };
+    const [dir] = buildStopSchedule({
+      directions, patterns: [zeroPattern], nodes, set, trips: [trip('tz1', 'pat-zero', ['z-p', 'z-q'], hm(4))],
+      runtimeProfiles: [], runtimeAssignments: [], columnMode: 'sample', omitTimepointsWithoutStopId: false,
+    });
+    expect(rowOf(dir, 'node:na')?.distanceMiles).toBeCloseTo(greatCircleMiles(A, S1), 9);
+    expect(rowOf(dir, 'stop:s1')?.distanceMiles).toBeCloseTo(greatCircleMiles(S1, B), 9);
+  });
+
+  it('falls back to the segment miles (rule 3) when a timepoint of the segment lacks coordinates', () => {
+    // B-C is 3 miles with no stop between; C has no coordinates, so rule 1 and rule 2 do not apply.
+    expect(rowOf(southbound({ set: located() }), 'node:nb')?.distanceMiles).toBe(3);
   });
 });

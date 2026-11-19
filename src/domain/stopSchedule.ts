@@ -1,7 +1,8 @@
 import { orderPatterns } from './directions';
-import { sortedPoints } from './stops';
+import { greatCircleMiles } from './geo';
+import { hasCoordinates, normalizeStopLocation, sortedPoints } from './stops';
 import { stopTimeRows, type StopTimeRow } from './stopTimes';
-import type { EntityId, Node, PatternPoint, PlannedFrequency, RouteDirection, RoutePattern, RouteStopSet, RuntimeAssignment, RuntimeBand, RuntimeProfile, ServiceSeconds, Trip } from './types';
+import type { EntityId, Node, PatternPoint, PlannedFrequency, RouteDirection, RoutePattern, RouteStopSet, RuntimeAssignment, RuntimeBand, RuntimeProfile, ServiceSeconds, StopLocation, Trip } from './types';
 
 /** Decision 0084. `sample`: one column per period, from its first Trip. `all`: one column per Trip. */
 export type StopScheduleColumnMode = 'sample' | 'all';
@@ -34,12 +35,13 @@ export const BAND_EDGE_SNAP_SECONDS = 15 * 60;
 /** A Trip with a usable departure. `position` is its 0-based place in the pattern's departure order (step 3). */
 interface Departure { trip: Trip; departure: ServiceSeconds; position: number; }
 
-/** One pattern before merging. `full` is the row list without a Trip, before omission; `keys` and `distanceByIndex` use its indices. */
+/** One pattern before merging. `full` is the row list without a Trip, before omission; `keys`, `locations` and `distanceByIndex` use its indices. */
 interface PatternRows {
   pattern: RoutePattern;
   departures: Departure[];
   bands: RuntimeBand[];
   full: StopTimeRow[];
+  locations: Array<StopLocation | undefined>;
   keys: string[];
   kept: number[];
   distanceByIndex: Map<number, number | undefined>;
@@ -105,22 +107,33 @@ function buildDirection(input: StopScheduleInput, direction: RouteDirection): St
     }
   });
 
-  // Step 5. Details and distance come from the spine first, then the other patterns in order.
+  // Step 5. Details, location and distance come from the spine first, then the other patterns in order. Details and location come from
+  // the first pattern that has the row, so a timepoint's location is its own point on that pattern (section 4.9).
   const order = [spine, ...patterns.map((_, p) => p).filter((p) => p !== spine)];
   const rows: StopScheduleRow[] = [];
   for (const key of merged) {
     let detail: StopTimeRow | undefined;
+    let location: StopLocation | undefined;
     let distanceMiles: number | undefined;
     for (const p of order) {
       const index = placed[p].get(key);
       if (index === undefined) continue;
-      detail ??= patterns[p].full[index];
+      if (detail === undefined) {
+        detail = patterns[p].full[index];
+        location = patterns[p].locations[index];
+      }
       distanceMiles ??= patterns[p].distanceByIndex.get(index);
     }
     if (!detail) continue;
     const row: StopScheduleRow = { key, name: detail.name, isTimepoint: detail.kind === 'timepoint' };
     const code = detail.stopCode?.trim();
     if (code) row.stopCode = code;
+    // Section 4.9. Coordinates are used only as a pair; the speed limit is used on its own.
+    if (hasCoordinates(location)) {
+      row.latitude = location.latitude;
+      row.longitude = location.longitude;
+    }
+    if (location?.speedLimitMph !== undefined) row.speedLimitMph = location.speedLimitMph;
     if (distanceMiles !== undefined) row.distanceMiles = distanceMiles;
     rows.push(row);
   }
@@ -140,7 +153,17 @@ function patternRows(input: StopScheduleInput, pattern: RoutePattern, departures
     return count === 1 ? base : `${base}#${count}`;
   });
   const kept = full.flatMap((row, index) => (input.omitTimepointsWithoutStopId && row.kind === 'timepoint' && keys[index].startsWith('node:') ? [] : [index]));
-  return { pattern, departures, bands: bandsOf(input, pattern.id), full, keys, kept, distanceByIndex: distancesOf(pattern, full, kept) };
+  const locations = full.map((row) => locationOf(input, pattern, row));
+  return { pattern, departures, bands: bandsOf(input, pattern.id), full, locations, keys, kept, distanceByIndex: distancesOf(pattern, full, locations, kept) };
+}
+
+/**
+ * Section 4.9. A stop row's location is its stop record's. A timepoint row's location is its own point's on this pattern (Decision 0085:
+ * the same Node can sit at different positions in each direction).
+ */
+function locationOf(input: StopScheduleInput, pattern: RoutePattern, row: StopTimeRow): StopLocation | undefined {
+  if (row.kind === 'stop') return normalizeStopLocation(input.set?.stops.find((stop) => stop.id === row.stopId));
+  return normalizeStopLocation(input.set?.timepointLocationsByPatternId?.[pattern.id]?.[row.patternPointId]);
 }
 
 function baseKey(row: StopTimeRow, codesByNode: ReadonlyMap<string, ReadonlySet<string>>): string {
@@ -186,20 +209,74 @@ function bandsOf(input: StopScheduleInput, patternId: EntityId): RuntimeBand[] {
 }
 
 /**
- * Step 9 (SS1 rule). The piece between full rows k and k + 1 is the miles between their points when both are timepoints (so no stop
- * lies between them) and the miles are above 0. A row's distance is the sum of the pieces up to the pattern's next kept row.
+ * Step 9 (section 4.9). The piece between full rows k and k + 1 belongs to one segment of the pattern, and is measured by the first rule
+ * that applies:
+ * 1. the segment miles, scaled so that the straight-line pieces of the segment add up to them, when every member of the segment
+ *    (its opening timepoint, its stops, its closing timepoint) has coordinates, the segment miles are above 0, and the straight-line sum is above 0;
+ * 2. the straight-line miles between the two rows, when both have coordinates;
+ * 3. the segment miles, when both rows are timepoints (no stop lies between them) and the miles are above 0 (Decision 0084, SS1 rule).
+ * A row's distance is the sum of the pieces up to the pattern's next kept row.
  */
-function distancesOf(pattern: RoutePattern, full: StopTimeRow[], kept: number[]): Map<number, number | undefined> {
-  const pointById = new Map(pattern.points.map((point) => [point.id, point] as const));
+function distancesOf(pattern: RoutePattern, full: StopTimeRow[], locations: ReadonlyArray<StopLocation | undefined>, kept: number[]): Map<number, number | undefined> {
+  const points = sortedPoints(pattern);
+  const pointIndex = new Map(points.map((point, index) => [point.id, index] as const));
+  const segmentOf = (index: number): number | undefined => {
+    const row = full[index];
+    return row.kind === 'stop' ? row.segmentIndex : pointIndex.get(row.patternPointId);
+  };
+  const segmentMiles = (segment: number): number | undefined => {
+    const start = points[segment];
+    const end = points[segment + 1];
+    return start && end ? end.cumulativeMiles - start.cumulativeMiles : undefined;
+  };
+
+  // Full row indices of each segment, in order: the timepoint that opens it, its stops, and the timepoint that closes it.
+  const members = new Map<number, number[]>();
+  const addMember = (segment: number | undefined, index: number): void => {
+    if (segment === undefined || segment < 0) return;
+    members.set(segment, [...(members.get(segment) ?? []), index]);
+  };
+  full.forEach((row, index) => {
+    if (row.kind === 'stop') {
+      addMember(row.segmentIndex, index);
+      return;
+    }
+    const point = pointIndex.get(row.patternPointId);
+    addMember(point, index);
+    addMember(point === undefined ? undefined : point - 1, index);
+  });
+
+  // Rule 1 scale per segment: the segment miles and the straight-line sum of its members. Absent when a member lacks coordinates.
+  const scales = new Map<number, { miles: number; straightLineTotal: number }>();
+  for (let segment = 0; segment + 1 < points.length; segment += 1) {
+    const miles = segmentMiles(segment);
+    const list = members.get(segment) ?? [];
+    if (miles === undefined || miles <= 0 || list.length < 2) continue;
+    const coordinates: Array<{ latitude: number; longitude: number }> = [];
+    for (const index of list) {
+      const location = locations[index];
+      if (!hasCoordinates(location)) break;
+      coordinates.push(location);
+    }
+    if (coordinates.length !== list.length) continue;
+    let total = 0;
+    for (let j = 0; j + 1 < coordinates.length; j += 1) total += greatCircleMiles(coordinates[j], coordinates[j + 1]);
+    if (total > 0) scales.set(segment, { miles, straightLineTotal: total });
+  }
+
   const piece = (index: number): number | undefined => {
-    const from: StopTimeRow = full[index];
-    const to: StopTimeRow | undefined = full[index + 1];
-    if (from.kind !== 'timepoint' || to?.kind !== 'timepoint') return undefined;
-    const start = pointById.get(from.patternPointId);
-    const end = pointById.get(to.patternPointId);
-    if (!start || !end) return undefined;
-    const miles = end.cumulativeMiles - start.cumulativeMiles;
-    return miles > 0 ? miles : undefined;
+    const segment = segmentOf(index);
+    if (segment === undefined) return undefined;
+    const from = locations[index];
+    const to = locations[index + 1];
+    const scale = scales.get(segment);
+    if (scale !== undefined && hasCoordinates(from) && hasCoordinates(to)) {
+      return (greatCircleMiles(from, to) * scale.miles) / scale.straightLineTotal;
+    }
+    if (hasCoordinates(from) && hasCoordinates(to)) return greatCircleMiles(from, to);
+    const miles = segmentMiles(segment);
+    if (full[index].kind !== 'timepoint' || full[index + 1].kind !== 'timepoint' || miles === undefined || miles <= 0) return undefined;
+    return miles;
   };
   const distances = new Map<number, number | undefined>();
   kept.forEach((index, n) => {
