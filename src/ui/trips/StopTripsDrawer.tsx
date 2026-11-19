@@ -3,7 +3,7 @@ import { RouteStopValidationError, STOPS_CHANGED_ELSEWHERE, type RouteDefinition
 import { stopTripsTable } from '../../application/stopTripsView';
 import { DEFAULT_STOP_ROUNDING_SECONDS, normalizePlacements, validateRouteStopSet } from '../../domain/stops';
 import { formatServiceTime } from '../../domain/time';
-import { type Node, type PatternStopPlacement, type RouteDefinitionAggregate, type RoutePattern, type RouteStopSet, type StopTimeRoundingSeconds, type StopTimingRule, type Trip } from '../../domain/types';
+import { type Node, type PatternStopPlacement, type RouteDefinitionAggregate, type RoutePattern, type RouteStopSet, type StopInterpolation, type StopTimeRoundingSeconds, type StopTimingRule, type Trip } from '../../domain/types';
 import { userFacingError } from '../errorMessages';
 import { SaveBar } from '../shared/bars';
 import { ShiftDiscardDialog } from '../shared/dialogs';
@@ -19,7 +19,8 @@ const TIMING_OPTIONS: Array<{ value: StopTimingRule; text: string }> = [
   { value: 'previous', text: 'Prev.' },
   { value: 'next', text: 'Next' },
 ];
-const ROUNDING_OPTIONS = [{ value: '60', text: 'Round down to 1 min' }, { value: '30', text: '30 s' }];
+const ROUNDING_OPTIONS = [{ value: '60', text: 'Round down to 1 min' }, { value: '30', text: '30 s' }, { value: '1', text: '1 s' }];
+const SPACING_OPTIONS = [{ value: 'equal', text: 'Equal' }, { value: 'distance', text: 'By distance' }];
 const clock = (seconds: number | undefined) => seconds === undefined ? '' : formatServiceTime(seconds, seconds % 60 !== 0);
 
 /** The pattern shown first: the first selected Trip's, else the first with stops, else the first (Decision 0079, ST6 item 2). */
@@ -39,13 +40,14 @@ export const StopTripsDrawer = forwardRef<StopTripsHandle, { service: StopTripsS
   // Edited placements by pattern; a pattern without an entry shows its saved placements.
   const [edited, setEdited] = useState<Record<string, PatternStopPlacement[]>>({});
   const [rounding, setRounding] = useState<StopTimeRoundingSeconds>(DEFAULT_STOP_ROUNDING_SECONDS);
+  const [spacing, setSpacing] = useState<StopInterpolation>('equal');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [closePrompt, setClosePrompt] = useState(false);
   const closeButton = useRef<HTMLButtonElement>(null);
 
   const set = loaded?.set;
-  const accept = useCallback((next: RouteStopSet | undefined) => { setLoaded({ set: next }); setEdited({}); setRounding(next?.roundingSeconds ?? DEFAULT_STOP_ROUNDING_SECONDS); setError(''); }, []);
+  const accept = useCallback((next: RouteStopSet | undefined) => { setLoaded({ set: next }); setEdited({}); setRounding(next?.roundingSeconds ?? DEFAULT_STOP_ROUNDING_SECONDS); setSpacing(next?.interpolation ?? 'equal'); setError(''); }, []);
   useEffect(() => {
     let current = true;
     service.getRouteStopSet(aggregate.route.id).then((next) => { if (current) accept(next); }, (reason) => { if (current) setError(userFacingError(reason, 'The stops could not be loaded.')); });
@@ -62,7 +64,8 @@ export const StopTripsDrawer = forwardRef<StopTripsHandle, { service: StopTripsS
   const placementsOf = (id: string) => edited[id] ?? savedPlacements(id);
   const changedPatternIds = Object.keys(edited).filter((id) => JSON.stringify(edited[id]) !== JSON.stringify(savedPlacements(id)));
   const roundingChanged = Boolean(set) && rounding !== (set?.roundingSeconds ?? DEFAULT_STOP_ROUNDING_SECONDS);
-  const changeCount = changedPatternIds.reduce((count, id) => count + edited[id].filter((placement, index) => placement.timing !== savedPlacements(id)[index]?.timing).length, 0) + (roundingChanged ? 1 : 0);
+  const spacingChanged = Boolean(set) && spacing !== (set?.interpolation ?? 'equal');
+  const changeCount = changedPatternIds.reduce((count, id) => count + edited[id].filter((placement, index) => placement.timing !== savedPlacements(id)[index]?.timing).length, 0) + (roundingChanged ? 1 : 0) + (spacingChanged ? 1 : 0);
   const dirty = changeCount > 0;
   useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
@@ -71,7 +74,9 @@ export const StopTripsDrawer = forwardRef<StopTripsHandle, { service: StopTripsS
   const patternTrips = pattern ? trips.filter((trip) => trip.patternId === pattern.id) : [];
   const selectedOfPattern = patternTrips.filter((trip) => selectedTripIds.includes(trip.id));
   const shownTrips = selectedOfPattern.length ? selectedOfPattern : patternTrips;
-  const table = pattern ? stopTripsTable({ pattern, set, nodes, trips: shownTrips, placements, roundingSeconds: rounding }) : undefined;
+  const table = pattern ? stopTripsTable({ pattern, set, nodes, trips: shownTrips, placements, roundingSeconds: rounding, interpolation: spacing }) : undefined;
+  // Decision 0086: segments of the shown pattern that fell back to equal spacing for want of a location.
+  const equalSegments = table && spacing === 'distance' ? new Set(table.rows.filter((row) => row.kind === 'stop' && row.spacing === 'equal').map((row) => row.patternPointId)).size : 0;
   const warnings = pattern && set ? new Set(validateRouteStopSet({ ...set, placementsByPatternId: { ...set.placementsByPatternId, [pattern.id]: placements } }, [pattern]).filter((finding) => finding.severity === 'warning').map((finding) => finding.entityId)) : new Set<string>();
 
   function setTiming(placementId: string, timing: StopTimingRule) {
@@ -83,13 +88,13 @@ export const StopTripsDrawer = forwardRef<StopTripsHandle, { service: StopTripsS
     if (!set || !dirty) return true;
     setBusy(true);
     try {
-      // One write per edited pattern, each on the set the previous one wrote; a rounding change alone is saved with the shown pattern.
+      // One write per edited pattern, each on the set the previous one wrote; a rounding or spacing change alone is saved with the shown pattern.
       let current: RouteStopSet | undefined = set;
       const ids = changedPatternIds.length ? changedPatternIds : [pattern?.id ?? Object.keys(set.placementsByPatternId)[0]];
       for (const id of ids) {
         const target = aggregate.patterns.find((candidate) => candidate.id === id);
         if (!current || !target) continue;
-        current = await service.saveRouteStops({ routeId: aggregate.route.id, patternId: id, stops: current.stops, placements: normalizePlacements(target, edited[id] ?? current.placementsByPatternId[id] ?? []), timepointStopCodes: current.timepointStopCodesByPatternId?.[id] ?? {}, timepointLocations: current.timepointLocationsByPatternId?.[id] ?? {}, interpolation: current.interpolation ?? 'equal', roundingSeconds: rounding, baseUpdatedAt: current.updatedAt });
+        current = await service.saveRouteStops({ routeId: aggregate.route.id, patternId: id, stops: current.stops, placements: normalizePlacements(target, edited[id] ?? current.placementsByPatternId[id] ?? []), timepointStopCodes: current.timepointStopCodesByPatternId?.[id] ?? {}, timepointLocations: current.timepointLocationsByPatternId?.[id] ?? {}, interpolation: spacing, roundingSeconds: rounding, baseUpdatedAt: current.updatedAt });
       }
       accept(current);
       return true;
@@ -99,7 +104,7 @@ export const StopTripsDrawer = forwardRef<StopTripsHandle, { service: StopTripsS
       return false;
     } finally { setBusy(false); }
   }
-  function discard() { setEdited({}); setRounding(set?.roundingSeconds ?? DEFAULT_STOP_ROUNDING_SECONDS); setError(''); }
+  function discard() { setEdited({}); setRounding(set?.roundingSeconds ?? DEFAULT_STOP_ROUNDING_SECONDS); setSpacing(set?.interpolation ?? 'equal'); setError(''); }
   useImperativeHandle(ref, () => ({ save, discard }));
 
   const requestClose = useCallback(() => { if (dirty) setClosePrompt(true); else onClose(); }, [dirty, onClose]);
@@ -120,6 +125,7 @@ export const StopTripsDrawer = forwardRef<StopTripsHandle, { service: StopTripsS
       <div className="stop-trips-controls">
         <label className="stop-trips-field">Pattern<select value={patternId} disabled={busy || !loaded} onChange={(event) => setPatternId(event.target.value)}>{patterns.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name || 'Untitled pattern'}</option>)}</select></label>
         <SegmentedControl label="Rounding" className="stop-trips-rounding" options={ROUNDING_OPTIONS} value={String(rounding)} disabled={busy || !set} title={set ? undefined : 'This route has no stops'} onChange={(value) => { setRounding(Number(value) as StopTimeRoundingSeconds); setError(''); }} />
+        <SegmentedControl label="Spacing" className="stop-trips-spacing" options={SPACING_OPTIONS} value={spacing} disabled={busy || !set} title={set ? undefined : 'This route has no stops'} onChange={(value) => { setSpacing(value as StopInterpolation); setError(''); }} />
         <span className="stop-trips-count" role="status">{shownTrips.length === patternTrips.length ? `${patternTrips.length} trip${patternTrips.length === 1 ? '' : 's'}` : `${shownTrips.length} of ${patternTrips.length} trips (selected)`}</span>
       </div>
       {!loaded && !error && <p role="status">Loading stops…</p>}
@@ -138,6 +144,7 @@ export const StopTripsDrawer = forwardRef<StopTripsHandle, { service: StopTripsS
           })}</tbody>
         </table>
       </div>}
+      {equalSegments > 0 && <p className="stop-trips-note">{equalSegments} segment{equalSegments === 1 ? ' uses' : 's use'} equal spacing because a stop or timepoint has no location.</p>}
       {error && <p className="field-error" role="alert">{error}</p>}
     </div>
     <footer className={dirty ? 'stop-trips-drawer__footer stop-trips-drawer__footer--dirty' : 'stop-trips-drawer__footer'}>
@@ -149,5 +156,5 @@ export const StopTripsDrawer = forwardRef<StopTripsHandle, { service: StopTripsS
 
 /** Cancel, Discard, or Save for unsaved timing rules or rounding. Also used by the Trips workspace before a scope change. */
 export function StopTripsClosePrompt({ onCancel, onDiscard, onSave }: { onCancel: () => void; onDiscard: () => void; onSave: () => void }) {
-  return <ShiftDiscardDialog title="Discard stop timing changes?" text="Timing rules or rounding have unsaved edits." onCancel={onCancel} onDiscard={onDiscard} onSave={onSave} />;
+  return <ShiftDiscardDialog title="Discard stop timing changes?" text="Timing rules, rounding, or spacing have unsaved edits." onCancel={onCancel} onDiscard={onDiscard} onSave={onSave} />;
 }
