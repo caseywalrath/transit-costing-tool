@@ -14,8 +14,7 @@ export function stopScheduleCsv(directions: StopScheduleDirection[], columnMode:
   const lines: string[][] = [];
   directions.forEach((direction, index) => {
     if (index > 0) lines.push(['']);
-    // The title starts with `[`, so no spreadsheet reads it as a formula and it is written as given.
-    lines.push([`[${direction.name}]`]);
+    lines.push([neutralizeFormulaText(direction.name)]);
     lines.push([...FIXED_HEADER, ...direction.columns.map((column) => neutralizeFormulaText(column.patternName))]);
     lines.push([...BLANK_FIXED, ...direction.columns.map((column) => headerOf(column, columnMode))]);
     direction.rows.forEach((row, rowIndex) => lines.push(rowCells(row, direction.columns, rowIndex)));

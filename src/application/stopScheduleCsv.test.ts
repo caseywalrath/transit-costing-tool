@@ -22,14 +22,14 @@ describe('stop schedule CSV export', () => {
     const text = stopScheduleCsv([north, south], 'sample');
     expect(text.endsWith('\r\n')).toBe(true);
     expect(csvRows(text)).toEqual([
-      ['[Northbound]'],
+      ['Northbound'],
       ['Stop ID', 'Stop Name', 'Latitude', 'Longitude', 'Distance (miles)', 'Speed Limit', 'Main'],
       ['', '', '', '', '', '', 'Peak\n15 min\n7:00-9:00'],
       ['1000', 'Alpha', '', '', '', '', '10:00'],
       ['', 'Bravo', '', '', '', '', '10:10'],
       ['', 'Run time (min)', '', '', '', '', '10'],
       [''],
-      ['[Southbound]'],
+      ['Southbound'],
       ['Stop ID', 'Stop Name', 'Latitude', 'Longitude', 'Distance (miles)', 'Speed Limit', 'Express'],
       ['', '', '', '', '', '', 'Service\n2 trips\n10:00-11:00'],
       ['', 'Charlie', '', '', '', '', '-'],

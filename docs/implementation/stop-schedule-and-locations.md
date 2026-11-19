@@ -194,7 +194,7 @@ Steps, for each direction in input order:
 
 `stopScheduleCsv(directions: StopScheduleDirection[]): string`. Lines joined with `\r\n`, file ends with `\r\n`, every cell through `csvEscape`. Free text cells (direction name, pattern name, stop name, stop ID, band label, Trip label) go through `neutralizeFormulaText`; times, numbers, `-`, and fixed labels do not. For each direction, in order, separated by one empty line:
 
-1. `[name]`
+1. A row with one cell: the direction name (free text).
 2. `['Stop ID', 'Stop Name', 'Latitude', 'Longitude', 'Distance (miles)', 'Speed Limit', …patternName of each column]`
 3. `['', '', '', '', '', '', …header of each column]`. Header: three lines joined by `\n`:
    - sample mode: `label`; `headwayText`; `${formatServiceTime(startTime)}-${formatServiceTime(endTime)}`;
