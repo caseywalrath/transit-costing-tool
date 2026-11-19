@@ -207,6 +207,25 @@ test('timepoint stop IDs are entered per pattern, filled from and copied to patt
   expect(await storedCodes(page, 'Reverse')).toEqual(['B=B-south']);
 });
 
+test('a stop ID typed on a new row that matches a saved stop of the Route links that stop instead of duplicating it', async ({ page }) => {
+  await threePatternRoute(page, 'Stops reuse by ID');
+  await openStops(page, 'Main');
+  await addStop(page, 'A', 'B', 'Shared', '100');
+  await saveStops(page);
+
+  // Short is another pattern of the Route: typing a different name and the saved stop ID reuses the saved stop.
+  await patternButton(page, 'Short').click();
+  await expect(page.getByRole('heading', { name: 'Short', exact: true })).toBeVisible();
+  await addStop(page, 'A', 'B', 'Typed name', '100');
+  await drawerOf(page).getByRole('textbox', { name: 'Stop ID, Typed name', exact: true }).press('Enter');
+  await expect(drawerOf(page).getByRole('textbox', { name: 'Stop name, Shared', exact: true })).toHaveValue('Shared');
+  await expect(drawerOf(page).getByText('2 patterns', { exact: true })).toBeVisible();
+  await expect(drawerOf(page).getByText('Another stop on this route has this stop ID.')).toHaveCount(0);
+  await saveStops(page);
+  expect(await storedStops(page, 'Main')).toEqual(['Shared']);
+  expect(await storedStops(page, 'Short')).toEqual(['Shared']);
+});
+
 test('asks before leaving unsaved stops for another pattern, and shows a duplicate stop ID beside its row', async ({ page }) => {
   await threePatternRoute(page, 'Stops guards');
   await openStops(page, 'Main');

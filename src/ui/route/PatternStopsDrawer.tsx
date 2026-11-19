@@ -144,6 +144,19 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
     const placements = draft.placements.map((placement) => placement.id === placementId ? { ...placement, stopId: match.id } : placement);
     edit({ ...draft, stops: withoutOrphans(draft.stops, placements), placements });
   }
+  /**
+   * A stop ID is unique within the Route (Decision 0079 item 2), so a stop ID typed on a row that is new in this drawer, when it matches a saved
+   * stop of the Route, names that stop: the row links to it and shows its name, rather than creating a second stop with the same ID.
+   */
+  function linkIfSavedCode(placementId: string, stopId: string, value: string) {
+    if (savedStopIds.has(stopId) || patternUse(stopId) > 1) return;
+    const code = value.trim().toLocaleLowerCase();
+    if (!code) return;
+    const match = draft.stops.find((stop) => stop.id !== stopId && savedStopIds.has(stop.id) && (stop.stopCode?.trim().toLocaleLowerCase() ?? '') === code);
+    if (!match) return;
+    const placements = draft.placements.map((placement) => placement.id === placementId ? { ...placement, stopId: match.id } : placement);
+    edit({ ...draft, stops: withoutOrphans(draft.stops, placements), placements });
+  }
   /** Decision 0080. A timepoint's stop ID on this pattern. An empty field removes it. */
   function updateCode(pointId: string, value: string) {
     const { [pointId]: _previous, ...codes } = draft.codes;
@@ -218,7 +231,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
               const isNew = !savedStopIds.has(placement.stopId);
               return <Fragment key={placement.id}><tr className={moved?.id === placement.id ? `pattern-stops-stop row-moved row-moved--${moved.tick % 2}` : 'pattern-stops-stop'}>
                 <td><div className="pattern-stops-name"><input ref={(element) => { if (element) nameInputs.current.set(placement.id, element); else nameInputs.current.delete(placement.id); }} value={stop?.name ?? ''} placeholder="Stop name" list={isNew ? listId : undefined} aria-label={`Stop name, ${label}`} aria-invalid={errors.length > 0} aria-describedby={errorId} disabled={busy} onChange={(event) => updateStop(placement.stopId, { name: event.target.value })} onBlur={(event) => linkIfSuggested(placement.id, placement.stopId, event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') linkIfSuggested(placement.id, placement.stopId, event.currentTarget.value); }} />{uses > 1 && <span className="chip" title={`Used by ${uses} patterns of this route`}>{uses} patterns</span>}</div></td>
-                <td><input className="pattern-stops-code" value={stop?.stopCode ?? ''} aria-label={`Stop ID, ${label}`} aria-invalid={errors.length > 0} aria-describedby={errorId} disabled={busy} onChange={(event) => updateStop(placement.stopId, { stopCode: event.target.value || undefined })} /></td>
+                <td><input className="pattern-stops-code" value={stop?.stopCode ?? ''} aria-label={`Stop ID, ${label}`} aria-invalid={errors.length > 0} aria-describedby={errorId} disabled={busy} onChange={(event) => updateStop(placement.stopId, { stopCode: event.target.value || undefined })} onBlur={(event) => linkIfSavedCode(placement.id, placement.stopId, event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') linkIfSavedCode(placement.id, placement.stopId, event.currentTarget.value); }} /></td>
                 <td className="pattern-stops-order"><button type="button" className="icon-button" disabled={busy || first} aria-label={`Move ${label} up`} title="Move up" onClick={() => moveStop(index, position, -1)}>↑</button><button type="button" className="icon-button" disabled={busy || last} aria-label={`Move ${label} down`} title="Move down" onClick={() => moveStop(index, position, 1)}>↓</button></td>
                 <td><button type="button" className="icon-button icon-button--danger" disabled={busy} aria-label={`Remove ${label}`} title={`Remove ${label}`} onClick={() => removeStop(placement.id)}><TrashIcon /></button></td>
               </tr>{errors.length > 0 && <tr className="pattern-stops-error"><td colSpan={4}><span className="field-error" id={errorId}>{errors.join(' ')}</span></td></tr>}</Fragment>;
