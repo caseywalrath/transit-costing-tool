@@ -23,6 +23,9 @@ import { useBlockingScenarioCommands } from '../blocking/blockingScenarioCommand
 import { runtimeProfileCsv } from '../runtimeProfileCsv';
 import { tripTableCsv } from '../../application/tripTableCsv';
 import { stopTimesCsv } from '../../application/stopTimesCsv';
+import { stopScheduleCsv } from '../../application/stopScheduleCsv';
+import { buildStopSchedule } from '../../domain/stopSchedule';
+import { StopScheduleExportDialog, type StopScheduleExportOptions } from './StopScheduleExportDialog';
 import { StopTripsClosePrompt, StopTripsDrawer, type StopTripsHandle } from './StopTripsDrawer';
 import { type RouteNavigationGuard } from '../shared/types';
 import { type RuntimeEditorHandle, type RuntimeEditorState, RuntimeEditor2, RouteRuntimeMethodDialog } from './RuntimeEditor';
@@ -179,6 +182,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
   const [compareOpen, setCompareOpen] = useState(false);
   const [routeMethodChange, setRouteMethodChange] = useState<{ method: RuntimeCalculationMethod; impact?: { profileCount: number; tripCount: number }; busy: boolean }>();
   const [tripCopyOpen, setTripCopyOpen] = useState(false);
+  const [stopScheduleOpen, setStopScheduleOpen] = useState(false);
   const [batchPatternChangeOpen, setBatchPatternChangeOpen] = useState(false);
   const [tripPatternChangeOpen, setTripPatternChangeOpen] = useState(false);
   const [runtimesOpenStored, setRuntimesOpen] = useState(storedRuntimesOpen);
@@ -707,6 +711,16 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
       download(`${safeName}-stop-times.csv`, stopTimesCsv({ trips, patterns, nodes: aggregate.nodes, set, directionName: direction?.name ?? '', blockLabels }), 'text/csv;charset=utf-8');
     } catch (error) { onError(error, 'Unable to export stop times.'); }
   }
+  /** Decision 0084: both directions of the Route on the day and Trip Profile, one row per stop (output only, Decision 0044). Returns whether a stop is listed twice. */
+  async function exportStopScheduleCsv(options: StopScheduleExportOptions): Promise<boolean> {
+    try {
+      const safeName = `${aggregate.route.name || 'route'}-${selectedDay?.name || 'service-day'}-${selectedTripProfile?.name || 'trip-profile'}`.replaceAll(/[^a-z0-9]+/gi, '-').replaceAll(/^-|-$/g, '') || 'trips';
+      const set = await service.getRouteStopSet(aggregate.route.id);
+      const schedule = buildStopSchedule({ directions: orderDirections(aggregate.directions ?? []), patterns: aggregate.patterns, nodes: aggregate.nodes, set, trips: routeDayTrips, runtimeProfiles: routeRuntime?.profiles ?? [], runtimeAssignments: routeRuntime?.assignments ?? [], plan: planResult?.plan, ...options });
+      download(`${safeName}-stop-schedule.csv`, stopScheduleCsv(schedule, options.columnMode), 'text/csv;charset=utf-8');
+      return schedule.some((direction) => direction.orderConflict);
+    } catch (error) { onError(error, 'Unable to export the stop schedule.'); return false; }
+  }
   const parsedShiftSeconds = parseShiftSeconds(shiftMinutes);
   const canShiftSelectedTrips = selectedTripIds.length > 0 && parsedShiftSeconds !== undefined;
   async function requestTripDeletion(tripIds: string[]) {
@@ -853,7 +867,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     { items: [{ id: 'copy-day', label: 'Copy trips from another day…', disabled: tripProfileBusy || shiftOperations.length > 0, title: shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: () => setTripCopyOpen(true) }] },
     // Decision 0079 (ST6): one open edit at a time, so Stop trips waits for a staged Shift to be settled.
     { items: [{ id: 'stop-trips', label: 'Stop trips…', disabled: tripProfileBusy || stopTripsOpen || shiftOperations.length > 0, title: stopTripsOpen ? 'The Stop trips drawer is already open.' : shiftOperations.length ? 'Discard the staged shift first.' : undefined, onSelect: openStopTrips }] },
-    { items: [{ id: 'export-trips-csv', label: 'Export trips CSV', disabled: !trips.length, onSelect: exportTripsCsv }, { id: 'export-stop-times-csv', label: 'Export trips with stops CSV', disabled: !trips.length, onSelect: () => void exportStopTimesCsv() }] },
+    { items: [{ id: 'export-trips-csv', label: 'Export trips CSV', disabled: !trips.length, onSelect: exportTripsCsv }, { id: 'export-stop-times-csv', label: 'Export trips with stops CSV', disabled: !trips.length, onSelect: () => void exportStopTimesCsv() }, { id: 'export-stop-schedule-csv', label: 'Export stop schedule CSV…', disabled: !routeDayTrips.length, onSelect: () => setStopScheduleOpen(true) }] },
   ];
   const canUnassignSelected = selectedTripIds.some((id) => tripBlockByTripId.has(id));
   // The selection bar. The table draws it above its rows and, compact, above its pinned headings (only one copy is live at a time).
@@ -1003,6 +1017,7 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     {startTimeReview && <StartTimeChangeDialog patternName={startTimeReview.patternName} fromSeconds={startTimeReview.fromSeconds} toSeconds={startTimeReview.toSeconds} preview={startTimeReview.preview} busy={busy} onApply={() => void applyStartTimeChange(startTimeReview.preview)} onClose={() => setStartTimeReview(undefined)} />}
     {recalculationTripIds.length > 0 && <TripRecalculationDialog tripService={tripService} tripIds={recalculationTripIds} trips={trips} context={reviewContext} onDone={finishRecalculation} onClose={() => setRecalculationTripIds([])} />}
     {runtimeCopyOpen && selectedDay && <RuntimeDayCopyDialog tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} routeName={aggregate.route.name || 'Untitled route'} targetDay={selectedDay} days={days} patterns={aggregate.patterns.filter(isUsablePattern)} onDone={completeRuntimeCopy} onClose={closeRuntimeCopy} onError={onError} />}
+    {stopScheduleOpen && <StopScheduleExportDialog scope={`${selectedDay?.name || 'Service day'} · ${selectedTripProfile?.name || 'Trip profile'}`} onExport={exportStopScheduleCsv} onClose={() => setStopScheduleOpen(false)} />}
     {tripCopyOpen && selectedDay && <TripDayCopyDialog tripService={tripService} scenarioId={records.scenario.id} routeId={aggregate.route.id} tripProfileId={tripProfileId} routeName={aggregate.route.name || 'Untitled route'} tripProfileName={(records.tripProfiles ?? []).find((profile) => profile.id === tripProfileId)?.name || 'trip profile'} targetDay={selectedDay} days={days} patterns={aggregate.patterns} onDone={completeTripDayCopy} onClose={closeTripCopy} onError={onError} />}
     {tripPatternChangeOpen && selectedTrips.length === 1 && <TripPatternChangeDialog tripService={tripService} trip={selectedTrips[0]!} directionId={directionId} context={reviewContext} onDone={completeTripCopy} onClose={closeTripPatternChange} />}
     {batchPatternChangeOpen && <BatchPatternChangeDialog tripService={tripService} tripIds={selectedTripIds} trips={trips} context={reviewContext} onDone={completeTripCopy} onClose={closeBatchPatternChange} />}
