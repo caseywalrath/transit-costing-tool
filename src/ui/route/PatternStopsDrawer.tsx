@@ -1,8 +1,8 @@
 import { forwardRef, Fragment, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { RouteStopValidationError, STOPS_CHANGED_ELSEWHERE, type RouteDefinitionApplication, type StopDraft, type StopPlacementPreview } from '../../application/routeDefinitionService';
-import { DEFAULT_STOP_ROUNDING_SECONDS, normalizePlacements, normalizeTimepointStopCodes, placementsBySegment, sortedPoints } from '../../domain/stops';
+import { DEFAULT_STOP_ROUNDING_SECONDS, normalizePlacements, normalizeTimepointLocations, normalizeTimepointStopCodes, placementsBySegment, sortedPoints } from '../../domain/stops';
 import { newId } from '../../domain/ids';
-import { type PatternStopPlacement, type RouteDefinitionAggregate, type RoutePattern, type RouteStop, type RouteStopSet, type TimepointStopCodes, type ValidationFinding } from '../../domain/types';
+import { type PatternStopPlacement, type RouteDefinitionAggregate, type RoutePattern, type RouteStop, type RouteStopSet, type TimepointLocations, type TimepointStopCodes, type ValidationFinding } from '../../domain/types';
 import { userFacingError } from '../errorMessages';
 import { MenuButton } from '../MenuButton';
 import { ModalDialog } from '../ModalDialog';
@@ -21,9 +21,9 @@ const plural = (count: number, singular: string) => `${count} ${singular}${count
 const suggestionValue = (stop: RouteStop) => stop.stopCode ? `${stop.name} · ${stop.stopCode}` : stop.name;
 
 /** `codes` holds the timepoint stop IDs as typed (Decision 0080); they are trimmed on save. */
-type Draft = { stops: RouteStop[]; placements: PatternStopPlacement[]; codes: TimepointStopCodes };
-const EMPTY_DRAFT: Draft = { stops: [], placements: [], codes: {} };
-const draftOf = (pattern: RoutePattern, set: RouteStopSet | undefined): Draft => ({ stops: (set?.stops ?? []).map((stop) => ({ ...stop })), placements: normalizePlacements(pattern, set?.placementsByPatternId[pattern.id] ?? []), codes: normalizeTimepointStopCodes(pattern, set?.timepointStopCodesByPatternId?.[pattern.id]) });
+type Draft = { stops: RouteStop[]; placements: PatternStopPlacement[]; codes: TimepointStopCodes; locations: TimepointLocations };
+const EMPTY_DRAFT: Draft = { stops: [], placements: [], codes: {}, locations: {} };
+const draftOf = (pattern: RoutePattern, set: RouteStopSet | undefined): Draft => ({ stops: (set?.stops ?? []).map((stop) => ({ ...stop })), placements: normalizePlacements(pattern, set?.placementsByPatternId[pattern.id] ?? []), codes: normalizeTimepointStopCodes(pattern, set?.timepointStopCodesByPatternId?.[pattern.id]), locations: normalizeTimepointLocations(pattern, set?.timepointLocationsByPatternId?.[pattern.id]) });
 
 /** Counts placements added, removed, or moved, stops renamed or given another stop ID, and timepoint stop IDs changed. */
 function changeCount(pattern: RoutePattern, base: Draft, draft: Draft): number {
@@ -72,7 +72,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
   }, []);
   const count = changeCount(pattern, base, draft);
   // The Fill preview reads the draft; one object per draft keeps the dialog from previewing again on every render.
-  const stopDraft = useMemo<StopDraft>(() => ({ placements: draft.placements, timepointStopCodes: draft.codes }), [draft.placements, draft.codes]);
+  const stopDraft = useMemo<StopDraft>(() => ({ placements: draft.placements, timepointStopCodes: draft.codes, timepointLocations: draft.locations }), [draft.placements, draft.codes, draft.locations]);
   const dirty = count > 0;
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
@@ -171,7 +171,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
   async function save(): Promise<boolean> {
     setBusy(true);
     try {
-      const written = await service.saveRouteStops({ routeId: aggregate.route.id, patternId: pattern.id, stops: draft.stops, placements: draft.placements, timepointStopCodes: draft.codes, roundingSeconds: loaded?.set?.roundingSeconds ?? DEFAULT_STOP_ROUNDING_SECONDS, baseUpdatedAt: loaded?.set?.updatedAt });
+      const written = await service.saveRouteStops({ routeId: aggregate.route.id, patternId: pattern.id, stops: draft.stops, placements: draft.placements, timepointStopCodes: draft.codes, timepointLocations: draft.locations, interpolation: loaded?.set?.interpolation ?? 'equal', roundingSeconds: loaded?.set?.roundingSeconds ?? DEFAULT_STOP_ROUNDING_SECONDS, baseUpdatedAt: loaded?.set?.updatedAt });
       accept(written);
       return true;
     } catch (reason) {
@@ -252,7 +252,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
     <footer className={dirty ? 'pattern-stops-drawer__footer pattern-stops-drawer__footer--dirty' : 'pattern-stops-drawer__footer'}>
       {dirty ? <SaveBar message={plural(count, 'unsaved change')} saveLabel="Save stops" busy={busy} onSave={() => void save()} onDiscard={discard} /> : <button type="button" onClick={onClose} disabled={busy}>Close</button>}
     </footer>
-    {dialog && <PatternStopsDialog service={service} mode={dialog} aggregate={aggregate} pattern={pattern} set={loaded?.set} draft={stopDraft} onFilled={(filled) => { edit({ ...draft, placements: filled.placements, codes: filled.timepointStopCodes }); setDialog(undefined); }} onCopied={(set) => { accept(set); setDialog(undefined); }} onClose={() => setDialog(undefined)} />}
+    {dialog && <PatternStopsDialog service={service} mode={dialog} aggregate={aggregate} pattern={pattern} set={loaded?.set} draft={stopDraft} onFilled={(filled) => { edit({ ...draft, placements: filled.placements, codes: filled.timepointStopCodes, locations: filled.timepointLocations ?? draft.locations }); setDialog(undefined); }} onCopied={(set) => { accept(set); setDialog(undefined); }} onClose={() => setDialog(undefined)} />}
     {closePrompt && <DiscardRouteDraftDialog title="Discard unsaved stop changes?" onClose={() => setClosePrompt(false)} onDiscard={() => { setClosePrompt(false); onClose(); }} onSave={() => { setClosePrompt(false); void save().then((saved) => { if (saved) onClose(); }); }} />}
   </aside>;
 });

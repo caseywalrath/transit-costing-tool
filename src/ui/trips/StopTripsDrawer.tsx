@@ -89,7 +89,7 @@ export const StopTripsDrawer = forwardRef<StopTripsHandle, { service: StopTripsS
       for (const id of ids) {
         const target = aggregate.patterns.find((candidate) => candidate.id === id);
         if (!current || !target) continue;
-        current = await service.saveRouteStops({ routeId: aggregate.route.id, patternId: id, stops: current.stops, placements: normalizePlacements(target, edited[id] ?? current.placementsByPatternId[id] ?? []), timepointStopCodes: current.timepointStopCodesByPatternId?.[id] ?? {}, roundingSeconds: rounding, baseUpdatedAt: current.updatedAt });
+        current = await service.saveRouteStops({ routeId: aggregate.route.id, patternId: id, stops: current.stops, placements: normalizePlacements(target, edited[id] ?? current.placementsByPatternId[id] ?? []), timepointStopCodes: current.timepointStopCodesByPatternId?.[id] ?? {}, timepointLocations: current.timepointLocationsByPatternId?.[id] ?? {}, interpolation: current.interpolation ?? 'equal', roundingSeconds: rounding, baseUpdatedAt: current.updatedAt });
       }
       accept(current);
       return true;
