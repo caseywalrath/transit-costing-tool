@@ -145,17 +145,22 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
     edit({ ...draft, stops: withoutOrphans(draft.stops, placements), placements });
   }
   /**
-   * A stop ID is unique within the Route (Decision 0079 item 2), so a stop ID typed on a row that is new in this drawer, when it matches a saved
-   * stop of the Route, names that stop: the row links to it and shows its name, rather than creating a second stop with the same ID.
+   * A stop ID is unique within the Route (Decision 0079 item 2), so a stop ID typed on a row whose stop has no saved stop ID (a new stop, or a
+   * saved stop without one), when it matches a saved stop of the Route, names that stop: the row links to it and shows its name, rather than
+   * giving a second stop the same ID.
    */
   function linkIfSavedCode(placementId: string, stopId: string, value: string) {
-    if (savedStopIds.has(stopId) || patternUse(stopId) > 1) return;
+    const saved = loaded?.set?.stops.find((stop) => stop.id === stopId);
+    // A saved stop that already has a stop ID is being given another one: a match is a real duplicate, reported on save.
+    if (saved ? (saved.stopCode?.trim() ?? '') !== '' : patternUse(stopId) > 1) return;
     const code = value.trim().toLocaleLowerCase();
     if (!code) return;
     const match = draft.stops.find((stop) => stop.id !== stopId && savedStopIds.has(stop.id) && (stop.stopCode?.trim().toLocaleLowerCase() ?? '') === code);
     if (!match) return;
     const placements = draft.placements.map((placement) => placement.id === placementId ? { ...placement, stopId: match.id } : placement);
-    edit({ ...draft, stops: withoutOrphans(draft.stops, placements), placements });
+    // A saved stop without a stop ID keeps its saved values for the other patterns that use it; only this row moves to the matching stop.
+    const stops = saved ? draft.stops.map((stop) => stop.id === stopId ? { ...saved } : stop) : draft.stops;
+    edit({ ...draft, stops: withoutOrphans(stops, placements), placements });
   }
   /** Decision 0080. A timepoint's stop ID on this pattern. An empty field removes it. */
   function updateCode(pointId: string, value: string) {

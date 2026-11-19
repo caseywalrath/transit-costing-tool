@@ -226,6 +226,28 @@ test('a stop ID typed on a new row that matches a saved stop of the Route links 
   expect(await storedStops(page, 'Short')).toEqual(['Shared']);
 });
 
+test('a stop ID typed on a saved stop without one, matching another saved stop, links only this pattern to that stop', async ({ page }) => {
+  await threePatternRoute(page, 'Stops merge by ID');
+  await openStops(page, 'Short');
+  await addStop(page, 'A', 'B', 'Hampden', '100');
+  await saveStops(page);
+  // Main has its own "Hampden" record with no stop ID.
+  await patternButton(page, 'Main').click();
+  await expect(page.getByRole('heading', { name: 'Main', exact: true })).toBeVisible();
+  await drawerOf(page).getByRole('button', { name: 'Add stop between A and B', exact: true }).click();
+  await page.keyboard.type('Hampden uncoded');
+  await page.keyboard.press('Tab');
+  await saveStops(page);
+
+  await drawerOf(page).getByRole('textbox', { name: 'Stop ID, Hampden uncoded', exact: true }).fill('100');
+  await drawerOf(page).getByRole('textbox', { name: 'Stop ID, Hampden uncoded', exact: true }).press('Enter');
+  await expect(drawerOf(page).getByRole('textbox', { name: 'Stop name, Hampden', exact: true })).toHaveValue('Hampden');
+  await expect(drawerOf(page).getByText('2 patterns', { exact: true })).toBeVisible();
+  await saveStops(page);
+  expect(await storedStops(page, 'Main')).toEqual(['Hampden']);
+  expect(await storedStops(page, 'Short')).toEqual(['Hampden']);
+});
+
 test('asks before leaving unsaved stops for another pattern, and shows a duplicate stop ID beside its row', async ({ page }) => {
   await threePatternRoute(page, 'Stops guards');
   await openStops(page, 'Main');
