@@ -107,7 +107,7 @@ test('links an existing stop from another pattern, renames it once for both, fil
   await addStop(page, 'A', 'B', 'Shared · 100');
   const linked = drawerOf(page).getByRole('textbox', { name: 'Stop name, Shared', exact: true });
   await expect(linked).toHaveValue('Shared');
-  await expect(drawerOf(page).getByText('2 patterns', { exact: true })).toBeVisible();
+  await expect(drawerOf(page).getByRole('img', { name: 'Used by 2 patterns of this route', exact: true })).toBeVisible();
   await linked.fill('Shared stop');
   await saveStops(page);
   expect(await storedStops(page, 'Main')).toEqual(['Shared stop', 'Branch stop']);
@@ -219,7 +219,7 @@ test('a stop ID typed on a new row that matches a saved stop of the Route links 
   await addStop(page, 'A', 'B', 'Typed name', '100');
   await drawerOf(page).getByRole('textbox', { name: 'Stop ID, Typed name', exact: true }).press('Enter');
   await expect(drawerOf(page).getByRole('textbox', { name: 'Stop name, Shared', exact: true })).toHaveValue('Shared');
-  await expect(drawerOf(page).getByText('2 patterns', { exact: true })).toBeVisible();
+  await expect(drawerOf(page).getByRole('img', { name: 'Used by 2 patterns of this route', exact: true })).toBeVisible();
   await expect(drawerOf(page).getByText('Another stop on this route has this stop ID.')).toHaveCount(0);
   await saveStops(page);
   expect(await storedStops(page, 'Main')).toEqual(['Shared']);
@@ -242,7 +242,7 @@ test('a stop ID typed on a saved stop without one, matching another saved stop, 
   await drawerOf(page).getByRole('textbox', { name: 'Stop ID, Hampden uncoded', exact: true }).fill('100');
   await drawerOf(page).getByRole('textbox', { name: 'Stop ID, Hampden uncoded', exact: true }).press('Enter');
   await expect(drawerOf(page).getByRole('textbox', { name: 'Stop name, Hampden', exact: true })).toHaveValue('Hampden');
-  await expect(drawerOf(page).getByText('2 patterns', { exact: true })).toBeVisible();
+  await expect(drawerOf(page).getByRole('img', { name: 'Used by 2 patterns of this route', exact: true })).toBeVisible();
   await saveStops(page);
   expect(await storedStops(page, 'Main')).toEqual(['Hampden']);
   expect(await storedStops(page, 'Short')).toEqual(['Hampden']);
