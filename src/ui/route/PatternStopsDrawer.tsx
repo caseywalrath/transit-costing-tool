@@ -217,12 +217,45 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
     for (const [textKey, value] of Object.entries(texts)) next[textKey.slice(key.length + 1) as LocationField] = parseLocationText(value);
     edit(withLocations(draft, [{ key, location: next }]));
   }
+  /** The location rows in drawer order: each timepoint, then the stops of its segment. */
+  function locationRowKeys(): string[] {
+    return points.flatMap((point, index) => [`point:${point.id}`, ...(index < points.length - 1 ? segments[index].map((placement) => `stop:${placement.stopId}`) : [])]);
+  }
+  /**
+   * A block copied from a spreadsheet (tab-separated columns, one line per row) fills from the pasted cell rightward across Latitude,
+   * Longitude, and Speed and down the following rows. Cells past the last column or row are ignored. A single value is left to onChange.
+   */
+  function pasteLocations(key: string, field: LocationField, clipboard: string): boolean {
+    const lines = clipboard.replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n').map((line) => line.split('\t'));
+    if (lines.length < 2 && lines[0].length < 2) return false;
+    const fields = LOCATION_FIELDS.map((item) => item.field);
+    const rows = locationRowKeys();
+    const startRow = rows.indexOf(key);
+    const startColumn = fields.indexOf(field);
+    const texts: Record<string, string> = {};
+    lines.forEach((cells, rowOffset) => {
+      const rowKey = rows[startRow + rowOffset];
+      if (!rowKey) return;
+      cells.forEach((cell, columnOffset) => { const target = fields[startColumn + columnOffset]; if (target) texts[`${rowKey}:${target}`] = cell.trim(); });
+    });
+    setLocationTexts((current) => ({ ...current, ...texts }));
+    const nextByKey = new Map<string, StopLocation>();
+    for (const [textKey, value] of Object.entries(texts)) {
+      const cut = textKey.lastIndexOf(':');
+      const rowKey = textKey.slice(0, cut);
+      const next = nextByKey.get(rowKey) ?? { ...locationOf(rowKey) };
+      next[textKey.slice(cut + 1) as LocationField] = parseLocationText(value);
+      nextByKey.set(rowKey, next);
+    }
+    edit(withLocations(draft, [...nextByKey].map(([rowKey, location]) => ({ key: rowKey, location }))));
+    return true;
+  }
   const locationValue = (key: string, field: LocationField) => locationTexts[`${key}:${field}`] ?? (locationOf(key)?.[field]?.toString() ?? '');
   const textErrors = (key: string) => unusableKeys.some((textKey) => textKey.startsWith(`${key}:`)) ? ['Enter latitude, longitude, and speed limit as numbers.'] : [];
   function locationCells(key: string, label: string) {
     if (!showLocations) return null;
     const invalid = textErrors(key).length > 0 || findings.some((item) => item.entityId === key.split(':')[1] && item.ruleId.startsWith('stopLocation.'));
-    return LOCATION_FIELDS.map(({ field, label: fieldLabel }) => <td key={field} className="pattern-stops-location"><input className="pattern-stops-code" inputMode="decimal" value={locationValue(key, field)} aria-label={`${fieldLabel}, ${label}`} aria-invalid={invalid} disabled={busy} onChange={(event) => updateLocation(key, field, event.target.value)} /></td>);
+    return LOCATION_FIELDS.map(({ field, label: fieldLabel }) => <td key={field} className="pattern-stops-location"><input className="pattern-stops-code" inputMode="decimal" value={locationValue(key, field)} aria-label={`${fieldLabel}, ${label}`} aria-invalid={invalid} disabled={busy} onChange={(event) => updateLocation(key, field, event.target.value)} onPaste={(event) => { if (pasteLocations(key, field, event.clipboardData.getData('text/plain'))) event.preventDefault(); }} /></td>);
   }
 
   /** Decision 0085 item 7: the rows of this pattern, matched against the file by stop ID, then by a name found once on each side. */

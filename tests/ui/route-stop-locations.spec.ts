@@ -161,3 +161,35 @@ test('import fills locations matched by stop ID and leaves a name match unapplie
   expect(saved.locations).toEqual({ 'Main A': { latitude: 39.914169, longitude: -105.006705, speedLimitMph: 40 }, 'Main B': { latitude: 39.9, longitude: -105 } });
   expect(saved.stops[0]).toEqual(expect.objectContaining({ latitude: 39.912274, longitude: -104.99353, speedLimitMph: 35 }));
 });
+
+test('a block pasted from a spreadsheet fills across the location columns and down the rows', async ({ page }) => {
+  await route(page, 'Stop location paste');
+  const drawer = await openStops(page, 'Main');
+  await drawer.getByRole('button', { name: 'Show locations', exact: true }).click();
+  await drawer.getByRole('button', { name: 'Add stop between A and B', exact: true }).click();
+  await page.keyboard.type('Pecos');
+
+  // Rows in drawer order: A, Pecos, B. Three lines from Latitude of A; the third has no speed, and a fourth column is ignored.
+  const paste = (label: string, text: string) => drawer.getByRole('textbox', { name: label, exact: true }).evaluate((input, value) => {
+    const data = new DataTransfer();
+    data.setData('text/plain', value);
+    input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  }, text);
+  await paste('Latitude, timepoint A', '39.91\t-105.01\t40\textra\r\n39.92\t-105.02\t35\r\n39.93\t-105.03\r\n');
+  await expect(drawer.getByRole('textbox', { name: 'Speed limit, timepoint A', exact: true })).toHaveValue('40');
+  await expect(drawer.getByRole('textbox', { name: 'Latitude, Pecos', exact: true })).toHaveValue('39.92');
+  await expect(drawer.getByRole('textbox', { name: 'Speed limit, Pecos', exact: true })).toHaveValue('35');
+  await expect(drawer.getByRole('textbox', { name: 'Longitude, timepoint B', exact: true })).toHaveValue('-105.03');
+  await expect(drawer.getByRole('textbox', { name: 'Latitude, timepoint C', exact: true })).toHaveValue('');
+
+  // Two columns starting at Longitude fill Longitude and Speed of one row.
+  await paste('Longitude, timepoint C', '-105.04\t25');
+  await expect(drawer.getByRole('textbox', { name: 'Longitude, timepoint C', exact: true })).toHaveValue('-105.04');
+  await expect(drawer.getByRole('textbox', { name: 'Speed limit, timepoint C', exact: true })).toHaveValue('25');
+  await drawer.getByRole('textbox', { name: 'Latitude, timepoint C', exact: true }).fill('39.94');
+
+  await saveStops(page);
+  const saved = await storedSet(page);
+  expect(saved.locations).toEqual({ 'Main A': { latitude: 39.91, longitude: -105.01, speedLimitMph: 40 }, 'Main B': { latitude: 39.93, longitude: -105.03 }, 'Main C': { latitude: 39.94, longitude: -105.04, speedLimitMph: 25 } });
+  expect(saved.stops[0]).toEqual(expect.objectContaining({ name: 'Pecos', latitude: 39.92, longitude: -105.02, speedLimitMph: 35 }));
+});
