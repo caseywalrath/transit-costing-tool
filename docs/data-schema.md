@@ -482,10 +482,12 @@ interface ValidationFinding {
 Decision 0079. A Route-owned record, at most one per Route, stored only while it has at least one stop or one timepoint stop ID (Decision 0080). Stops are passenger stops between timepoints; they are never Nodes or pattern points, and their times are derived, never stored.
 
 ```typescript
-interface RouteStop { id: EntityId; name: string; stopCode?: string }
+interface RouteStop { id: EntityId; name: string; stopCode?: string; latitude?: number; longitude?: number; speedLimitMph?: number }
+interface StopLocation { latitude?: number; longitude?: number; speedLimitMph?: number }
+type StopInterpolation = "equal" | "distance";
 type StopTimingRule = "interpolate" | "previous" | "next";
 interface PatternStopPlacement { id: EntityId; stopId: EntityId; afterPatternPointId: EntityId; sequence: number; timing: StopTimingRule }
-type StopTimeRoundingSeconds = 30 | 60;
+type StopTimeRoundingSeconds = 1 | 30 | 60;
 
 interface RouteStopSet extends EntityMetadata {
   id: EntityId;
@@ -497,6 +499,10 @@ interface RouteStopSet extends EntityMetadata {
   placementsByPatternId: Record<EntityId, PatternStopPlacement[]>;
   /** Decision 0080. Pattern ID → pattern point ID → that timepoint's stop ID on that pattern. A pattern with none has no entry. */
   timepointStopCodesByPatternId?: Record<EntityId, Record<EntityId, string>>;
+  /** Decision 0085. Pattern ID → pattern point ID → that timepoint's location on that pattern. */
+  timepointLocationsByPatternId?: Record<EntityId, Record<EntityId, StopLocation>>;
+  /** Decision 0086. Absent means "equal". */
+  interpolation?: StopInterpolation;
 }
 ```
 
@@ -504,6 +510,7 @@ interface RouteStopSet extends EntityMetadata {
 - `stopCode` is optional and unique within the set after trimming, ignoring case. Stop and placement IDs are unique within their set, so Route and Scenario copies keep them.
 - Validation (`validateRouteStopSet`): `routeStop.nameRequired`, `routeStop.codeDuplicate`, `routeStop.idDuplicate`, `stopPlacement.stopMissing`, `stopPlacement.idDuplicate`, `stopPlacement.repeatedInSegment`, and `routeStopSet.roundingInvalid` are errors; `stopPlacement.timingOutOfOrder` is a warning.
 - A timepoint stop ID (Decision 0080) is trimmed and non-blank, and names a point of its own pattern. It is not unique: patterns of one direction share it through Fill and Copy. A pattern edit keeps it only while its point remains and stands on the same Node (`reconcileTimepointStopCodes`).
+- Locations (Decision 0085): latitude and longitude are given together or not at all, latitude from −90 to 90, longitude from −180 to 180, speed limit above 0; a timepoint location follows the same lifetime as a timepoint stop ID and is filled or copied between patterns of the same direction. Distance spacing (Decision 0086) uses great-circle miles along opening timepoint, stops, closing timepoint; a segment missing a location, or of length 0, is equally spaced.
 - Every Scenario write prunes placements and timepoint stop IDs whose pattern or point no longer exists, stops no placement uses, and sets left with neither stops nor timepoint stop IDs (`pruneRouteStopSets`). Writes go through `updateScenarioRecords` (`saveRouteStops`, stop copy and undo) or the Route edit commit (placement reconciliation).
 
 ## IndexedDB tables and indexes
@@ -625,7 +632,9 @@ Import must validate the complete payload before opening a write transaction. ID
 
 Version 10 adds the optional top-level `plannedFrequencies` array (Decision 0058); the key is omitted when a project has no plans, so such a file differs from version 9 only by its version number. Versions 1 to 9 stay readable and import with no plans.
 
-Version 14 (current, Decision 0080) adds the optional `timepointStopCodesByPatternId` to each stop set and no longer writes `Node.stopCode`. Import checks that each value is a non-blank string of a point of its pattern. A version 13 file's `Node.stopCode` is moved onto every point of its Route's patterns that stands on that Node (a point that already has a stop ID keeps it), and a Route without a stop set gets one.
+Version 16 (current, Decisions 0085 and 0086) adds the optional stop `latitude`, `longitude` and `speedLimitMph`, the optional `timepointLocationsByPatternId` and `interpolation` on each stop set, and accepts `roundingSeconds` 1. Import refuses a malformed location (an incomplete pair, a value out of range, or a location on a point not of its pattern). Versions 1 to 15 stay readable and import with no locations and equal spacing. The Dexie schema stays at version 15.
+
+Version 14 (Decision 0080) adds the optional `timepointStopCodesByPatternId` to each stop set and no longer writes `Node.stopCode`. Import checks that each value is a non-blank string of a point of its pattern. A version 13 file's `Node.stopCode` is moved onto every point of its Route's patterns that stands on that Node (a point that already has a stop ID keeps it), and a Route without a stop set gets one.
 
 Version 15 adds the optional `runtimeInputsSignature` to a Trip's `provenance.calculationSource` (Decision 0081 item 11, FX7); when present it must be a non-empty string, and a file that breaks this fails with `Invalid project backup: trips[N] has an invalid runtime inputs signature`. Versions 1 to 14 stay readable. On import of any version, a Trip that records a source without a signature and is current by the revision rule against its source profile gets that profile's signature (`withRecordedRuntimeSignatures`), as the Dexie version 14 upgrade does.
 

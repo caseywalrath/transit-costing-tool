@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
 import { segmentStopTimes, stopTimeRows } from './stopTimes';
-import type { Node, PatternStopPlacement, RoutePattern, RouteStopSet, StopTimingRule, Trip } from './types';
+import type { Node, PatternStopPlacement, RoutePattern, RouteStop, RouteStopSet, StopInterpolation, StopTimeRoundingSeconds, StopTimingRule, TimepointLocations, Trip } from './types';
 
 const T = metadata('2026-01-01T00:00:00.000Z');
 const I: StopTimingRule = 'interpolate';
@@ -132,5 +132,103 @@ describe('stopTimeRows (Decision 0079, section 8.3)', () => {
     expect(fine.find((row) => row.placementId === 'y2')?.time).toBe(29580);
     const seg = segmentStopTimes(at(8, 10), at(8, 20), [I, I], 30);
     expect(fine.find((row) => row.placementId === 'y3')?.time).toBe(seg[1]);
+  });
+});
+
+describe('distance-weighted stop times (Decision 0086, section 4.11)', () => {
+  // On the equator, great-circle distance is proportional to the longitude difference, so the chain fractions are exact.
+  const along = (longitude: number) => ({ latitude: 0, longitude });
+  const nodeOpen: Node = { ...T, id: 'nO', scenarioId: 's', routeId: 'r', name: 'Open', kind: 'timepoint' };
+  const nodeClose: Node = { ...T, id: 'nX', scenarioId: 's', routeId: 'r', name: 'Close', kind: 'timepoint' };
+  const nodes = [nodeOpen, nodeClose];
+  const pattern: RoutePattern = {
+    ...T, id: 'Q', scenarioId: 's', routeId: 'r', name: 'Q',
+    points: [
+      { id: 'qA', nodeId: 'nO', sequence: 0, cumulativeMiles: 0 },
+      { id: 'qB', nodeId: 'nX', sequence: 1, cumulativeMiles: 1 },
+    ],
+  };
+  const trip: Trip = {
+    ...T, id: 'qtrip', scenarioId: 's', routeId: 'r', serviceDayId: 'd', patternId: 'Q',
+    stopTimes: [
+      { patternPointId: 'qA', sequence: 0, time: at(10, 0) },
+      { patternPointId: 'qB', sequence: 1, time: at(10, 10) },
+    ],
+    provenance: { kind: 'generated', manuallyChangedFields: [] },
+  };
+  const stop = (id: string, longitude?: number): RouteStop => ({ id, name: id, ...(longitude === undefined ? {} : along(longitude)) });
+  const placement = (id: string, stopId: string, sequence: number, timing: StopTimingRule = I): PatternStopPlacement =>
+    ({ id, stopId, afterPatternPointId: 'qA', sequence, timing });
+  const timepointLocations: TimepointLocations = { qA: along(0), qB: along(1) };
+  const buildSet = (options: {
+    stops: RouteStop[];
+    placements: PatternStopPlacement[];
+    rounding?: StopTimeRoundingSeconds;
+    interpolation?: StopInterpolation;
+    locations?: TimepointLocations;
+  }): RouteStopSet => ({
+    ...T, id: 'qset', scenarioId: 's', routeId: 'r', roundingSeconds: options.rounding ?? 60,
+    stops: options.stops,
+    placementsByPatternId: { Q: options.placements },
+    timepointLocationsByPatternId: { Q: options.locations ?? timepointLocations },
+    ...(options.interpolation ? { interpolation: options.interpolation } : {}),
+  });
+  // Two stops in segment qA to qB at 1/4 and 3/4 of the chain (longitude 0.25 and 0.75 between 0 and 1).
+  const quarterStops = [stop('S1', 0.25), stop('S2', 0.75)];
+  const quarterPlacements = [placement('y1', 'S1', 0), placement('y2', 'S2', 1)];
+
+  it('keeps equal spacing unchanged when the set says equal, and marks the rows equal', () => {
+    const plain = buildSet({ stops: quarterStops, placements: quarterPlacements });
+    const equal = buildSet({ stops: quarterStops, placements: quarterPlacements, interpolation: 'equal' });
+    const plainRows = stopTimeRows({ pattern, set: plain, nodes, trip });
+    const equalRows = stopTimeRows({ pattern, set: equal, nodes, trip });
+    expect(equalRows.map((row) => row.time)).toEqual(plainRows.map((row) => row.time));
+    expect(equalRows.filter((row) => row.kind === 'stop').map((row) => row.time)).toEqual(segmentStopTimes(at(10, 0), at(10, 10), [I, I], 60));
+    expect(equalRows.filter((row) => row.kind === 'stop').every((row) => row.spacing === 'equal')).toBe(true);
+  });
+
+  it('places stops at 1/4 and 3/4 of the chain: 10:02 and 10:07 at 60-second rounding, 10:02:30 and 10:07:30 at 1 second', () => {
+    const set = buildSet({ stops: quarterStops, placements: quarterPlacements, interpolation: 'distance' });
+    const coarse = stopTimeRows({ pattern, set, nodes, trip }).filter((row) => row.kind === 'stop');
+    expect(coarse.map((row) => row.time)).toEqual([at(10, 2), at(10, 7)]);
+    expect(coarse.every((row) => row.spacing === 'distance')).toBe(true);
+    const fine = stopTimeRows({ pattern, set, nodes, trip, roundingSeconds: 1 }).filter((row) => row.kind === 'stop');
+    expect(fine.map((row) => row.time)).toEqual([at(10, 2, 30), at(10, 7, 30)]);
+  });
+
+  it('uses equal spacing for a segment with a stop that has no location, and marks its rows equal', () => {
+    const stops = [stop('S1'), stop('S2', 0.75)];
+    const set = buildSet({ stops, placements: quarterPlacements, interpolation: 'distance' });
+    const rows = stopTimeRows({ pattern, set, nodes, trip }).filter((row) => row.kind === 'stop');
+    expect(rows.map((row) => row.time)).toEqual(segmentStopTimes(at(10, 0), at(10, 10), [I, I], 60));
+    expect(rows.map((row) => row.spacing)).toEqual(['equal', 'equal']);
+  });
+
+  it('keeps previous and next stops at the timepoint times in a distance segment, and raises an interpolated stop to a previous next stop', () => {
+    const stops = [stop('S1', 0.25), stop('S2', 0.75)];
+    const bounded = buildSet({ stops, placements: [placement('y1', 'S1', 0, 'previous'), placement('y2', 'S2', 1, 'next')], interpolation: 'distance' });
+    const boundedRows = stopTimeRows({ pattern, set: bounded, nodes, trip }).filter((row) => row.kind === 'stop');
+    expect(boundedRows.map((row) => row.time)).toEqual([at(10, 0), at(10, 10)]);
+    expect(boundedRows.every((row) => row.spacing === 'distance')).toBe(true);
+
+    // The 'next' stop at 10:10 comes first, so the interpolated stop after it (3/4 of the way, raw 10:07:30 at 1 second) is raised to 10:10.
+    const raised = buildSet({ stops, placements: [placement('y1', 'S1', 0, 'next'), placement('y2', 'S2', 1)], interpolation: 'distance' });
+    const raisedRows = stopTimeRows({ pattern, set: raised, nodes, trip, roundingSeconds: 1 }).filter((row) => row.kind === 'stop');
+    expect(raisedRows.map((row) => row.time)).toEqual([at(10, 10), at(10, 10)]);
+  });
+
+  it('uses equal spacing when the chain has no length, and marks its rows equal', () => {
+    const stops = [stop('S1', 0), stop('S2', 0)];
+    const set = buildSet({ stops, placements: quarterPlacements, interpolation: 'distance', locations: { qA: along(0), qB: along(0) } });
+    const rows = stopTimeRows({ pattern, set, nodes, trip }).filter((row) => row.kind === 'stop');
+    expect(rows.map((row) => row.time)).toEqual(segmentStopTimes(at(10, 0), at(10, 10), [I, I], 60));
+    expect(rows.every((row) => row.spacing === 'equal')).toBe(true);
+  });
+
+  it('uses equal spacing when the set has no interpolation, even with locations on every member', () => {
+    const set = buildSet({ stops: quarterStops, placements: quarterPlacements });
+    const rows = stopTimeRows({ pattern, set, nodes, trip }).filter((row) => row.kind === 'stop');
+    expect(rows.map((row) => row.time)).toEqual(segmentStopTimes(at(10, 0), at(10, 10), [I, I], 60));
+    expect(rows.every((row) => row.spacing === 'equal')).toBe(true);
   });
 });

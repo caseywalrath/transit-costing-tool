@@ -9,7 +9,7 @@
 .copy-mode { display: grid; gap: 5px; margin: 0 0 var(--space-3); border: 0; padding: 0; color: var(--color-text-muted); font-size: var(--font-size-label); }
 .copy-mode legend { margin-bottom: var(--space-1); font-weight: var(--font-weight-bold); }
 .copy-mode label, .clear-target { display: flex; align-items: center; gap: 6px; }
-.copy-mode input[type=radio], .clear-target input[type=checkbox] { width: auto; min-height: 0; }
+.copy-mode input[type=radio], .copy-mode input[type=checkbox], .clear-target input[type=checkbox] { width: auto; min-height: 0; }
 .copy-mode small { color: var(--color-text-muted); padding-left: 23px; }
 .copy-impact { grid-template-columns: repeat(3, minmax(90px, 1fr)); }
 .clear-target { margin: 0 0 var(--space-3); color: var(--color-warn); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }

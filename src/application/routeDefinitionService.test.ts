@@ -1292,6 +1292,102 @@ describe('route stops (Decision 0079)', () => {
     });
   });
 
+  describe('stop locations and spacing (Decisions 0085, 0086)', () => {
+    type Location = { latitude?: number; longitude?: number; speedLimitMph?: number };
+    /** Saves one pattern's timepoint locations, keeping its stored stops, placements and codes. */
+    async function saveLocations(service: RouteDefinitionService, routeId: string, patternId: string, timepointLocations: Record<string, Location>) {
+      const stored = await service.getRouteStopSet(routeId);
+      return service.saveRouteStops({ routeId, patternId, stops: stored?.stops ?? [], placements: stored?.placementsByPatternId[patternId] ?? [], timepointStopCodes: stored?.timepointStopCodesByPatternId?.[patternId] ?? {}, timepointLocations, roundingSeconds: 60, baseUpdatedAt: stored?.updatedAt });
+    }
+
+    /** Adds Return, in the Route's other direction (the same helper as the Decision 0080 block). */
+    async function withReturn() {
+      const route = await stopRoute();
+      const directions = route.aggregate.directions ?? [];
+      const nodeIds = [...route.trunk.points].sort((left, right) => left.sequence - right.sequence).map((point) => point.nodeId).reverse();
+      const opposite = await savePattern(route.service, route.aggregate, { name: 'Return', directionId: directions[1].id, stops: nodeIds.map((nodeId, index) => ({ nodeId, miles: [0, 2.5, 4][index] })) });
+      return { ...route, aggregate: opposite.aggregate, opposite: opposite.pattern };
+    }
+
+    it('saves stop locations and speed limits, rounding 1 s, and refuses a latitude without a longitude', async () => {
+      const { service, routeId, trunk } = await stopRoute();
+      const [south] = pointIds(trunk);
+      const located: RouteStop[] = [{ id: 'elm', name: 'Elm Street', latitude: 39.912274, longitude: -104.99353, speedLimitMph: 35 }, { id: 'oak', name: 'Oak Avenue' }];
+      const saved = await service.saveRouteStops({ routeId, patternId: trunk.id, stops: located, placements: [placement('elm', south)], timepointStopCodes: {}, timepointLocations: {}, roundingSeconds: 1, baseUpdatedAt: undefined });
+      // The stop no placement uses is pruned (Decision 0079); the located stop keeps its location.
+      expect(saved?.stops).toEqual([located[0]]);
+      expect(saved?.roundingSeconds).toBe(1);
+      await expect(service.saveRouteStops({
+        routeId, patternId: trunk.id, roundingSeconds: 1, placements: [placement('elm', south)], timepointStopCodes: {}, timepointLocations: {}, baseUpdatedAt: saved!.updatedAt,
+        stops: [{ id: 'elm', name: 'Elm Street', latitude: 39.9 }, { id: 'oak', name: 'Oak Avenue' }],
+      })).rejects.toMatchObject({ name: 'RouteStopValidationError', findings: [expect.objectContaining({ ruleId: 'stopLocation.incomplete', entityId: 'elm' })] });
+      expect(await service.getRouteStopSet(routeId)).toEqual(saved);
+    });
+
+    it('keeps a pattern\'s timepoint locations when another pattern is saved, and when the save gives none', async () => {
+      const { service, routeId, trunk, branch } = await stopRoute();
+      const [south] = pointIds(trunk);
+      await saveLocations(service, routeId, trunk.id, { [south]: { latitude: 39.91, longitude: -105 } });
+      const withBranch = await saveLocations(service, routeId, branch.id, { [pointIds(branch)[0]]: { speedLimitMph: 25 } });
+      expect(withBranch?.timepointLocationsByPatternId).toEqual({ [trunk.id]: { [south]: { latitude: 39.91, longitude: -105 } }, [branch.id]: { [pointIds(branch)[0]]: { speedLimitMph: 25 } } });
+      // A save from an older caller that passes no locations leaves the stored ones alone.
+      const kept = await saveStops(service, routeId, trunk.id, [placement('elm', south)]);
+      expect(kept?.timepointLocationsByPatternId?.[trunk.id]).toEqual({ [south]: { latitude: 39.91, longitude: -105 } });
+    });
+
+    it('stores distance spacing only when chosen, and a save without a choice keeps the stored one', async () => {
+      const { service, routeId, trunk } = await stopRoute();
+      const [south] = pointIds(trunk);
+      const distance = await service.saveRouteStops({ routeId, patternId: trunk.id, stops: STOPS, placements: [placement('elm', south)], timepointStopCodes: {}, interpolation: 'distance', roundingSeconds: 60, baseUpdatedAt: undefined });
+      expect(distance?.interpolation).toBe('distance');
+      const kept = await saveStops(service, routeId, trunk.id, [placement('elm', south)]);
+      expect(kept?.interpolation).toBe('distance');
+      const equal = await service.saveRouteStops({ routeId, patternId: trunk.id, stops: STOPS, placements: [placement('elm', south)], timepointStopCodes: {}, interpolation: 'equal', roundingSeconds: 60, baseUpdatedAt: kept!.updatedAt });
+      expect(equal).toBeDefined();
+      expect(equal?.interpolation).toBeUndefined();
+    });
+
+    it('fill takes locations from same-direction patterns only, and copy writes them to same-direction patterns and undo restores them', async () => {
+      const { service, routeId, aggregate, trunk, branch, opposite } = await withReturn();
+      const [south] = pointIds(trunk);
+      await saveLocations(service, routeId, trunk.id, { [south]: { latitude: 39.91, longitude: -105 } });
+      await saveLocations(service, routeId, opposite.id, { [pointIds(opposite)[1]]: { latitude: 39.5, longitude: -104 } });
+
+      const fill = service.previewStopFill(aggregate, await service.getRouteStopSet(routeId), branch, { placements: [], timepointStopCodes: {}, timepointLocations: {} });
+      expect(fill.locationChanges.map((change) => [change.patternId, change.patternPointId, change.next, change.sourcePatternIds])).toEqual([[branch.id, pointIds(branch)[0], { latitude: 39.91, longitude: -105 }, [trunk.id]]]);
+      expect(service.applyStopFill(branch, { placements: [], timepointStopCodes: {}, timepointLocations: {} }, fill).timepointLocations).toEqual({ [pointIds(branch)[0]]: { latitude: 39.91, longitude: -105 } });
+
+      const copy = await service.previewStopCopy(trunk.id);
+      expect(copy.locationChanges.map((change) => [change.patternId, change.patternPointId, change.next])).toEqual([[branch.id, pointIds(branch)[0], { latitude: 39.91, longitude: -105 }]]);
+      const written = await service.applyStopCopy(copy);
+      expect(written.timepointLocationsByPatternId?.[branch.id]).toEqual({ [pointIds(branch)[0]]: { latitude: 39.91, longitude: -105 } });
+      expect(written.timepointLocationsByPatternId?.[opposite.id]).toEqual({ [pointIds(opposite)[1]]: { latitude: 39.5, longitude: -104 } });
+      expect((await service.undoStopCopy())?.timepointLocationsByPatternId?.[branch.id]).toBeUndefined();
+    });
+
+    it('refuses a copy when only a location changed after the preview, and writes nothing', async () => {
+      const { service, repository, scenarioId, routeId, trunk } = await stopRoute();
+      const [south] = pointIds(trunk);
+      await saveLocations(service, routeId, trunk.id, { [south]: { latitude: 39.91, longitude: -105 } });
+      const preview = await service.previewStopCopy(trunk.id);
+      await saveLocations(service, routeId, trunk.id, { [south]: { latitude: 39.92, longitude: -105 } });
+      const before = JSON.stringify(await repository.getScenarioRecords(scenarioId));
+      await expect(service.applyStopCopy(preview)).rejects.toThrow('Stops changed after the preview. Review the changes again.');
+      expect(JSON.stringify(await repository.getScenarioRecords(scenarioId))).toBe(before);
+    });
+
+    it('a pattern edit drops the location of a removed point and of a point moved to another Node', async () => {
+      const { service, routeId, aggregate, trunk } = await stopRoute();
+      const [south, north, third] = pointIds(trunk);
+      await saveLocations(service, routeId, trunk.id, { [south]: { latitude: 39.91, longitude: -105 }, [north]: { latitude: 39.92, longitude: -105 }, [third]: { speedLimitMph: 30 } });
+      const sorted = [...trunk.points].sort((left, right) => left.sequence - right.sequence);
+      const otherNode = aggregate.nodes.find((node) => node.id !== sorted[0].nodeId && node.id !== sorted[1].nodeId)!;
+      const preview = await service.previewPatternChange(routeId, trunk.id, { ...trunk, points: [sorted[0], { ...sorted[1], nodeId: otherNode.id }] });
+      await service.commitPatternChange(preview.previewToken);
+      expect((await service.getRouteStopSet(routeId))?.timepointLocationsByPatternId).toEqual({ [trunk.id]: { [south]: { latitude: 39.91, longitude: -105 } } });
+    });
+  });
+
   it('a Route rename leaves the stop set unchanged', async () => {
     const { service, routeId, aggregate, trunk } = await stopRoute();
     await saveStops(service, routeId, trunk.id, [placement('elm', pointIds(trunk)[0])]);

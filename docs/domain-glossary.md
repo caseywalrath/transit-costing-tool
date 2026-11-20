@@ -52,7 +52,19 @@ One Route stop on one pattern segment, after a given pattern point, in an order 
 
 ### Timing rule
 
-How a stop's time is derived from a Trip's times at the two timepoints around it: `interpolate` (the default; the segment's interpolated stops divide its time equally, rounded down to 1 minute or 30 seconds), `previous` (the earlier timepoint's time), or `next` (the later timepoint's time).
+How a stop's time is derived from a Trip's times at the two timepoints around it: `interpolate` (the default; the segment's interpolated stops divide its time equally, rounded down to 1 minute, 30 seconds or 1 second; equally or by distance, see Spacing), `previous` (the earlier timepoint's time), or `next` (the later timepoint's time).
+
+### Stop location
+
+A latitude and longitude, with an optional speed limit in miles per hour, of a Route stop or of a timepoint on one pattern (Decision 0085). It is entered or imported from a CSV file in the Stops drawer and fills the location columns of the stop schedule.
+
+### Spacing
+
+The Route setting that places interpolated stops between two timepoints: **Equal** divides the time equally; **By distance** places each stop by its straight-line distance along the segment (Decision 0086). A segment where a stop or timepoint has no location stays equal.
+
+### Stop schedule
+
+The wide CSV export of one Route and Service day (Decision 0084): one row per stop and timepoint per direction, with stop ID, name, location, distance to the next stop and speed limit, and one time column per service period and pattern from a sample Trip. Output only.
 
 ### Stop trips
 

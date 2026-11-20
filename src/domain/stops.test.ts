@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
 import {
+  hasCoordinates,
   normalizePlacements,
+  normalizeStopLocation,
+  normalizeTimepointLocations,
   placementSegmentIndex,
   placementsBySegment,
   pruneRouteStopSets,
   reconcilePlacements,
+  reconcileTimepointLocations,
   remapRouteStopSet,
+  sameLocation,
   validateRouteStopSet,
 } from './stops';
 import type { PatternPoint, PatternStopPlacement, Route, RoutePattern, RouteStop, RouteStopSet, StopTimingRule } from './types';
@@ -249,5 +254,154 @@ describe('remapRouteStopSet', () => {
     expect(JSON.stringify(set)).toBe(before);
     expect(copy.stops).not.toBe(set.stops);
     expect(copy.stops[0]).not.toBe(set.stops[0]);
+  });
+
+  it('maps timepoint location keys and drops an unmapped point and an unmapped pattern (Decision 0085)', () => {
+    const located = setOf({
+      placementsByPatternId: { P: FIXTURE },
+      timepointLocationsByPatternId: {
+        P: { pA: { latitude: 39.9, longitude: -105 }, pB: { speedLimitMph: 35 } },
+        Q: { pA: { latitude: 1, longitude: 2 } },
+      },
+    });
+    const copy = remapRouteStopSet(located, target, '2026-02-02T00:00:00.000Z');
+    expect(copy.timepointLocationsByPatternId).toEqual({ P2: { qA: { latitude: 39.9, longitude: -105 } } });
+  });
+});
+
+describe('stop locations and spacing (Decisions 0085, 0086)', () => {
+  const summary = (findings: ReturnType<typeof validateRouteStopSet>) => findings.map((item) => [item.ruleId, item.entityId, item.field]);
+  const located = (overrides: Partial<RouteStop>): RouteStop => ({ ...stop('s1'), ...overrides });
+
+  describe('validateRouteStopSet location rules (section 4.3)', () => {
+    it('stopLocation.incomplete: a latitude without a longitude, or a longitude without a latitude, is an error on the stop', () => {
+      expect(summary(validateRouteStopSet(setOf({ stops: [located({ latitude: 39.9 })], placementsByPatternId: {} }), [P]))).toEqual([['stopLocation.incomplete', 's1', 'latitude']]);
+      expect(summary(validateRouteStopSet(setOf({ stops: [located({ longitude: -105 })], placementsByPatternId: {} }), [P]))).toEqual([['stopLocation.incomplete', 's1', 'latitude']]);
+    });
+
+    it('stopLocation.latitudeRange: latitude above 90 or not finite is an error', () => {
+      expect(summary(validateRouteStopSet(setOf({ stops: [located({ latitude: 91, longitude: 0 })], placementsByPatternId: {} }), [P]))).toEqual([['stopLocation.latitudeRange', 's1', 'latitude']]);
+      expect(summary(validateRouteStopSet(setOf({ stops: [located({ latitude: Number.NaN, longitude: 0 })], placementsByPatternId: {} }), [P]))).toEqual([['stopLocation.latitudeRange', 's1', 'latitude']]);
+    });
+
+    it('stopLocation.latitudeRange: exactly -90 and 90 are valid', () => {
+      expect(validateRouteStopSet(setOf({ stops: [located({ latitude: -90, longitude: 0 }), stop('s2')], placementsByPatternId: {} }), [P])).toEqual([]);
+      expect(validateRouteStopSet(setOf({ stops: [located({ latitude: 90, longitude: 0 })], placementsByPatternId: {} }), [P])).toEqual([]);
+    });
+
+    it('stopLocation.longitudeRange: longitude below -180 is an error', () => {
+      expect(summary(validateRouteStopSet(setOf({ stops: [located({ latitude: 39, longitude: -181 })], placementsByPatternId: {} }), [P]))).toEqual([['stopLocation.longitudeRange', 's1', 'longitude']]);
+    });
+
+    it('stopLocation.speedLimitInvalid: a speed of 0, above 100, or not finite is an error; 100 is valid', () => {
+      for (const speedLimitMph of [0, 101, Number.POSITIVE_INFINITY]) {
+        expect(summary(validateRouteStopSet(setOf({ stops: [located({ speedLimitMph })], placementsByPatternId: {} }), [P]))).toEqual([['stopLocation.speedLimitInvalid', 's1', 'speedLimitMph']]);
+      }
+      expect(validateRouteStopSet(setOf({ stops: [located({ speedLimitMph: 100 })], placementsByPatternId: {} }), [P])).toEqual([]);
+    });
+
+    it('applies the same rules to a timepoint location, reported with its pattern', () => {
+      const findings = validateRouteStopSet(setOf({ timepointLocationsByPatternId: { P: { pB: { latitude: 39.9 } } } }), [P]);
+      expect(summary(findings)).toEqual([['stopLocation.incomplete', 'pB', 'latitude']]);
+      expect(findings[0]).toMatchObject({ entityType: 'timepointLocation', parameters: { patternId: 'P' } });
+    });
+
+    it('stopLocation.speedLimitInvalid on a timepoint location is an error', () => {
+      const findings = validateRouteStopSet(setOf({ timepointLocationsByPatternId: { P: { pC: { speedLimitMph: 0 } } } }), [P]);
+      expect(summary(findings)).toEqual([['stopLocation.speedLimitInvalid', 'pC', 'speedLimitMph']]);
+    });
+
+    it('routeStopSet.roundingInvalid: rounding 1 is valid now; a rounding of 45 is still an error', () => {
+      expect(validateRouteStopSet(setOf({ roundingSeconds: 1 }), [P])).toEqual([]);
+      expect(summary(validateRouteStopSet(setOf({ roundingSeconds: 45 as unknown as 30 }), [P]))).toEqual([['routeStopSet.roundingInvalid', 'set', 'roundingSeconds']]);
+    });
+
+    it('routeStopSet.interpolationInvalid: only "equal" and "distance" are valid; absent is equal', () => {
+      expect(summary(validateRouteStopSet(setOf({ interpolation: 'bogus' as unknown as 'equal' }), [P]))).toEqual([['routeStopSet.interpolationInvalid', 'set', 'interpolation']]);
+      expect(validateRouteStopSet(setOf({ interpolation: 'equal' }), [P])).toEqual([]);
+    });
+
+    it('a valid set with rounding 1, distance spacing, located stops and a located timepoint gives no findings', () => {
+      const set = setOf({
+        roundingSeconds: 1,
+        interpolation: 'distance',
+        stops: [located({ latitude: 39.9, longitude: -105, speedLimitMph: 35 }), ...STOPS.slice(1)],
+        timepointLocationsByPatternId: { P: { pB: { latitude: 39.91, longitude: -105.01 } } },
+      });
+      expect(validateRouteStopSet(set, [P])).toEqual([]);
+    });
+  });
+
+  describe('pruneRouteStopSets and timepoint locations (section 4.4)', () => {
+    const routes: Route[] = [{ ...T, id: 'r', scenarioId: 's', name: 'R' }];
+
+    it('keeps a set whose only content is timepoint locations', () => {
+      const locationsOnly = setOf({ stops: [], placementsByPatternId: {}, timepointLocationsByPatternId: { P: { pB: { latitude: 39.9, longitude: -105 } } } });
+      expect(pruneRouteStopSets([locationsOnly], { routes, patterns: [P] })).toEqual([locationsOnly]);
+    });
+
+    it('drops the location of a removed point and of a removed pattern', () => {
+      const set = setOf({ timepointLocationsByPatternId: { P: { pB: { latitude: 39.9, longitude: -105 }, gone: { speedLimitMph: 30 } }, Q: { pA: { latitude: 1, longitude: 2 } } } });
+      const [pruned] = pruneRouteStopSets([set], { routes, patterns: [P] });
+      expect(pruned.timepointLocationsByPatternId).toEqual({ P: { pB: { latitude: 39.9, longitude: -105 } } });
+    });
+
+    it('returns the same array when every location is valid', () => {
+      const sets = [setOf({ timepointLocationsByPatternId: { P: { pB: { latitude: 39.9, longitude: -105 } } } })];
+      expect(pruneRouteStopSets(sets, { routes, patterns: [P] })).toBe(sets);
+    });
+  });
+
+  describe('reconcileTimepointLocations (Decision 0085 item 4)', () => {
+    const loc = { latitude: 39.9, longitude: -105 };
+
+    it('keeps a location on a point that remains on the same Node', () => {
+      expect(reconcileTimepointLocations(P, P, { pB: loc })).toEqual({ locations: { pB: loc }, removedCount: 0 });
+    });
+
+    it('drops a location when its point now stands on another Node', () => {
+      const moved = pattern('P', [pA, { ...pB, nodeId: 'X' }, pC, pD]);
+      expect(reconcileTimepointLocations(P, moved, { pB: loc })).toEqual({ locations: {}, removedCount: 1 });
+    });
+
+    it('drops a location when its point is removed', () => {
+      expect(reconcileTimepointLocations(P, pattern('P', [pA, pC, pD]), { pB: loc })).toEqual({ locations: {}, removedCount: 1 });
+    });
+  });
+
+  describe('location normalization and comparison (section 4.2)', () => {
+    it('keeps finite fields in the order latitude, longitude, speed limit, and returns undefined when none is kept', () => {
+      const result = normalizeStopLocation({ speedLimitMph: 35, longitude: Number.NaN, latitude: 39.9 });
+      expect(result).toEqual({ latitude: 39.9, speedLimitMph: 35 });
+      expect(Object.keys(result ?? {})).toEqual(['latitude', 'speedLimitMph']);
+      expect(normalizeStopLocation({ latitude: Number.POSITIVE_INFINITY })).toBeUndefined();
+      expect(normalizeStopLocation({})).toBeUndefined();
+      expect(normalizeStopLocation(undefined)).toBeUndefined();
+    });
+
+    it('keeps a lone latitude, which validation reports', () => {
+      expect(normalizeStopLocation({ latitude: 39.9 })).toEqual({ latitude: 39.9 });
+    });
+
+    it('normalizeTimepointLocations keeps points on the pattern in point order and drops empty values', () => {
+      const result = normalizeTimepointLocations(P, { pD: { latitude: 1, longitude: 2 }, nope: { latitude: 3, longitude: 4 }, pB: {}, pA: { speedLimitMph: 30 } });
+      expect(result).toEqual({ pA: { speedLimitMph: 30 }, pD: { latitude: 1, longitude: 2 } });
+      expect(Object.keys(result)).toEqual(['pA', 'pD']);
+    });
+
+    it('sameLocation: two empty locations are the same; absent equals absent; any differing field is a change', () => {
+      expect(sameLocation(undefined, undefined)).toBe(true);
+      expect(sameLocation(undefined, {})).toBe(true);
+      expect(sameLocation({ latitude: 1, longitude: undefined }, { latitude: 1 })).toBe(true);
+      expect(sameLocation({ latitude: 1, longitude: 2 }, { latitude: 1, longitude: 3 })).toBe(false);
+      expect(sameLocation(undefined, { speedLimitMph: 30 })).toBe(false);
+    });
+
+    it('hasCoordinates: true only when latitude and longitude are both finite numbers', () => {
+      expect(hasCoordinates({ latitude: 1, longitude: 2 })).toBe(true);
+      expect(hasCoordinates({ latitude: 1 })).toBe(false);
+      expect(hasCoordinates({ latitude: Number.NaN, longitude: 2 })).toBe(false);
+      expect(hasCoordinates(undefined)).toBe(false);
+    });
   });
 });

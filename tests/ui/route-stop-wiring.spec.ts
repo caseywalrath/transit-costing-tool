@@ -118,7 +118,7 @@ test('Trips Actions offers "Export trips with stops CSV"; a Route without stops 
   const tripsSection = page.locator('[aria-label="Trips section"]');
   await openMenu(page, tripsSection.getByRole('button', { name: 'Trip actions', exact: true }), 'Trip actions');
   const menu = page.getByRole('menu', { name: 'Trip actions', exact: true });
-  await expect(menu.getByRole('menuitem')).toHaveText(['Copy trips from another day…', 'Stop trips…', 'Export trips CSV', 'Export trips with stops CSV']);
+  await expect(menu.getByRole('menuitem')).toHaveText(['Copy trips from another day…', 'Stop trips…', 'Export trips CSV', 'Export trips with stops CSV', 'Export stop schedule CSV…']);
 
   const download = page.waitForEvent('download');
   await menu.getByRole('menuitem', { name: 'Export trips with stops CSV', exact: true }).click();

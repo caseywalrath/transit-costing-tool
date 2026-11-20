@@ -135,3 +135,42 @@ test('fits a 390 px screen without horizontal page scroll', async ({ page }) => 
   await expect(drawer.getByRole('rowheader', { name: /^Northgate/ })).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
+
+test('By distance and 1 s spacing are saved, place a stop by its location, and note segments without locations', async ({ page }) => {
+  // SD2 (Decision 0086). On ENGLEWOOD every member of the first segment has a location, on the equator so that "Wagon Rd & 120th" sits
+  // at exactly a quarter of the chain; on EVANS "Northgate" has none, so that segment stays equally spaced.
+  const backup = goldenWithStops();
+  const points = (name: string) => [...backup.patterns.find((candidate: any) => candidate.name === name).points].sort((left: any, right: any) => left.sequence - right.sequence);
+  const [set] = backup.routeStopSets as any[];
+  set.stops[0] = { ...set.stops[0], latitude: 0, longitude: 0.25 };
+  const [e1, e2] = points(ENGLEWOOD); const [v1, v2] = points(EVANS);
+  set.timepointLocationsByPatternId = { [backup.patterns.find((candidate: any) => candidate.name === ENGLEWOOD).id]: { [e1.id]: { latitude: 0, longitude: 0 }, [e2.id]: { latitude: 0, longitude: 1 } }, [backup.patterns.find((candidate: any) => candidate.name === EVANS).id]: { [v1.id]: { latitude: 0, longitude: 0 }, [v2.id]: { latitude: 0, longitude: 1 } } };
+  await seedSnapshot(page, backup);
+  await page.goto('/');
+  await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Trips', exact: true }).click();
+  await chooseScope(page, 'Day', { label: 'Weekday' });
+  await expect(page.locator('.trips-workspace .schedule-table tbody tr')).toHaveCount(138, { timeout: 30000 });
+
+  const drawer = await openStopTrips(page);
+  await drawer.getByLabel('Pattern').selectOption({ label: EVANS });
+  await expect(drawer.getByText('equal spacing because')).toHaveCount(0);
+  await drawer.getByRole('radio', { name: 'By distance', exact: true }).click();
+  await drawer.getByRole('radio', { name: '1 s', exact: true }).click();
+  await expect(drawer.getByText('1 segment uses equal spacing because a stop or timepoint has no location.')).toBeVisible();
+  await expect(drawer.getByRole('status').filter({ hasText: 'unsaved change' })).toHaveText('2 unsaved changes');
+  await drawer.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(drawer.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Trips', exact: true }).click();
+  await chooseScope(page, 'Day', { label: 'Weekday' });
+  await expect(page.locator('.trips-workspace .schedule-table tbody tr')).toHaveCount(138, { timeout: 30000 });
+  const reopened = await openStopTrips(page);
+  await expect(reopened.getByRole('radio', { name: 'By distance', exact: true })).toHaveAttribute('aria-checked', 'true');
+  await expect(reopened.getByRole('radio', { name: '1 s', exact: true })).toHaveAttribute('aria-checked', 'true');
+  await reopened.getByLabel('Pattern').selectOption({ label: ENGLEWOOD });
+  await expect(reopened.getByText('equal spacing because')).toHaveCount(0);
+  const a = seconds((await rowCells(reopened, 'Wagon Road'))[2]); const b = seconds((await rowCells(reopened, '112th Ave'))[2]);
+  expect((await rowCells(reopened, 'Wagon Rd & 120th'))[2]).toBe(clock(Math.max(a, Math.floor(a + (b - a) * 0.25 + 1e-9))));
+});

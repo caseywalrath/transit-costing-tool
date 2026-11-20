@@ -86,7 +86,12 @@ export const USER_FACING_VALIDATION_MESSAGES: Record<string, string> = {
   'stopPlacement.idDuplicate': 'This stop is listed twice.',
   'stopPlacement.repeatedInSegment': 'This stop is already between these timepoints.',
   'stopPlacement.timingOutOfOrder': 'Stop timing rules are out of order here.',
-  'routeStopSet.roundingInvalid': 'Choose 1 min or 30 s rounding.',
+  'routeStopSet.roundingInvalid': 'Choose 1 min, 30 s, or 1 s rounding.',
+  'routeStopSet.interpolationInvalid': 'Choose equal or distance spacing.',
+  'stopLocation.incomplete': 'Enter both latitude and longitude, or neither.',
+  'stopLocation.latitudeRange': 'Latitude must be between -90 and 90.',
+  'stopLocation.longitudeRange': 'Longitude must be between -180 and 180.',
+  'stopLocation.speedLimitInvalid': 'Enter a speed limit above 0 and up to 100 mph.',
 };
 
 export function userMessage(finding: ValidationFinding) {

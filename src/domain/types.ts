@@ -47,14 +47,24 @@ export interface PlannedFrequency extends EntityMetadata {
   /** Direction ID → node ID. A missing entry means the default measure node. */
   measureNodeIdByDirectionId: Record<EntityId, EntityId>;
 }
-/** Decision 0079. A passenger stop of one Route. Never a pattern point, timetable column, or runtime segment end. `id` is unique within its stop set. */
-export interface RouteStop { id: EntityId; name: string; stopCode?: string; }
+/**
+ * Decision 0079. A passenger stop of one Route. Never a pattern point, timetable column, or runtime segment end. `id` is unique within its stop set.
+ * Decision 0085. Location fields are optional; latitude and longitude are both present or both absent.
+ */
+export interface RouteStop { id: EntityId; name: string; stopCode?: string; latitude?: number; longitude?: number; speedLimitMph?: number; }
 export type StopTimingRule = 'interpolate' | 'previous' | 'next';
 /** Decision 0079. One stop on the segment from `afterPatternPointId` to the next point by sequence. `sequence` orders stops within the segment. `id` is unique within its pattern. */
 export interface PatternStopPlacement { id: EntityId; stopId: EntityId; afterPatternPointId: EntityId; sequence: number; timing: StopTimingRule; }
-export type StopTimeRoundingSeconds = 30 | 60;
+/** Decision 0079, 0086. */
+export type StopTimeRoundingSeconds = 1 | 30 | 60;
 /** Decision 0080. Pattern point ID → the stop ID of that timepoint on its pattern. A trimmed, non-blank string. */
 export type TimepointStopCodes = Record<EntityId, string>;
+/** Decision 0085. The location of one timepoint on one pattern. Never stored empty. */
+export interface StopLocation { latitude?: number; longitude?: number; speedLimitMph?: number; }
+/** Decision 0085. Pattern point ID → its location. */
+export type TimepointLocations = Record<EntityId, StopLocation>;
+/** Decision 0086. Absent means 'equal'. */
+export type StopInterpolation = 'equal' | 'distance';
 /** Decision 0079. At most one per Route. Not stored when it has no stops and no timepoint stop IDs. */
 export interface RouteStopSet extends EntityMetadata {
   id: EntityId; scenarioId: EntityId; routeId: EntityId;
@@ -64,6 +74,10 @@ export interface RouteStopSet extends EntityMetadata {
   placementsByPatternId: Record<EntityId, PatternStopPlacement[]>;
   /** Decision 0080. Pattern ID → its timepoints' stop IDs. A pattern with none has no entry. Absent in sets written before Decision 0080. */
   timepointStopCodesByPatternId?: Record<EntityId, TimepointStopCodes>;
+  /** Decision 0085. Pattern ID → its timepoints' locations. A pattern with none has no entry. */
+  timepointLocationsByPatternId?: Record<EntityId, TimepointLocations>;
+  /** Decision 0086. Absent means 'equal'. Stored only when 'distance'. */
+  interpolation?: StopInterpolation;
 }
 /** A transient additive request. It is never persisted as a scheduling record. */
 export interface GenerateTripsRequest {

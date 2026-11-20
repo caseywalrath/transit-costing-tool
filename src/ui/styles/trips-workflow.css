@@ -255,7 +255,7 @@
    inside the drawer in both directions; the heading row and the stop name column stay in view. Timepoint rows are tinted and marked like
    the Route tab's Stops drawer, so the stops read as sitting between them. */
 .stop-trips-drawer { width: min(860px, 68vw); }
-.stop-trips-drawer__body { grid-template-rows: auto minmax(0, 1fr) auto; align-content: stretch; overflow: hidden; }
+.stop-trips-drawer__body { grid-template-rows: auto minmax(0, 1fr) auto auto; align-content: stretch; overflow: hidden; }
 .stop-trips-controls { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-2) var(--space-3); }
 .stop-trips-field { display: grid; gap: 5px; color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
 .stop-trips-field select { min-width: 12em; max-width: 100%; }
@@ -278,6 +278,7 @@
 .stop-trips-grid__stop-row td.stop-trips-grid__time { color: var(--color-text-muted); }
 .stop-trips-grid__warning { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: var(--space-2); border-radius: 50%; background: var(--color-warn-soft); color: var(--color-warn); font-size: var(--font-size-caption); font-weight: var(--font-weight-bold); }
 .stop-trips-grid__stop-row--warning .stop-trips-grid__rule select { border-color: var(--color-warn-border); }
+.stop-trips-note { margin: 0; color: var(--color-text-muted); font-size: var(--font-size-note); }
 .stop-trips-drawer__footer--dirty { padding: 0; }
 .stop-trips-drawer__footer--dirty .save-bar { flex: 1; border-radius: 0; }
 @media (max-width: 680px) { .stop-trips-drawer { width: 100vw; } }

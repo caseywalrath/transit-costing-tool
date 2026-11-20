@@ -46,7 +46,7 @@ describe('Route stop sets in backups (Decision 0079)', () => {
   it('round trips a schema 14 file exactly: stop sets and timepoint stop IDs survive export and import', () => {
     const snapshot = goldenWithStops();
     const payload = exportProjectJson(snapshot);
-    expect(JSON.parse(payload).exportSchemaVersion).toBe(15);
+    expect(JSON.parse(payload).exportSchemaVersion).toBe(16);
     expect(JSON.parse(payload).routeStopSets).toEqual(snapshot.routeStopSets);
     const restored = importProjectJson(payload);
     expect(restored.routeStopSets).toEqual(snapshot.routeStopSets);
@@ -108,7 +108,7 @@ describe('Route stop sets in backups (Decision 0079)', () => {
       generationSets: [], trips: [], blocks: [],
     } as unknown as Parameters<typeof exportProjectJson>[0];
     const file = JSON.parse(exportProjectJson(source));
-    expect(file.exportSchemaVersion).toBe(15);
+    expect(file.exportSchemaVersion).toBe(16);
     file.exportSchemaVersion = 12;
     const restored = importProjectJson(JSON.stringify(file));
     expect(restored.costingAssumptions?.[0].routeEstimateFactors).toEqual(routeEntries);
@@ -152,7 +152,7 @@ describe('Route stop sets in backups (Decision 0079)', () => {
   it.each([
     ['a missing Route', (set: any) => { set.routeId = 'no-route'; }, /references a missing Route/],
     ['an unknown timing rule', (set: any) => { set.placementsByPatternId[Object.keys(set.placementsByPatternId)[0]][0].timing = 'middle'; }, /timing/],
-    ['a rounding of 45 seconds', (set: any) => { set.roundingSeconds = 45; }, /roundingSeconds must be 30 or 60/],
+    ['a rounding of 45 seconds', (set: any) => { set.roundingSeconds = 45; }, /roundingSeconds must be 1, 30 or 60/],
     ['a placement of a missing stop', (set: any) => { set.placementsByPatternId[Object.keys(set.placementsByPatternId)[0]][0].stopId = 'no-such-stop'; }, /stopPlacement\.stopMissing/],
     ['two stops with one stop code', (set: any) => { set.stops[1].stopCode = ' s1 '; }, /routeStop\.codeDuplicate/],
   ])('refuses a stop set with %s', (_label, change, message) => {
@@ -174,5 +174,67 @@ describe('Route stop sets in backups (Decision 0079)', () => {
     const file = JSON.parse(exportProjectJson(goldenWithStops()));
     change(file.routeStopSets[0]);
     expect(() => importProjectJson(JSON.stringify(file))).toThrow(message);
+  });
+
+  // Decisions 0085 and 0086, schema 16.
+  it('round trips stop locations, timepoint locations, 1-second rounding and distance spacing exactly', () => {
+    const snapshot = goldenWithStops();
+    const [set] = snapshot.routeStopSets!;
+    const pattern = snapshot.patterns.find((candidate) => candidate.routeId === set.routeId)!;
+    const [first, second] = sortedPoints(pattern.points);
+    const located: RouteStopSet = {
+      ...set,
+      roundingSeconds: 1,
+      interpolation: 'distance',
+      stops: [{ ...set.stops[0], latitude: 39.912274, longitude: -104.99353, speedLimitMph: 35 }, set.stops[1]],
+      timepointLocationsByPatternId: { [pattern.id]: { [first.id]: { latitude: 39.914169, longitude: -105.006705 }, [second.id]: { speedLimitMph: 25 } } },
+    };
+    const payload = exportProjectJson({ ...snapshot, routeStopSets: [located] });
+    expect(JSON.parse(payload).exportSchemaVersion).toBe(16);
+    const restored = importProjectJson(payload);
+    expect(restored.routeStopSets).toEqual([located]);
+    expect(withoutExportedAt(exportProjectJson(restored))).toEqual(withoutExportedAt(payload));
+  });
+
+  it('a version 15 file imports with no locations, no distance spacing and the default rounding', () => {
+    const file = JSON.parse(exportProjectJson(goldenWithStops()));
+    file.exportSchemaVersion = 15;
+    const [set] = importProjectJson(JSON.stringify(file)).routeStopSets!;
+    expect(set.stops.every((stop) => stop.latitude === undefined && stop.longitude === undefined && stop.speedLimitMph === undefined)).toBe(true);
+    expect(set.timepointLocationsByPatternId).toBeUndefined();
+    expect(set.interpolation).toBeUndefined();
+    expect(set.roundingSeconds).toBe(30);
+  });
+
+  it.each([
+    ['an interpolation that is neither equal nor distance', (set: any) => { set.interpolation = 'curved'; }, /interpolation must be 'equal' or 'distance'/],
+    ['a stop latitude that is text', (set: any) => { set.stops[0].latitude = '39.9'; }, /stops\[0\]\.latitude must be a number/],
+    ['a stop speed limit that is null', (set: any) => { set.stops[0].speedLimitMph = null; }, /stops\[0\]\.speedLimitMph must be a number/],
+    ['a stop with latitude but no longitude', (set: any) => { set.stops[0].latitude = 39.9; }, /stopLocation\.incomplete/],
+    ['a stop latitude above 90', (set: any) => { set.stops[0].latitude = 91; set.stops[0].longitude = -105; }, /stopLocation\.latitudeRange/],
+    ['a stop speed limit of 0', (set: any) => { set.stops[0].speedLimitMph = 0; }, /stopLocation\.speedLimitInvalid/],
+    ['timepoint locations that are not an object', (set: any) => { set.timepointLocationsByPatternId = { [Object.keys(set.placementsByPatternId)[0]]: 'x' }; }, /timepointLocationsByPatternId\.\S+ must be an object/],
+    ['a timepoint location whose latitude is text', (set: any) => { const patternId = Object.keys(set.placementsByPatternId)[0]; const pointId = set.placementsByPatternId[patternId][0].afterPatternPointId; set.timepointLocationsByPatternId = { [patternId]: { [pointId]: { latitude: '39.9', longitude: -105 } } }; }, /latitude must be a number/],
+    ['an empty timepoint location', (set: any) => { const patternId = Object.keys(set.placementsByPatternId)[0]; const pointId = set.placementsByPatternId[patternId][0].afterPatternPointId; set.timepointLocationsByPatternId = { [patternId]: { [pointId]: {} } }; }, /invalid timepoint location/],
+    ['a timepoint location of a missing point', (set: any) => { const patternId = Object.keys(set.placementsByPatternId)[0]; set.timepointLocationsByPatternId = { [patternId]: { 'no-such-point': { latitude: 39.9, longitude: -105 } } }; }, /location for a missing timepoint/],
+  ])('refuses a stop set with %s (Decisions 0085, 0086)', (_label, change, message) => {
+    const file = JSON.parse(exportProjectJson(goldenWithStops()));
+    change(file.routeStopSets[0]);
+    expect(() => importProjectJson(JSON.stringify(file))).toThrow(message);
+  });
+
+  it('import as copy remaps timepoint location keys to the copy\'s pattern and point', () => {
+    const snapshot = goldenWithStops();
+    const [set] = snapshot.routeStopSets!;
+    const pattern = snapshot.patterns.find((candidate) => candidate.routeId === set.routeId)!;
+    const [first] = sortedPoints(pattern.points);
+    const located = { ...snapshot, routeStopSets: [{ ...set, timepointLocationsByPatternId: { [pattern.id]: { [first.id]: { latitude: 39.9, longitude: -105 } } } }] };
+    const source = importProjectJson(exportProjectJson(located));
+    const copy = importProjectJson(exportProjectJson(cloneProjectSnapshot(source, stamp.createdAt)));
+    const copyPattern = copy.patterns.find((candidate) => candidate.routeId === copy.routes[0].id)!;
+    const [copySet] = copy.routeStopSets!;
+    const [copyPointId] = Object.keys(copySet.timepointLocationsByPatternId![copyPattern.id]);
+    expect(sortedPoints(copyPattern.points)[0].id).toBe(copyPointId);
+    expect(copySet.timepointLocationsByPatternId![copyPattern.id][copyPointId]).toEqual({ latitude: 39.9, longitude: -105 });
   });
 });
