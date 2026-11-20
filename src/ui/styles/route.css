@@ -126,6 +126,9 @@
 .stop-location-import-dialog caption { padding-bottom: var(--space-1); color: var(--color-text); font-weight: var(--font-weight-semibold); text-align: left; }
 .stop-location-import-note { color: var(--color-text-muted); font-size: var(--font-size-note); }
 @media (max-width: 680px) { .shift-drawer.pattern-stops-drawer { width: 100vw; } }
+/* Decision 0087 item 10: the notice under a drawer row that a typed name or stop ID linked to an existing stop. */
+.pattern-stops-link td { padding-top: 0; color: var(--color-text-muted); font-size: var(--font-size-note); }
+.pattern-stops-link button { margin-left: var(--space-2); padding: 0 var(--space-1); }
 /* Decision 0087: the Route stops section, full width below Nodes and Patterns. */
 .route-stops { margin-top: var(--space-4); }
 .route-stops__filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }

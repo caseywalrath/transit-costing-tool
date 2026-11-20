@@ -23,7 +23,8 @@ export const locationText = (row: { latitude?: number; longitude?: number; speed
  * Decision 0085 item 7. Matches by stop ID are applied; matches by name are offered unchecked, because a name can be shared by two different
  * places. Apply writes into the drawer's draft only; the planner saves with Save stops.
  */
-export function StopLocationImportDialog({ review, onApply, onClose }: { review: StopLocationImportReview; onApply: (matches: StopLocationMatch[]) => void; onClose: () => void }) {
+export function StopLocationImportDialog({ review, scope = 'pattern', onApply, onClose }: { review: StopLocationImportReview; /** Decision 0087 item 9: 'route' when the Stops section imports for every stop of the Route. */ scope?: 'pattern' | 'route'; onApply: (matches: StopLocationMatch[]) => void; onClose: () => void }) {
+  const rowHeading = scope === 'route' ? 'Stop' : 'Drawer row';
   const [checked, setChecked] = useState<string[]>([]);
   const byId = review.matches.filter((match) => match.by === 'id');
   const byName = review.matches.filter((match) => match.by === 'name');
@@ -36,18 +37,18 @@ export function StopLocationImportDialog({ review, onApply, onClose }: { review:
     {review.missingColumns ? <p className="field-error" role="alert">The file has no Latitude and Longitude columns.</p> : <>
       {byId.length > 0 && <div className="preview-times"><table aria-label="Matched by stop ID">
         <caption>Matched by stop ID · {plural(byId.length, 'row')}</caption>
-        <thead><tr><th scope="col">Drawer row</th><th scope="col">Location</th></tr></thead>
+        <thead><tr><th scope="col">{rowHeading}</th><th scope="col">Location</th></tr></thead>
         <tbody>{byId.map((match) => <tr key={match.key}><td>{label(match.key)}</td><td>{locationText(match.row)}</td></tr>)}</tbody>
       </table></div>}
       {byName.length > 0 && <div className="preview-times"><table aria-label="Matched by name">
         <caption>Matched by name · check the rows to apply</caption>
-        <thead><tr><th scope="col">Apply</th><th scope="col">Drawer row</th><th scope="col">File row</th><th scope="col">Location</th></tr></thead>
+        <thead><tr><th scope="col">Apply</th><th scope="col">{rowHeading}</th><th scope="col">File row</th><th scope="col">Location</th></tr></thead>
         <tbody>{byName.map((match) => <tr key={match.key}>
           <td><input type="checkbox" checked={checked.includes(match.key)} aria-label={`Apply to ${label(match.key)}`} onChange={(event) => setChecked((current) => event.target.checked ? [...current, match.key] : current.filter((key) => key !== match.key))} /></td>
           <td>{label(match.key)}</td><td>{fileRow(match.row)}</td><td>{locationText(match.row)}</td>
         </tr>)}</tbody>
       </table></div>}
-      {review.matches.length === 0 && <p>No rows of this file match the stops of this pattern.</p>}
+      {review.matches.length === 0 && <p>No rows of this file match the stops of this {scope === 'route' ? 'route' : 'pattern'}.</p>}
       {review.conflictStopCodes.length > 0 && <div className="segment-runtime-skips"><p><strong>Stop IDs with different locations in the file</strong></p><ul className="recalculation-candidates">{review.conflictStopCodes.map((code) => <li key={code}>{code}</li>)}</ul></div>}
       {review.unmatchedTargetKeys.length > 0 && <div className="segment-runtime-skips"><p><strong>Not found in the file</strong></p><ul className="recalculation-candidates">{review.unmatchedTargetKeys.map((key) => <li key={key}>{label(key)}</li>)}</ul></div>}
       {review.unusedRowLines.length > 0 && <p className="stop-location-import-note">{plural(review.unusedRowLines.length, 'file row')} not used: line{review.unusedRowLines.length === 1 ? '' : 's'} {review.unusedRowLines.join(', ')}.</p>}

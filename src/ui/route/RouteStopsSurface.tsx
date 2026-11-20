@@ -1,5 +1,6 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { RouteStopValidationError, STOPS_CHANGED_ELSEWHERE, type RouteDefinitionApplication } from '../../application/routeDefinitionService';
+import { matchStopLocations, readStopLocationFile, type StopLocationMatch, type StopLocationTarget } from '../../application/stopLocationImport';
 import { orderDirections } from '../../domain/directions';
 import { routeStopUsage, type RouteStopFields } from '../../domain/routeStopManagement';
 import { normalizeStopLocation, sameLocation } from '../../domain/stops';
@@ -12,6 +13,7 @@ import { LinkIcon } from '../shared/icons';
 import { messages, userMessage } from '../shared/messages';
 import { SegmentedControl } from '../shared/SegmentedControl';
 import { WorkSurface } from '../shared/surfaces';
+import { StopLocationImportDialog, type StopLocationImportReview } from './StopLocationImportDialog';
 import { DeleteStopsDialog, MergeStopsDialog, SplitAllStopsDialog, SplitStopDialog, type DirectionChoice, type StopUseRow } from './routeStopDialogs';
 
 export type RouteStopsService = Pick<RouteDefinitionApplication, 'getRouteStopSet' | 'saveRouteStopRecords' | 'splitRouteStop' | 'splitSharedRouteStops' | 'deleteRouteStops' | 'mergeRouteStops'>;
@@ -65,6 +67,8 @@ export const RouteStopsSurface = forwardRef<RouteStopsHandle, { service: RouteSt
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [dialog, setDialog] = useState<Dialog>();
+  const [importReview, setImportReview] = useState<StopLocationImportReview>();
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const accept = useCallback((set: RouteStopSet | undefined) => { setLoaded({ set }); setTexts({}); setFindings([]); setError(''); setSelected((current) => current.filter((id) => set?.stops.some((stop) => stop.id === id))); }, []);
   const stops = loaded?.set?.stops ?? [];
@@ -157,6 +161,25 @@ export const RouteStopsSurface = forwardRef<RouteStopsHandle, { service: RouteSt
       return false;
     } finally { setBusy(false); }
   }
+  /** Decision 0087 item 9. Every stop of the Route is a target, matched by its stop ID, then by a name found once on each side. */
+  async function readImportFile(file: File) {
+    const read = readStopLocationFile(await file.text());
+    const targets: StopLocationTarget[] = editedStops.map((stop) => ({ key: `stop:${stop.id}`, name: stop.name, ...(stop.stopCode ? { stopCode: stop.stopCode } : {}) }));
+    const labels = Object.fromEntries(editedStops.map((stop) => [`stop:${stop.id}`, [stop.name || 'Untitled stop', stop.stopCode].filter(Boolean).join(' · ')]));
+    setImportReview({ fileName: file.name, missingColumns: read.missingColumns, skippedLineCount: read.skippedLineCount, labels, ...matchStopLocations(read.rows, targets) });
+  }
+  /** Apply writes into the unsaved edits; Save stops writes them. A file row without a speed keeps the stop's speed. */
+  function applyImport(matches: StopLocationMatch[]) {
+    const next: Record<string, string> = {};
+    for (const { key, row } of matches) {
+      const id = key.slice('stop:'.length);
+      next[`${id}:latitude`] = String(row.latitude);
+      next[`${id}:longitude`] = String(row.longitude);
+      if (row.speedLimitMph !== undefined) next[`${id}:speedLimitMph`] = String(row.speedLimitMph);
+    }
+    setTexts((current) => ({ ...current, ...next })); setFindings([]); setError('');
+    setImportReview(undefined);
+  }
   function discard() { setTexts({}); setFindings([]); setError(''); }
   useImperativeHandle(ref, () => ({ save, discard }));
 
@@ -169,6 +192,8 @@ export const RouteStopsSurface = forwardRef<RouteStopsHandle, { service: RouteSt
 
   return <WorkSurface title="Stops" count={stops.length} className="route-stops" ariaLabel="Route stops" collapse={{ open: isOpen, onToggle: toggle, id: 'route-stops-body' }}
     actions={isOpen ? <MenuButton label="Actions" menuLabel="Route stop actions" disabled={readOnly || !loaded} groups={[{ items: [
+      { id: 'import-route-stop-locations', label: 'Import stop locations…', onSelect: () => fileInput.current?.click() },
+    ] }, { items: [
       { id: 'split-all-stops', label: 'Split all shared stops…', disabled: Boolean(structuralBlock) || sharedStops.length === 0, title: structuralBlock ?? (sharedStops.length === 0 ? 'No stop is used by more than one direction' : undefined), onSelect: () => setDialog({ kind: 'splitAll' }) },
     ] }]} /> : undefined}
     footer={dirty ? <SaveBar message={`${plural(count, 'unsaved change')} in Stops`} saveLabel="Save stops" busy={busy} onSave={() => void save()} onDiscard={discard} /> : undefined}>
@@ -212,6 +237,8 @@ export const RouteStopsSurface = forwardRef<RouteStopsHandle, { service: RouteSt
       {visible.length === 0 && <p className="route-stops__empty">No stops match this filter.</p>}
     </>}
     {error && <p className="field-error" role="alert">{error}</p>}
+    <input ref={fileInput} className="visually-hidden" tabIndex={-1} type="file" accept=".csv,text/csv" aria-label="Route stop location CSV file" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void readImportFile(file).catch((reason) => setError(userFacingError(reason, 'The file could not be read.'))); }} />
+    {importReview && <StopLocationImportDialog review={importReview} scope="route" onApply={applyImport} onClose={() => setImportReview(undefined)} />}
     {dialogStop && <SplitStopDialog stop={dialogStop} directions={choicesFor(dialogStop.id)} onClose={() => setDialog(undefined)} onConfirm={(directionId, newStop) => run((baseUpdatedAt) => service.splitRouteStop({ routeId: aggregate.route.id, stopId: dialogStop.id, directionId, newStop, baseUpdatedAt }), 'The stop could not be split.')} />}
     {dialog?.kind === 'splitAll' && <SplitAllStopsDialog directions={directions.map((direction) => ({ id: direction.id, name: direction.name }))} stops={sharedStops} onClose={() => setDialog(undefined)} onConfirm={(input) => run((baseUpdatedAt) => service.splitSharedRouteStops({ routeId: aggregate.route.id, ...input, baseUpdatedAt }), 'The stops could not be split.')} />}
     {dialog?.kind === 'delete' && <DeleteStopsDialog rows={rowsOf(dialog.stopIds)} onClose={() => setDialog(undefined)} onConfirm={() => run((baseUpdatedAt) => service.deleteRouteStops({ routeId: aggregate.route.id, stopIds: dialog.stopIds, baseUpdatedAt }), 'The stops could not be deleted.')} />}

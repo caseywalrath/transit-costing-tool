@@ -184,6 +184,55 @@ test('delete lists the patterns, merge refuses a repeated stop, and the filters 
   await expect(page.getByRole('status').filter({ hasText: 'Deleted stops of route' })).toBeVisible();
 });
 
+// RS4 (Decision 0087 items 9 and 10).
+test('the route-wide import fills stops of both directions into the unsaved edits', async ({ page }) => {
+  await route(page, 'Route stops import');
+  const csv = ['Stop ID,Stop Name,Latitude,Longitude,Speed Limit', '100,Bates,39.81,-105.01,30', '200,Oak,39.82,-105.02,', ',Elm,39.83,-105.03,'].join('\r\n');
+  await section(page).getByRole('button', { name: 'Route stop actions', exact: true }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('menuitem', { name: 'Import stop locations…', exact: true }).click();
+  await (await chooser).setFiles({ name: 'stops.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
+  const review = page.getByRole('dialog', { name: 'Import stop locations' });
+  await expect(review.getByRole('table', { name: 'Matched by stop ID' }).getByRole('row')).toHaveText(['StopLocation', 'Bates · 10039.81, -105.01 · 30 mph', 'Oak · 20039.82, -105.02']);
+  await review.getByRole('checkbox', { name: 'Apply to Elm', exact: true }).check();
+  await review.getByRole('button', { name: 'Apply 3 locations', exact: true }).click();
+  await expect(review).toHaveCount(0);
+  await expect(section(page).getByRole('textbox', { name: 'Latitude, Oak', exact: true })).toHaveValue('39.82');
+  expect((await stored(page)).stops.find((stop) => stop.name === 'Oak').latitude).toBeUndefined();
+  await section(page).getByRole('button', { name: 'Save stops', exact: true }).click();
+  await expect(section(page).getByRole('button', { name: 'Save stops', exact: true })).toHaveCount(0);
+  const saved = (await stored(page)).stops;
+  expect(saved.find((stop) => stop.name === 'Bates')).toMatchObject({ latitude: 39.81, longitude: -105.01, speedLimitMph: 30 });
+  expect(saved.find((stop) => stop.name === 'Oak')).toMatchObject({ latitude: 39.82, longitude: -105.02 });
+  expect(saved.find((stop) => stop.name === 'Elm')).toMatchObject({ latitude: 39.83, longitude: -105.03 });
+});
+
+test('a typed stop ID that links a drawer row says so, and Undo link restores the new stop', async ({ page }) => {
+  await route(page, 'Route stops link notice');
+  await page.getByRole('complementary', { name: 'Patterns' }).getByRole('button', { name: /^Reverse/ }).click();
+  await page.getByRole('button', { name: 'Pattern actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Stops…', exact: true }).click();
+  const drawer = page.getByRole('complementary', { name: /^Stops/ });
+  await drawer.getByRole('button', { name: 'Add stop between B and A', exact: true }).click();
+  await page.keyboard.type('Bates NB');
+  await drawer.getByRole('textbox', { name: 'Stop ID, Bates NB', exact: true }).fill('100');
+  await drawer.getByRole('textbox', { name: 'Stop ID, Bates NB', exact: true }).press('Enter');
+  await expect(drawer.getByRole('status').filter({ hasText: 'Linked to existing stop Bates (100)' })).toBeVisible();
+  if (process.env.RS_SHOTS) await drawer.screenshot({ path: `${process.env.RS_SHOTS}/drawer-link-notice.png` });
+  await drawer.getByRole('button', { name: 'Undo link', exact: true }).click();
+  await expect(drawer.getByRole('status').filter({ hasText: 'Linked to existing stop' })).toHaveCount(0);
+  const code = drawer.getByRole('textbox', { name: 'Stop ID, Bates NB', exact: true });
+  await expect(code).toHaveValue('100');
+  // The row is not linked again; a new stop ID is typed and saved as its own stop.
+  await code.fill('101');
+  await code.press('Enter');
+  await drawer.getByRole('button', { name: 'Save stops', exact: true }).click();
+  await expect(drawer.getByRole('button', { name: 'Save stops', exact: true })).toHaveCount(0);
+  const saved = await stored(page);
+  expect(saved.byPattern.Reverse).toEqual(['Oak', 'Bates', 'Bates NB']);
+  expect(saved.stops.find((stop) => stop.name === 'Bates NB')?.stopCode).toBe('101');
+});
+
 // Screenshots for review, only when RS_SHOTS names an output folder.
 test('screenshots at 1024 and 1440 px', async ({ page }) => {
   test.skip(!process.env.RS_SHOTS, 'Set RS_SHOTS to capture screenshots');
