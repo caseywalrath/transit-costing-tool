@@ -1,6 +1,6 @@
 # Decision 0084: Stop Schedule Export
 
-- Status: Accepted, not implemented (plan: `docs/implementation/stop-schedule-and-locations.md`)
+- Status: Accepted and implemented (2026-11-20; plan: `docs/implementation/stop-schedule-and-locations.md`; closeout: `docs/implementation/stop-schedule-and-locations-closeout.md`)
 - Date: 2026-11-19 (user design discussion, based on the Federal BRT STOPS modeling workbook "Travel Times Schedules - FTA Comments Incorporated")
 - Related: Decision 0044 (Trips CSV is output only), Decision 0058 (planned frequencies), Decision 0079 (route stops, derived stop times; this decision adds the wide export that item 13 and its alternatives deferred), Decision 0080 (timepoint stop IDs), Decision 0085 (stop locations fill the location columns)
 

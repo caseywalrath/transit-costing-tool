@@ -1,6 +1,6 @@
 # Decision 0085: Stop and Timepoint Locations
 
-- Status: Accepted, not implemented (plan: `docs/implementation/stop-schedule-and-locations.md`)
+- Status: Accepted and implemented (2026-11-20; plan: `docs/implementation/stop-schedule-and-locations.md`; closeout: `docs/implementation/stop-schedule-and-locations-closeout.md`)
 - Date: 2026-11-19 (user design discussion)
 - Related: Decision 0036 (writes re-read stored data), Decision 0079 (route stops), Decision 0080 (timepoint stop IDs per pattern; this decision stores locations the same way), Decision 0084 (stop schedule export), Decision 0086 (distance-weighted stop times use these locations)
 

@@ -1,6 +1,6 @@
 # Decision 0086: Distance-Weighted Stop Times and 1-Second Rounding
 
-- Status: Accepted, not implemented (plan: `docs/implementation/stop-schedule-and-locations.md`)
+- Status: Accepted and implemented (2026-11-20; plan: `docs/implementation/stop-schedule-and-locations.md`; closeout: `docs/implementation/stop-schedule-and-locations-closeout.md`)
 - Date: 2026-11-19 (user design discussion)
 - Amends: Decision 0079 item 5 (interpolation) and item 6 (rounding interval)
 - Related: Decision 0084 (stop schedule export), Decision 0085 (stop and timepoint locations)
