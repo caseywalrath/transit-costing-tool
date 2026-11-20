@@ -134,24 +134,29 @@
 .route-stops__filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
 .route-stops__search { flex: 0 1 240px; min-width: 160px; }
 .route-stops__note, .route-stops__empty { color: var(--color-text-muted); font-size: var(--font-size-note); }
-.route-stops-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
-.route-stops-table th, .route-stops-table td { padding: var(--space-1); text-align: left; vertical-align: middle; }
-.route-stops-table thead th { color: var(--color-text-subtle); font-size: var(--font-size-caption); font-weight: var(--font-weight-semibold); border-bottom: 1px solid var(--color-border); }
-.route-stops-table tbody tr + tr td { border-top: 1px solid var(--color-border-soft); }
-.route-stops-table input:not([type="checkbox"]) { width: 100%; min-width: 0; font-variant-numeric: tabular-nums; }
-.route-stops__check { width: 32px; }
-.route-stops-table th:nth-child(2) { width: auto; }
+/* The table uses the app's table rules (tables.css), as the Trips table does: sticky muted headings, soft row lines, compact rows. */
+.route-stops-table { table-layout: fixed; min-width: 760px; }
+.route-stops-table td { vertical-align: middle; padding-top: 2px; padding-bottom: 2px; }
+/* Fields read as cell text, like the Trips times; the border shows on hover and focus. */
+.route-stops-table input:not([type="checkbox"]) { width: 100%; min-width: 0; min-height: 24px; padding: 1px var(--space-1); border-color: transparent; background: transparent; font-size: var(--font-size-label); }
+.route-stops-table input:not([type="checkbox"]):hover:not(:disabled) { border-color: var(--color-border); background: var(--color-surface); }
+.route-stops-table input:not([type="checkbox"]):focus { border-color: var(--color-accent); background: var(--color-surface); }
+.route-stops-table input[aria-invalid="true"] { border-color: var(--color-danger); }
+/* The selection column matches the Trips table's (trips-workflow.css). */
+.route-stops-table .route-stops__check { width: 36px; padding: var(--space-1) 7px; text-align: center; }
+.route-stops-table .route-stops__check input { width: 15px; min-height: 15px; vertical-align: middle; }
 .route-stops-table th:nth-child(3) { width: 110px; }
-.route-stops-table th.route-stops__number { width: 108px; }
+.route-stops-table th.route-stops__number { width: 100px; }
 .route-stops-table th:nth-child(6) { width: 84px; }
 .route-stops-table th:nth-child(7) { width: 220px; }
 .route-stops-table th:last-child { width: 44px; }
-.route-stops__number input { text-align: right; }
-.route-stops__used { color: var(--color-text-muted); font-size: var(--font-size-note); }
+.route-stops__number, .route-stops__number input { text-align: right; }
+.route-stops__used { color: var(--color-text-muted); font-size: var(--font-size-label); }
+.route-stops__actions .menu-trigger { min-height: 24px; height: 24px; padding: 0 6px; }
 .route-stops__used > span:first-child { margin-right: var(--space-1); }
 .route-stops__shared { display: inline-flex; align-items: center; vertical-align: middle; color: var(--color-warn); }
 .route-stops__row--edited td { background: var(--color-warn-soft); }
-.route-stops__error td { padding-top: 0; border-top: 0 !important; }
+.route-stops__error td { padding-top: 0; }
 .route-stop-dialog__choices { display: flex; flex-wrap: wrap; gap: var(--space-3); border: 0; padding: 0; margin: var(--space-2) 0; }
 .route-stop-dialog__choices label, .route-stop-dialog__check { display: inline-flex; align-items: center; gap: var(--space-1); }
 .route-stop-dialog__fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-2); margin: var(--space-2) 0; }
