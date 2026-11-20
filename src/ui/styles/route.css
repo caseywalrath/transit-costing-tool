@@ -107,6 +107,14 @@
 .pattern-stops-name { display: flex; align-items: center; gap: var(--space-1); min-width: 0; padding-left: var(--space-3); }
 .pattern-stops-name input { flex: 1 1 auto; min-width: 0; }
 .pattern-stops-code { width: 100%; min-width: 0; font-variant-numeric: tabular-nums; }
+/* As in the Route stops table and the Trips times: fields read as cell text in compact rows; the border shows on hover and focus. */
+.pattern-stops-table td { padding-top: 2px; padding-bottom: 2px; }
+.pattern-stops-table input { min-height: 24px; padding: 1px var(--space-1); border-color: transparent; background: transparent; font-size: var(--font-size-label); }
+.pattern-stops-table input:hover:not(:disabled) { border-color: var(--color-border); background: var(--color-surface); }
+.pattern-stops-table input:focus { border-color: var(--color-accent); background: var(--color-surface); }
+.pattern-stops-table input[aria-invalid="true"] { border-color: var(--color-danger); }
+.pattern-stops-table input:placeholder-shown { border-color: var(--color-border-soft); }
+.pattern-stops-table .icon-button { min-height: 24px; height: 24px; }
 .pattern-stops-order { white-space: nowrap; }
 /* A stop used by several patterns of the Route: a link mark and the count, in its own narrow column so the name field keeps its width. */
 .pattern-stops-table td.pattern-stops-shared { padding-right: 0; padding-left: var(--space-1); }
@@ -142,6 +150,7 @@
 .route-stops-table input:not([type="checkbox"]):hover:not(:disabled) { border-color: var(--color-border); background: var(--color-surface); }
 .route-stops-table input:not([type="checkbox"]):focus { border-color: var(--color-accent); background: var(--color-surface); }
 .route-stops-table input[aria-invalid="true"] { border-color: var(--color-danger); }
+.route-stops-table input:not([type="checkbox"]):placeholder-shown { border-color: var(--color-border-soft); }
 /* The selection column matches the Trips table's (trips-workflow.css). */
 .route-stops-table .route-stops__check { width: 36px; padding: var(--space-1) 7px; text-align: center; }
 .route-stops-table .route-stops__check input { width: 15px; min-height: 15px; vertical-align: middle; }
