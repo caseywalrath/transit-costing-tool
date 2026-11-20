@@ -12,7 +12,6 @@ Each entry lists the problem, the proposed approach, open choices, and the edge 
 | [Costing by service day across routes](#costing-by-service-day-across-routes) | Costing | Implemented 2026-11-12: Decision 0078 |
 | [Multi-route interlining](#multi-route-interlining) | Blocking, Costing | Proposed 2026-11-12; not needed for the current scenario |
 | [Year-varying service](#year-varying-service) | Scenario, Costing | Idea 2026-11-12; beyond current scope |
-| [GTFS interoperability](#gtfs-interoperability) | Stops, Export, Import, Blocking, Costing | Proposed 2026-11-20 in a cross-repository plan; awaiting user approval (Gate G0) |
 
 ---
 
@@ -229,28 +228,3 @@ Plan:
 - Area: Scenario, Costing
 
 Costing assumes the same service in every forecast year; only the rate escalates. A real plan may change one Route in year 3 and leave another unchanged. Supporting this needs a temporal model (for example, a Trip Profile or Route service level per year range) and is beyond current scope. Until then, separate Scenarios model each service stage.
-
----
-
-## GTFS interoperability
-
-- Proposed: 2026-11-20
-- Area: Stops, Export, Import, Blocking, Costing
-- Plan: `docs/gtfs-expansion-plan.md` in the `caseywalrath/transit-analysis-tool` repository (<https://github.com/caseywalrath/transit-analysis-tool/blob/main/docs/gtfs-expansion-plan.md> once merged). That plan governs. Its Part 6 holds this repository's phases, and its Part 2 decision D14 requires each phase to follow this repository's rules: a decision record, an implementation plan with a verification table, structural and UI packages kept separate, and a user verification gate between them.
-
-### Problem
-
-`architecture_overview.md` defers GTFS import and export to Phase 6. The Transit Analysis Tool is gaining a GTFS schedule engine, so GTFS becomes the file both applications exchange: the Analysis tool sketches and analyses, and this tool schedules, blocks and costs.
-
-### Phases (each needs an Opus sub-plan before work starts)
-
-1. **C1, one GTFS stop per physical stop.** Stops are Route-owned (Decision 0079), so a stop served by two Routes is two records. Recommended first step: merge stops that share a stop ID and lie within about 30 m, at export only.
-2. **C2, GTFS export.** An export dialog (agency, date range, holidays, Trip profile, optional Blocking scenario, shapes); stops need coordinates (Decision 0085); derived stop times (Decision 0086) export with `timepoint=0`.
-3. **C3, new views.** A cross-scenario comparison table, a blocks timeline beside the Blocks tables, and a Marey chart on the Trips screen.
-4. **C4, interlining.** Resolves [Multi-route interlining](#multi-route-interlining), with deadhead times estimated from stored locations.
-5. **C5, GTFS import as a baseline.** Patterns from stop sequences, run-time profiles from observed times, trips kept at their exact times. No new libraries: unzip with browser built-ins.
-6. **J1, round trip with the Analysis tool.**
-
-### Open choices
-
-The plan's Part 8 lists every user decision gate for these phases with a recommendation (G-C1 to G-C5d, G-J1).
