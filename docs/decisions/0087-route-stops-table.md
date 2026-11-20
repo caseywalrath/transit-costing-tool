@@ -1,6 +1,6 @@
 # Decision 0087: Route Stops Table
 
-- Status: Accepted, not implemented (plan: `docs/implementation/route-stops-table.md`)
+- Status: Accepted and implemented (plan: `docs/implementation/route-stops-table.md`; closeout: `docs/implementation/route-stops-table-closeout.md`). Item 1 as built: the section sits full width below Nodes and Patterns rather than between them, so its columns fit; the section order on the page is unchanged.
 - Date: 2026-11-20 (user design discussion, Federal BRT stop cleanup)
 - Related: Decision 0079 (Route stops; a stop is one Route-wide record shared by every pattern that places it), Decision 0080 (timepoint stop IDs per pattern), Decision 0081 (restore points), Decision 0085 (stop locations and the location import)
 
