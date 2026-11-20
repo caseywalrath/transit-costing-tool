@@ -89,7 +89,18 @@ export const ROUTE_DEFINITION_COVERAGE: Coverage = {
     const profile = await lookup.getRuntimeProfile(profileId as string);
     return profile && { scope: 'scenario', scenarioId: profile.scenarioId, refs: { routeId: profile.routeId, patternId: profile.patternId, runtimeProfileId: profileId as string } };
   } },
+  splitRouteStop: { kind: 'splitRouteStops', resolve: async ([input], lookup) => routeStopTarget(lookup, input) },
+  splitSharedRouteStops: { kind: 'splitRouteStops', resolve: async ([input], lookup) => routeStopTarget(lookup, input) },
+  deleteRouteStops: { kind: 'deleteRouteStops', resolve: async ([input], lookup) => routeStopTarget(lookup, input) },
+  mergeRouteStops: { kind: 'mergeRouteStops', resolve: async ([input], lookup) => routeStopTarget(lookup, input) },
 };
+
+/** Decision 0087. A stop-list command takes `{ routeId, … }`; its Scenario is the Route's. `saveRouteStopRecords` is not covered. */
+async function routeStopTarget(lookup: RestorePointLookup, input: unknown): Promise<CoverageTarget | undefined> {
+  const routeId = (input as { routeId: string }).routeId;
+  const route = await lookup.getRoute(routeId);
+  return route && { scope: 'scenario', scenarioId: route.scenarioId, refs: { routeId } };
+}
 
 /** FX8. A trip change: the Scenario, Route, Day, and Trip profile of its first Trip, and the number of Trips. Nothing is recorded without Trips. */
 async function tripChange(lookup: RestorePointLookup, tripIds: readonly string[], kind: RestorePointKind): Promise<CoverageTarget | undefined> {
