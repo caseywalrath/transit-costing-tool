@@ -24,6 +24,7 @@ import { rebaseCumulativeMiles, setSegmentMiles } from '../../domain/patterns';
 import { classifyPatternEdit } from '../../domain/safeRouteEditing';
 import { PatternDistanceDialog } from './PatternDistanceDialog';
 import { PatternStopsDrawer, type PatternStopsHandle } from './PatternStopsDrawer';
+import { RouteStopsSurface, type RouteStopsHandle } from './RouteStopsSurface';
 
 const plural = (count: number, singular: string) => `${count} ${singular}${count === 1 ? '' : 's'}`;
 
@@ -47,7 +48,11 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
   const [plansDirty, setPlansDirty] = useState(false);
   // Decision 0079 (ST5): the Stops drawer of the selected saved pattern, and whether it holds unsaved edits.
   const [stopsOpen, setStopsOpen] = useState(false);
-  const [stopsDirty, setStopsDirty] = useState(false);
+  const [drawerStopsDirty, setStopsDirty] = useState(false);
+  // Decision 0087: the Stops section's unsaved field edits count with the drawer's for every save-or-discard prompt.
+  const [stopTableDirty, setStopTableDirty] = useState(false);
+  const stopsDirty = drawerStopsDirty || stopTableDirty;
+  const stopTableRef = useRef<RouteStopsHandle>(null);
   const stopsRef = useRef<PatternStopsHandle>(null);
   const plansRef = useRef<PlannedFrequenciesHandle>(null);
   const newNodeButton = useRef<HTMLButtonElement>(null);
@@ -127,7 +132,7 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
   useEffect(() => { if (stopsOpen && !stopsPattern) { setStopsOpen(false); setStopsDirty(false); } }, [stopsOpen, stopsPattern]);
   /** Runs `action` once the Stops drawer has no unsaved edits, asking to save or discard them first. */
   function guardStops(action: () => void) {
-    if (!stopsDirty) { action(); return; }
+    if (!drawerStopsDirty) { action(); return; }
     setDiscardDialog({ title: 'Discard unsaved stop changes?', action: () => { stopsRef.current?.discard(); action(); }, saveFirst: true, save: (then) => void stopsRef.current?.save().then((saved) => { if (saved) then(); }) });
   }
 
@@ -214,12 +219,14 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
     setNodeDraft(aggregate.nodes); setPendingNodeDeletes(new Set()); setNodeFindings([]);
     plansRef.current?.discard();
     stopsRef.current?.discard();
+    stopTableRef.current?.discard();
     discardPattern();
   }
   function saveDraftsThenNavigate(action: () => void) {
     // Stops save first: a pattern save can move this pattern's stops, which would make the drawer's edits stale. A refused stop save keeps the
     // planner on the Route tab with the drawer's messages.
-    if (stopsDirty) { void stopsRef.current?.save().then((saved) => { if (saved) saveRouteDraftsThenNavigate(action); }); return; }
+    if (drawerStopsDirty) { void stopsRef.current?.save().then((saved) => { if (saved) saveRouteDraftsThenNavigate(action); }); return; }
+    if (stopTableDirty) { void stopTableRef.current?.save().then((saved) => { if (saved) saveRouteDraftsThenNavigate(action); }); return; }
     saveRouteDraftsThenNavigate(action);
   }
   function saveRouteDraftsThenNavigate(action: () => void) {
@@ -277,6 +284,8 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
     </div>
     <div className="route-bottom-grid"><WorkSurface title="Nodes" count={nodeDraft.length} className="route-nodes" footer={nodeDirty && <SaveBar message={`${plural(Math.max(1, countNodeChanges(aggregate.nodes, nodeDraft, pendingNodeDeletes)), 'unsaved change')} in Nodes`} saveLabel="Save nodes" busy={nodeSaving} onSave={() => void reviewNodeSave()} onDiscard={discardNodes} />}><NodesGrid nodes={nodeDraft} savedNodes={aggregate.nodes} pendingDeletes={pendingNodeDeletes} saving={nodeSaving} errorsFor={(id) => messages(nodeFindings, id)} newNodeButton={newNodeButton} onAdd={addNode} onChange={(id, patch) => { setNodeDraft((current) => current.map((candidate) => candidate.id === id ? { ...candidate, ...patch } : candidate)); if ('name' in patch) setNodeFindings([]); }} onSetPendingDelete={(id, pending) => setPendingNodeDeletes((current) => { const next = new Set(current); if (pending) next.add(id); else next.delete(id); return next; })} /></WorkSurface>
       <WorkSurface title="Patterns" count={displayPatterns.length} className="route-patterns"><div className="pattern-layout"><aside className="pattern-list" aria-label="Patterns">{sortedDisplayPatterns.length ? sortedDisplayPatterns.map((pattern, index) => { const direction = patternDirectionName(pattern); return <Fragment key={pattern.id}>{(index === 0 || patternDirectionName(sortedDisplayPatterns[index - 1]) !== direction) && <div className="pattern-list__group">{direction}</div>}<button className={patternDraft?.id === pattern.id ? 'selected' : ''} title={pattern.name || 'Untitled pattern'} onClick={() => requestPattern(pattern.id)}><strong>{patternNameWithoutDirection(pattern.name, direction) || 'Untitled pattern'} {isNewPattern && pattern.id === patternDraft?.id ? <em>Unsaved</em> : null}</strong><span className="pattern-list__meta"><span className="chip">{patternShortName(pattern, direction, nodeById)}</span></span></button></Fragment>; }) : <p>No patterns. A pattern is an ordered list of 2 or more nodes.</p>}<button ref={addPatternButton} className={sortedDisplayPatterns.length ? 'pattern-list-add' : 'pattern-list-add pattern-list-add--first primary'} onClick={newPattern} disabled={nodeSaving || patternSaving}><span aria-hidden="true">+ </span>Add pattern</button></aside>{patternDraft && <PatternEditor pattern={patternDraft} savedPattern={savedPattern} directionName={patternDirectionName(patternDraft)} directions={aggregate.directions ?? []} nodes={aggregate.nodes} segmentMiles={segmentMiles} errors={patternErrors} conflict={conflict} isNew={isNewPattern} dirty={patternDirty} saving={patternSaving} canDuplicate={!isNewPattern} onPattern={updateDraft} onAddPoint={addPoint} onUpdatePoint={updatePoint} onSetSegment={setSegment} hasOtherPatterns={hasOtherPatterns} distanceUndoApplies={distanceUndoApplies} onFillDistances={() => setDistanceDialog('fill')} onCopyDistances={() => setDistanceDialog('copy')} onUndoDistances={onUndoDistances} stopsOpen={Boolean(stopsPattern)} onStops={() => setStopsOpen(true)} onMovePoint={movePoint} onRemovePoint={removePoint} onReverse={() => duplicatePattern(true)} onDuplicate={() => duplicatePattern(false)} onDelete={() => isNewPattern ? discardPattern() : onDeletePattern()} onSave={() => void reviewPatternSave()} onDiscard={discardPattern} />}</div></WorkSurface></div>
+    {/* Decision 0087: the Route's stop records, full width below Nodes and Patterns, so the table has room for its seven columns. */}
+    <RouteStopsSurface ref={stopTableRef} service={service} aggregate={aggregate} drawerOpen={Boolean(stopsPattern)} onDirtyChange={setStopTableDirty} />
     {distanceDialog && patternDraft && <PatternDistanceDialog service={service} mode={distanceDialog} aggregate={aggregate} draft={patternDraft} onFilled={(next) => { updateDraft({ points: next.points }); setDistanceDialog(undefined); }} onCopied={(result) => { onCommitted(result); setDistanceDialog(undefined); }} onClose={() => setDistanceDialog(undefined)} />}
     {impactDialog && <RouteEditImpactDialog preview={impactDialog.preview} mode={impactDialog.mode} timepointNames={impactTimepointNames(impactDialog.preview)} onClose={() => setImpactDialog(undefined)} onCommit={() => impactDialog.preview.kind === 'nodes' ? void commitNodes(impactDialog.preview, impactDialog.afterCommit) : void commitPattern(impactDialog.preview, impactDialog.mode, impactDialog.afterCommit)} />}
     {discardDialog && <DiscardRouteDraftDialog title={discardDialog.title} onDiscard={() => { discardDialog.action(); setDiscardDialog(undefined); }} onClose={() => setDiscardDialog(undefined)} {...(discardDialog.saveFirst ? { onSave: () => { const { action, save } = discardDialog; setDiscardDialog(undefined); if (save) save(action); else void reviewPatternSave(action); } } : {})} />}
