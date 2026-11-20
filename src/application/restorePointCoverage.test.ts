@@ -106,6 +106,11 @@ describe('each covered command requests its restore point', () => {
     ['clearPlan', ['r1', 'd1'], [{ type: 'scenario', request: { kind: 'clearPlan', scenarioId: 's1', refs: { routeId: 'r1', serviceDayId: 'd1' } } as ScenarioChangeRequest }], undefined],
     ['applyCopyFromDay', [{ scenarioId: 's1', routeId: 'r1', sourceServiceDayId: 'd0', targetServiceDayId: 'd1' }], [{ type: 'scenario', request: { kind: 'copyPlanFromDay', scenarioId: 's1', refs: { routeId: 'r1', serviceDayId: 'd1', sourceServiceDayId: 'd0' } } as ScenarioChangeRequest }], undefined],
     ['applyCopyFromScenario', [{ scenarioId: 's1', sourceScenarioId: 's2', targetRouteId: 'r1' }], [{ type: 'scenario', request: { kind: 'copyPlansFromScenario', scenarioId: 's1', refs: { routeId: 'r1' }, extraNames: { sourceScenario: 'Other scenario' } } as ScenarioChangeRequest }], undefined],
+    ['splitRouteStop', [{ routeId: 'r1', stopId: 'a', directionId: 'd2', newStop: { name: 'A NB' }, baseUpdatedAt: 'x' }], [{ type: 'scenario', request: { kind: 'splitRouteStops', scenarioId: 's1', refs: { routeId: 'r1' } } as ScenarioChangeRequest }], undefined],
+    ['splitSharedRouteStops', [{ routeId: 'r1', keepDirectionId: 'd1', suffixByDirectionId: {}, renameKept: false, baseUpdatedAt: 'x' }], [{ type: 'scenario', request: { kind: 'splitRouteStops', scenarioId: 's1', refs: { routeId: 'r1' } } as ScenarioChangeRequest }], undefined],
+    ['deleteRouteStops', [{ routeId: 'r1', stopIds: ['a'], baseUpdatedAt: 'x' }], [{ type: 'scenario', request: { kind: 'deleteRouteStops', scenarioId: 's1', refs: { routeId: 'r1' } } as ScenarioChangeRequest }], undefined],
+    ['deleteRouteStops', [{ routeId: 'no-such-route', stopIds: ['a'], baseUpdatedAt: 'x' }], 'none', undefined],
+    ['mergeRouteStops', [{ routeId: 'r1', keepStopId: 'a', mergeStopIds: ['b'], baseUpdatedAt: 'x' }], [{ type: 'scenario', request: { kind: 'mergeRouteStops', scenarioId: 's1', refs: { routeId: 'r1' } } as ScenarioChangeRequest }], undefined],
   ];
 
   it.each(cases)('%s with %j', async (key, args, expected) => {

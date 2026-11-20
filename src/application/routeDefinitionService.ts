@@ -3,7 +3,8 @@ import { metadata, newId, withUpdatedAt } from '../domain/ids';
 import { createProject, createScenarioRecords, duplicateRouteRecords, duplicateScenario, projectLastChangedAt, renameProject as renameProjectRecord, type ScenarioRecords } from '../domain/project';
 import { duplicatePattern, getSegmentMiles, normalizePattern, reversePattern, setSegmentMiles, validatePattern } from '../domain/patterns';
 import { applySegmentDistancePlan, copyCandidatePatternIds, planDistanceCopy, planDistanceFill, type SegmentDistancePlan } from '../domain/segmentDistanceMatching';
-import { createManagedDirections, ensureManagedDirections, oppositeDirectionGroup } from '../domain/directions';
+import { createManagedDirections, ensureManagedDirections, oppositeDirectionGroup, orderDirections } from '../domain/directions';
+import { applyRouteStopEdits, deleteRouteStops as deleteStopsFromSet, mergeRouteStops as mergeStopsInSet, RouteStopCommandError, splitRouteStop as splitStopInSet, splitSharedRouteStops as splitSharedStopsInSet, type RouteStopCommandErrorCode, type RouteStopFields } from '../domain/routeStopManagement';
 import { classifyPatternEdit, describePatternPointChange, getPatternServiceImpact, rebalanceRuntimeProfile, rebalanceTripForPattern, reconcileRouteTimetables, resetPatternService, type DirectionOrderConflict, type PatternServiceImpact, type RouteEditClassification, type RouteEditMode } from '../domain/safeRouteEditing';
 import { normalizeServiceDayAbbreviation, sortServiceDays, validateServiceDayAbbreviations } from '../domain/serviceDays';
 import { applySegmentRuntimePlan, defaultBandPairs, planCopyToOthers, planFillFromOthers, planValueCopy, qualifyingProfiles, type BandPairs, type ValueCopyRequest, type SegmentRuntimePlan } from '../domain/segmentRuntimeMatching';
@@ -353,6 +354,20 @@ export interface StopPlacementPreview extends StopPlacementPlan {
 }
 export const STOPS_CHANGED_ELSEWHERE = 'Stops changed after this editor opened. Close it and open it again.';
 export const STOP_COPY_UNDO_REFUSED = "These stops were changed after the copy, so it can't be undone.";
+/** Decision 0087. Messages for the route stop command errors. They live here, not in src/ui, because the application layer must not import UI code. */
+const ROUTE_STOP_COMMAND_MESSAGES: Record<RouteStopCommandErrorCode, string> = {
+  stopMissing: 'A selected stop is no longer on this route.',
+  nothingToSplit: 'Only one direction uses this stop, so there is nothing to split.',
+  mergeNeedsTwo: 'Choose at least two stops to merge.',
+};
+export function routeStopCommandMessage(code: RouteStopCommandErrorCode): string {
+  return ROUTE_STOP_COMMAND_MESSAGES[code];
+}
+/** The commands that cannot remove the set (each keeps at least one stop and placement) return a written set; this guards the type. */
+function requireRouteStops(set: RouteStopSet | undefined): RouteStopSet {
+  if (!set) throw new Error('The stops of this route were removed by this change.');
+  return set;
+}
 const STOP_COPY_PREVIEW_STALE = 'Stops changed after the preview. Review the changes again.';
 interface StopCopyUndo { routeId: string; scenarioId: string; before: RouteStopSet; writtenUpdatedAt: string; patternCount: number }
 
@@ -846,6 +861,72 @@ export class RouteDefinitionService {
       return { ...current, routeStopSets: [...(current.routeStopSets ?? []).filter((set) => set.routeId !== edit.routeId), ...(kept ? [kept] : [])] };
     });
     return written.routeStopSets?.find((set) => set.routeId === edit.routeId);
+  }
+
+  /** Decision 0087 section 5 (RS2): field edits of the Route's stop records. Placements are unchanged. */
+  async saveRouteStopRecords(input: { routeId: string; edits: Array<{ id: string } & RouteStopFields>; baseUpdatedAt: string }): Promise<RouteStopSet> {
+    return requireRouteStops(await this.writeRouteStops(input.routeId, input.baseUpdatedAt, (stored) => applyRouteStopEdits(stored, input.edits)));
+  }
+
+  /** Decision 0087 section 5 (RS2): gives one direction its own copy of a stop. The new record gets a new ID. */
+  async splitRouteStop(input: { routeId: string; stopId: string; directionId: string; newStop: RouteStopFields; baseUpdatedAt: string }): Promise<RouteStopSet> {
+    return requireRouteStops(await this.writeRouteStops(input.routeId, input.baseUpdatedAt, (stored, patterns) => splitStopInSet(stored, patterns, {
+      stopId: input.stopId, directionId: input.directionId, newStop: { ...input.newStop, id: newId() },
+    })));
+  }
+
+  /** Decision 0087 section 5 (RS2): splits every stop used by more than one direction. */
+  async splitSharedRouteStops(input: { routeId: string; keepDirectionId: string; suffixByDirectionId: Record<string, string>; renameKept: boolean; baseUpdatedAt: string }): Promise<RouteStopSet> {
+    return requireRouteStops(await this.writeRouteStops(input.routeId, input.baseUpdatedAt, (stored, patterns, directions) => splitSharedStopsInSet(stored, patterns, {
+      directionOrder: orderDirections(directions).map((direction) => direction.id),
+      keepDirectionId: input.keepDirectionId,
+      suffixByDirectionId: input.suffixByDirectionId,
+      renameKept: input.renameKept,
+      newId,
+    }).set));
+  }
+
+  /** Decision 0087 section 5 (RS2): removes stop records and their placements. Returns undefined when the set is removed. */
+  async deleteRouteStops(input: { routeId: string; stopIds: string[]; baseUpdatedAt: string }): Promise<RouteStopSet | undefined> {
+    return this.writeRouteStops(input.routeId, input.baseUpdatedAt, (stored) => deleteStopsFromSet(stored, input.stopIds));
+  }
+
+  /** Decision 0087 section 5 (RS2): merges stop records into one. Repeats within a segment are refused by validation. */
+  async mergeRouteStops(input: { routeId: string; keepStopId: string; mergeStopIds: string[]; baseUpdatedAt: string }): Promise<RouteStopSet> {
+    return requireRouteStops(await this.writeRouteStops(input.routeId, input.baseUpdatedAt, (stored) => mergeStopsInSet(stored, { keepStopId: input.keepStopId, mergeStopIds: input.mergeStopIds })));
+  }
+
+  /**
+   * Decision 0087 section 5 (RS2). Shared write path for the stop-list commands. The stored set must still carry `baseUpdatedAt`, or the
+   * command is refused with STOPS_CHANGED_ELSEWHERE. The RS1 change is validated against the Route's patterns, then pruned and written in one
+   * write. Returns the written set, or undefined when pruning removed it.
+   */
+  private async writeRouteStops(
+    routeId: string,
+    baseUpdatedAt: string | undefined,
+    change: (stored: RouteStopSet, patterns: RoutePattern[], directions: RouteDirection[]) => RouteStopSet,
+  ): Promise<RouteStopSet | undefined> {
+    this.stopCopyUndo = undefined;
+    const records = await this.recordsForRoute(routeId);
+    const written = await this.updateScenarioRecords(records.scenario.id, (current) => {
+      if (!current.routes.some((candidate) => candidate.id === routeId)) throw new Error('The selected route is no longer available.');
+      const stored = (current.routeStopSets ?? []).find((set) => set.routeId === routeId);
+      if (!stored || stored.updatedAt !== baseUpdatedAt) throw new Error(STOPS_CHANGED_ELSEWHERE);
+      const patterns = current.patterns.filter((candidate) => candidate.routeId === routeId);
+      const directions = (current.directions ?? []).filter((direction) => direction.routeId === routeId);
+      let next: RouteStopSet;
+      try {
+        next = { ...change(stored, patterns, directions), updatedAt: this.now() };
+      } catch (error) {
+        if (error instanceof RouteStopCommandError) throw new Error(routeStopCommandMessage(error.code));
+        throw error;
+      }
+      const findings = validateRouteStopSet(next, patterns);
+      if (findings.some((finding) => finding.severity === 'error')) throw new RouteStopValidationError(findings);
+      const kept = pruneRouteStopSets([next], { routes: current.routes, patterns: current.patterns }).find((set) => set.routeId === routeId);
+      return { ...current, routeStopSets: [...(current.routeStopSets ?? []).filter((set) => set.routeId !== routeId), ...(kept ? [kept] : [])] };
+    });
+    return written.routeStopSets?.find((set) => set.routeId === routeId);
   }
 
   /** Decision 0079 (model: Decision 0065). What "Fill stops from other patterns" would write into the draft. Synchronous; nothing is read or written. */
@@ -1810,6 +1891,11 @@ export type RouteDefinitionApplication = Pick<RouteDefinitionService,
   | 'undoDistanceCopy'
   | 'getRouteStopSet'
   | 'saveRouteStops'
+  | 'saveRouteStopRecords'
+  | 'splitRouteStop'
+  | 'splitSharedRouteStops'
+  | 'deleteRouteStops'
+  | 'mergeRouteStops'
   | 'previewStopFill'
   | 'applyStopFill'
   | 'previewStopCopy'

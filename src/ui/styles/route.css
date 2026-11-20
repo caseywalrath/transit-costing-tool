@@ -126,3 +126,43 @@
 .stop-location-import-dialog caption { padding-bottom: var(--space-1); color: var(--color-text); font-weight: var(--font-weight-semibold); text-align: left; }
 .stop-location-import-note { color: var(--color-text-muted); font-size: var(--font-size-note); }
 @media (max-width: 680px) { .shift-drawer.pattern-stops-drawer { width: 100vw; } }
+/* Decision 0087 item 10: the notice under a drawer row that a typed name or stop ID linked to an existing stop. */
+.pattern-stops-link td { padding-top: 0; color: var(--color-text-muted); font-size: var(--font-size-note); }
+.pattern-stops-link button { margin-left: var(--space-2); padding: 0 var(--space-1); }
+/* Decision 0087: the Route stops section, full width below Nodes and Patterns. */
+.route-stops { margin-top: var(--space-4); }
+.route-stops__filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+.route-stops__search { flex: 0 1 240px; min-width: 160px; }
+.route-stops__note, .route-stops__empty { color: var(--color-text-muted); font-size: var(--font-size-note); }
+.route-stops-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.route-stops-table th, .route-stops-table td { padding: var(--space-1); text-align: left; vertical-align: middle; }
+.route-stops-table thead th { color: var(--color-text-subtle); font-size: var(--font-size-caption); font-weight: var(--font-weight-semibold); border-bottom: 1px solid var(--color-border); }
+.route-stops-table tbody tr + tr td { border-top: 1px solid var(--color-border-soft); }
+.route-stops-table input:not([type="checkbox"]) { width: 100%; min-width: 0; font-variant-numeric: tabular-nums; }
+.route-stops__check { width: 32px; }
+.route-stops-table th:nth-child(2) { width: auto; }
+.route-stops-table th:nth-child(3) { width: 110px; }
+.route-stops-table th.route-stops__number { width: 108px; }
+.route-stops-table th:nth-child(6) { width: 84px; }
+.route-stops-table th:nth-child(7) { width: 220px; }
+.route-stops-table th:last-child { width: 44px; }
+.route-stops__number input { text-align: right; }
+.route-stops__used { color: var(--color-text-muted); font-size: var(--font-size-note); }
+.route-stops__used > span:first-child { margin-right: var(--space-1); }
+.route-stops__shared { display: inline-flex; align-items: center; vertical-align: middle; color: var(--color-warn); }
+.route-stops__row--edited td { background: var(--color-warn-soft); }
+.route-stops__error td { padding-top: 0; border-top: 0 !important; }
+.route-stop-dialog__choices { display: flex; flex-wrap: wrap; gap: var(--space-3); border: 0; padding: 0; margin: var(--space-2) 0; }
+.route-stop-dialog__choices label, .route-stop-dialog__check { display: inline-flex; align-items: center; gap: var(--space-1); }
+.route-stop-dialog__fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-2); margin: var(--space-2) 0; }
+.route-stop-dialog__fields label, .route-stop-dialog__keep { display: grid; gap: var(--space-1); font-size: var(--font-size-note); }
+.route-stop-dialog__keep { margin: var(--space-2) 0; max-width: 280px; }
+/* The generic `.confirm-dialog > div` rule makes direct child divs right-aligned flex rows (dialogs.css); these are laid out here instead. */
+.confirm-dialog.route-stop-dialog { width: min(600px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; }
+.confirm-dialog.route-stop-dialog > div.preview-times, .confirm-dialog.route-stop-dialog > div.segment-runtime-skips { display: block; }
+.confirm-dialog.route-stop-dialog > div.route-stop-dialog__fields { display: grid; justify-content: stretch; }
+.route-stop-dialog .segment-runtime-skips p { margin: var(--space-3) 0 var(--space-1); }
+.confirm-dialog.route-stop-dialog > label.route-stop-dialog__check { display: flex; width: 100%; margin: var(--space-2) 0; }
+.route-stop-dialog input[type="checkbox"], .route-stop-dialog input[type="radio"] { width: auto; flex: none; }
+.route-stops__shared { gap: 2px; font-size: var(--font-size-caption); font-weight: var(--font-weight-semibold); }
+@media (max-width: 1100px) { .route-stops-table th:nth-child(7) { width: 150px; } .route-stops-table th.route-stops__number { width: 88px; } }

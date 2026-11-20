@@ -134,7 +134,8 @@ describe('restore points in IndexedDB', () => {
     } finally {
       await h.close();
     }
-  });
+    // 21 full-snapshot writes take about 4.5 s locally, so the 5 s default timed out on a slower CI runner.
+  }, 20_000);
 
   it('keepNewest leaves the newest points and removes their payloads', async () => {
     const h = await open();

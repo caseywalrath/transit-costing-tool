@@ -131,6 +131,43 @@ describe('every covered command can be restored to the exact records before it',
     await roundTrip(h, 'deleteRoute', async () => h.routeDefinition.deleteRoute(route.id, (await h.routeDefinition.getRouteDeletionImpact(route.id)).reviewToken));
   }));
 
+  it('route stops: deleteRouteStops', () => withHarness(async (h) => {
+    const routeId = h.fixture.planPattern.routeId;
+    const set = (await h.routeDefinition.getRouteStopSet(routeId))!;
+    await roundTrip(h, 'deleteRouteStops', async () => h.routeDefinition.deleteRouteStops({ routeId, stopIds: ['stop-a'], baseUpdatedAt: set.updatedAt }));
+  }));
+
+  it('route stops: mergeRouteStops', () => withHarness(async (h) => {
+    const { planPattern } = h.fixture;
+    const routeId = planPattern.routeId;
+    const [, second] = [...planPattern.points].sort((left, right) => left.sequence - right.sequence);
+    const current = (await h.routeDefinition.getRouteStopSet(routeId))!;
+    // Setup, outside the round-trip: a second stop on the pattern's second point, so there is something to merge.
+    const withSecond = await h.routeDefinition.saveRouteStops({
+      routeId, patternId: planPattern.id, roundingSeconds: 60, timepointStopCodes: {},
+      stops: [...current.stops, { id: 'stop-b', name: 'Stop B' }],
+      placements: [...current.placementsByPatternId[planPattern.id], { id: 'placement-b', stopId: 'stop-b', afterPatternPointId: second.id, sequence: 0, timing: 'interpolate' }],
+      baseUpdatedAt: current.updatedAt,
+    });
+    await roundTrip(h, 'mergeRouteStops', async () => h.routeDefinition.mergeRouteStops({ routeId, keepStopId: 'stop-a', mergeStopIds: ['stop-b'], baseUpdatedAt: withSecond!.updatedAt }));
+  }));
+
+  it('route stops: splitRouteStop', () => withHarness(async (h) => {
+    const { planPattern } = h.fixture;
+    const routeId = planPattern.routeId;
+    const other = h.fixture.snapshot.patterns.find((pattern) => pattern.routeId === routeId && pattern.directionId !== planPattern.directionId)!;
+    const [otherFirst] = [...other.points].sort((left, right) => left.sequence - right.sequence);
+    const current = (await h.routeDefinition.getRouteStopSet(routeId))!;
+    // Setup, outside the round-trip: stop A also serves the other direction's pattern, so it is shared and can be split.
+    const shared = await h.routeDefinition.saveRouteStops({
+      routeId, patternId: other.id, roundingSeconds: 60, timepointStopCodes: {},
+      stops: current.stops,
+      placements: [{ id: 'placement-other', stopId: 'stop-a', afterPatternPointId: otherFirst.id, sequence: 0, timing: 'interpolate' }],
+      baseUpdatedAt: current.updatedAt,
+    });
+    await roundTrip(h, 'splitRouteStops', async () => h.routeDefinition.splitRouteStop({ routeId, stopId: 'stop-a', directionId: other.directionId!, newStop: { name: 'Stop A NB' }, baseUpdatedAt: shared!.updatedAt }));
+  }));
+
   it('route definition: deletePattern', () => withHarness(async (h) => {
     const pattern = h.fixture.planPattern;
     await roundTrip(h, 'deletePattern', async () => h.routeDefinition.deletePattern(pattern.id, (await h.routeDefinition.getPatternDeletionImpact(pattern.id)).reviewToken));

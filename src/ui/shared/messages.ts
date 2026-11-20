@@ -232,6 +232,9 @@ export function restorePointLabel(point: Pick<RestorePointSummary, 'kind' | 'nam
     case 'deleteProject': return `Deleted project ${names.project}`;
     case 'deleteScenario': return `Deleted scenario ${names.scenario}`;
     case 'deleteRoute': return `Deleted route ${names.route ?? ''}`.trim();
+    case 'splitRouteStops': return `Split stops by direction on route ${names.route ?? ''}`.trim();
+    case 'deleteRouteStops': return `Deleted stops of route ${names.route ?? ''}`.trim();
+    case 'mergeRouteStops': return `Merged stops of route ${names.route ?? ''}`.trim();
     case 'deletePattern': return `Deleted pattern ${names.pattern ?? ''}`.trim();
     case 'resetPatternService': return `Removed the service of pattern ${names.pattern ?? ''}`.trim();
     case 'rebalancePattern': return `Saved pattern ${names.pattern ?? ''}`.trim();

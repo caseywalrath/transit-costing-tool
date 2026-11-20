@@ -81,6 +81,10 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
   const fileInput = useRef<HTMLInputElement>(null);
   const [closePrompt, setClosePrompt] = useState(false);
   const [moved, setMoved] = useState<{ id: string; tick: number }>();
+  /** Decision 0087 item 10. Placement ID → the stop a typed name or stop ID linked the row to, and the row's stop before the link. */
+  const [links, setLinks] = useState<Record<string, { linkedStopId: string; previous: RouteStop }>>({});
+  /** Rows whose link was undone; their typing does not link them again. */
+  const [linkDeclined, setLinkDeclined] = useState<Set<string>>(new Set());
   const nameInputs = useRef(new Map<string, HTMLInputElement>());
   const focusAfterRender = useRef<string | undefined>(undefined);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -90,7 +94,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
   patternRef.current = pattern;
   const accept = useCallback((set: RouteStopSet | undefined) => {
     const next = draftOf(patternRef.current, set);
-    setLoaded({ set }); setBase(next); setDraft(next); setFindings([]); setError(''); setLocationTexts({});
+    setLoaded({ set }); setBase(next); setDraft(next); setFindings([]); setError(''); setLocationTexts({}); setLinks({}); setLinkDeclined(new Set());
   }, []);
   const unusableKeys = Object.entries(locationTexts).filter(([, text]) => isUnusableText(text)).map(([key]) => key);
   // A field holding text that is not a number is an edit too, so the drawer cannot be closed without a prompt.
@@ -144,6 +148,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
   }
   function removeStop(placementId: string) {
     const placements = draft.placements.filter((placement) => placement.id !== placementId);
+    setLinks(({ [placementId]: _removed, ...rest }) => rest);
     edit({ ...draft, stops: withoutOrphans(draft.stops, placements), placements });
   }
   /** Decision 0079 (ST5 item 5): past the first or last stop of a segment, a stop moves across the timepoint into the next segment. */
@@ -157,16 +162,36 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
     setMoved((current) => ({ id: placement.id, tick: (current?.tick ?? 0) + 1 }));
     edit({ ...draft, placements: fromSegments(next) });
   }
-  function updateStop(stopId: string, patch: Partial<RouteStop>) { edit({ ...draft, stops: draft.stops.map((stop) => stop.id === stopId ? { ...stop, ...patch } : stop) }); }
+  function updateStop(stopId: string, patch: Partial<RouteStop>) { dropLinkNotices(stopId); edit({ ...draft, stops: draft.stops.map((stop) => stop.id === stopId ? { ...stop, ...patch } : stop) }); }
+  /** Decision 0087 item 10. Ends the link notice of the rows of a stop once that stop is edited again. */
+  function dropLinkNotices(stopId: string) {
+    setLinks((current) => Object.values(current).some((link) => link.linkedStopId === stopId) ? Object.fromEntries(Object.entries(current).filter(([, link]) => link.linkedStopId !== stopId)) : current);
+  }
+  /** Links a row to an existing stop and remembers the row's stop and values before, for Undo link. */
+  function link(placementId: string, stopId: string, match: RouteStop, stops: RouteStop[]) {
+    const previous = draft.stops.find((stop) => stop.id === stopId);
+    const placements = draft.placements.map((placement) => placement.id === placementId ? { ...placement, stopId: match.id } : placement);
+    edit({ ...draft, stops: withoutOrphans(stops, placements), placements });
+    if (previous) setLinks((current) => ({ ...current, [placementId]: { linkedStopId: match.id, previous: { ...previous } } }));
+  }
+  /** Decision 0087 item 10. Returns the row to the stop and values it had before the link; the row is not linked again by its typing. */
+  function undoLink(placementId: string) {
+    const entry = links[placementId];
+    if (!entry) return;
+    const placements = draft.placements.map((placement) => placement.id === placementId ? { ...placement, stopId: entry.previous.id } : placement);
+    const stops = draft.stops.some((stop) => stop.id === entry.previous.id) ? draft.stops.map((stop) => stop.id === entry.previous.id ? entry.previous : stop) : [...draft.stops, entry.previous];
+    edit({ ...draft, stops: withoutOrphans(stops, placements), placements });
+    setLinks(({ [placementId]: _removed, ...rest }) => rest);
+    setLinkDeclined((current) => new Set(current).add(placementId));
+  }
   /** A stop typed in this drawer that matches a suggestion links its row to that existing stop. */
   function linkIfSuggested(placementId: string, stopId: string, value: string) {
-    if (savedStopIds.has(stopId) || patternUse(stopId) > 1) return;
+    if (linkDeclined.has(placementId) || savedStopIds.has(stopId) || patternUse(stopId) > 1) return;
     const text = value.trim().toLocaleLowerCase();
     if (!text) return;
     const match = draft.stops.find((stop) => stop.id !== stopId && savedStopIds.has(stop.id) && suggestionValue(stop).toLocaleLowerCase() === text);
     if (!match) return;
-    const placements = draft.placements.map((placement) => placement.id === placementId ? { ...placement, stopId: match.id } : placement);
-    edit({ ...draft, stops: withoutOrphans(draft.stops, placements), placements });
+    link(placementId, stopId, match, draft.stops);
   }
   /**
    * A stop ID is unique within the Route (Decision 0079 item 2), so a stop ID typed on a row whose stop has no saved stop ID (a new stop, or a
@@ -174,6 +199,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
    * giving a second stop the same ID.
    */
   function linkIfSavedCode(placementId: string, stopId: string, value: string) {
+    if (linkDeclined.has(placementId)) return;
     const saved = loaded?.set?.stops.find((stop) => stop.id === stopId);
     // A saved stop that already has a stop ID is being given another one: a match is a real duplicate, reported on save.
     if (saved ? (saved.stopCode?.trim() ?? '') !== '' : patternUse(stopId) > 1) return;
@@ -181,10 +207,9 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
     if (!code) return;
     const match = draft.stops.find((stop) => stop.id !== stopId && savedStopIds.has(stop.id) && (stop.stopCode?.trim().toLocaleLowerCase() ?? '') === code);
     if (!match) return;
-    const placements = draft.placements.map((placement) => placement.id === placementId ? { ...placement, stopId: match.id } : placement);
     // A saved stop without a stop ID keeps its saved values for the other patterns that use it; only this row moves to the matching stop.
     const stops = saved ? draft.stops.map((stop) => stop.id === stopId ? { ...saved } : stop) : draft.stops;
-    edit({ ...draft, stops: withoutOrphans(stops, placements), placements });
+    link(placementId, stopId, match, stops);
   }
   /** Decision 0080. A timepoint's stop ID on this pattern. An empty field removes it. */
   function updateCode(pointId: string, value: string) {
@@ -210,6 +235,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
     return { ...current, stops, locations };
   }
   function updateLocation(key: string, field: LocationField, text: string) {
+    if (key.startsWith('stop:')) dropLinkNotices(key.slice('stop:'.length));
     const pair = field === 'latitude' ? COORDINATE_PAIR.exec(text) : null;
     const texts = pair ? { [`${key}:latitude`]: pair[1], [`${key}:longitude`]: pair[2] } : { [`${key}:${field}`]: text };
     setLocationTexts((current) => ({ ...current, ...texts }));
@@ -299,7 +325,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
       return false;
     } finally { setBusy(false); }
   }
-  function discard() { setDraft(base); setFindings([]); setError(''); setLocationTexts({}); }
+  function discard() { setDraft(base); setFindings([]); setError(''); setLocationTexts({}); setLinks({}); setLinkDeclined(new Set()); }
   useImperativeHandle(ref, () => ({ save, discard }));
 
   const requestClose = useCallback(() => { if (dirty) setClosePrompt(true); else onClose(); }, [dirty, onClose]);
@@ -368,7 +394,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
                 <td className="pattern-stops-shared">{uses > 1 && <span className="pattern-stops-shared__mark" role="img" aria-label={`Used by ${uses} patterns of this route`} title={`Used by ${uses} patterns of this route`}><LinkIcon />{uses}</span>}</td>
                 <td className="pattern-stops-order"><button type="button" className="icon-button" disabled={busy || first} aria-label={`Move ${label} up`} title="Move up" onClick={() => moveStop(index, position, -1)}>↑</button><button type="button" className="icon-button" disabled={busy || last} aria-label={`Move ${label} down`} title="Move down" onClick={() => moveStop(index, position, 1)}>↓</button></td>
                 <td><button type="button" className="icon-button icon-button--danger" disabled={busy} aria-label={`Remove ${label}`} title={`Remove ${label}`} onClick={() => removeStop(placement.id)}><TrashIcon /></button></td>
-              </tr>{errors.length > 0 && <tr className="pattern-stops-error"><td colSpan={columns}><span className="field-error" id={errorId}>{errors.join(' ')}</span></td></tr>}</Fragment>;
+              </tr>{links[placement.id] && <tr className="pattern-stops-link"><td colSpan={columns}><span role="status">Linked to existing stop {stop?.name.trim() || 'Untitled stop'}{stop?.stopCode?.trim() ? ` (${stop.stopCode.trim()})` : ''}</span><button type="button" className="ghost" disabled={busy} onClick={() => undoLink(placement.id)}>Undo link</button></td></tr>}{errors.length > 0 && <tr className="pattern-stops-error"><td colSpan={columns}><span className="field-error" id={errorId}>{errors.join(' ')}</span></td></tr>}</Fragment>;
             })}
             {index < points.length - 1 && <tr className="pattern-stops-add"><td colSpan={columns}><button type="button" className="ghost" disabled={busy} aria-label={`Add stop between ${node?.name || 'this timepoint'} and ${nextNode?.name || 'the next timepoint'}`} onClick={() => addStop(index)}><span aria-hidden="true">+ </span>Add stop</button></td></tr>}
           </Fragment>;

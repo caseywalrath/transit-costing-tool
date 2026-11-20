@@ -54,6 +54,14 @@ One Route stop on one pattern segment, after a given pattern point, in an order 
 
 How a stop's time is derived from a Trip's times at the two timepoints around it: `interpolate` (the default; the segment's interpolated stops divide its time equally, rounded down to 1 minute, 30 seconds or 1 second; equally or by distance, see Spacing), `previous` (the earlier timepoint's time), or `next` (the later timepoint's time).
 
+### Stop record
+
+One Route stop as stored once per Route (`RouteStop`): name, optional stop ID, and optional location. Every pattern that places it shares it. The Route tab's Stops section lists the stop records and shows which directions use each one (Decision 0087).
+
+### Split by direction
+
+Giving one direction its own stop record for a stop that patterns of two or more directions share (Decision 0087). That direction's placements move to the new record with their order and timing; the other directions keep the original. **Split all shared stops** does this for every shared stop at once, naming the new records with a suffix per direction and leaving their stop ID and location empty.
+
 ### Stop location
 
 A latitude and longitude, with an optional speed limit in miles per hour, of a Route stop or of a timepoint on one pattern (Decision 0085). It is entered or imported from a CSV file in the Stops drawer and fills the location columns of the stop schedule.
