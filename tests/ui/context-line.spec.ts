@@ -20,6 +20,8 @@ test('Trips, Blocking, and Costing share the Trip profile and Blocking scenario 
   await crumb(page, 'Trip profile').click();
   await page.getByRole('menu', { name: 'Trip profile', exact: true }).getByRole('menuitemradio', { name: 'Default' }).click();
   await expect(crumb(page, 'Trip profile')).toContainText('Default');
+  // The working Blocking scenario follows the profile change a moment later; read it only once it is chosen.
+  await expect(crumb(page, 'Blocking scenario')).not.toContainText('No blocking scenario');
   const blocking = (await crumb(page, 'Blocking scenario').textContent())?.replace(/^Blocking scenario/, '').replace('▾', '').trim();
   expect(blocking).toBeTruthy();
 
