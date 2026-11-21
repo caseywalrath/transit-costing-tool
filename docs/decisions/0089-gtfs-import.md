@@ -54,7 +54,7 @@ Planners want to start from an agency's published service: a whole public GTFS f
     - The planner may choose any day group or any date in the range instead.
 17. **Part-year routes.** A selected route with no trip on the date chosen for a service day, but with trips on other dates of that day's days of the week, is flagged. The planner may give that route its own date for that service day. Its trips on that service day then come from its own date.
 18. **Holiday candidates:** dates where the feed departs from the normal day of the week: a `calendar_dates` removal of a service that the typical set of that day of the week contains, an addition of a service it does not contain, or both. Public-holiday names are only labels in the list; they never classify a date.
-19. **Holiday classification, per route and per candidate date**, comparing the route's trips on the date with its trips on the chosen Saturday and Sunday dates. Two trips are the same when they have the same pattern (item 25) and the same departure time at the first timepoint.
+19. **Holiday classification, per route and per candidate date**, comparing the route's trips on the date with its trips on the chosen Saturday and Sunday dates. Two trips are the same when they have the same direction, the same stop sequence and the same first departure (amended 2026-11-21, sub-plan section 10).
     - **Saturday service:** the same set of trips as Saturday.
     - **Sunday service:** the same set of trips as Sunday.
     - **Reduced or other weekday:** every trip is one of the chosen Weekday date's trips, or the date has the typical Monday–Friday set with some of it removed.

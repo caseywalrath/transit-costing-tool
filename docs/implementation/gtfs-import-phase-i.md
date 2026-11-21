@@ -247,3 +247,79 @@ export function feedSummary(tables: GtfsTables, today: GtfsDate, countDate?: Gtf
 **Run:** `pnpm exec vitest run src/domain/gtfs`, `pnpm typecheck`, then `pnpm test` once at the end.
 
 **Done when:** the worked examples are tests and pass; no other file changed.
+
+## 10. Sitting 3 order
+
+I3 reads only I2's `FeedTrip` lists, not I2b's code, so I2b and I3 run in parallel (separate files). Decision 0089 item 19 is amended for this: two trips are "the same" when they have the same direction, the same stop sequence and the same first departure. That is stricter than "same pattern" and needs no pattern grouping.
+
+## 11. Card I2b — Day groups, default dates, part-year routes, holidays, annual counts
+
+**Model:** Sonnet, effort `high`. **Rules:** 0089 items 15–21 (item 19 as amended in section 10).
+
+**Files to create:** `src/domain/gtfs/dayGroups.ts`, `holidays.ts`, `annualCounts.ts`, a test beside each, and fixture folders `tests/fixtures/gtfs/cal-school-days/`, `cal-friday-extras/`, `cal-holiday-saturday/`, `cal-holiday-mixed/`, `cal-holiday-unique/`, `cal-part-year/`, each with an `EXPECTED.md` of hand-worked answers, and a row for each in `tests/fixtures/gtfs/README.md`. Use I2's functions (`serviceIdsActiveOn`, `tripsOnDate`, `feedServiceRange`, `dayOfWeek`, `addDays`, `daysBetween`) and `testFeeds.ts`. **Do not touch** other files.
+
+**API (names fixed; field details may be added, not removed):**
+
+```ts
+export type ServiceDayKey = 'weekday' | 'saturday' | 'sunday' | 'holiday' | `custom${number}`;
+export interface DayGroup { serviceIds: string[]; dates: GtfsDate[]; daysOfWeek: number[]; tripCount: number; addedServiceIds: string[]; removedServiceIds: string[]; tripDelta: number; routeIdsAffected: string[] }
+export function dayGroups(tables: GtfsTables, routeIds: ReadonlySet<string>): { range?: { start: GtfsDate; end: GtfsDate }; groups: DayGroup[]; typicalByDayOfWeek: string[][] };
+export function defaultDates(tables: GtfsTables, routeIds: ReadonlySet<string>): Partial<Record<'weekday' | 'saturday' | 'sunday', GtfsDate>>;
+export function partYearRoutes(tables: GtfsTables, routeIds: ReadonlySet<string>, chosen: Partial<Record<'weekday' | 'saturday' | 'sunday', GtfsDate>>): Array<{ routeId: string; serviceDay: 'weekday' | 'saturday' | 'sunday'; suggestedDate?: GtfsDate }>;
+export type HolidayClass = 'saturday' | 'sunday' | 'reducedWeekday' | 'unique' | 'none';
+export interface HolidayCandidate { date: GtfsDate; addedServiceIds: string[]; removedServiceIds: string[]; byRoute: Record<string, HolidayClass>; scenarioClass: Exclude<HolidayClass, 'none'> }
+export function holidayCandidates(tables: GtfsTables, routeIds: ReadonlySet<string>, chosen: Partial<Record<'weekday' | 'saturday' | 'sunday', GtfsDate>>): HolidayCandidate[];
+export function proposeHolidayDays(tables: GtfsTables, routeIds: ReadonlySet<string>, candidates: HolidayCandidate[]): Array<{ key: ServiceDayKey; name: string; date: GtfsDate; dates: GtfsDate[] }>;
+export interface AnnualCountProposal { countsByKey: Record<string, number>; datesByKey: Record<string, number>; rangeDates: number; scaled: boolean; unmatchedDates: GtfsDate[] }
+export function proposeAnnualCounts(tables: GtfsTables, routeIds: ReadonlySet<string>, classOfDate: (date: GtfsDate) => ServiceDayKey): AnnualCountProposal;
+export function proposeRouteOwnCounts(tables: GtfsTables, routeId: string, classOfDate: (date: GtfsDate) => ServiceDayKey, scenarioRangeDates: number): Record<string, number>;
+```
+
+`classOfDate` is built by the caller from the candidates and the planner's choices; tests build it with a small helper that applies the default classification (a candidate's `scenarioClass`; Saturday/Sunday classes map to those keys, `reducedWeekday` to weekday, `unique` to the key `proposeHolidayDays` gave the date; any other date maps to its day of the week).
+
+**Worked example (mini, all three routes; check by hand and stop if you disagree):**
+- Range 20260105–20260201, 28 dates. Typical sets: Monday–Friday `{WKDY}`, Saturday `{SAT}`, Sunday `{SUN}`.
+- Defaults: weekday 20260120 (20260119 has an exception; 20260120 is 1.5 days from the middle, 20260116 is 2.5), saturday 20260117 (20260124 has an exception), sunday 20260118.
+- Candidates: 20260119 (removed WKDY, added SUN) → B1 `sunday`, R1 and F1 `none` → scenario `sunday`. 20260124 (added EVT) → B1 and F1 `saturday`, R1 `unique` → scenario `unique`. 20260130 (added SAT) → `unique`.
+- Holiday days: Holiday = 20260130 (31 trips, the most), Holiday 2 = 20260124.
+- Counts by date: weekday 18, saturday 3, sunday 5, holiday 1, custom1 1 (28). Scaled by 365/28 with the largest remainder: 235, 39, 65, 13, 13 (365).
+
+**Fixtures to write:** school-day services on 60% of weekdays (weekday default must be a school date only if school dates are the most common set; make them the less common set); one extra service only on Fridays; a Monday holiday that runs Saturday service on every route; a holiday with Saturday trips on one route and Sunday trips on another; two unique holidays with different trips; a route running only in July (range covering June–August), flagged part-year with its own counts. Keep each under 30 lines per file.
+
+**Run:** `pnpm exec vitest run src/domain/gtfs`, `pnpm typecheck`, `pnpm test` once at the end. **Done when:** the worked example and every fixture's `EXPECTED.md` are tests and pass.
+
+## 12. Card I3 — Translation part 1: directions, patterns, timepoints, Nodes, stops, distances
+
+**Model:** Haiku, effort `xhigh`. **Rules:** 0089 items 24–29, 38 (`gtfsRouteId`, `gtfsRouteType`, `color` upper-cased).
+
+**Files to create:** `src/domain/gtfs/directionsFromFeed.ts`, `patternsFromFeed.ts`, `timepointsFromFeed.ts`, `distancesFromFeed.ts`, `routeFromFeed.ts`, a test beside each. Reuse `greatCircleMiles` (`src/domain/geo.ts`), `createManagedDirections` and `mapPatternPointsToDirection` (`src/domain/directions.ts`), `newId`/`metadata` (`src/domain/ids.ts`), and the `RouteStopSet` rules of `src/domain/stops.ts` (`validateRouteStopSet` must return no error-level finding on every result). **Do not touch** other files.
+
+**Main API:**
+
+```ts
+export interface FeedShapePoint { latitude: number; longitude: number; sequence: number }
+export interface RouteFromFeedInput {
+  scenarioId: EntityId; routeRow: Row; trips: FeedTrip[];            // every trip of the route on every chosen date, already expanded
+  stops: ReadonlyMap<string, Row>; shapes: ReadonlyMap<string, FeedShapePoint[]>;
+  timepointOverrides?: Record<string, string[]>;                     // pattern key → stop IDs chosen by the planner
+  now: string;
+}
+export interface TripPlacement { tripId: string; patternId: EntityId; points: Array<{ patternPointId: EntityId; departure: number; arrival: number; filled: boolean }> }
+export type GtfsFindingCode = 'mergedVariant' | 'thinnedTimepoints' | 'filledTime' | 'straightLineMiles' | 'stopWithoutLocation' | 'directionsGuessed' | 'dwellAtTimepoint';
+export interface GtfsFinding { code: GtfsFindingCode; routeId: string; patternKey?: string; tripId?: string; stopId?: string; detail?: string }
+export interface RouteFromFeed { route: Route; nodes: Node[]; directions: RouteDirection[]; patterns: RoutePattern[]; stopSet?: RouteStopSet; placements: TripPlacement[]; patternKeys: Record<EntityId, string>; findings: GtfsFinding[] }
+export function routeFromFeed(input: RouteFromFeedInput): RouteFromFeed;
+```
+
+- A **pattern key** is `{outbound|inbound}:{timepoint stop IDs joined by '>'}`.
+- `placements` gives every trip's time at every pattern point: the departure, and the arrival at the last point. `filled` is true when the time was blank and filled by distance (item 26).
+- Route: name = long name, or the short name when the long name is blank; `shortName` = short name when present.
+- Segment miles go on the pattern points' `cumulativeMiles`, rounded to 0.01 mile.
+
+**Worked examples (from `tests/fixtures/gtfs/README.md`):**
+- `edge-no-direction` (weekday trips on 20260105): directions guessed (finding `directionsGuessed`); Outbound = NA→NB with name "South Terminal", Inbound name "North Terminal"; 2 Nodes (NA, NB, both `terminal`); 2 patterns, each with 2 points; one Route stop `NM` placed on both patterns; Route name "N1"; finding `straightLineMiles` per pattern.
+- `edge-loop-variants` (20260105): one Outbound loop pattern `LA>LC>LA` with 5 trips and one short pattern `LA>LC` with 1 trip; Node `LA` used at both ends; one `mergedVariant` finding (`L1_skip`); one `dwellAtTimepoint` (`L1_full_1` at `LC`, stored departure 06:11 = 22260); stops `LB` and `LD`; pattern names "Loop Hub to Loop Hub" and "Loop Hub to Loop Far"; colour `AA00AA`.
+- `mini` route B1 (trips on 20260112): Outbound S1>S2>S3 and Inbound S3>S2>S1; `B1_W_2` has `filled: true` at S2 with 08:10:00 (29400); miles measured along `SH_B1_0` (S1→S2 about 0.53 mi along the line; assert within 0.02 of the polyline length you compute independently in the test); colour `0055AA`; `gtfsRouteType` 3.
+- A built test feed with 35 flagged timepoints on one trip → 30 points kept, both terminals kept, one `thinnedTimepoints` finding.
+
+**Run:** `pnpm exec vitest run src/domain/gtfs`, `pnpm typecheck`, `pnpm test` once at the end. **Done when:** every worked example is a test and passes, and `validateRouteStopSet` has no error on any built route.
