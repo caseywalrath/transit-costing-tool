@@ -1,6 +1,6 @@
 # GTFS import and export — plan
 
-> **Status:** Draft for user review, 2026-11-21. No work package has started. No decision record exists yet.
+> **Status:** Gates answered 2026-11-21 except G-I2c (Part 4) and V-I. No work package has started. No decision record exists yet; the next step is I0 (1.3).
 >
 > **Origin:** adapted from the deferred plan `docs/gtfs-costing-tool-plan.md` in `caseywalrath/transit-analysis-tool` (branch `claude/friendly-brahmagupta-51rk4t`, commit `b5d9370`). Once the user approves this draft, this file governs and the Analysis app copy becomes a pointer (1.3).
 >
@@ -154,7 +154,12 @@ All three open the same import screen with the target already chosen.
 These rules go into the decision record in Opus's words, with worked examples on the fixtures. Haiku implements them as pure functions.
 
 1. **Reading.** A hand-written ZIP reader (stored and deflate entries; `DecompressionStream("deflate-raw")`), plus a streaming CSV reader (BOM, CRLF, quotes, chunk boundaries). `trips.txt` is read first, so `stop_times.txt` keeps only the selected routes' rows. Both run off the main thread in a Web Worker where the browser allows it (Vite supports this). D12: no libraries.
-2. **Dates (G-I2).** Each service day gets one date. A trip is in that day if its `service_id` is active on the date (`calendar` weekday and range, plus `calendar_dates` additions and removals). Defaults: the busiest weekday, Saturday and Sunday in the feed's range. Holiday has no date by default (G-I2b).
+2. **Dates (G-I2, answered).** Each service day gets one date. A trip is in that day if its `service_id` is active on the date (`calendar` weekday and range, plus `calendar_dates` additions and removals). The default is the most **representative** date, not the busiest:
+   - **Service set of a date:** the set of `service_id`s active on it for the selected routes.
+   - **Day groups:** every date in the feed's range is grouped by its service set. For each day of the week, the group with the most dates is the "typical" set. Example: Monday–Thursday share one set on 80 dates; school-only or event services add a second set on fewer dates.
+   - **Default date:** a date of the typical set for that service day's days of the week (Monday–Friday for Weekday), with no `calendar_dates` exception on it, nearest the middle of the feed's range.
+   - **Shown, not hidden:** the Days step lists every day group with its number of dates, trips, and what differs from the typical set ("+42 trips on routes 3, 11: school days", "+6 trips on Fridays"). The planner can choose any group, or any date in the range.
+   - **Routes with no service on the chosen date** (seasonal or part-year routes) are flagged before import. The planner can give such a route its own date for that service day (G-I2c).
 3. **Frequencies.** Every `frequencies.txt` window is expanded. `exact_times=1`: departures at `start + k × headway` below `end`. `exact_times=0`: the same, marked "approximate" in the report. Each expanded trip copies the template's stop times, shifted.
 4. **Directions.** `direction_id` 0 → Outbound, 1 → Inbound. When the field is missing, trips are grouped by their pair of terminals, and the planner confirms which group is Outbound. The most common headsign or a compass direction is proposed as the direction's display name (Decision 0088).
 5. **Patterns (G-I3).** Trips are grouped into patterns within a direction. A loop that returns to its first stop keeps repeated pattern points (already allowed).
@@ -163,25 +168,34 @@ These rules go into the decision record in Opus's words, with worked examples on
 8. **Distances.** Pattern segment miles are measured along `shapes.txt`: each timepoint is projected onto the line in order. Without a shape, the miles are great-circle distances summed stop to stop, and the report says so. `shape_dist_traveled` is never used (D5).
 9. **Run-time bands (G-C5b).** One Runtime profile per pattern and service day, named "{Day} from feed". Hourly bands hold the median observed segment time of the trips that start in that hour. Hours with no trips are merged into the nearest band. Method: `segmentStart`, the default for new profiles.
 10. **Trips.** Times at timepoints are the feed's exact departures, and the arrival at the last point. Status per G-I5.
-11. **Service days and annual counts (G-C5c).** Proposed from the feed calendar (holidays are dates where a weekday runs the Sunday or Saturday service set), scaled to a 365-day year when the feed covers less, shown for confirmation. The 365 total rule (Decision 0041) applies.
+11. **Service days and annual counts (G-C5c).** Each date in the feed's range is counted under the service day whose set it matches (holidays per rule 11a). The counts are scaled to a 365-day year when the feed covers less, and shown for confirmation. Dates that match no service day are listed, not silently assigned. The 365 total rule (Decision 0041) applies.
+
+11a. **Holidays (G-I2b, answered: classify from the data, assume nothing).**
+   - **Candidate holidays** are dates where the feed itself departs from the normal day of the week: a `calendar_dates` removal of that day's regular service, an addition of other service, or both. Known public-holiday names are only labels for the list ("Mon May 31 — Memorial Day?"). They are never used to classify a date.
+   - **Each candidate is classified per route**, by comparing that route's trips on the date with its trips on the chosen Saturday and Sunday dates:
+     - **Saturday service:** same trips as Saturday;
+     - **Sunday service:** same trips as Sunday;
+     - **Reduced or other weekday:** a subset of, or a change to, the weekday trips (for example the day after Thanksgiving);
+     - **Unique holiday service:** anything else, including a mix of Saturday trips on some routes and Sunday trips on others.
+   - **Annual counts follow the classification.** A Saturday-service holiday adds one to the Saturday count, a Sunday-service holiday to the Sunday count. Unique holiday service goes to Holiday.
+   - **Holiday trips:** when one or more dates have unique holiday service, the Holiday service day gets the trips of a date the planner picks (default: the unique-service date with the most trips). A second, different unique holiday service (for example Thanksgiving differing from Christmas) can become a **custom** service day ("Holiday 2"), which the tool already supports. Otherwise its dates are counted under Holiday with the first date's trips, and the difference is reported.
+   - **Mixed dates** are shown route by route, so the planner sees, for example, "route 15: Saturday trips, route 0: Sunday trips".
+   - **No holiday exceptions in the feed:** the report says so. The feed runs normal service on those dates, and they count under their day of the week. Holiday is left with no trips and a count of 0, for the planner to set.
+   - **The planner confirms or changes** every candidate's classification in the Days step before import.
 12. **Analysis app sketches.** Their only timepoints are the first and last stops, so G-C5a's rule gives two-column run-time tables. Their headway windows may seed planned frequencies (old G-C5e, kept, optional).
 13. **Blocks (G-I4).**
 14. **Report.** Counts per route (patterns, timepoints, stops, trips per day, blocks), what was merged or thinned, what was not imported, and a **fidelity check**: trips and running hours per day from the feed vs. as imported. These must be equal; any difference is listed by trip.
 
-**Gate G-I2 — Which days of the feed become the service days**
-Question: GTFS says which dates each trip runs; this tool has Weekday, Saturday, Sunday and Holiday. How should the import decide which trips belong to each?
-- Option A (recommended): pick one real date for each service day. The import starts on the feed's busiest Monday–Friday, Saturday and Sunday, and you can change each date. Every trip that runs on that date goes into that service day.
-- Option B: map the feed's service codes (`service_id`) onto service days, one by one.
-Example: RTD's feed may run "WK", "WK-school" and "WK-nosch" codes on weekdays. Under A, choosing Tuesday Feb 9, 2027 brings in exactly the trips that run that Tuesday, whatever their codes.
-What changes: A always gives a real day's service. Codes that run only on some weekdays (school days) follow the chosen date. B can double-count when several codes run on the same day. Neither changes existing data.
-If you say "your call": Option A.
+**Gate G-I2 — answered 2026-11-21.** One real date per service day. The default is the most representative date (rule 2), not the busiest. Every day group is shown, so school-only or event service can be left out, and the planner can pick any date.
 
-**Gate G-I2b — Holiday service**
-Question: Many feeds run Sunday service on holidays. What should the Holiday service day get?
-- Option A (recommended): no trips by default; the holidays found in the feed are added to the Sunday (or Saturday) annual count. You can instead pick a holiday date, and Holiday then gets that date's trips.
-- Option B: always copy the Sunday trips into Holiday.
-Example: a feed with Sunday service on 6 holidays. Under A: Sunday count 58, Holiday count 0, no Holiday trips. Under B: Sunday 52, Holiday 6, with a second copy of the Sunday trips.
-What changes: annual hours are the same either way. A avoids duplicate trips and blocks to maintain. B matches the Federal BRT project's existing layout.
+**Gate G-I2b — answered 2026-11-21.** Holidays are classified from the feed's own data, route by route (rule 11a), with no assumption that holidays run Sunday service. The planner confirms each classification.
+
+**Gate G-I2c — Routes that run only part of the year**
+Question: A route that runs only in summer, or only during the school year, may have no trips on the chosen date, or run fewer days than the scenario's annual counts. What should the import do?
+- Option A (recommended): flag the route, and let you pick a different date for it (its trips then come from that date). Annual counts stay scenario-wide, and the report lists the route's real number of service days in the feed, so you can see how far the cost is overstated. Per-route annual counts become a backlog item next to "Year-varying service".
+- Option B: add per-route annual counts to Costing in this plan, so a part-year route is costed for its real days.
+Example: a summer shuttle that runs on 62 weekdays. Under A it imports with July trips and is costed for the scenario's 255 weekdays, with the report stating "runs on 62 weekdays in the feed". Under B it is costed for 62.
+What changes: A needs no change to Costing; part-year routes are overstated until you adjust them (for example in a separate scenario). B is a Costing data change (backup schema and the cost screens), with its own decision record, and it changes no existing numbers, because routes without their own counts keep the scenario's counts.
 If you say "your call": Option A.
 
 **Gate G-I3 — How trips are grouped into patterns**
@@ -219,7 +233,10 @@ One multi-step dialog (draggable, Decision 0068), with Back and Next. Each step'
 
 1. **Feed.** Choose the ZIP. It shows the agency, feed version, date range (with a warning when the feed has expired or ends within 30 days), the number of routes and stops, and files that will not be imported.
 2. **Routes.** A table: short name, long name, type, agency, weekday trips, patterns. Checkbox per row, Select all, search, filter by type or agency. A running total: routes, weekday trips. Level C shows name clashes here.
-3. **Days.** One row per service day: date picker (default: busiest), trips on that date for the selected routes, proposed annual count (editable; level C shows the Scenario's counts instead). Holiday follows G-I2b.
+3. **Days.** One row per service day: a date picker (default: the representative date, rule 2), trips on that date for the selected routes, and the proposed annual count (editable; level C shows the Scenario's counts instead). Below the rows:
+   - the day groups, with their date counts and what differs from the typical set, each with "Use this";
+   - routes with no trips on a chosen date, each with its own date picker (G-I2c);
+   - the candidate holidays, with their per-route classification and a menu to change it (rule 11a).
 4. **Options.** Timepoints (feed's flags, or suggested), pattern grouping (G-I3), import blocks plus pull-out/pull-in default (G-I4), seed planned frequencies (off unless the feed has `frequencies.txt`). Level C: the target Trip profile and Blocking scenario.
 5. **Review.** Per-route counts and warnings, the fidelity check, and a timepoint review: each pattern's proposed timepoints, with add and remove before import. Then **Import**.
 
@@ -256,21 +273,22 @@ Kept as written, last and optional. It needs I and E.
 
 Every phase follows `AGENTS.md` and `codex.md`: a decision record in `docs/decisions/`; a sub-plan in `docs/implementation/` with a "Verification per package" table; structural and UI packages kept apart, with a user gate between them; no automatic start of the next package.
 
-**Models (G-I7):** Haiku (`high` or `xhigh` effort) does most packages from exact work cards written by Opus. Opus writes the decision record, the cards with worked examples, the import-screen design, reviews every package, and integrates. Sonnet only where Part 9 records the user's permission.
+**Models (G-I7):** Haiku (`high` or `xhigh` effort) does most packages from exact work cards written by Opus. Opus writes the decision record, the cards with worked examples, the import-screen design, reviews every package, and integrates. Sonnet may take a package that Opus judges too broad for Haiku (G-I7, answered yes); the sub-plan names those packages for user approval.
 
 | Package | Content | Class / model | Depends on |
 |---|---|---|---|
 | I0 | Decision record(s): Part 4 rules, G-I answers, data additions (2.3 items 1–3), backup schema 17. Phase I sub-plan and Haiku work cards. Test fixtures: the Analysis app's `test/fixtures/gtfs/mini` (our own file; copied, not shared code), plus hand-made edge feeds (no `direction_id`, `exact_times=0`, loop, multi-route blocks, empty non-timepoint times, deflate ZIP). | Opus | Gate answers |
 | I1 | ZIP reader and streaming CSV reader, pure, with unit tests | Structural / Haiku | I0 |
-| I2 | Feed model: calendar on a date, busiest dates, frequency expansion, trips on a date per route, feed summary for steps 1–3 | Structural / Haiku | I1 |
-| I3 | Translation, part 1: directions, pattern grouping, timepoint suggestion, Nodes, stops and placements, locations, distances along shapes | Structural / Haiku `xhigh`, Opus review | I2 |
+| I2 | Feed model: calendar on a date, frequency expansion, trips on a date per route, feed summary for steps 1–3 | Structural / Haiku | I1 |
+| I2b | Day groups, representative dates, part-year route detection, holiday candidates and per-route classification, annual counts from classified dates (rules 2, 11, 11a), with edge fixtures: school-day service, Friday extras, Saturday-service holiday, mixed Saturday/Sunday holiday, unique holiday, a feed with no exceptions | Structural / Sonnet (several rules interact), Opus review | I2 |
+| I3 | Translation, part 1: directions, pattern grouping, timepoint suggestion, Nodes, stops and placements, locations, distances along shapes | Structural / Haiku `xhigh`, Opus review | I2b |
 | I4 | Translation, part 2: run-time bands, trips and status, service days and annual counts, blocks, optional planned frequencies, report and fidelity check | Structural / Haiku `xhigh`, Opus review | I3 |
 | I5 | Persistence: new Route and Scenario fields, trip status, backup schema 17 with round-trip and older-version tests, Scenario and Route copy remapping | Structural / Haiku | I0 |
 | I6 | Application service: three targets (A via the project-import path; B and C through one Scenario write), restore point `importGtfsRoutes`, Web Worker wrapper; plus `tools/gtfs_to_backup.mjs`, which writes a project backup from a feed | Structural / Haiku | I4, I5 |
 | **Gate V-I** | **User check:** the agent converts the mini feed and 2–3 real routes from a feed the user names into backup files. The user opens them with **Import project JSON** and checks routes, trips, blocks and costs against the agency's published numbers. | User | I6 |
 | I7 | Import screen design: mock-ups of the five steps in `docs/implementation/gtfs-import/`, for user approval | UI design / Opus | V-I |
 | I8 | Import screen wiring from the approved mock-ups, steps 1–3 | UI / Haiku (precise card) | I7 |
-| I9 | Import screen steps 4–5, timepoint review, menu entries, after-import notice | UI / Opus, or Haiku where the card is precise | I8 |
+| I9 | Import screen steps 4–5, timepoint review, menu entries, after-import notice | UI / Sonnet from the approved mock-ups, Opus review | I8 |
 | I10 | Scale: a whole large feed (G-I6), Route chooser with many Routes, Costing and Trips load times; fixes found | Structural / Haiku; Opus judges results | I9 |
 | I11 | Closeout: full browser suite, `architecture_overview.md`, `docs/data-schema.md`, `docs/domain-glossary.md`, `docs/ui-conventions.md`, backlog | Opus | I10 |
 
@@ -278,7 +296,7 @@ Every phase follows `AGENTS.md` and `codex.md`: a decision record in `docs/decis
 
 | Package | Run | Skip | Do not cut |
 |---|---|---|---|
-| I1–I4 | Their unit tests; typecheck; full unit suite at package end | Browser suite (no screen or storage change) | Typecheck |
+| I1–I4 (incl. I2b) | Their unit tests; typecheck; full unit suite at package end | Browser suite (no screen or storage change) | Typecheck |
 | I5 | Backup and migration unit tests; `tests/ui/backup-import.spec.ts`, `database-migration.spec.ts`, `scenario-copy-recovery.spec.ts`; backup round trip | Other browser specs | Persistence, migration and backup tests; round trip |
 | I6 | Service tests with fake-indexeddb; `tests/ui/undo-history.spec.ts`, `data-safety.spec.ts`; converter run on the fixtures | Screen specs | Restore-point tests |
 | I8–I9 | New `tests/ui/gtfs-import.spec.ts`; `draggable-dialogs.spec.ts`, `keyboard.spec.ts` (axe), `project-context-menu.spec.ts`, `scenario-context-menu.spec.ts`, `context-line.spec.ts`; build; screenshots | Blocking and Costing specs not touched | Typecheck; build |
@@ -293,13 +311,7 @@ Example: under A, importing all of RTD takes some seconds and shows a warning fi
 What changes: A meets the "whole feed" goal at once, at the risk of slow screens on very large scenarios. Nothing existing changes either way.
 If you say "your call": Option A.
 
-**Gate G-I7 — Which models do the work**
-Question: You asked for Haiku to do most packages with Opus orchestrating and reviewing. May Sonnet take a package when Opus judges it too broad for Haiku?
-- Option A (recommended): yes, only for packages named in the sub-plan, which you approve with the plan.
-- Option B: no; Haiku and Opus only. Opus does any package Haiku cannot.
-Example: the import screen's steps 4–5 (I9) combine several existing components with new review logic. Under A that could be a Sonnet package; under B, Opus does it.
-What changes: A is cheaper than Opus for mid-size packages; Opus still reviews everything. The answer is recorded in `AGENTS.md`, which today names only the structural and UI-design classes.
-If you say "your call": Option B, following your stated preference, with Opus taking what Haiku cannot.
+**Gate G-I7 — answered 2026-11-21.** Sonnet may take packages that Opus judges too broad for Haiku. The sub-plan names them (currently I2b and I9) for user approval, and I0 records the Sonnet class in `AGENTS.md`.
 
 ---
 
@@ -321,19 +333,20 @@ New for this plan:
 
 | Gate | Question (short) | Recommendation | Answer | Date |
 |---|---|---|---|---|
-| G-I1 | Import levels | New project, new scenario, add routes | | |
-| G-I2 | Days from the feed | One date per service day | | |
-| G-I2b | Holiday service | No Holiday trips; holidays in Sunday count | | |
-| G-I3 | Pattern grouping | By timepoint sequence | | |
-| G-I4 | Feed blocks | Whole blocks only, rest listed | | |
-| G-I5 | Imported trips vs bands | "From feed", quiet until bands change | | |
-| G-I6 | Import size | Whole feed, warn above 40 routes / 5,000 trips | | |
-| G-I7 | Sonnet allowed | No (user preference) | | |
-| G-C5a | Timepoints | Feed's flags, else suggested | | |
-| G-C5b | Bands from real times | Hourly medians | | |
-| G-C5c | Annual counts | From calendar, confirmed | | |
-| G-C5d | Exact or rebuilt trips | Exact (assumed) | | |
-| G-C5e | Frequency windows → plan | Busiest direction, conflicts listed | | |
+| G-I1 | Import levels | New project, new scenario, add routes | A (as recommended) | 2026-11-21 |
+| G-I2 | Days from the feed | One date per service day | One date per service day, default the most representative (not busiest); all day groups shown; any date may be picked (rule 2) | 2026-11-21 |
+| G-I2b | Holiday service | — | Classify each holiday from the data, route by route; no Saturday/Sunday assumption; planner confirms (rule 11a) | 2026-11-21 |
+| G-I3 | Pattern grouping | By timepoint sequence | A | 2026-11-21 |
+| G-I4 | Feed blocks | Whole blocks only, rest listed | A | 2026-11-21 |
+| G-I5 | Imported trips vs bands | "From feed", quiet until bands change | A | 2026-11-21 |
+| G-I6 | Import size | Whole feed, warn above 40 routes / 5,000 trips | A | 2026-11-21 |
+| G-I2c | Part-year routes | Flag, own date per route; per-route counts to backlog | | |
+| G-I7 | Sonnet allowed | — | Yes, for packages the sub-plan names | 2026-11-21 |
+| G-C5a | Timepoints | Feed's flags, else suggested | A | 2026-11-21 |
+| G-C5b | Bands from real times | Hourly medians | A | 2026-11-21 |
+| G-C5c | Annual counts | From calendar, confirmed | A | 2026-11-21 |
+| G-C5d | Exact or rebuilt trips | Exact | A | 2026-11-21 |
+| G-C5e | Frequency windows → plan | Busiest direction, conflicts listed | A | 2026-11-21 |
 | V-I | User check of converted backups | — | | |
 | G-C1, G-C2a–c | Export gates (phase E) | As in the deferred plan | | |
 | G-C3 | Views order (phase V) | Comparison first | | |
@@ -359,3 +372,12 @@ New for this plan:
 - Re-checked the deferred plan's findings against `main` at `38323d8` (1.1).
 - Reordered for the primary goal (import), defined import levels, added gates G-I1 to G-I7 and V-I, folded C1 into export, and moved the round trip last.
 - No code changed. Awaiting the user's gate answers.
+
+### 2026-11-21 — Gate answers (user)
+
+- G-I1, G-I3 to G-I6, G-C5a to G-C5e: as recommended.
+- G-I2: one date per service day, but the default is the most representative date rather than the busiest, so school-only and event exceptions are not captured by default; the planner may pick any date. Rule 2 rewritten: day groups by active service set, typical set per day of the week, default date with no exception nearest the middle of the range, every group shown.
+- G-I2b: classify holidays from the data, route by route, with no Saturday or Sunday assumption; agencies may run Saturday, Sunday, a mix, or unique service. New rule 11a; a second distinct holiday service can become a custom service day.
+- New gate G-I2c (part-year routes), raised by the user's point on routes that run for part of the year. Open.
+- G-I7: Sonnet may be used. New package I2b (day groups and holidays) goes to Sonnet; I9 moves to Sonnet.
+
