@@ -462,14 +462,14 @@ The user named the RTD feed (`https://www.rtd-denver.com/files/gtfs/google_trans
 
 ### 2026-11-21 — Test routes chosen (user)
 
-V-I test routes: **30 South Federal Blvd, 0 Broadway, 0L South Broadway Limited** (RTD feed above).
+V-I test routes: **31 Federal Blvd, 0 Broadway, 0L South Broadway Limited** (RTD feed above; the user corrected 30 to 31).
 
-| Route | Weekday / Saturday / Sunday trips | Stop sequences per direction (weekday) | Timepoints per direction | Stops per direction |
+| Route | Weekday / Saturday / Sunday trips | Weekday stop sequences per direction (trips) | Timepoints per direction | Stops per direction |
 |---|---|---|---|---|
-| 30 | 128 / 118 / 116 | 1 / 1 | 9 / 10 | 46 / 51 |
+| 31 | 191 / 136 / 81 | 3 (75, 11, 9) / 3 (76, 12, 8) | 10–12 / 8–10 | 48–71 / 46–69 |
 | 0 | 149 / 149 / 126 | 1 / 1 | 7 / 8 | 36 / 36 |
 | 0L | 99 / — / — | 1 / 1 | 3 / 3 | 8 / 8 |
 
-- Blocks: 21 weekday, 16 Saturday and 16 Sunday blocks, all within a single route, so the import keeps every one (G-I4).
-- What they exercise beyond the basics: 0L has weekday service only, which tests a Route with empty service days.
-- What they do not exercise: pattern grouping (G-I3, one sequence each) and left-out shared blocks (G-I4). The I0 edge fixtures cover those.
+- **Blocks:** 28 weekday, 18 Saturday and 15 Sunday blocks touch these routes. All are kept except one weekday block that also runs route 4, which G-I4 leaves out and lists (its route 31 trips stay unassigned).
+- **What they exercise:** route 31's three patterns per direction, each with its own timepoint sequence, so G-I3 makes three patterns per direction and the timepoint review has real choices; a left-out shared block (G-I4); and 0L's weekday-only service (empty service days).
+- **What they do not exercise:** variants that differ only between timepoints (G-I3 merging). The I0 edge fixtures cover that.
