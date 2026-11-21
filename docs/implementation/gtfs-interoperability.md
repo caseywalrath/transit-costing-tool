@@ -532,3 +532,7 @@ V-I test routes: **31 Federal Blvd, 0 Broadway, 0L South Broadway Limited** (RTD
   - `AGENTS.md`: the broad structural class (Sonnet), per G-I7. `docs/backlog.md` and `architecture_overview.md`: pointers (step 1.3.2).
 - **For the user to approve:** Decision 0089 and the sub-plan, including the Sonnet assignments (I2b, I9, I9b).
 - **Hand-off:** sitting 1 ends at the I0 user review. Next is sitting 2 (I1 and I5 in parallel, then I2; Haiku), started in a fresh session with the Part 7 prompt once the user approves I0.
+
+### 2026-11-21 — I0 approved (user)
+
+- The user approved Decision 0089, the phase I sub-plan and Sonnet for I2b, I9 and I9b, and asked to continue with sitting 2 in this session.

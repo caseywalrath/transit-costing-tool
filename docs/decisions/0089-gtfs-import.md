@@ -1,6 +1,6 @@
 # Decision 0089: GTFS Import
 
-- Status: Accepted 2026-11-21 (gate answers in `docs/implementation/gtfs-interoperability.md`, Part 9); awaiting user review of this record (sitting 1). Not implemented.
+- Status: Accepted 2026-11-21 (gate answers in `docs/implementation/gtfs-interoperability.md`, Part 9); record approved by the user 2026-11-21. Not implemented.
 - Date: 2026-11-21
 - Plan: `docs/implementation/gtfs-interoperability.md` (whole programme); `docs/implementation/gtfs-import-phase-i.md` (phase I sub-plan and work cards)
 - Related: Decisions 0011 (Outbound and Inbound groups), 0041 (365-day total), 0058 (planned frequencies), 0068 (draggable dialogs), 0077 (inherited-value style), 0079, 0080, 0085, 0086, 0087 (Route stops, stop IDs, locations, distance spacing, Stops table), 0081 (restore points), 0088 (direction names)
