@@ -1,6 +1,6 @@
 # GTFS import and export — plan
 
-> **Status:** Gates answered 2026-11-21 except G-I2c (Part 4) and V-I. No work package has started. No decision record exists yet; the next step is I0 (1.3).
+> **Status:** Plan approved 2026-11-21. All phase I gates answered except V-I (a later checkpoint). Interface decisions are listed in 5b. No work package has started. No decision record exists yet; the next step is I0 (1.3).
 >
 > **Origin:** adapted from the deferred plan `docs/gtfs-costing-tool-plan.md` in `caseywalrath/transit-analysis-tool` (branch `claude/friendly-brahmagupta-51rk4t`, commit `b5d9370`). Once the user approves this draft, this file governs and the Analysis app copy becomes a pointer (1.3).
 >
@@ -190,13 +190,14 @@ These rules go into the decision record in Opus's words, with worked examples on
 
 **Gate G-I2b — answered 2026-11-21.** Holidays are classified from the feed's own data, route by route (rule 11a), with no assumption that holidays run Sunday service. The planner confirms each classification.
 
-**Gate G-I2c — Routes that run only part of the year**
-Question: A route that runs only in summer, or only during the school year, may have no trips on the chosen date, or run fewer days than the scenario's annual counts. What should the import do?
-- Option A (recommended): flag the route, and let you pick a different date for it (its trips then come from that date). Annual counts stay scenario-wide, and the report lists the route's real number of service days in the feed, so you can see how far the cost is overstated. Per-route annual counts become a backlog item next to "Year-varying service".
-- Option B: add per-route annual counts to Costing in this plan, so a part-year route is costed for its real days.
-Example: a summer shuttle that runs on 62 weekdays. Under A it imports with July trips and is costed for the scenario's 255 weekdays, with the report stating "runs on 62 weekdays in the feed". Under B it is costed for 62.
-What changes: A needs no change to Costing; part-year routes are overstated until you adjust them (for example in a separate scenario). B is a Costing data change (backup schema and the cost screens), with its own decision record, and it changes no existing numbers, because routes without their own counts keep the scenario's counts.
-If you say "your call": Option A.
+**Gate G-I2c — answered 2026-11-21: per-route annual counts, opt in.** Every Route uses the Scenario's annual counts by default, exactly as today. A planner can switch a Route to its own counts; only then does that Route's Costing use them. The import proposes own counts for a part-year route (its real days in the feed, scaled to a year) but leaves the switch off unless the planner turns it on in the Days step.
+
+Rules (for the decision record):
+- Stored on the Route as an optional set of counts by service day. Absent = the Scenario's counts. A day missing from a Route's set uses the Scenario's count for that day.
+- Whole numbers from 0 up; a Route's own counts may total at most 365.
+- Costing uses a Route's counts for that Route's rows on both bases. With no Route switched on, every number is unchanged (D13; a test proves it).
+- A Block that serves Routes with different counts (today's Unattributed row) uses the largest of their counts, with a finding.
+- Scenario and Route copy carry the counts; backup schema 17 holds them; the Route tab's Annual service days panel shows them (5b, U1).
 
 **Gate G-I3 — How trips are grouped into patterns**
 Question: A real route often has many slightly different stop sequences (a skipped stop, a detour). How many patterns should the import make?
@@ -249,6 +250,52 @@ One multi-step dialog (draggable, Decision 0068), with Back and Next. Each step'
 
 After import: a notice "{n} routes imported from {feed}" with Undo (level C) or "Open"; the first imported Route opens on the Route tab.
 
+### 5b — Interface decisions
+
+Some can be decided now; the rest are settled in the I7 mock-ups or when a package reaches them. "When" says which.
+
+**Import screen**
+
+| # | Decision | Proposal | When |
+|---|---|---|---|
+| W1 | A large dialog or a full-page workspace for the import | Large dialog (Decision 0068) with steps; a 130-route table fits with scrolling | Now or I7 |
+| W2 | Route table: columns, sort, search, filters | Short name, long name, type, agency, weekday trips, patterns; sort by short name in route order; search and type filter | I7 |
+| W3 | Days step: showing day groups, part-year routes and holiday classification without overwhelming | One row per service day up top; groups, part-year routes and holidays as collapsible sections with one-line results ("3 holidays · 2 Sunday service, 1 unique") | I7 (the hardest screen) |
+| W4 | Timepoint review: editing which stops are timepoints, per pattern | A stop list per pattern with timepoint checkboxes and run time between timepoints; variants merged under G-I3 listed under the pattern | I7 |
+| W5 | Which findings stop an import and which only inform | Stop: unreadable file, no trips on a chosen date. Inform: everything else, in the report | Decision record (I0) |
+| W6 | Progress and cancel while a large feed is read | Progress line per file, Cancel; nothing is written until Import | I7 |
+| W7 | After import: notice text, which Route opens, Undo for level C | As Part 5 | I7 |
+| W8 | Where the report can be seen later | A "Download import report (CSV)" in the review step and in the notice; the Scenario's import note keeps the summary | I7 |
+
+**Imported data in today's screens**
+
+| # | Decision | Proposal | When |
+|---|---|---|---|
+| D1 | Where the Scenario's import note shows | Scenario switcher (a line under the name) and the Cost summary footnote | I7 |
+| D2 | How "From feed" trips look in the Trips table, and what happens to the mark when a band is edited | A quiet "Feed" tag in the status cell; it changes to the existing "run times changed" mark once a band is edited (G-I5) | I7 |
+| D3 | Use the feed's route colour | As the Route's identity dot in the Route switcher and Costing route rows; no other colour use | Now or I7 |
+| D4 | Run-time profile names for imported patterns | "{Day} from feed" | Decision record (I0) |
+| D5 | Blocks with no pull-out or pull-in | Existing "incomplete" marking; the import's default minutes are shown in the Blocking summary note | I7 |
+| D6 | Blocks left out because they serve other routes | Listed in the report; their trips appear as unassigned in Blocking, as any unassigned trip does | Decided |
+
+**Per-route annual counts (G-I2c)**
+
+| # | Decision | Proposal | When |
+|---|---|---|---|
+| U1 | Where the switch and the counts are edited | The Route tab's **Annual service days** panel (already beside Route details): a "This route uses its own counts" switch; when on, a second column "This route" beside the Scenario's counts, with the Scenario value shown faintly in blank cells (the inherited-value style of Decision 0077) | Now |
+| U2 | How Costing shows a Route on its own counts | A small marker on the Route row in the Cost breakdown, with the counts in its tooltip; the Cost summary and CSV name the counts used | I9b |
+| U3 | Where extra service days are added and removed | Annual service days panel: "Add service day…" and a row menu with Delete (with the existing deletion review); five or more days make the Day toggles fall back to a menu | I9b |
+
+**Many routes (G-I6)**
+
+| # | Decision | Proposal | When |
+|---|---|---|---|
+| M1 | Route switcher with 100+ Routes | Type-ahead is there today; add a search box and sort by short name in route order | I10, from measurements |
+| M2 | Costing route table with 100+ rows | Sort by annual cost, a "Top 20 / All" toggle | I10 |
+| M3 | Blocking's Route filter with 100+ Routes | Same chooser as M1 | I10 |
+
+Export, comparison, interlining and round-trip screens are decided in their own phases.
+
 ---
 
 ## Part 6 — Other phases (secondary)
@@ -290,12 +337,14 @@ Every phase follows `AGENTS.md` and `codex.md`: a decision record in `docs/decis
 | I2b | Day groups, representative dates, part-year route detection, holiday candidates and per-route classification, annual counts from classified dates (rules 2, 11, 11a), with edge fixtures: school-day service, Friday extras, Saturday-service holiday, mixed Saturday/Sunday holiday, unique holiday, a feed with no exceptions | Structural / Sonnet (several rules interact), Opus review | I2 |
 | I3 | Translation, part 1: directions, pattern grouping, timepoint suggestion, Nodes, stops and placements, locations, distances along shapes | Structural / Haiku `xhigh`, Opus review | I2b |
 | I4 | Translation, part 2: run-time bands, trips and status, service days and annual counts, blocks, optional planned frequencies, report and fidelity check | Structural / Haiku `xhigh`, Opus review | I3 |
-| I5 | Persistence: new Route and Scenario fields, trip status, backup schema 17 with round-trip and older-version tests, Scenario and Route copy remapping | Structural / Haiku | I0 |
+| I5 | Persistence: new Route and Scenario fields (incl. per-route annual counts), trip status, backup schema 17 with round-trip and older-version tests, Scenario and Route copy remapping | Structural / Haiku | I0 |
 | I6 | Application service: three targets (A via the project-import path; B and C through one Scenario write), restore point `importGtfsRoutes`, Web Worker wrapper; plus `tools/gtfs_to_backup.mjs`, which writes a project backup from a feed | Structural / Haiku | I4, I5 |
 | **Gate V-I** | **User check:** the agent converts the mini feed and 2–3 real routes from a feed the user names into backup files. The user opens them with **Import project JSON** and checks routes, trips, blocks and costs against the agency's published numbers. | User | I6 |
 | I7 | Import screen design: mock-ups of the five steps in `docs/implementation/gtfs-import/`, for user approval | UI design / Opus | V-I |
 | I8 | Import screen wiring from the approved mock-ups, steps 1–3 | UI / Haiku (precise card) | I7 |
 | I9 | Import screen steps 4–5, timepoint review, menu entries, after-import notice | UI / Sonnet from the approved mock-ups, Opus review | I8 |
+| I5b | Costing with per-route annual counts (both bases, Unattributed rule), Cost summary and CSV naming the counts used; tests that totals are unchanged with no Route switched on | Structural / Haiku `xhigh`, Opus review | I5 |
+| I9b | Per-route counts on the Route tab, Costing markers, and the extra-service-day command (5b, U1–U3) | UI / Sonnet, Opus review | I7, I5b |
 | I10 | Scale: a whole large feed (G-I6), Route chooser with many Routes, Costing and Trips load times; fixes found | Structural / Haiku; Opus judges results | I9 |
 | I11 | Closeout: full browser suite, `architecture_overview.md`, `docs/data-schema.md`, `docs/domain-glossary.md`, `docs/ui-conventions.md`, backlog | Opus | I10 |
 
@@ -347,7 +396,9 @@ New for this plan:
 | G-I4 | Feed blocks | Whole blocks only, rest listed | A | 2026-11-21 |
 | G-I5 | Imported trips vs bands | "From feed", quiet until bands change | A | 2026-11-21 |
 | G-I6 | Import size | Whole feed, warn above 40 routes / 5,000 trips | A | 2026-11-21 |
-| G-I2c | Part-year routes | Flag, own date per route; per-route counts to backlog | | |
+| G-I2c | Part-year routes | — | Per-route annual counts, opt in; Scenario counts by default | 2026-11-21 |
+| Custom days command | Add/remove extra service days | Yes, small Route-tab command | Approved | 2026-11-21 |
+| G-C4c early | Split shared-bus hours in phase I | Not pulled in; Unattributed row stays | Plan approved as written | 2026-11-21 |
 | G-I7 | Sonnet allowed | — | Yes, for packages the sub-plan names | 2026-11-21 |
 | G-C5a | Timepoints | Feed's flags, else suggested | A | 2026-11-21 |
 | G-C5b | Bands from real times | Hourly medians | A | 2026-11-21 |
@@ -387,4 +438,11 @@ New for this plan:
 - G-I2b: classify holidays from the data, route by route, with no Saturday or Sunday assumption; agencies may run Saturday, Sunday, a mix, or unique service. New rule 11a; a second distinct holiday service can become a custom service day.
 - New gate G-I2c (part-year routes), raised by the user's point on routes that run for part of the year. Open.
 - G-I7: Sonnet may be used. New package I2b (day groups and holidays) goes to Sonnet; I9 moves to Sonnet.
+
+### 2026-11-21 — Plan approved (user)
+
+- G-I2c: per-route annual counts, opt in; Scenario counts stay the default. New packages I5b (Costing) and I9b (screens).
+- Approved as recommended: a small command to add and remove extra service days; G-C4c not pulled in (the Unattributed row stays until interlining).
+- Added 5b, the list of interface decisions, with when each is settled.
+- Still needed before V-I: the agency feed (ZIP, supplied by the user) and 2–3 test routes.
 
