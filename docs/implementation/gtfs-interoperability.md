@@ -42,7 +42,7 @@ The deferred plan was written against `aea64aa`. Re-checked on `main` at `38323d
 | Deferred-plan finding | Now |
 |---|---|
 | Stops belong to one Route; stop IDs are unique only within it (Decision 0079) | Unchanged. Decision 0087 added a Route **Stops** table with Split and Merge; Decision 0080 keeps timepoint stop IDs per pattern point. |
-| No calendar dates on service days | Unchanged. `ServiceDayKind` includes `custom`. |
+| No calendar dates on service days | Unchanged. `ServiceDayKind` includes `custom`, and backups accept custom days, but no screen creates or deletes one. Annual counts are per Scenario; the counts of all service days must total at most 365 (`MAX_ANNUAL_SERVICE_DAYS`, `src/domain/costing.ts`; edit check in `routeDefinitionService.ts`). |
 | ZIP writer in `src/application/csvDownload.ts` | It re-exports `createCsvArchive` from `src/persistence/csv.ts`, which **stores files uncompressed**. That is fine for export. Reading public feeds needs a deflate reader (D12). |
 | CSV reader | `parseCsv` in `src/application/csvRead.ts` reads whole text. A large `stop_times.txt` (100 MB or more) needs a streaming reader. |
 | Direction groups | Decision 0088 added per-route display names. Import maps `direction_id` onto the **group** (Outbound/Inbound) and may propose a display name. |
@@ -178,7 +178,7 @@ These rules go into the decision record in Opus's words, with worked examples on
      - **Reduced or other weekday:** a subset of, or a change to, the weekday trips (for example the day after Thanksgiving);
      - **Unique holiday service:** anything else, including a mix of Saturday trips on some routes and Sunday trips on others.
    - **Annual counts follow the classification.** A Saturday-service holiday adds one to the Saturday count, a Sunday-service holiday to the Sunday count. Unique holiday service goes to Holiday.
-   - **Holiday trips:** when one or more dates have unique holiday service, the Holiday service day gets the trips of a date the planner picks (default: the unique-service date with the most trips). A second, different unique holiday service (for example Thanksgiving differing from Christmas) can become a **custom** service day ("Holiday 2"), which the tool already supports. Otherwise its dates are counted under Holiday with the first date's trips, and the difference is reported.
+   - **Holiday trips:** when one or more dates have unique holiday service, the Holiday service day gets the trips of a date the planner picks (default: the unique-service date with the most trips). A second, different unique holiday service (for example Thanksgiving differing from Christmas) can become a **custom** service day ("Holiday 2"). The stored data and backups already accept custom days; the import creates it, but no screen can create or delete one today, so I0 decides whether a small Route-tab command is added. Otherwise its dates are counted under Holiday with the first date's trips, and the difference is reported.
    - **Mixed dates** are shown route by route, so the planner sees, for example, "route 15: Saturday trips, route 0: Sunday trips".
    - **No holiday exceptions in the feed:** the report says so. The feed runs normal service on those dates, and they count under their day of the week. Holiday is left with no trips and a count of 0, for the planner to set.
    - **The planner confirms or changes** every candidate's classification in the Days step before import.
@@ -222,6 +222,13 @@ Question: Imported trips keep their exact feed times, and the bands are medians,
 Example: a 07:12 trip that takes 41 minutes, where the band median is 39. Under A it is quiet until you edit that band. Under B it is flagged from the start, along with most of the route's trips.
 What changes: A needs a new "From feed" trip status (a small stored-data addition). B needs no change but makes the "run times changed" marker useless on imported routes. Under both, regenerating a trip rebuilds it from the bands. Existing trips are unchanged.
 If you say "your call": Option A.
+
+**G-I2c note (2026-11-21, checked against code):** today's service days cannot model a part-year route by themselves:
+- a custom "Summer weekday" day with 62 days holding only the shuttle's trips would cost the shuttle correctly, but 255 + 52 + 52 + 6 + 62 = 427 is refused by the 365-day total, which treats service days as separate calendar days;
+- no screen creates custom days;
+- every part-year schedule (summer weekday, summer Saturday, school-year weekday) would need its own day, shown on every Route's Day toggle.
+
+Option B is therefore per-route counts: a Route may replace any service day's count with its own (shuttle: Weekday 62). Costing already groups hours by Route (`routeRows`), so the change is local to the count used for each Route's rows. The 365 total is checked per Route. One rule is needed: a Block that serves a part-year and a year-round Route (today's Unattributed row) uses the larger count, with a finding.
 
 The old gates **G-C5a** (timepoints), **G-C5b** (hourly median bands), **G-C5c** (annual counts) and **G-C5e** (frequency windows) are kept as written in the deferred plan, with the rules above. **G-C5d** (keep exact times) is kept: Option A is assumed throughout.
 
