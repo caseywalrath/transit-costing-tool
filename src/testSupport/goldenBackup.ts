@@ -12,6 +12,22 @@ export const asSnapshot = (backup: any): ProjectSnapshot => ({ ...backup, genera
 const STAMP = '2026-10-22T00:00:00.000Z';
 
 /**
+ * Golden backup as a version 17 file, with the feed fields of Decision 0089 items 38 to 41 set: the first Route has a GTFS route
+ * ID, a colour, a route type and its own count (62) on the Scenario's first service day, and the Scenario has one import note
+ * that dates that day.
+ */
+export function goldenWithFeedFields(): any {
+  const backup = goldenRaw();
+  backup.exportSchemaVersion = 17;
+  const route = backup.routes[0];
+  const scenario = backup.scenarios.find((candidate: any) => candidate.id === route.scenarioId);
+  const day = backup.serviceDays.find((candidate: any) => candidate.scenarioId === scenario.id);
+  backup.routes[0] = { ...route, gtfsRouteId: 'B1', gtfsRouteType: 3, color: '0055AA', ownAnnualServiceDays: { enabled: true, countsByServiceDayId: { [day.id]: 62 } } };
+  scenario.importNotes = [{ publisher: 'Example Transit', feedVersion: '2026-01', fileName: 'example-gtfs.zip', datesByServiceDayId: { [day.id]: '2026-01-12' }, routeCount: 1, importedAt: '2026-11-21T10:00:00.000Z' }];
+  return backup;
+}
+
+/**
  * Golden backup plus a second Trip Profile ("Alt", listed after "Default") that holds copies of the Weekday Trips, and a second
  * Blocking Scenario ("Alt Blocks") on that profile that holds copies of the Weekday Blocks. This is the shape a planner produces
  * with Copy Trip Profile followed by a new Blocking Scenario.

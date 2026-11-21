@@ -130,7 +130,7 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       await repository.saveProjectSnapshot(snapshot);
       const backup = new ProjectBackupService((id) => repository.getProjectSnapshot(id), (value) => repository.saveProjectSnapshot(value));
       const payload = await backup.exportProject(snapshot.project.id);
-      expect(JSON.parse(payload).exportSchemaVersion).toBe(16);
+      expect(JSON.parse(payload).exportSchemaVersion).toBe(17);
       const before = JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value);
       await backup.importProject(payload, 'replace');
       expect(JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value)).toBe(before);
@@ -654,6 +654,24 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
         factors: { allDays: {}, serviceDays: [{ serviceDayId: duplicate.serviceDays.find((day) => day.kind === 'weekday')!.id, deadheadFraction: 0.07 }] },
       }]);
       expect(copied.routeEstimateFactors![0].routeId).not.toBe(route.id);
+    });
+  });
+
+  describe('Feed fields of Route and Scenario (Decision 0089 items 38 to 41)', () => {
+    it('a Route with its own counts and a Scenario with an import note save and load', async () => {
+      const { snapshot, scenarioId, weekday } = fixture();
+      const [route] = snapshot.routes;
+      const feedRoute = { ...route, gtfsRouteId: 'B1', gtfsRouteType: 3, color: '0055AA', ownAnnualServiceDays: { enabled: true, countsByServiceDayId: { [weekday]: 62 } } };
+      const note = { publisher: 'Example Transit', fileName: 'example-gtfs.zip', datesByServiceDayId: { [weekday]: '2026-01-12' }, routeCount: 1, importedAt: '2026-11-21T10:00:00.000Z' };
+      await repository.saveProjectSnapshot({
+        ...snapshot,
+        scenarios: snapshot.scenarios.map((scenario) => scenario.id === scenarioId ? { ...scenario, importNotes: [note] } : scenario),
+        routes: snapshot.routes.map((candidate) => candidate.id === route.id ? feedRoute : candidate),
+      });
+
+      const loaded = (await repository.getProjectSnapshot(snapshot.project.id))!;
+      expect(loaded.routes.find((candidate) => candidate.id === route.id)).toEqual(feedRoute);
+      expect(loaded.scenarios.find((scenario) => scenario.id === scenarioId)!.importNotes).toEqual([note]);
     });
   });
 });

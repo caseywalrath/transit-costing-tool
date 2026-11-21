@@ -46,7 +46,7 @@ describe('Route stop sets in backups (Decision 0079)', () => {
   it('round trips a schema 14 file exactly: stop sets and timepoint stop IDs survive export and import', () => {
     const snapshot = goldenWithStops();
     const payload = exportProjectJson(snapshot);
-    expect(JSON.parse(payload).exportSchemaVersion).toBe(16);
+    expect(JSON.parse(payload).exportSchemaVersion).toBe(17);
     expect(JSON.parse(payload).routeStopSets).toEqual(snapshot.routeStopSets);
     const restored = importProjectJson(payload);
     expect(restored.routeStopSets).toEqual(snapshot.routeStopSets);
@@ -108,7 +108,7 @@ describe('Route stop sets in backups (Decision 0079)', () => {
       generationSets: [], trips: [], blocks: [],
     } as unknown as Parameters<typeof exportProjectJson>[0];
     const file = JSON.parse(exportProjectJson(source));
-    expect(file.exportSchemaVersion).toBe(16);
+    expect(file.exportSchemaVersion).toBe(17);
     file.exportSchemaVersion = 12;
     const restored = importProjectJson(JSON.stringify(file));
     expect(restored.costingAssumptions?.[0].routeEstimateFactors).toEqual(routeEntries);
@@ -190,7 +190,7 @@ describe('Route stop sets in backups (Decision 0079)', () => {
       timepointLocationsByPatternId: { [pattern.id]: { [first.id]: { latitude: 39.914169, longitude: -105.006705 }, [second.id]: { speedLimitMph: 25 } } },
     };
     const payload = exportProjectJson({ ...snapshot, routeStopSets: [located] });
-    expect(JSON.parse(payload).exportSchemaVersion).toBe(16);
+    expect(JSON.parse(payload).exportSchemaVersion).toBe(17);
     const restored = importProjectJson(payload);
     expect(restored.routeStopSets).toEqual([located]);
     expect(withoutExportedAt(exportProjectJson(restored))).toEqual(withoutExportedAt(payload));

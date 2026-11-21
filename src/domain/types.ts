@@ -7,11 +7,15 @@ export type Miles = number;
 export type ServiceDayKind = 'weekday' | 'saturday' | 'sunday' | 'holiday' | 'custom';
 export interface EntityMetadata { createdAt: IsoTimestamp; updatedAt: IsoTimestamp; }
 export interface Project extends EntityMetadata { id: EntityId; name: string; description?: string; distanceUnit: 'miles'; currencyCode: string; }
-export interface Scenario extends EntityMetadata { id: EntityId; projectId: EntityId; name: string; description?: string; sourceScenarioId?: EntityId; }
+/** One import of a GTFS feed into a Scenario (Decision 0089 item 39). Kept so the planner can see where the Scenario's service came from. */
+export interface ScenarioImportNote { publisher: string; feedVersion?: string; fileName: string; datesByServiceDayId: Record<EntityId, string /* YYYY-MM-DD */>; routeCount: number; importedAt: string /* ISO */; }
+export interface Scenario extends EntityMetadata { id: EntityId; projectId: EntityId; name: string; description?: string; sourceScenarioId?: EntityId; importNotes?: ScenarioImportNote[]; }
 export interface TripProfile extends EntityMetadata { id: EntityId; scenarioId: EntityId; name: string; sourceTripProfileId?: EntityId; }
 export type NodeKind = 'timepoint' | 'terminal' | 'garage' | 'other';
 export interface ServiceDayDefinition extends EntityMetadata { id: EntityId; scenarioId: EntityId; kind: ServiceDayKind; name: string; annualServiceDays: number; sequence: number; /** Optional 1 to 3 character label for scope toggles (Decision 0059). When absent the label is derived, see `serviceDayAbbreviation`. */ abbreviation?: string; }
-export interface Route extends EntityMetadata { id: EntityId; scenarioId: EntityId; name: string; shortName?: string; description?: string; }
+/** A Route's own annual service-day counts, used in place of the Scenario's for that Route (Decision 0089 item 41). A day missing from the map uses the Scenario's count. */
+export interface RouteOwnAnnualServiceDays { enabled: boolean; countsByServiceDayId: Record<EntityId, number>; }
+export interface Route extends EntityMetadata { id: EntityId; scenarioId: EntityId; name: string; shortName?: string; description?: string; /** Decision 0089 item 38: the feed's route_id, the colour (six upper-case hex digits, no "#") and the GTFS route_type. Set only by a feed import. */ gtfsRouteId?: string; gtfsRouteType?: number; color?: string; ownAnnualServiceDays?: RouteOwnAnnualServiceDays; }
 export interface Node extends EntityMetadata { id: EntityId; scenarioId: EntityId; routeId: EntityId; name: string; shortName?: string; kind: NodeKind; notes?: string; }
 export interface PatternPoint { id: EntityId; nodeId: EntityId; sequence: number; cumulativeMiles: Miles; directionColumnId?: EntityId; }
 export interface RouteDirection extends EntityMetadata {
@@ -116,7 +120,7 @@ export interface ScheduledPoint { patternPointId: EntityId; sequence: number; ti
 export interface TripCalculationSource { runtimeProfileId: EntityId; runtimeCalculationRevision: number;
   /** Decision 0081 item 11 (FX7). `runtimeInputsSignature` of the profile when the Trip's times were calculated. Absent on older Trips, which keep the revision rule. */
   runtimeInputsSignature?: string; }
-export type TripCreationMethod = 'generated' | 'manual';
+export type TripCreationMethod = 'generated' | 'manual' | 'feed';
 export interface TripProvenance {
   kind: 'generated' | 'manual';
   /** Authoritative creation method for current and future trip records. */

@@ -174,6 +174,8 @@ export interface RouteOwnAnnualServiceDays { enabled: boolean; countsByServiceDa
 
 **Done when:** all pass, version 16 still imports, no screen changed.
 
+**As built (2026-11-21):** no service-day delete path exists yet, so `removeServiceDayFromFeedFields` (`src/domain/project.ts`) is pure and tested but not called; I9b's Delete command must call it.
+
 ## 9. Card I2 — Feed model: calendars, frequencies, trips on a date, summary
 
 **Model:** Haiku, effort `high`. **Depends on:** I1 (uses only its record shape `Record<string, string>`, not its code). **Rules:** 0089 items 10, 13–14, 16 ("feed's range"), 22–23.

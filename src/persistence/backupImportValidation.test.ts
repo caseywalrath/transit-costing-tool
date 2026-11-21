@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { RouteDefinitionService } from '../application/routeDefinitionService';
 import { duplicateScenario, projectSnapshotWithScenario, snapshotForScenario } from '../domain/project';
-import { goldenJson, goldenRaw, goldenWithAltBlocking } from '../testSupport/goldenBackup';
+import { goldenJson, goldenRaw, goldenWithAltBlocking, goldenWithFeedFields } from '../testSupport/goldenBackup';
 import { exportProjectJson, importProjectJson, parseProjectBackupWithReport } from './backup';
 import { ProjectBackupService } from './backupRepository';
 import { InMemoryRouteDefinitionRepository } from './inMemoryRepository';
@@ -53,7 +53,7 @@ describe('3-001: Block ownership survives export and import', () => {
       // The golden file is a version 6 file; exporting writes the current version, 8, and nothing else changes (Decision 0051).
       if (key !== 'exportedAt' && key !== 'exportSchemaVersion') expect(again[key], key).toEqual(original[key]);
     }
-    expect(again.exportSchemaVersion).toBe(16);
+    expect(again.exportSchemaVersion).toBe(17);
   });
 
   it('removes a Trip Profile that an older export stamped on a normalized Block when it matches the Blocking Scenario', () => {
@@ -376,5 +376,67 @@ describe('P17: a backup with repeated Block labels is refused with the cause and
     });
     expect(message).toMatch(/, and 1 other label repeats in this file\./);
     expect(message).toMatch(/Rename the repeated labels in the project where this file was exported/);
+  });
+});
+
+describe('feed fields of Route and Scenario (Decision 0089 items 38 to 42)', () => {
+  it('round trips every feed field: export and import give equal Route and Scenario records', () => {
+    const file = goldenWithFeedFields();
+    const imported = parseProjectBackupWithReport(JSON.stringify(file)).snapshot;
+    const exported = JSON.parse(exportProjectJson(imported));
+    expect(exported.routes).toEqual(file.routes);
+    expect(exported.scenarios).toEqual(file.scenarios);
+    const again = parseProjectBackupWithReport(JSON.stringify(exported)).snapshot;
+    expect(again.routes).toEqual(imported.routes);
+    expect(again.scenarios).toEqual(imported.scenarios);
+  });
+
+  it('writes none of the feed fields when they are absent', () => {
+    const exported = JSON.parse(exportProjectJson(importProjectJson(goldenJson())));
+    const feedRouteKeys = ['gtfsRouteId', 'gtfsRouteType', 'color', 'ownAnnualServiceDays'];
+    expect(exported.routes.flatMap((route: any) => feedRouteKeys.filter((key) => key in route))).toEqual([]);
+    expect(exported.scenarios.filter((scenario: any) => 'importNotes' in scenario)).toEqual([]);
+  });
+
+  it('imports a version 16 backup with none of the feed fields, as before', () => {
+    const version16 = JSON.parse(exportProjectJson(importProjectJson(goldenJson())));
+    version16.exportSchemaVersion = 16;
+    const { snapshot } = parseProjectBackupWithReport(JSON.stringify(version16));
+    expect(snapshot.routes).toEqual(importProjectJson(goldenJson()).routes);
+    expect(snapshot.scenarios.filter((scenario) => scenario.importNotes !== undefined)).toEqual([]);
+  });
+
+  it('accepts provenance.creationMethod feed on a Trip', () => {
+    const file = goldenRaw();
+    file.exportSchemaVersion = 17;
+    const id = file.trips[0].id;
+    file.trips[0].provenance.creationMethod = 'feed';
+    const { snapshot } = parseProjectBackupWithReport(JSON.stringify(file));
+    expect(snapshot.trips.find((trip) => trip.id === id)!.provenance.creationMethod).toBe('feed');
+  });
+
+  const dayIds = (file: any) => file.serviceDays.filter((day: any) => day.scenarioId === file.routes[0].scenarioId).map((day: any) => day.id) as string[];
+  const refused: Array<[string, (file: any) => void, RegExp]> = [
+    ['a blank gtfsRouteId', (file) => { file.routes[0].gtfsRouteId = ' '; }, /routes\[0\]\.gtfsRouteId/],
+    ['a negative gtfsRouteType', (file) => { file.routes[0].gtfsRouteType = -1; }, /routes\[0\]\.gtfsRouteType/],
+    ['a fractional gtfsRouteType', (file) => { file.routes[0].gtfsRouteType = 1.5; }, /routes\[0\]\.gtfsRouteType/],
+    ['a colour with a hash sign', (file) => { file.routes[0].color = '#0055AA'; }, /routes\[0\]\.color/],
+    ['a lower-case colour', (file) => { file.routes[0].color = '0055aa'; }, /routes\[0\]\.color/],
+    ['an enabled flag that is not true or false', (file) => { file.routes[0].ownAnnualServiceDays.enabled = 'yes'; }, /routes\[0\]\.ownAnnualServiceDays\.enabled/],
+    ['a count for a day of another Scenario', (file) => { file.routes[0].ownAnnualServiceDays.countsByServiceDayId = { 'other-day': 62 }; }, /not a service day of the Route's Scenario/],
+    ['a negative count', (file) => { file.routes[0].ownAnnualServiceDays.countsByServiceDayId = { [dayIds(file)[0]]: -1 }; }, /countsByServiceDayId\[/],
+    ['counts that total more than 365', (file) => { const [first, second] = dayIds(file); file.routes[0].ownAnnualServiceDays.countsByServiceDayId = { [first]: 200, [second]: 200 }; }, /total more than 365/],
+    ['import notes that are not a list', (file) => { file.scenarios[0].importNotes = {}; }, /scenarios\[0\]\.importNotes must be an array/],
+    ['a blank publisher', (file) => { file.scenarios[0].importNotes[0].publisher = ''; }, /importNotes\[0\]\.publisher/],
+    ['a blank file name', (file) => { file.scenarios[0].importNotes[0].fileName = ' '; }, /importNotes\[0\]\.fileName/],
+    ['a negative route count', (file) => { file.scenarios[0].importNotes[0].routeCount = -1; }, /importNotes\[0\]\.routeCount/],
+    ['an import time that is not text', (file) => { file.scenarios[0].importNotes[0].importedAt = 1234; }, /importNotes\[0\]\.importedAt/],
+    ['a date for a day of another Scenario', (file) => { file.scenarios[0].importNotes[0].datesByServiceDayId = { 'other-day': '2026-01-12' }; }, /datesByServiceDayId names/],
+    ['a date that is not YYYY-MM-DD', (file) => { file.scenarios[0].importNotes[0].datesByServiceDayId = { [dayIds(file)[0]]: '12/01/2026' }; }, /datesByServiceDayId\[/],
+  ];
+  it.each(refused)('refuses %s and names the field', (_label, change, pattern) => {
+    const file = goldenWithFeedFields();
+    change(file);
+    expect(() => importProjectJson(JSON.stringify(file))).toThrow(pattern);
   });
 });

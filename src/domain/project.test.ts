@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { asSnapshot, goldenRaw, goldenWithAltBlocking, goldenWithDeadhead } from '../testSupport/goldenBackup';
+import { asSnapshot, goldenRaw, goldenWithAltBlocking, goldenWithDeadhead, goldenWithFeedFields } from '../testSupport/goldenBackup';
 import { summarizeBlock } from './blocking';
 import { evaluateBlockEligibility } from './costing';
 import { metadata } from './ids';
-import { createScenarioRecords, duplicateRouteRecords, duplicateScenario, projectLastChangedAt, projectSnapshotWithScenario, snapshotForScenario } from './project';
+import { createScenarioRecords, duplicateRouteRecords, duplicateScenario, projectLastChangedAt, projectSnapshotWithScenario, removeServiceDayFromFeedFields, snapshotForScenario } from './project';
 import { assertTripProfileReferences } from './trips';
 import type { Block, BlockingBlock, CostingAssumptions, ProjectSnapshot, RouteStopSet, Trip } from './types';
 
@@ -319,5 +319,59 @@ describe('route stop sets in duplication and snapshots (Decision 0079)', () => {
     expect(snapshotForScenario(withSets, records.scenario.id)!.routeStopSets).toEqual(records.routeStopSets);
     expect(snapshotForScenario({ ...snapshot, routeStopSets: [] }, records.scenario.id)!.routeStopSets).toBeUndefined();
     expect(projectSnapshotWithScenario(withSets, { ...records, routeStopSets: [] }).routeStopSets).toEqual([]);
+  });
+});
+
+describe('feed fields in Scenario and Route duplication (Decision 0089 items 39 and 41)', () => {
+  const stamp = '2026-11-21T12:00:00.000Z';
+  const feedSource = () => {
+    const snapshot = asSnapshot(goldenWithFeedFields());
+    const route = snapshot.routes.find((candidate) => candidate.gtfsRouteId === 'B1')!;
+    const records = snapshotForScenario(snapshot, route.scenarioId)!;
+    const dayIndex = records.serviceDays.findIndex((day) => day.id === Object.keys(route.ownAnnualServiceDays!.countsByServiceDayId)[0]);
+    return { records, route, dayIndex };
+  };
+
+  it('a Scenario duplicate points the own counts and the import dates at the copy\'s service days', () => {
+    const { records, dayIndex } = feedSource();
+    const copy = duplicateScenario(records, 'Copy', stamp);
+    const copiedDayId = copy.serviceDays[dayIndex].id;
+    const copiedRoute = copy.routes.find((route) => route.gtfsRouteId === 'B1')!;
+    expect(copiedRoute.ownAnnualServiceDays).toEqual({ enabled: true, countsByServiceDayId: { [copiedDayId]: 62 } });
+    expect(copy.scenario.importNotes).toEqual([{ ...records.scenario.importNotes![0], datesByServiceDayId: { [copiedDayId]: '2026-01-12' } }]);
+  });
+
+  it('a Route duplicate copies the feed fields and the own counts unchanged', () => {
+    const { records, route } = feedSource();
+    const { route: copy } = duplicateRouteRecords(records, route.id, 'Copy', stamp);
+    expect(copy).toMatchObject({ gtfsRouteId: 'B1', gtfsRouteType: 3, color: '0055AA' });
+    expect(copy.ownAnnualServiceDays).toEqual(route.ownAnnualServiceDays);
+  });
+
+  it('deleting a service day removes its count from the Route and its date from every import note, and changes nothing else', () => {
+    const snapshot = asSnapshot(goldenWithFeedFields());
+    const route = snapshot.routes.find((candidate) => candidate.gtfsRouteId === 'B1')!;
+    const scenario = snapshot.scenarios.find((candidate) => candidate.id === route.scenarioId)!;
+    const [first, second] = snapshot.serviceDays.filter((day) => day.scenarioId === scenario.id);
+    const note = { ...scenario.importNotes![0], datesByServiceDayId: { [first.id]: '2026-01-12', [second.id]: '2026-01-17' } };
+    const withCounts = { ...route, ownAnnualServiceDays: { enabled: true, countsByServiceDayId: { [first.id]: 62, [second.id]: 10 } } };
+    const otherScenarioRoute = { ...withCounts, id: 'other-route', scenarioId: 'other-scenario' };
+
+    const result = removeServiceDayFromFeedFields({ ...scenario, importNotes: [note] }, [withCounts, otherScenarioRoute], first.id, stamp);
+
+    expect(result.routes[0].ownAnnualServiceDays).toEqual({ enabled: true, countsByServiceDayId: { [second.id]: 10 } });
+    expect(result.routes[0].updatedAt).toBe(stamp);
+    expect(result.routes[1]).toBe(otherScenarioRoute);
+    expect(result.scenario.importNotes).toEqual([{ ...note, datesByServiceDayId: { [second.id]: '2026-01-17' } }]);
+    expect(result.scenario.updatedAt).toBe(stamp);
+  });
+
+  it('returns the same records when the deleted service day has no entry', () => {
+    const snapshot = asSnapshot(goldenWithFeedFields());
+    const route = snapshot.routes.find((candidate) => candidate.gtfsRouteId === 'B1')!;
+    const scenario = snapshot.scenarios.find((candidate) => candidate.id === route.scenarioId)!;
+    const result = removeServiceDayFromFeedFields(scenario, [route], 'no-such-day', stamp);
+    expect(result.routes[0]).toBe(route);
+    expect(result.scenario).toBe(scenario);
   });
 });
