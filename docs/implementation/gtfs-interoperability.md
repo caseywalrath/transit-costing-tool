@@ -536,3 +536,12 @@ V-I test routes: **31 Federal Blvd, 0 Broadway, 0L South Broadway Limited** (RTD
 ### 2026-11-21 — I0 approved (user)
 
 - The user approved Decision 0089, the phase I sub-plan and Sonnet for I2b, I9 and I9b, and asked to continue with sitting 2 in this session.
+
+### 2026-11-21 — Sitting 2: I1, I5, I2 (Haiku; Opus review)
+
+- **I1** (`73d371a`): ZIP and streaming CSV readers in `src/persistence/gtfs/`; 15 tests. Choices kept: ZIP64 checked before multi-part; every `.txt` file mapped, names case-sensitive; a feed in exactly one folder; an unclosed final quote accepted.
+- **I5** (`7479b25`): new Route and Scenario fields, `creationMethod: 'feed'`, backup schema 17 (16 kept in every version list), copy remapping. Opus ran the typecheck and full suite the agent skipped. No service-day delete path exists, so the removal helper waits for I9b (sub-plan card I5, "As built").
+- **I2**: calendars, frequencies, trips on a date and the feed summary in `src/domain/gtfs/`; 72 tests. Returned once: malformed frequency rows, bad sequences and bad times now list the trip as invalid (`badFrequencyRow`, `badSequence`, `badTime`) instead of stopping (0089 item 12). Choices kept: the range counts every trip; summary trip counts are 0 without a count date; an unreadable `route_type` is −1; trips ordered by first departure; colour kept as written (upper-cased at translation, I3/I4).
+- **Tests at the end:** typecheck clean; `pnpm test` 114 files, 1,895 passed. Browser specs for I5 passed (11).
+- **Hand-off:** sitting 2 done. Next is sitting 3: I2b (Sonnet) and I3 (Haiku `xhigh`); the orchestrator writes both cards first.
+
