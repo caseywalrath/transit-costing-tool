@@ -51,6 +51,10 @@ Recommend the structural class (Luna) for bounded, mechanical, or structural wor
 
 The structural class must not make visual design, layout, interaction, accessibility, or other UX decisions.
 
+### Broad structural class (Sonnet)
+
+Recommend the broad structural class (Sonnet) for structural work that Opus judges too broad for the structural class: several interacting rules in one package, or UI wiring from approved mock-ups that needs judgment within those mock-ups. The plan names each such package for user approval (GTFS plan, gate G-I7). The same limits apply as to the structural class: it does not invent a visual or interaction system.
+
 ### UI/UX model recommendations
 
 - Recommend the UI-design class (Sol) for novel, complex, interaction-heavy, or visually distinctive UI work requiring design, usability, accessibility, or layout judgment.

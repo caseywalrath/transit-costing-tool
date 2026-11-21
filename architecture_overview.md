@@ -464,6 +464,8 @@ Replace the visual system and the screen layouts without changing domain, persis
 
 Consider suggested blocking, peak vehicles and spares, mile-based costing, Excel interoperability, GTFS interoperability, and multi-route interlining.
 
+GTFS import is planned and approved (Decision 0089; `docs/implementation/gtfs-interoperability.md` for the programme, `docs/implementation/gtfs-import-phase-i.md` for phase I). Not yet built.
+
 ## Deferred Decisions
 
 The following decisions are deliberately deferred:
@@ -474,7 +476,7 @@ The following decisions are deliberately deferred:
 - detailed garage and deadhead matrices;
 - cost-category allocation and combined cost models;
 - multi-user synchronization;
-- GTFS import and export;
+- GTFS export (import is decided by Decision 0089);
 - Full Excel schedule and workbook import, and spreadsheet paste or CSV import of Runtime bands (removed by Decision 0045).
 
 Resolve each item through a decision record before implementation.

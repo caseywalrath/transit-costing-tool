@@ -1,0 +1,4 @@
+stop_id,stop_name,stop_lat,stop_lon
+HUB,Central Hub,39.7400,-104.9900
+MKT,Market End,39.7400,-104.9700
+MIL,Mill End,39.7600,-104.9900

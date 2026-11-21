@@ -1,6 +1,6 @@
 # GTFS import and export — plan
 
-> **Status:** Plan approved 2026-11-21. All phase I gates answered except V-I (a later checkpoint). Interface decisions are listed in 5b. No work package has started. No decision record exists yet; the next step is I0 (1.3).
+> **Status:** Plan approved 2026-11-21. All phase I gates answered except V-I (a later checkpoint). Interface decisions are listed in 5b. I0 done in sitting 1 (Decision 0089, sub-plan `docs/implementation/gtfs-import-phase-i.md`, test feeds `tests/fixtures/gtfs/`), awaiting user review. No code package has started.
 >
 > **Origin:** adapted from the deferred plan `docs/gtfs-costing-tool-plan.md` in `caseywalrath/transit-analysis-tool` (branch `claude/friendly-brahmagupta-51rk4t`, commit `b5d9370`). Once the user approves this draft, this file governs and the Analysis app copy becomes a pointer (1.3).
 >
@@ -178,7 +178,7 @@ These rules go into the decision record in Opus's words, with worked examples on
      - **Reduced or other weekday:** a subset of, or a change to, the weekday trips (for example the day after Thanksgiving);
      - **Unique holiday service:** anything else, including a mix of Saturday trips on some routes and Sunday trips on others.
    - **Annual counts follow the classification.** A Saturday-service holiday adds one to the Saturday count, a Sunday-service holiday to the Sunday count. Unique holiday service goes to Holiday.
-   - **Holiday trips:** when one or more dates have unique holiday service, the Holiday service day gets the trips of a date the planner picks (default: the unique-service date with the most trips). A second, different unique holiday service (for example Thanksgiving differing from Christmas) can become a **custom** service day ("Holiday 2"). The stored data and backups already accept custom days; the import creates it, but no screen can create or delete one today, so I0 decides whether a small Route-tab command is added. Otherwise its dates are counted under Holiday with the first date's trips, and the difference is reported.
+   - **Holiday trips:** when one or more dates have unique holiday service, the Holiday service day gets the trips of a date the planner picks (default: the unique-service date with the most trips). A second, different unique holiday service (for example Thanksgiving differing from Christmas) can become a **custom** service day ("Holiday 2"). The stored data and backups already accept custom days; the import creates it, and package I9b adds an "Add service day…" command (Decision 0089 item 43). Otherwise its dates are counted under Holiday with the first date's trips, and the difference is reported.
    - **Mixed dates** are shown route by route, so the planner sees, for example, "route 15: Saturday trips, route 0: Sunday trips".
    - **No holiday exceptions in the feed:** the report says so. The feed runs normal service on those dates, and they count under their day of the week. Holiday is left with no trips and a count of 0, for the planner to set.
    - **The planner confirms or changes** every candidate's classification in the Days step before import.
@@ -521,3 +521,14 @@ V-I test routes: **31 Federal Blvd, 0 Broadway, 0L South Broadway Limited** (RTD
 - The orchestrator may continue between packages within a phase (Part 7, "Run rules"; exception noted in `AGENTS.md`).
 - The user asked to pause before sitting 1. **Hand-off:** nothing has started. Next is sitting 1 (baseline, then I0), begun by the user in a fresh session with the Part 7 prompt.
 
+### 2026-11-21 — Sitting 1: baseline and I0 (Opus)
+
+- **Branch:** `claude/dazzling-tesla-znfnl8` (the session allows no other; the sub-plan section 1 records this in place of a phase branch).
+- **Baseline at `729609c`:** typecheck clean; `pnpm test` 105 files, 1,781 tests passed; `tests/ui/backup-import.spec.ts` 5 passed.
+- **I0 written:**
+  - `docs/decisions/0089-gtfs-import.md`: the import rules (45 items), including the choices this plan left open: the scaling of annual counts (largest remainder to 365; the 365 dates centred in a longer feed), the timepoint suggestion when a feed marks none (one per 10 minutes of running time, 2 to 30), pattern names, direction grouping without `direction_id`, which findings stop an import (W5), the "From feed" trip status (`creationMethod: 'feed'`, counted current through its profile signature), the opt-in per-route counts with a kept `enabled` flag, and the stored fields of backup schema 17 with no Dexie change.
+  - `docs/implementation/gtfs-import-phase-i.md`: folders, package table with models, the final verification table, the rules block for agent prompts, and full work cards for I1, I5 and I2. Later cards are written at the start of their sittings.
+  - `tests/fixtures/gtfs/`: the mini feed copied from the Analysis app, three edge feeds (no direction, loop with variants, multi-route blocks) with hand-worked answers, four ZIPs (deflate, stored, in a folder), `.gitattributes` keeping them byte for byte.
+  - `AGENTS.md`: the broad structural class (Sonnet), per G-I7. `docs/backlog.md` and `architecture_overview.md`: pointers (step 1.3.2).
+- **For the user to approve:** Decision 0089 and the sub-plan, including the Sonnet assignments (I2b, I9, I9b).
+- **Hand-off:** sitting 1 ends at the I0 user review. Next is sitting 2 (I1 and I5 in parallel, then I2; Haiku), started in a fresh session with the Part 7 prompt once the user approves I0.

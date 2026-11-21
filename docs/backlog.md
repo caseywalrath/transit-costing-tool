@@ -12,6 +12,8 @@ Each entry lists the problem, the proposed approach, open choices, and the edge 
 | [Costing by service day across routes](#costing-by-service-day-across-routes) | Costing | Implemented 2026-11-12: Decision 0078 |
 | [Multi-route interlining](#multi-route-interlining) | Blocking, Costing | Proposed 2026-11-12; not needed for the current scenario |
 | [Year-varying service](#year-varying-service) | Scenario, Costing | Idea 2026-11-12; beyond current scope |
+| GTFS import and export | Project, Scenario, Route, Costing | Planned 2026-11-21: Decision 0089, `docs/implementation/gtfs-interoperability.md`, `docs/implementation/gtfs-import-phase-i.md` |
+| Refresh a Route from a newer GTFS feed (import level D) | Route, Trips | Idea 2026-11-21; Decision 0089 item 1 |
 
 ---
 

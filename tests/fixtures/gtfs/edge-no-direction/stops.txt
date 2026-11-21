@@ -1,0 +1,4 @@
+stop_id,stop_name,stop_lat,stop_lon
+NA,North Terminal,39.7600,-104.9900
+NM,Middle,39.7500,-104.9900
+NB,South Terminal,39.7400,-104.9900

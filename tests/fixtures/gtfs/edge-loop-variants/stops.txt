@@ -1,0 +1,5 @@
+stop_id,stop_name,stop_lat,stop_lon
+LA,Loop Hub,39.7400,-104.9900
+LB,Loop East,39.7400,-104.9800
+LC,Loop Far,39.7500,-104.9800
+LD,Loop West,39.7500,-104.9900

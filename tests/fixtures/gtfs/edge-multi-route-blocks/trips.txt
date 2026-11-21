@@ -1,0 +1,8 @@
+route_id,service_id,trip_id,direction_id,block_id
+M1,WK,M1_1,0,X
+M1,WK,M1_2,1,X
+M2,WK,M2_1,0,X
+M1,WK,M1_3,0,Y
+M1,WK,M1_4,1,Y
+M2,WK,M2_2,0,Z
+M2,WK,M2_3,1,Z
