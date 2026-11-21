@@ -35,6 +35,8 @@ Classify each package by capability class. The model names in parentheses are th
 
 Do not automatically begin the next work package. At each verification gate, report the completed result and recommend the next package and model to the user.
 
+Exception (user approval 2026-11-21): under the GTFS import plan, `docs/implementation/gtfs-interoperability.md`, an Opus orchestrator may run the packages of a phase one after another and delegate them to Haiku or Sonnet sub-agents. It still stops at every user gate, at each sitting's end, and at anything the plan does not decide. The rules are in that plan's Part 7, "Run rules".
+
 ### Structural class (Luna)
 
 Recommend the structural class (Luna) for bounded, mechanical, or structural work after the architecture is settled, including:

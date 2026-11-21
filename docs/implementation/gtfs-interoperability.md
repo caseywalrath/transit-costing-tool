@@ -327,6 +327,48 @@ Kept as written, last and optional. It needs I and E.
 
 Every phase follows `AGENTS.md` and `codex.md`: a decision record in `docs/decisions/`; a sub-plan in `docs/implementation/` with a "Verification per package" table; structural and UI packages kept apart, with a user gate between them; no automatic start of the next package.
 
+### Run rules (user approval 2026-11-21)
+
+- **Continuing between packages.** The Opus orchestrator runs a phase's packages one after another without asking, an exception to `AGENTS.md` for this plan only. It stops:
+  - at user gates: I0 review, V-I, I7 mock-up approval, each phase closeout;
+  - at the end of each sitting;
+  - on anything this plan does not decide.
+- **Sittings and breaks.** Work runs in the sittings below, 2–3 packages each, to manage usage. At each sitting's end:
+  - everything is committed and pushed;
+  - the progress log gets a hand-off: what was done, test results, next sitting;
+  - the session stops.
+
+  The user starts each sitting in a fresh session with the prompt below. No automatic restarts.
+- **Delegation.** Opus writes a self-contained work card per package: the files to touch and not touch, the rules, worked examples, tests, done-criteria and the effort level. Opus runs the card as a sub-agent on the named model. Independent packages run in parallel in separate worktrees.
+- **Checking.**
+  - Opus reads every diff and runs that package's verification rows.
+  - It fixes small problems itself, or returns the card once to the same model. After a second failure, Opus does the package.
+  - Each phase ends with a `code-review` at high effort, never skipped.
+- **Branches.** One branch per phase from `main` (for example `claude/gtfs-import-i`). The user merges each phase through a pull request after CI passes.
+
+| Sitting | Packages | Models | Ends with |
+|---|---|---|---|
+| 1 | Baseline (install, typecheck, unit tests, one browser spec; numbers recorded); I0 | Opus | User review of I0 |
+| 2 | I1 and I5 in parallel, then I2 | Haiku | Break |
+| 3 | I2b, I3 | Sonnet; Haiku `xhigh` | Break |
+| 4 | I4, I5b | Haiku `xhigh` | Break |
+| 5 | I6; convert the mini feed and RTD routes 31, 0, 0L | Haiku; Opus | Gate V-I |
+| 6 | I7 mock-ups | Opus | User approval of the mock-ups |
+| 7–8 | I8, I9, I9b; I10 | Haiku; Sonnet | Break |
+| 9 | I11 closeout, code review | Opus | Phase closeout and pull request |
+
+**Prompt to start a sitting:**
+
+```
+You are the Opus orchestrator for the GTFS import plan,
+docs/implementation/gtfs-interoperability.md in transit-costing-tool.
+Read AGENTS.md, codex.md, the plan in full, and the last progress-log
+hand-off. Run the next sitting in Part 7, following its run rules:
+delegate packages to the named models with exact work cards, review
+and verify each one, commit and push, then write the hand-off and stop
+at the sitting's end or at any user gate.
+```
+
 **Models (G-I7):** Haiku (`high` or `xhigh` effort) does most packages from exact work cards written by Opus. Opus writes the decision record, the cards with worked examples, the import-screen design, reviews every package, and integrates. Sonnet may take a package that Opus judges too broad for Haiku (G-I7, answered yes); the sub-plan names those packages for user approval.
 
 | Package | Content | Class / model | Depends on |
@@ -473,3 +515,9 @@ V-I test routes: **31 Federal Blvd, 0 Broadway, 0L South Broadway Limited** (RTD
 - **Blocks:** 28 weekday, 18 Saturday and 15 Sunday blocks touch these routes. All are kept except one weekday block that also runs route 4, which G-I4 leaves out and lists (its route 31 trips stay unassigned).
 - **What they exercise:** route 31's three patterns per direction, each with its own timepoint sequence, so G-I3 makes three patterns per direction and the timepoint review has real choices; a left-out shared block (G-I4); and 0L's weekday-only service (empty service days).
 - **What they do not exercise:** variants that differ only between timepoints (G-I3 merging). The I0 edge fixtures cover that.
+
+### 2026-11-21 — Run rules approved (user)
+
+- The orchestrator may continue between packages within a phase (Part 7, "Run rules"; exception noted in `AGENTS.md`).
+- The user asked to pause before sitting 1. **Hand-off:** nothing has started. Next is sitting 1 (baseline, then I0), begun by the user in a fresh session with the Part 7 prompt.
+
