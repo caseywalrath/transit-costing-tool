@@ -31,7 +31,7 @@
 - `pnpm test`: 105 files, 1781 tests passed.
 - `pnpm build`: passed.
 - Heights at 1440 and 1200 px: Route details 239 px (with the empty route name error showing), Annual service days 261 px. At 1024 px the panels stack.
-- Full browser suite: running when this file was committed; the result is recorded in the next commit.
+- Full browser suite: 406 passed, 3 skipped (the screenshot-only tests).
 
 ## Gate C (user)
 
