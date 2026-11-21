@@ -545,3 +545,11 @@ V-I test routes: **31 Federal Blvd, 0 Broadway, 0L South Broadway Limited** (RTD
 - **Tests at the end:** typecheck clean; `pnpm test` 114 files, 1,895 passed. Browser specs for I5 passed (11).
 - **Hand-off:** sitting 2 done. Next is sitting 3: I2b (Sonnet) and I3 (Haiku `xhigh`); the orchestrator writes both cards first.
 
+### 2026-11-21 — Sitting 3: I2b (Sonnet), I3 (Haiku `xhigh`); Opus review
+
+- Run in parallel: I3 needs only I2's trips. Decision 0089 item 19 now identifies a trip by direction, stop sequence and first departure (sub-plan section 10).
+- **I2b** (`dacff75`): day groups, default dates, part-year routes, holiday classification, Holiday and custom days, annual counts; six calendar fixtures. The agent's hand count of the mini example matched the card. Card slip corrected: school days are the minority set.
+- **I3**: directions, patterns, timepoints, Nodes, Route stops, distances; 83 tests. It stopped once with 8 questions; the orchestrator answered them in sub-plan section 12a (flagged timepoints apply per direction; mixed `direction_id`; bad route fields; missing locations). Three ways a route can still throw are carried to I4 (section 12b).
+- **Tests at the end:** typecheck clean; `pnpm test` 122 files, 2,026 passed.
+- **Hand-off:** sitting 3 done. Next is sitting 4: I4 and I5b (Haiku `xhigh`); write both cards first, I4 including section 12b.
+

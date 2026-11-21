@@ -336,3 +336,8 @@ These amend Decision 0089 items 24–29 as noted there.
 7. **Missing locations:** stops without a location are skipped in distance chains. A pattern with fewer than 2 located points gets 0 miles and a new finding `unmeasuredPattern`. A blank time whose neighbours cannot be measured is filled by equal spacing (finding `filledTime`, detail `equal`).
 8. **File names:** the card's (`…FromFeed.ts`) apply; section 3's names are superseded.
 The agent's listed non-blocking choices are accepted.
+
+### 12b. I3 as built: carried to the I4 card
+
+- `routeFromFeed` can throw on an odd route: conflicting stop order between two patterns of one direction (`mapPatternPointsToDirection`). Also, stop IDs that differ only by case give `codeDuplicate`, and a stop repeated within one segment gives `stopPlacement.repeatedInSegment`. The I4 card must catch each per route: that route is not imported, it is listed with the reason, and the rest of the import goes on (0089 item 12).
+- Route stops come only from each pattern's most common variant. Stops served only by merged variants are not imported; the `mergedVariant` findings list those trips.
