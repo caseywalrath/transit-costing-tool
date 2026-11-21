@@ -446,3 +446,16 @@ New for this plan:
 - Added 5b, the list of interface decisions, with when each is settled.
 - Still needed before V-I: the agency feed (ZIP, supplied by the user) and 2–3 test routes.
 
+
+### 2026-11-21 — RTD feed profiled (Opus)
+
+The user named the RTD feed (`https://www.rtd-denver.com/files/gtfs/google_transit.zip`). It downloads from this environment; it is not committed (Part 10 item 5). Version `Sep26-37381-22-23-20261113-122950`, valid 2026-09-27 to 2027-01-02 (14 weeks, so annual counts are scaled).
+
+- **Size:** 10.8 MB ZIP, 61 MB unpacked; 130 routes (120 bus, 6 light rail, 4 commuter rail), 21,813 trips, 814,413 stop times. About 8,850 trips per weekday, above the G-I6 warning threshold, so I10 has its real test case.
+- **Service ids:** `WK` (Mon–Fri), `MT` (Mon–Thu), `FR` (Fri), `SA`, `SU`. Only the 10 rail lines use `MT`/`FR`; bus routes are the same Monday to Friday. Rule 2 picks a Monday–Thursday date and shows Friday as its own group. A custom "Friday" service day for the rail lines is possible but not proposed by default.
+- **Holidays:** `calendar_dates` replaces weekday service with `SU` on Nov 26, Dec 25 and Jan 1. Rule 11a classifies all three as Sunday service.
+- **Timepoints:** marked (199,998 of 814,413 rows), so G-C5a uses the feed's flags. No blank times; arrival differs from departure on 7,517 rows.
+- **Directions:** `direction_id` on every trip.
+- **Blocks:** `block_id` on every trip; 1,647 blocks, 313 of them serving more than one route. Selective imports will leave many blocks out under G-I4 and list them.
+- **No `frequencies.txt`.** `shape_dist_traveled` is present and ignored (D5).
+- Candidate test routes (weekday trips): 0 Broadway (149), 0L South Broadway Limited (99), 31 Federal Blvd (191), 15 East Colfax (212), 15L East Colfax Limited (202).
