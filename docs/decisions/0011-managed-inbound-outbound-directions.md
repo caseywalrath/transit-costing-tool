@@ -1,6 +1,6 @@
 # Decision 0011: Managed Inbound and Outbound Direction Groups
 
-- Status: Accepted for the Phase 2R revision
+- Status: Accepted for the Phase 2R revision. Superseded in part by Decision 0088: each group may now have a per-route display name; the groups and their identity are unchanged.
 - Date: 2026-09-12 (the exact day is not recorded; the record was written between Decision 0010, 2026-09-11, and Decision 0013, 2026-09-13)
 - Supersedes: the user-managed Directions in Decision 0010
 
