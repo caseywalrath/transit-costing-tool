@@ -78,6 +78,8 @@ Planners want to start from an agency's published service: a whole public GTFS f
 
 ### F. Directions, patterns, timepoints, stops
 
+Items 24–29 are amended by `docs/implementation/gtfs-import-phase-i.md` section 12a (2026-11-21): flagged timepoints apply per direction, mixed `direction_id`, bad route fields, missing locations.
+
 24. **Directions (rule 4).** `direction_id` 0 → Outbound, 1 → Inbound. When the column is absent or blank on every trip of a route, its trips are grouped by (first stop, last stop). The group with the most trips is proposed as Outbound, and its reverse pair (if any) as Inbound; a tie goes to the group with the earliest first departure. Other pairs join the direction whose terminal pair shares the first stop, otherwise Outbound; the planner confirms. A direction's proposed name is its most common non-blank headsign (Decision 0088 rules: trimmed, at most 40 characters, the two names must differ; on a clash the defaults are kept).
 25. **Patterns (G-I3, Option A).** Within a direction, one pattern per distinct sequence of timepoint stop IDs. Its stops are the stop sequence of its most common variant (tie: the variant of the earliest trip). Other variants are listed in the report as merged.
     - **Pattern name:** the most common non-blank headsign of its trips; when blank, "{first timepoint name} to {last timepoint name}". Duplicate names in a Route get " 2", " 3".

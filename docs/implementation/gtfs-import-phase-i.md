@@ -323,3 +323,16 @@ export function routeFromFeed(input: RouteFromFeedInput): RouteFromFeed;
 - A built test feed with 35 flagged timepoints on one trip → 30 points kept, both terminals kept, one `thinnedTimepoints` finding.
 
 **Run:** `pnpm exec vitest run src/domain/gtfs`, `pnpm typecheck`, `pnpm test` once at the end. **Done when:** every worked example is a test and passes, and `validateRouteStopSet` has no error on any built route.
+
+### 12a. Card I3 answers (orchestrator, 2026-11-21)
+
+These amend Decision 0089 items 24–29 as noted there.
+1. **Flagged timepoints are per direction, not per trip.** A direction's timepoint stops are every stop flagged `timepoint` = 1 on any of its trips. Each trip's timepoints are those stops it serves, plus its own first and last stop. A blank time at such a stop is filled (item 26). The mini B1 example stands: `B1_W_2` sits on S1>S2>S3 with S2 filled. A stop that is a Node of the Route is never also a Route stop.
+2. **Thinning** runs per direction on that stop set, before grouping. The even shares use the median running time of the trips of the direction's most common stop sequence.
+3. **Overrides** are keyed by the pattern key before the override. An overridden pattern's trips get the override stops they serve, plus their own first and last stop. Override stops the pattern does not serve are ignored.
+4. **Mixed `direction_id`:** trips with a blank value join the direction whose valued trips most often share their first stop, otherwise Outbound, with the finding `directionsGuessed`.
+5. **Names:** a headsign is trimmed and cut to 40 characters; a tie goes to the earliest trip's headsign; on a clash both directions keep "Outbound" and "Inbound".
+6. **Bad route fields:** a leading `#` is removed from `route_color`; a colour that is still not six hexadecimal digits is left unset, and `route_type` that is not a whole number is left unset, each with a new finding `badRouteField`. A blank `stop_name` uses the `stop_id` as the name.
+7. **Missing locations:** stops without a location are skipped in distance chains. A pattern with fewer than 2 located points gets 0 miles and a new finding `unmeasuredPattern`. A blank time whose neighbours cannot be measured is filled by equal spacing (finding `filledTime`, detail `equal`).
+8. **File names:** the card's (`…FromFeed.ts`) apply; section 3's names are superseded.
+The agent's listed non-blocking choices are accepted.
