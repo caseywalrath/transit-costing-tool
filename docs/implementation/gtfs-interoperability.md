@@ -271,12 +271,12 @@ Some can be decided now; the rest are settled in the I7 mock-ups or when a packa
 
 | # | Decision | Proposal | When |
 |---|---|---|---|
-| D1 | Where the Scenario's import note shows | Scenario switcher (a line under the name) and the Cost summary footnote | I7 |
-| D2 | How "From feed" trips look in the Trips table, and what happens to the mark when a band is edited | A quiet "Feed" tag in the status cell; it changes to the existing "run times changed" mark once a band is edited (G-I5) | I7 |
-| D3 | Use the feed's route colour | As the Route's identity dot in the Route switcher and Costing route rows; no other colour use | Now or I7 |
-| D4 | Run-time profile names for imported patterns | "{Day} from feed" | Decision record (I0) |
-| D5 | Blocks with no pull-out or pull-in | Existing "incomplete" marking; the import's default minutes are shown in the Blocking summary note | I7 |
-| D6 | Blocks left out because they serve other routes | Listed in the report; their trips appear as unassigned in Blocking, as any unassigned trip does | Decided |
+| S1 | Where the Scenario's import note shows | Scenario switcher (a line under the name) and the Cost summary footnote | I7 |
+| S2 | How "From feed" trips look in the Trips table, and what happens to the mark when a band is edited | A quiet "Feed" tag in the status cell; it changes to the existing "run times changed" mark once a band is edited (G-I5) | I7 |
+| S3 | Use the feed's route colour | As the Route's identity dot in the Route switcher and Costing route rows; no other colour use | Now or I7 |
+| S4 | Run-time profile names for imported patterns | "{Day} from feed" | Decision record (I0) |
+| S5 | Blocks with no pull-out or pull-in | Existing "incomplete" marking; the import's default minutes are shown in the Blocking summary note | I7 |
+| S6 | Blocks left out because they serve other routes | Listed in the report; their trips appear as unassigned in Blocking, as any unassigned trip does | Decided |
 
 **Per-route annual counts (G-I2c)**
 
