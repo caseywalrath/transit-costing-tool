@@ -228,7 +228,7 @@ If you say "your call": Option A.
 - no screen creates custom days;
 - every part-year schedule (summer weekday, summer Saturday, school-year weekday) would need its own day, shown on every Route's Day toggle.
 
-Option B is therefore per-route counts: a Route may replace any service day's count with its own (shuttle: Weekday 62). Costing already groups hours by Route (`routeRows`), so the change is local to the count used for each Route's rows. The 365 total is checked per Route. One rule is needed: a Block that serves a part-year and a year-round Route (today's Unattributed row) uses the larger count, with a finding.
+Option B is therefore per-route counts: a Route may replace any service day's count with its own (shuttle: Weekday 62). Costing already groups hours by Route (`routeRows`), so the change is local to the count used for each Route's rows. A Route's own counts can only be fewer days than the year, so no new limit is needed beyond the usual whole-number check. One rule is needed: a Block that serves a part-year and a year-round Route (today's Unattributed row) uses the larger count, with a finding.
 
 The old gates **G-C5a** (timepoints), **G-C5b** (hourly median bands), **G-C5c** (annual counts) and **G-C5e** (frequency windows) are kept as written in the deferred plan, with the rules above. **G-C5d** (keep exact times) is kept: Option A is assumed throughout.
 
