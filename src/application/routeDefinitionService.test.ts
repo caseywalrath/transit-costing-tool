@@ -316,6 +316,37 @@ describe('RouteDefinitionService', () => {
     expect(reloaded.nodes[0].name).toBe('A');
   });
 
+  it('renames a direction by group, keeps its ID and group through a reload and a later save, and restores the default for a blank name (Decision 0088)', async () => {
+    const { service } = createService();
+    const created = await service.createProject('Direction names');
+    const addedRoute = await service.addRoute(created.records);
+    const load = async () => (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
+    const before = (await load()).directions!.find((direction) => direction.group === 'inbound')!;
+
+    let aggregate = await service.renameDirection(await load(), 'inbound', ' Northbound ');
+    const renamed = (await load()).directions!.find((direction) => direction.group === 'inbound')!;
+    expect(renamed).toMatchObject({ id: before.id, group: 'inbound', name: 'Northbound' });
+
+    aggregate = await service.updateRoute(await load(), { description: 'Later edit' });
+    expect(aggregate.directions!.find((direction) => direction.group === 'inbound')!.name).toBe('Northbound');
+    expect((await load()).directions!.find((direction) => direction.group === 'inbound')!.name).toBe('Northbound');
+
+    await service.renameDirection(await load(), 'inbound', '   ');
+    expect((await load()).directions!.find((direction) => direction.group === 'inbound')!.name).toBe('Inbound');
+  });
+
+  it('refuses a direction name that the Route\'s other direction already uses, and writes nothing', async () => {
+    const { service } = createService();
+    const created = await service.createProject('Direction name clash');
+    const addedRoute = await service.addRoute(created.records);
+    const load = async () => (await service.loadWorkspace(created.project.id, created.records.scenario.id, addedRoute.route.id)).aggregate!;
+    await service.renameDirection(await load(), 'outbound', 'Southbound');
+    const before = (await load()).directions;
+
+    await expect(service.renameDirection(await load(), 'inbound', ' southbound ')).rejects.toThrow('Each direction needs its own name.');
+    expect((await load()).directions).toEqual(before);
+  });
+
   it('atomically rebalances a saved Pattern, runtimes, and trips after a point is inserted', async () => {
     const repository = new InMemoryRouteDefinitionRepository();
     const { service } = createService(repository);

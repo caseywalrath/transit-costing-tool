@@ -9,6 +9,25 @@ export function directionGroupName(group: DirectionGroup): string {
   return group === 'outbound' ? 'Outbound' : 'Inbound';
 }
 
+export const MAX_DIRECTION_NAME_LENGTH = 40;
+
+/** The name to store for a group: the trimmed name, or the group's default when blank. */
+export function directionDisplayName(group: DirectionGroup, name: string | undefined): string {
+  return name?.trim() || directionGroupName(group);
+}
+
+export type DirectionNameProblem = 'tooLong' | 'sameAsOther';
+
+/** Checks a proposed name against the Route's other direction. Returns undefined when it may be saved. */
+export function directionNameProblem(group: DirectionGroup, name: string, directions: readonly RouteDirection[]): DirectionNameProblem | undefined {
+  const displayName = directionDisplayName(group, name);
+  if (displayName.length > MAX_DIRECTION_NAME_LENGTH) return 'tooLong';
+  const otherGroup = oppositeDirectionGroup(group);
+  const other = directions.find((direction) => direction.group === otherGroup);
+  if (other && displayName.toLowerCase() === directionDisplayName(otherGroup, other.name).toLowerCase()) return 'sameAsOther';
+  return undefined;
+}
+
 export function oppositeDirectionGroup(group: DirectionGroup): DirectionGroup {
   return group === 'outbound' ? 'inbound' : 'outbound';
 }
@@ -107,7 +126,7 @@ export function ensureManagedDirections(directions: RouteDirection[], scenarioId
     const legacyIndex = matchedIndex >= 0 ? matchedIndex : 0;
     const matched = available.splice(legacyIndex, 1)[0];
     result.push(matched
-      ? { ...matched, scenarioId, routeId, name: directionGroupName(group), group, sequence, updatedAt: now }
+      ? { ...matched, scenarioId, routeId, name: matched.group === group && matched.name.trim() ? matched.name : directionGroupName(group), group, sequence, updatedAt: now }
       : { ...createRouteDirection(scenarioId, routeId, directionGroupName(group), sequence, now), group });
   }
   return result;

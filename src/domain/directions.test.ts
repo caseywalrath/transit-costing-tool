@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
-import { createManagedDirections, createRouteDirection, mapPatternPointsToDirection, normalizeDirections, patternDirectionGroups, validateDirection, validatePatternDirection } from './directions';
+import { createManagedDirections, createRouteDirection, directionDisplayName, directionNameProblem, ensureManagedDirections, mapPatternPointsToDirection, normalizeDirections, patternDirectionGroups, validateDirection, validatePatternDirection } from './directions';
 import type { RoutePattern } from './types';
 
 const nodes = [
@@ -66,5 +66,37 @@ describe('route directions and timetable columns', () => {
     const pattern = (id: string, directionId?: string): RoutePattern => ({ id, scenarioId: 's', routeId: 'r', name: id, ...(directionId ? { directionId } : {}), points: [], ...metadata() });
     const groups = patternDirectionGroups([pattern('out', outbound.id), pattern('in', inbound.id), pattern('legacy', ungrouped.id), pattern('none'), pattern('missing', 'gone')], [outbound, inbound, ungrouped]);
     expect([...groups]).toEqual([['out', 'outbound'], ['in', 'inbound']]);
+  });
+
+  it('keeps a stored direction name on its group and writes the default for a blank name or a legacy record without a group', () => {
+    const [outbound, inbound] = createManagedDirections('s', 'r');
+    const kept = ensureManagedDirections([outbound, { ...inbound, name: 'Northbound' }], 's', 'r');
+    expect(kept.map((direction) => ({ name: direction.name, group: direction.group }))).toEqual([
+      { name: 'Outbound', group: 'outbound' },
+      { name: 'Northbound', group: 'inbound' },
+    ]);
+    const blank = ensureManagedDirections([outbound, { ...inbound, name: '   ' }], 's', 'r');
+    expect(blank[1].name).toBe('Inbound');
+    const { group: _group, ...legacy } = createRouteDirection('s', 'r', 'Northbound', 1);
+    const migrated = ensureManagedDirections([outbound, legacy], 's', 'r');
+    expect(migrated.map((direction) => ({ name: direction.name, group: direction.group }))).toEqual([
+      { name: 'Outbound', group: 'outbound' },
+      { name: 'Inbound', group: 'inbound' },
+    ]);
+  });
+
+  it('trims a direction name and falls back to the group default when it is blank', () => {
+    expect(directionDisplayName('inbound', '  Northbound ')).toBe('Northbound');
+    expect(directionDisplayName('inbound', '   ')).toBe('Inbound');
+    expect(directionDisplayName('outbound', undefined)).toBe('Outbound');
+  });
+
+  it('reports a direction name longer than 40 characters, and a name the other direction already uses, ignoring case', () => {
+    const [outbound, inbound] = createManagedDirections('s', 'r');
+    const directions = [{ ...outbound, name: 'Northbound' }, inbound];
+    expect(directionNameProblem('inbound', 'x'.repeat(41), directions)).toBe('tooLong');
+    expect(directionNameProblem('inbound', 'x'.repeat(40), directions)).toBeUndefined();
+    expect(directionNameProblem('inbound', 'northbound', directions)).toBe('sameAsOther');
+    expect(directionNameProblem('inbound', '   ', directions)).toBeUndefined();
   });
 });

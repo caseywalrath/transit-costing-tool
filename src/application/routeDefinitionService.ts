@@ -3,7 +3,7 @@ import { metadata, newId, withUpdatedAt } from '../domain/ids';
 import { createProject, createScenarioRecords, duplicateRouteRecords, duplicateScenario, projectLastChangedAt, renameProject as renameProjectRecord, type ScenarioRecords } from '../domain/project';
 import { duplicatePattern, getSegmentMiles, normalizePattern, reversePattern, setSegmentMiles, validatePattern } from '../domain/patterns';
 import { applySegmentDistancePlan, copyCandidatePatternIds, planDistanceCopy, planDistanceFill, type SegmentDistancePlan } from '../domain/segmentDistanceMatching';
-import { createManagedDirections, ensureManagedDirections, oppositeDirectionGroup, orderDirections } from '../domain/directions';
+import { createManagedDirections, directionDisplayName, directionNameProblem, ensureManagedDirections, oppositeDirectionGroup, orderDirections, type DirectionGroup } from '../domain/directions';
 import { applyRouteStopEdits, deleteRouteStops as deleteStopsFromSet, mergeRouteStops as mergeStopsInSet, RouteStopCommandError, splitRouteStop as splitStopInSet, splitSharedRouteStops as splitSharedStopsInSet, type RouteStopCommandErrorCode, type RouteStopFields } from '../domain/routeStopManagement';
 import { classifyPatternEdit, describePatternPointChange, getPatternServiceImpact, rebalanceRuntimeProfile, rebalanceTripForPattern, reconcileRouteTimetables, resetPatternService, type DirectionOrderConflict, type PatternServiceImpact, type RouteEditClassification, type RouteEditMode } from '../domain/safeRouteEditing';
 import { normalizeServiceDayAbbreviation, sortServiceDays, validateServiceDayAbbreviations } from '../domain/serviceDays';
@@ -691,6 +691,20 @@ export class RouteDefinitionService {
 
   async updateRoute(aggregate: RouteDefinitionAggregate, patch: Partial<Route>): Promise<RouteDefinitionAggregate> {
     return this.saveAggregate({ ...aggregate, route: withUpdatedAt({ ...aggregate.route, ...patch }, this.now()) });
+  }
+
+  /** Renames one direction of a Route. The group and ID stay the same; the name is display text (Decision 0088). */
+  async renameDirection(aggregate: RouteDefinitionAggregate, group: DirectionGroup, name: string): Promise<RouteDefinitionAggregate> {
+    const directions = ensureManagedDirections(aggregate.directions ?? [], aggregate.route.scenarioId, aggregate.route.id, this.now());
+    const problem = directionNameProblem(group, name, directions);
+    if (problem === 'tooLong') throw new Error('A direction name can have at most 40 characters.');
+    if (problem === 'sameAsOther') throw new Error('Each direction needs its own name.');
+    const displayName = directionDisplayName(group, name);
+    if (aggregate.directions?.find((direction) => direction.group === group)?.name === displayName) return aggregate;
+    return this.saveAggregate({
+      ...aggregate,
+      directions: directions.map((direction) => direction.group === group ? { ...direction, name: displayName, updatedAt: this.now() } : direction),
+    });
   }
 
   async getDirectionDeletionImpact(aggregate: RouteDefinitionAggregate, directionId: string): Promise<DirectionDeletionImpact> {
@@ -1850,6 +1864,7 @@ export type RouteDefinitionApplication = Pick<RouteDefinitionService,
   | 'deleteRoute'
   | 'updateServiceDay'
   | 'updateRoute'
+  | 'renameDirection'
   | 'previewNodeChanges'
   | 'commitNodeChanges'
   | 'previewPatternChange'
