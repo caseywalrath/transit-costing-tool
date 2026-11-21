@@ -1,6 +1,6 @@
 # Decision 0088: Direction Names per Route
 
-- Status: Accepted (plan: `docs/implementation/direction-names.md`)
+- Status: Accepted and implemented (plan: `docs/implementation/direction-names.md`; closeout: `docs/implementation/direction-names-closeout.md`). Item 9 as built: the automatic blocking dialog groups its patterns by Route, so each Route's headings use that Route's own name ("Outbound (Southbound)"); the minimum layover dialog adds a name only when every Route shares it.
 - Date: 2026-11-20 (user request, Federal BRT: Inbound is Northbound)
 - Supersedes: the last consequence of Decision 0011 ("Route-level aliases for displayed group names are deferred")
 - Related: Decision 0011 (managed Outbound and Inbound groups), Decision 0059 (scope toggles), Decision 0060 (side-by-side trips), Decision 0084 (stop schedule export uses direction names), Decision 0087 (Split all shared stops)

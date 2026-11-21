@@ -32,6 +32,8 @@ A named transit service being planned. A route groups nodes, patterns, trips, an
 
 One of the two application-managed schedule groups, Outbound or Inbound. Each route has both groups, and each owns the internal timetable columns shared by its patterns. A loop may use either group.
 
+**Direction name** (Decision 0088): the text shown for a group on one route, such as Northbound for Inbound. It is entered in Route details, defaults to the group word, and never changes which group a pattern or trip belongs to. Screens that cover several routes (automatic blocking, minimum layover) show the group word with the name in brackets: "Inbound (Northbound)".
+
 ### Direction timetable column
 
 A stable ordered column in a direction-level schedule. A pattern point maps to a column by identifier, allowing repeated visits to the same node to remain distinct.

@@ -46,7 +46,7 @@ The product is a planning tool. It is not intended to dispatch service, manage o
 | Trip authority | Saved trips and scheduled points; generation requests are transient |
 | Runtime changes | Existing trips remain fixed until explicit recalculation |
 | Timetable alternatives | Scenario-wide Trip profiles; Runtime profiles remain independent |
-| Direction view | Application-managed Outbound and Inbound groups; patterns may carry a separate descriptive Label |
+| Direction view | Application-managed Outbound and Inbound groups, each with a per-route display name (Decision 0088); patterns may carry a separate descriptive Label |
 | Blocking | Manual assignment first; automated suggestions later |
 | Layover | Derived from connected trips and deadhead activities |
 | Deadhead | Manually entered first |
@@ -195,7 +195,7 @@ The interface keeps Project and Scenario selectors in a permanent global row wit
 
 A node represents a scheduling timepoint, terminal, or other location required for planning. Passenger stops between timepoints are Route stops (see "Route Stops"), never Nodes. A Node has no stop ID: a timepoint's public stop ID belongs to a pattern point (Decision 0080), because two directions can serve one Node at different stops.
 
-A route contains two managed direction groups: Outbound and Inbound. Each group contains stable internal timetable columns. Every route pattern belongs to one group, and each pattern point maps to one internal column. A pattern may omit columns. Column identifiers distinguish repeated visits to the same node.
+A route contains two managed direction groups: Outbound and Inbound. Each group contains stable internal timetable columns. The planner may give each group a display name per route, such as Southbound and Northbound (Decision 0088). The name is stored in `RouteDirection.name` and is display text only; commands, validation, blocking, planned frequencies and backup matching use the group or the record ID. A blank name restores the default. Every route pattern belongs to one group, and each pattern point maps to one internal column. A pattern may omit columns. Column identifiers distinguish repeated visits to the same node.
 
 Direction and pattern sequences are normalized deterministically at the domain/application boundary. The structural implementation provisions both groups when a route is created and maps points by node occurrence; a loop therefore receives distinct columns for each visit. A pattern's descriptive Label is independent of group ownership. Legacy fixtures may omit direction data, but a usable Phase 2R route is validated against its direction and column references.
 
