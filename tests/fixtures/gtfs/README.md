@@ -12,6 +12,12 @@ Git keeps these files byte for byte (`.gitattributes`: `-text`), because the byt
 | `edge-no-direction/` | No `direction_id` column, no `timepoint` column, no shapes, no `calendar_dates.txt`, a blank route long name. |
 | `edge-loop-variants/` | A loop that returns to its first stop; two stop sequences with the same timepoints (merged under G-I3); a short-turn trip with different timepoints; a timepoint with dwell (arrival ≠ departure); `frequencies.txt` with `exact_times=0`; no shapes; blank `shape_id`. |
 | `edge-multi-route-blocks/` | One block that serves two routes, one block per route, a stop shared by two routes. |
+| `cal-school-days/` | A school-day service on 10 of 25 weekdays, the less common set, with the range's middle on a school date; no weekend service. Tests that the default weekday is a non-school date. `EXPECTED.md` has the hand-worked answers (day groups, defaults, annual counts). |
+| `cal-friday-extras/` | An extra service on Fridays only, with the range's middle on a Friday. Tests the Monday–Friday typical sets that differ and the default weekday. `EXPECTED.md`. |
+| `cal-holiday-saturday/` | Two routes; a Monday holiday that runs Saturday service on every route (`WKDY` removed, `SAT` added). `EXPECTED.md`. |
+| `cal-holiday-mixed/` | Two routes; a Monday holiday on which one route runs its Saturday trips and the other its Sunday trips, under a new service. Scenario class is unique. `EXPECTED.md`. |
+| `cal-holiday-unique/` | Three unique holiday dates: two share the same trips, one has different trips (Holiday and Holiday 2). `EXPECTED.md`. |
+| `cal-part-year/` | A year-round route and a route that runs only in July, in a range covering June to August; the part-year route is flagged and gets its own counts. `EXPECTED.md`. |
 | `zips/` | The same feeds as ZIP files: `mini-deflate.zip`, `mini-stored.zip` (no compression), `mini-in-folder-deflate.zip` (every file inside one folder `mini-feed/`) and `edge-no-direction-deflate.zip`. Made with Python's `zipfile` (fixed date 2026-01-01); remake them only when a folder above changes. |
 
 ## Expected answers for the edge feeds
