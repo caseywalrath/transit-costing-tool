@@ -28,6 +28,19 @@ export function directionNameProblem(group: DirectionGroup, name: string, direct
   return undefined;
 }
 
+/** The group word, with the planner's name in brackets when one other than the default is given: "Outbound (Southbound)". For screens that cover a group across Routes (Decision 0088 item 9). */
+export function directionGroupLabel(group: DirectionGroup, name?: string): string {
+  const shown = directionDisplayName(group, name);
+  return shown === directionGroupName(group) ? shown : `${directionGroupName(group)} (${shown})`;
+}
+
+/** The name every given record of the group uses, or undefined when they differ, none exists, or they use the default. */
+export function sharedDirectionName(group: DirectionGroup, directions: readonly RouteDirection[]): string | undefined {
+  const names = new Set(directions.filter((direction) => direction.group === group).map((direction) => directionDisplayName(group, direction.name)));
+  const [only] = names;
+  return names.size === 1 && only !== directionGroupName(group) ? only : undefined;
+}
+
 export function oppositeDirectionGroup(group: DirectionGroup): DirectionGroup {
   return group === 'outbound' ? 'inbound' : 'outbound';
 }

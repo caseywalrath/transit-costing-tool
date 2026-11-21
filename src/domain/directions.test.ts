@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
-import { createManagedDirections, createRouteDirection, directionDisplayName, directionNameProblem, ensureManagedDirections, mapPatternPointsToDirection, normalizeDirections, patternDirectionGroups, validateDirection, validatePatternDirection } from './directions';
+import { createManagedDirections, createRouteDirection, directionDisplayName, directionGroupLabel, directionNameProblem, sharedDirectionName, ensureManagedDirections, mapPatternPointsToDirection, normalizeDirections, patternDirectionGroups, validateDirection, validatePatternDirection } from './directions';
 import type { RoutePattern } from './types';
 
 const nodes = [
@@ -98,5 +98,18 @@ describe('route directions and timetable columns', () => {
     expect(directionNameProblem('inbound', 'x'.repeat(40), directions)).toBeUndefined();
     expect(directionNameProblem('inbound', 'northbound', directions)).toBe('sameAsOther');
     expect(directionNameProblem('inbound', '   ', directions)).toBeUndefined();
+  });
+
+  it('labels a group with a planner name in brackets, and finds a name shared by every route', () => {
+    expect(directionGroupLabel('outbound')).toBe('Outbound');
+    expect(directionGroupLabel('outbound', 'Outbound')).toBe('Outbound');
+    expect(directionGroupLabel('outbound', 'Southbound')).toBe('Outbound (Southbound)');
+    const a = createManagedDirections('s', 'a', '2026-11-21T00:00:00.000Z');
+    const b = createManagedDirections('s', 'b', '2026-11-21T00:00:00.000Z');
+    const named = (directions: typeof a, name: string) => directions.map((direction) => direction.group === 'outbound' ? { ...direction, name } : direction);
+    expect(sharedDirectionName('outbound', [...a, ...b])).toBeUndefined();
+    expect(sharedDirectionName('outbound', [...named(a, 'Southbound'), ...named(b, ' Southbound ')])).toBe('Southbound');
+    expect(sharedDirectionName('outbound', [...named(a, 'Southbound'), ...b])).toBeUndefined();
+    expect(sharedDirectionName('outbound', [])).toBeUndefined();
   });
 });

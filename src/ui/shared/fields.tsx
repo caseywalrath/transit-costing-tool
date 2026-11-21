@@ -55,6 +55,25 @@ export function ServiceDayAbbreviationInput({ dayName, saved, placeholder, onCom
   return <><input aria-label={`Abbreviation for ${dayName}`} aria-invalid={error ? true : undefined} aria-describedby={error ? errorId : undefined} maxLength={3} placeholder={placeholder} value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { cancelled.current = true; setDraft(saved ?? ''); setError(''); event.currentTarget.blur(); } }} />{error && <small id={errorId} className="field-error" role="alert">{error}{saved ? ` Saved abbreviation remains ${saved}.` : ' The default abbreviation remains.'}</small>}</>;
 }
 
+/**
+ * The name field of one direction of a Route (Decision 0088). It commits on blur and Enter; Escape restores the saved name. A blank field
+ * restores the default, shown as the placeholder. A refused name shows its reason and the field returns to the saved name.
+ */
+export function DirectionNameInput({ label, saved, placeholder, listId, onCommit }: { label: string; saved: string; placeholder: string; listId: string; onCommit: (value: string) => Promise<string | undefined> }) {
+  const shown = saved === placeholder ? '' : saved;
+  const [draft, setDraft] = useState(shown);
+  const [error, setError] = useState('');
+  const cancelled = useRef(false);
+  const errorId = useId();
+  useEffect(() => setDraft(shown), [shown]);
+  function commit() {
+    if (cancelled.current) { cancelled.current = false; return; }
+    if (draft.trim() === shown) { setDraft(shown); setError(''); return; }
+    void onCommit(draft).then((refusal) => { setError(refusal ?? ''); if (refusal) setDraft(shown); });
+  }
+  return <><input aria-label={label} aria-invalid={error ? true : undefined} aria-describedby={error ? errorId : undefined} list={listId} maxLength={40} placeholder={placeholder} title="Shown on the Trips tab, in tables and in exports. The direction's role in schedules and blocking does not change." value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { cancelled.current = true; setDraft(shown); setError(''); event.currentTarget.blur(); } }} />{error && <small id={errorId} className="field-error" role="alert">{error} Saved name remains {saved}.</small>}</>;
+}
+
 /** The name field of a Service day. A refused name shows its reason beside the field and the saved name stays. */
 export function ServiceDayNameInput({ name, onCommit }: { name: string; onCommit: (name: string) => Promise<string | undefined> }) {
   const [error, setError] = useState('');

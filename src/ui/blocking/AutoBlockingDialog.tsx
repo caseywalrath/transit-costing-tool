@@ -3,7 +3,8 @@ import type { AutoBlockingPreview, AutoBlockingSetup, BlockingCommands, Blocking
 import { nodeShortName } from '../../application/shortNames';
 import { describeBreakRule, type AutoBlockingMeasurement, type AutoBlockingRules } from '../../domain/autoBlocking';
 import type { MinimumLayoverRules } from '../../domain/blocking';
-import type { BlockingScenario, Node, RoutePattern, ValidationFinding } from '../../domain/types';
+import type { BlockingScenario, Node, RouteDirection, RoutePattern, ValidationFinding } from '../../domain/types';
+import { directionGroupLabel, type DirectionGroup } from '../../domain/directions';
 import { ModalDialog } from '../ModalDialog';
 import { userFacingError } from '../errorMessages';
 import { InlineNote } from '../shared/surfaces';
@@ -18,6 +19,8 @@ type Props = {
   existing?: { scenario: BlockingScenario; rules: AutoBlockingRules; editedBlockCount: number; blockCountChanged: boolean };
   /** The workspace's pattern pill, so the dialog shows Patterns as the Blocking tables do. */
   renderPatternPill: (pattern: RoutePattern) => ReactNode;
+  /** The Route's own direction records, so a group heading can show the planner's name (Decision 0088). */
+  directions?: readonly RouteDirection[];
   onCreated: (scenario: BlockingScenario) => Promise<void>;
   onClose: () => void;
   /**
@@ -127,7 +130,7 @@ const FINDING_FIELD_TEXT: Record<string, string> = {
 };
 
 /** Decision 0055: build a new Blocking Scenario from rules, or rebuild the selected automatically built one in place. */
-export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId, tripProfileName, minimumLayover, existing, renderPatternPill, onCreated, onClose, fill }: Props) {
+export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId, tripProfileName, minimumLayover, existing, renderPatternPill, directions = [], onCreated, onClose, fill }: Props) {
   const [setup, setSetup] = useState<AutoBlockingSetup>();
   const [form, setForm] = useState<Form>();
   const [name, setName] = useState('');
@@ -245,7 +248,11 @@ export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId,
     finally { setCreating(false); }
   }
 
-  const groupTitles: Array<[string | undefined, string]> = [['outbound', 'Outbound'], ['inbound', 'Inbound'], [undefined, 'No direction']];
+  // Each Route's headings carry that Route's own direction names: "Outbound (Southbound)".
+  const groupTitles = (routeId: string): Array<[DirectionGroup | undefined, string]> => [
+    ...(['outbound', 'inbound'] as const).map((group): [DirectionGroup, string] => [group, directionGroupLabel(group, directions.find((direction) => direction.routeId === routeId && direction.group === group)?.name)]),
+    [undefined, 'No direction'],
+  ];
   return <DialogShell onClose={closeKeepingDraft} busy={creating} onSubmit={() => void create()} label={fill ? 'Auto-block unassigned trips' : undefined}>
     <h2>{fill ? 'Auto-block unassigned trips' : 'Auto-blocking'}</h2>
     {fill ? <p className="auto-blocking-intro">Adds new blocks to {fill.blockingScenario.name} from the {plural(unassignedTotal, 'trip')} in trip profile {tripProfileName} that no block holds, on every route. Existing blocks are not changed. Each departure takes the vehicle that became ready most recently after its minimum layover; if none is ready, a new block starts. Peak vehicles count the existing blocks too.</p>
@@ -270,7 +277,7 @@ export function AutoBlockingDialog({ blockingService, scenarioId, tripProfileId,
           <div className="auto-blocking-section-body">
             {routeIds.map((routeId) => <div key={routeId} className="auto-blocking-route">
               {routeIds.length > 1 && <h3 className="auto-blocking-route-title">{routes.get(routeId)?.name}</h3>}
-              {groupTitles.map(([group, title]) => {
+              {groupTitles(routeId).map(([group, title]) => {
                 const rows = form.patterns.filter((row) => patterns.get(row.patternId)?.routeId === routeId && setup.patternGroups[row.patternId] === group);
                 if (!rows.length) return null;
                 return <div key={title} className="auto-blocking-group">
