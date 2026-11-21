@@ -471,4 +471,5 @@ V-I test routes: **30 South Federal Blvd, 0 Broadway, 0L South Broadway Limited*
 | 0L | 99 / — / — | 1 / 1 | 3 / 3 | 8 / 8 |
 
 - Blocks: 21 weekday, 16 Saturday and 16 Sunday blocks, all within a single route, so the import keeps every one (G-I4).
-- What they do not exercise: pattern grouping (G-I3, one sequence each), left-out shared blocks (G-I4), and a route with no Saturday or Sunday service only partly (0L has weekday service only, which tests empty service days). The I0 edge fixtures cover the rest.
+- What they exercise beyond the basics: 0L has weekday service only, which tests a Route with empty service days.
+- What they do not exercise: pattern grouping (G-I3, one sequence each) and left-out shared blocks (G-I4). The I0 edge fixtures cover those.
