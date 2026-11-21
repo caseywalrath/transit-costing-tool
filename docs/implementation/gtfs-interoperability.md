@@ -459,3 +459,16 @@ The user named the RTD feed (`https://www.rtd-denver.com/files/gtfs/google_trans
 - **Blocks:** `block_id` on every trip; 1,647 blocks, 313 of them serving more than one route. Selective imports will leave many blocks out under G-I4 and list them.
 - **No `frequencies.txt`.** `shape_dist_traveled` is present and ignored (D5).
 - Candidate test routes (weekday trips): 0 Broadway (149), 0L South Broadway Limited (99), 31 Federal Blvd (191), 15 East Colfax (212), 15L East Colfax Limited (202).
+
+### 2026-11-21 — Test routes chosen (user)
+
+V-I test routes: **30 South Federal Blvd, 0 Broadway, 0L South Broadway Limited** (RTD feed above).
+
+| Route | Weekday / Saturday / Sunday trips | Stop sequences per direction (weekday) | Timepoints per direction | Stops per direction |
+|---|---|---|---|---|
+| 30 | 128 / 118 / 116 | 1 / 1 | 9 / 10 | 46 / 51 |
+| 0 | 149 / 149 / 126 | 1 / 1 | 7 / 8 | 36 / 36 |
+| 0L | 99 / — / — | 1 / 1 | 3 / 3 | 8 / 8 |
+
+- Blocks: 21 weekday, 16 Saturday and 16 Sunday blocks, all within a single route, so the import keeps every one (G-I4).
+- What they do not exercise: pattern grouping (G-I3, one sequence each), left-out shared blocks (G-I4), and a route with no Saturday or Sunday service only partly (0L has weekday service only, which tests empty service days). The I0 edge fixtures cover the rest.
