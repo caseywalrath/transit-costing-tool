@@ -511,3 +511,25 @@ Accepted: step 2 weekday trip counts come from calendars and trips without `stop
 - Planned frequencies stay disabled ("Not available yet"): no seeding service exists. Backlog.
 - After a level A or B import with blocks, the "From feed" Blocking scenario is remembered for the new Scenario, so Costing opens on it.
 
+
+## 23. Card I9b — Per-route counts on screen, Costing markers, Add service day
+
+**Model:** Sonnet. **Rules:** 0089 items 21, 41, 43; plan table U1–U3.
+
+**Files:** `src/ui/route/RouteWorkspace.tsx` (Annual service days panel only) and a new `src/ui/route/AnnualServiceDaysPanel.tsx` if the panel is moved out; `src/ui/costing/**` (marker, messages, Cost summary names); `src/domain/costBreakdownText.ts` (day rows); `src/ui/errorMessages.ts` (the three costing codes); the existing application service for Routes and service days (one method each to save a Route's own counts, add a custom day and delete one), `src/ui/styles/route.css` and costing CSS; tests beside each. **Do not touch** `src/ui/gtfs/**`, `src/domain/gtfs/**`, `src/domain/costing.ts` rules, or blocking files.
+
+1. **U1 switch.** The panel gets a switch "This route uses its own counts". When on, a second column "This route" beside the Scenario's column: a blank cell shows the Scenario value faintly (Decision 0077 inherited style) and means "use the Scenario's"; a typed whole number 0 or more is stored in `ownAnnualServiceDays.countsByServiceDayId`. Total line for the Route's column, at most 365. Switching off keeps the numbers (stored with `enabled: false`). Saved through the existing route save path, with undo like other Route edits.
+2. **U2 marker.** In Costing's route table, a Route on its own counts gets a small marker ("Own counts") with a tooltip listing its counts. Messages for `costing.routeCountsInUse`, `costing.unattributedUsesLargestCount`, `costing.routeAnnualServiceDaysInvalid` in plain words. Cost summary names the Routes on their own counts. `costBreakdownText.ts` day rows show the count actually used for that Route.
+3. **U3 service days.** "Add service day…" below the table: a small dialog for name and abbreviation, count 0; creates a custom day for the Scenario. Each custom day's row gets a menu with Delete; Delete uses the existing deletion review (trips, blocks, plans that use the day) and on commit calls `removeServiceDayFromFeedFields` so no Route keeps a count for it. The three standard days cannot be deleted. With five or more days, the Day toggles elsewhere fall back to a menu (find where they render; if this needs a change outside these files, report and stop at that point).
+4. **Tests:** unit tests for any new pure helper; a browser spec `tests/ui/route-own-counts.spec.ts`: switch on, type Weekday 62, Costing shows the marker and the Route's annual hours use 62; add "Holiday 2", delete it through the review; undo restores.
+
+**Run:** the I9b row of section 4, plus `tests/ui/costing*.spec.ts`.
+
+## 24. Card I10 — Whole-feed scale
+
+**Model:** Haiku, effort `high`; Opus judges. **Rules:** 0089 item 44; plan G-I6, M1–M3.
+
+1. **Measure** with the full RTD feed in the scratchpad (never committed): parse and summary time, translation time for all 130 routes, `scenarioFromFeed` time and backup size, then in the browser: import the backup, open the Route switcher, Costing, Trips for a large Route, Blocking. Record times in a table.
+2. **Fix** only what is slow in `src/domain/gtfs/**` and `src/application/gtfs/**` (for example `serviceIdsActiveOn` called per trip; cache per date). UI changes M1–M3 are proposed with numbers, not built.
+3. **Timing check:** a unit test that builds a synthetic feed of 150 routes × 60 trips × 30 stops and asserts translation finishes under a generous limit.
+4. **Run:** `capacity-read-paths.spec.ts`, `recalculation-capacity.spec.ts`, `pnpm typecheck`, `pnpm test`.
