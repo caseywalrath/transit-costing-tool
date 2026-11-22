@@ -188,6 +188,11 @@ export const BLOCKING_COVERAGE: Coverage = {
   } },
 };
 
+/** Decision 0089 item 4. Adding Routes from a feed to a Scenario; Undo removes the added Routes and what they own. */
+export const GTFS_IMPORT_COVERAGE: Coverage = {
+  addRoutes: { kind: 'importGtfsRoutes', resolve: async ([scenarioId]) => ({ scope: 'scenario', scenarioId: scenarioId as string }) },
+};
+
 export const PLANNED_FREQUENCY_COVERAGE: Coverage = {
   clearPlan: { kind: 'clearPlan', resolve: async ([routeId, serviceDayId], lookup) => {
     const route = await lookup.getRoute(routeId as string);

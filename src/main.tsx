@@ -18,7 +18,8 @@ import { LocalDataProtectionService, SaveStatusPublisher } from './application/s
 import { LocalStorageDataProtectionStore } from './persistence/localDataProtectionStore';
 import { DexieRestorePoints } from './persistence/restorePointPersistence';
 import { RestorePointService } from './application/restorePointService';
-import { BLOCKING_COVERAGE, PLANNED_FREQUENCY_COVERAGE, ROUTE_DEFINITION_COVERAGE, TRIP_GENERATION_COVERAGE, withRestorePoints, type RestorePointLookup } from './application/restorePointCoverage';
+import { BLOCKING_COVERAGE, GTFS_IMPORT_COVERAGE, PLANNED_FREQUENCY_COVERAGE, ROUTE_DEFINITION_COVERAGE, TRIP_GENERATION_COVERAGE, withRestorePoints, type RestorePointLookup } from './application/restorePointCoverage';
+import { GtfsImportService } from './application/gtfs/gtfsImportService';
 
 async function start() {
   // Only one tab at a time may write (Decision 0037). Decide whether this is that tab before the application starts,
@@ -82,6 +83,9 @@ async function start() {
   }), repository, undefined, saveStatus);
 
   const plannedFrequencies = withRestorePoints(new PlannedFrequencyService(repository, undefined, saveStatus), PLANNED_FREQUENCY_COVERAGE, restorePoints, restorePoints, saveStatus, restoreLookup);
+  // The GTFS import service has no screen yet. Its covered command is wired here, as the Route commands are, so that the restore point for
+  // an import exists once the import screen calls it.
+  const gtfsImport = withRestorePoints(new GtfsImportService(repository, routeDefinitionCore, saveStatus), GTFS_IMPORT_COVERAGE, restorePoints, restorePoints, saveStatus, restoreLookup);
   const restoreService = new RestorePointService(restorePoints, restorePoints, {
     getScenarioRecords: (id) => repository.getScenarioRecords(id),
     saveScenarioRecords: (records) => repository.saveScenarioRecords(records),

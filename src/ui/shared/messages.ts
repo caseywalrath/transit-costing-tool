@@ -235,6 +235,7 @@ export function restorePointLabel(point: Pick<RestorePointSummary, 'kind' | 'nam
     case 'splitRouteStops': return `Split stops by direction on route ${names.route ?? ''}`.trim();
     case 'deleteRouteStops': return `Deleted stops of route ${names.route ?? ''}`.trim();
     case 'mergeRouteStops': return `Merged stops of route ${names.route ?? ''}`.trim();
+    case 'importGtfsRoutes': return 'Import routes from GTFS feed';
     case 'deletePattern': return `Deleted pattern ${names.pattern ?? ''}`.trim();
     case 'resetPatternService': return `Removed the service of pattern ${names.pattern ?? ''}`.trim();
     case 'rebalancePattern': return `Saved pattern ${names.pattern ?? ''}`.trim();

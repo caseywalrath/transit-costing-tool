@@ -1,7 +1,7 @@
 // Builds the records of a feed import into a Scenario (Decision 0089 items 2, 3, 13, 19 to 21, 39 and 41): the standard service days
 // with their custom holiday days, the annual counts, the Routes from translateFeed, the optional per-Route own counts, and one import
-// note. projectFromFeed wraps the same records in a new Project. Pure: it reads the parsed feed and returns records; nothing is
-// written here.
+// note. projectFromFeed wraps the same records in a new Project. planFeedDays is the date plan on its own, for an import into a Scenario
+// that already has its service days (level C). Pure: it reads the parsed feed and returns records; nothing is written here.
 
 import { createBlockingScenario } from '../blocking';
 import { metadata, newId } from '../ids';
@@ -46,6 +46,28 @@ export interface ScenarioFromFeed {
   records: ScenarioRecords;
   translation: FeedTranslation;
   counts: AnnualCountProposal;
+}
+
+/** The planner's choices that decide the dates and counts. */
+export type FeedDayOptions = Pick<ScenarioFromFeedOptions, 'tables' | 'routeIds' | 'dates' | 'holidayClasses' | 'keepExtraHolidayDays'>;
+
+/** A service day of the feed and the date it takes. `dateByRouteId` gives a part-year Route its own date (Decision 0089 item 17). */
+export interface FeedDayDate {
+  key: ServiceDayKey;
+  date: GtfsDate;
+  dateByRouteId?: Record<string, GtfsDate>;
+}
+
+export interface FeedDayPlan {
+  /** The ordinary days, and each holiday day that has a proposed date. A day without a date gets no trips. */
+  days: FeedDayDate[];
+  /** The annual counts, keyed by feed service day. */
+  counts: AnnualCountProposal;
+  /** The feed service day a date counts under. */
+  classOfDate: (date: GtfsDate) => ServiceDayKey;
+  partYear: ReturnType<typeof partYearRoutes>;
+  /** Every holiday day the feed proposes, including custom days the planner may keep or drop. */
+  holidayDays: ReturnType<typeof proposeHolidayDays>;
 }
 
 const ORDINARY_DAYS = ['weekday', 'saturday', 'sunday'] as const;
@@ -113,31 +135,21 @@ function applyHolidayClasses(
   return kept;
 }
 
-/** The date a service day uses: an ordinary day's chosen date, or a holiday day's proposed date. */
-function dateOfKey(key: string, chosen: ChosenDates, proposed: Array<{ key: ServiceDayKey; date: GtfsDate }>): GtfsDate | undefined {
-  if (key === 'weekday' || key === 'saturday' || key === 'sunday') return chosen[key];
-  return proposed.find((day) => day.key === key)?.date;
-}
-
-export function scenarioFromFeed(projectId: EntityId, scenarioName: string, options: ScenarioFromFeedOptions): ScenarioFromFeed {
-  const { tables, now } = options;
+/** The dates of one feed: the ordinary days' chosen dates, the holiday days' proposed dates, and each part-year Route's own dates. */
+export function planFeedDays(options: FeedDayOptions): FeedDayPlan {
+  const { tables } = options;
   const routeIds = new Set(options.routeIds);
   requireRange(tables, routeIds);
-  const publisher = agencyName(tables, options.fileName);
-
-  const base = createScenarioRecords(projectId, scenarioName, now);
-  const tripProfile = base.tripProfiles?.[0];
-  if (!tripProfile) throw new Error('A new Scenario has no Trip profile to receive the trips.');
 
   const chosen = chosenDates(tables, routeIds, options.dates);
   const partYear = partYearRoutes(tables, routeIds, chosen);
   const candidates = applyHolidayClasses(holidayCandidates(tables, routeIds, chosen), options.holidayClasses);
   const keepExtra = options.keepExtraHolidayDays ?? true;
-  const proposed = proposeHolidayDays(tables, routeIds, candidates);
+  const holidayDays = proposeHolidayDays(tables, routeIds, candidates);
 
   // Without extra holiday days, every unique date counts under Holiday (with the first date's trips).
   const holidayKeyByDate = new Map<GtfsDate, ServiceDayKey>();
-  for (const day of proposed) for (const date of day.dates) holidayKeyByDate.set(date, keepExtra ? day.key : 'holiday');
+  for (const day of holidayDays) for (const date of day.dates) holidayKeyByDate.set(date, keepExtra ? day.key : 'holiday');
   const candidateByDate = new Map(candidates.map((candidate) => [candidate.date, candidate]));
   const classOfDate = (date: GtfsDate): ServiceDayKey => {
     const candidate = candidateByDate.get(date);
@@ -158,10 +170,65 @@ export function scenarioFromFeed(projectId: EntityId, scenarioName: string, opti
   };
   const counts = proposeAnnualCounts(tables, routeIds, classOfDate);
 
+  const partYearDatesOf = (key: string): Record<string, GtfsDate> | undefined => {
+    const byRoute: Record<string, GtfsDate> = {};
+    for (const flag of partYear) {
+      if (flag.serviceDay === key && flag.suggestedDate !== undefined) byRoute[flag.routeId] = flag.suggestedDate;
+    }
+    return Object.keys(byRoute).length > 0 ? byRoute : undefined;
+  };
+  const ordinary: FeedDayDate[] = [];
+  for (const key of ORDINARY_DAYS) {
+    const date = chosen[key];
+    if (date === undefined) continue;
+    const byRoute = partYearDatesOf(key);
+    ordinary.push({ key, date, ...(byRoute ? { dateByRouteId: byRoute } : {}) });
+  }
+  const holiday: FeedDayDate[] = holidayDays.map((day) => {
+    const byRoute = partYearDatesOf(day.key);
+    return { key: day.key, date: day.date, ...(byRoute ? { dateByRouteId: byRoute } : {}) };
+  });
+
+  return { days: [...ordinary, ...holiday], counts, classOfDate, partYear, holidayDays };
+}
+
+/**
+ * The import note one import writes into a Scenario (Decision 0089 item 39): the publisher (the agency), the feed version, the file name, the
+ * date used for each service day, the number of Routes, and the time of the import.
+ */
+export function feedImportNote(
+  tables: GtfsTables,
+  fileName: string,
+  importedAt: string,
+  datesByServiceDayId: Record<EntityId, string>,
+  routeCount: number,
+): ScenarioImportNote {
+  const feedVersion = feedVersionOf(tables);
+  return {
+    publisher: agencyName(tables, fileName),
+    ...(feedVersion !== undefined ? { feedVersion } : {}),
+    fileName,
+    datesByServiceDayId,
+    routeCount,
+    importedAt,
+  };
+}
+
+export function scenarioFromFeed(projectId: EntityId, scenarioName: string, options: ScenarioFromFeedOptions): ScenarioFromFeed {
+  const { tables, now } = options;
+  const routeIds = new Set(options.routeIds);
+
+  const base = createScenarioRecords(projectId, scenarioName, now);
+  const tripProfile = base.tripProfiles?.[0];
+  if (!tripProfile) throw new Error('A new Scenario has no Trip profile to receive the trips.');
+
+  const plan = planFeedDays(options);
+  const keepExtra = options.keepExtraHolidayDays ?? true;
+
   // Service days keyed by the same keys the counts and the translation use.
   const keyed: Array<{ key: string; day: ServiceDayDefinition }> = base.serviceDays.map((day) => ({ key: day.kind, day }));
   if (keepExtra) {
-    for (const proposal of proposed) {
+    for (const proposal of plan.holidayDays) {
       if (proposal.key === 'holiday') continue;
       const day: ServiceDayDefinition = {
         id: newId(),
@@ -177,7 +244,7 @@ export function scenarioFromFeed(projectId: EntityId, scenarioName: string, opti
   }
   const serviceDays: ServiceDayDefinition[] = keyed.map(({ key, day }) => ({
     ...day,
-    annualServiceDays: counts.countsByKey[key] ?? 0,
+    annualServiceDays: plan.counts.countsByKey[key] ?? 0,
   }));
   const dayIdByKey = new Map(keyed.map(({ key, day }) => [key, day.id]));
   const idOf = (key: string): EntityId => {
@@ -185,30 +252,26 @@ export function scenarioFromFeed(projectId: EntityId, scenarioName: string, opti
     if (!id) throw new Error(`No service day holds the count for ${key}.`);
     return id;
   };
-  for (const [key, count] of Object.entries(counts.countsByKey)) {
+  for (const [key, count] of Object.entries(plan.counts.countsByKey)) {
     if (count > 0) idOf(key);
   }
 
   // A service day with no date gets no trips; its count still stands.
   const translateDays: TranslateServiceDay[] = [];
   for (const { key, day } of keyed) {
-    const date = dateOfKey(key, chosen, proposed);
-    if (!date) continue;
-    const byRoute: Record<string, GtfsDate> = {};
-    for (const flag of partYear) {
-      if (flag.serviceDay === key && flag.suggestedDate !== undefined) byRoute[flag.routeId] = flag.suggestedDate;
-    }
+    const dated = plan.days.find((candidate) => candidate.key === key);
+    if (!dated) continue;
     translateDays.push({
       key,
       serviceDayId: day.id,
       name: day.name,
-      date,
-      ...(Object.keys(byRoute).length > 0 ? { dateByRouteId: byRoute } : {}),
+      date: dated.date,
+      ...(dated.dateByRouteId ? { dateByRouteId: dated.dateByRouteId } : {}),
     });
   }
 
   // Part-year Routes get their own counts. They are switched on only when the planner lists them.
-  const flaggedRouteIds = [...new Set(partYear.map((flag) => flag.routeId))];
+  const flaggedRouteIds = [...new Set(plan.partYear.map((flag) => flag.routeId))];
   const switchedOn = options.routeOwnCountsOn ?? [];
   for (const routeId of switchedOn) {
     if (!flaggedRouteIds.includes(routeId)) {
@@ -217,7 +280,7 @@ export function scenarioFromFeed(projectId: EntityId, scenarioName: string, opti
   }
   const ownByFeedRouteId = new Map<string, RouteOwnAnnualServiceDays>();
   for (const routeId of flaggedRouteIds) {
-    const perKey = proposeRouteOwnCounts(tables, routeId, classOfDate, counts.rangeDates);
+    const perKey = proposeRouteOwnCounts(tables, routeId, plan.classOfDate, plan.counts.rangeDates);
     const countsByServiceDayId: Record<EntityId, number> = {};
     for (const [key, count] of Object.entries(perKey)) countsByServiceDayId[idOf(key)] = count;
     ownByFeedRouteId.set(routeId, { enabled: switchedOn.includes(routeId), countsByServiceDayId });
@@ -255,15 +318,7 @@ export function scenarioFromFeed(projectId: EntityId, scenarioName: string, opti
   });
   const datesByServiceDayId: Record<EntityId, string> = {};
   for (const day of translateDays) datesByServiceDayId[day.serviceDayId] = isoDate(day.date);
-  const feedVersion = feedVersionOf(tables);
-  const note: ScenarioImportNote = {
-    publisher,
-    ...(feedVersion !== undefined ? { feedVersion } : {}),
-    fileName: options.fileName,
-    datesByServiceDayId,
-    routeCount: translation.routes.length,
-    importedAt: now,
-  };
+  const note = feedImportNote(tables, options.fileName, now, datesByServiceDayId, translation.routes.length);
 
   const stopSets = translation.routes.flatMap((imported) => (imported.stopSet ? [imported.stopSet] : []));
   const records: ScenarioRecords = {
@@ -281,7 +336,7 @@ export function scenarioFromFeed(projectId: EntityId, scenarioName: string, opti
     blocks: translation.blocks,
     ...(stopSets.length > 0 ? { routeStopSets: stopSets } : {}),
   };
-  return { records, translation, counts };
+  return { records, translation, counts: plan.counts };
 }
 
 /** Level A (Decision 0089 item 2): a new Project named "{agency} ({feed version or first date})" holding one Scenario "Existing service". */

@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { findFeedFiles, readFeedTable } from './feedFiles';
+import { storedZip } from '../../testSupport/storedZip';
+import { findFeedFiles, readFeedHeader, readFeedTable } from './feedFiles';
 import { readZipEntries, type ZipEntry } from './zipReader';
 
 const FIXTURES = fileURLToPath(new URL('../../../tests/fixtures/gtfs/', import.meta.url));
@@ -35,6 +36,37 @@ describe('findFeedFiles', () => {
 
   it('maps nothing when the feed files sit in two folders and none at the root', () => {
     expect(findFeedFiles(listing('a/stops.txt', 'b/trips.txt')).size).toBe(0);
+  });
+});
+
+/** The header of the one file in a stored ZIP, read through the same entry the feed import uses. */
+async function headerOf(text: string): Promise<string[]> {
+  const zip = storedZip({ 'table.txt': text });
+  return readFeedHeader(zip, entryNamed(readZipEntries(zip), 'table.txt'));
+}
+
+describe('readFeedHeader', () => {
+  it('reads the names of a table that has data rows, in file order', async () => {
+    const zip = load('zips/mini-deflate.zip');
+    const stopTimes = entryNamed(readZipEntries(zip), 'stop_times.txt');
+    expect(await readFeedHeader(zip, stopTimes)).toEqual(['trip_id', 'arrival_time', 'departure_time', 'stop_id', 'stop_sequence', 'timepoint']);
+  });
+
+  it('reads the names of a table with a header and no data rows', async () => {
+    expect(await headerOf('route_id,service_id,trip_id\n')).toEqual(['route_id', 'service_id', 'trip_id']);
+  });
+
+  it('reads a header that ends without a line break, and a table with a blank line after its header', async () => {
+    expect(await headerOf('route_id,service_id')).toEqual(['route_id', 'service_id']);
+    expect(await headerOf('route_id,service_id\r\n\r\n')).toEqual(['route_id', 'service_id']);
+  });
+
+  it('removes the byte-order mark, trims names, and keeps a quoted name with a comma', async () => {
+    expect(await headerOf('﻿ route_id ,"stop, name"\nB1,x\n')).toEqual(['route_id', 'stop, name']);
+  });
+
+  it('has no names for an empty file', async () => {
+    expect(await headerOf('')).toEqual([]);
   });
 });
 

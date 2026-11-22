@@ -36,6 +36,41 @@ export function findFeedFiles(entries: ZipEntry[]): Map<string, ZipEntry> {
   return files;
 }
 
+/**
+ * The text of a table with one marker row added after its last line. readCsvRecords keys each record by the header, so a table with no data
+ * rows yields nothing; the marker is that one record. It is read only when the table ends, and it is never returned to a caller.
+ */
+function withMarkerRow(text: ReadableStream<string>): ReadableStream<string> {
+  const reader = text.getReader();
+  let marked = false;
+  return new ReadableStream<string>({
+    async pull(controller) {
+      const next = await reader.read();
+      if (!next.done) {
+        controller.enqueue(next.value);
+        return;
+      }
+      if (!marked) {
+        marked = true;
+        controller.enqueue('\nx');
+      }
+      controller.close();
+    },
+    async cancel(reason) {
+      await reader.cancel(reason);
+    },
+  });
+}
+
+/**
+ * The header names of one table, trimmed and in file order, whether or not the table has data rows. A table with no header line at all
+ * has no names.
+ */
+export async function readFeedHeader(bytes: Uint8Array, entry: ZipEntry): Promise<string[]> {
+  for await (const record of readCsvRecords(withMarkerRow(zipEntryText(bytes, entry)))) return Object.keys(record);
+  return [];
+}
+
 /** Reads one table, keeping rows for which keep(row) is true (all rows when absent). */
 export async function readFeedTable(
   bytes: Uint8Array,

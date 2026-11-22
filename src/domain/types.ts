@@ -222,7 +222,7 @@ export type RestorePointKind =
   | 'deleteProject' | 'deleteScenario' | 'deleteRoute' | 'deletePattern' | 'resetPatternService' | 'rebalancePattern' | 'deleteNodes'
   | 'deleteRuntimeProfile' | 'deleteTrips' | 'copyTripsFromDay' | 'deleteTripProfile' | 'unassignTrips' | 'moveTripsToBlock'
   | 'deleteBlockingScenario' | 'deleteBlocks' | 'copyBlocksFromDay' | 'rebuildAutoBlocks' | 'autoBlockUnassigned' | 'replaceBoundaryActivities'
-  | 'removeBlockActivity' | 'deleteDeadheads' | 'clearPlan' | 'copyPlanFromDay' | 'copyPlansFromScenario' | 'regenerateTrips' | 'changeTripStartTime' | 'changeTripPattern' | 'shiftTrips' | 'splitRouteStops' | 'deleteRouteStops' | 'mergeRouteStops' | 'restore';
+  | 'removeBlockActivity' | 'deleteDeadheads' | 'clearPlan' | 'copyPlanFromDay' | 'copyPlansFromScenario' | 'regenerateTrips' | 'changeTripStartTime' | 'changeTripPattern' | 'shiftTrips' | 'splitRouteStops' | 'deleteRouteStops' | 'mergeRouteStops' | 'importGtfsRoutes' | 'restore';
 /** Decision 0081. One collection of `ScenarioRecords`. `scenario` and `costingAssumptions` are single records, read as lists of 0 or 1. */
 export type RecordCollection = 'scenario' | 'serviceDays' | 'routes' | 'nodes' | 'patterns' | 'directions' | 'runtimeProfiles' | 'runtimeAssignments'
   | 'tripProfiles' | 'blockingScenarios' | 'costingAssumptions' | 'generationSets' | 'trips' | 'blocks' | 'plannedFrequencies' | 'routeStopSets';

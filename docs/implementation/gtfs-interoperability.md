@@ -561,3 +561,12 @@ V-I test routes: **31 Federal Blvd, 0 Broadway, 0L South Broadway Limited** (RTD
 - **Tests at the end:** typecheck clean; `pnpm test` 128 files, 2,097 passed; `tests/ui/costing*` 34 passed.
 - **Hand-off:** sitting 4 done. Next is sitting 5: I6 (application service, restore point, worker, converter; Haiku), then the conversions of the mini feed and RTD routes 31, 0, 0L (Opus), ending at Gate V-I.
 
+### 2026-11-22 — Sitting 5: I6a, I6b (Haiku); conversions (Opus) → Gate V-I
+
+- **I6a** (`4969857`): `scenarioFromFeed`, `projectFromFeed`, `tools/gtfs_to_backup.mjs`. Answers given: `weekdayAsNormal` = not a holiday; with no agency name the file name is the publisher.
+- **Fix by Opus** (`259f8c0`): a block left out because it also serves an unselected Route was reported as "invalid trip"; now "also serves 4".
+- **I6b**: import service for levels A, B and C, restore point `importGtfsRoutes` with Undo, Web Worker with a main-thread fallback, missing-file and missing-column refusals (including header-only tables). Extra files allowed by the orchestrator: a restore-point label (`messages.ts`), wiring in `main.tsx`, an optional Project name on copy import, `readFeedHeader`.
+- **Conversions:** the mini feed and RTD routes 31, 0, 0L (feed `Sep26-37381-22-23-20261113-122950`) were written as backups to the scratchpad and sent to the user; they are not committed. RTD: 31 = 6 patterns, 191/136/81 trips, 28 blocks; 0 = 2 patterns, 149/149/126, 29 blocks; 0L = 2 patterns, 99 weekday, 3 blocks; counts 250/52/63/0; fidelity OK; one weekday block left out (also serves 4). Converter run time 3.6 s.
+- **Tests at the end:** typecheck clean; `pnpm test` 131 files, 2,164 passed; `pnpm build` ok; full browser suite 404 passed, 2 failed under 8 workers (`segment-runtime-fill.spec.ts:82`, a `pattern-change-undo` spec), both passing when rerun alone; they touch no GTFS code and are recorded as load flakes to watch.
+- **Hand-off:** sitting 5 ends at **Gate V-I**: the user opens the RTD backup with Import project JSON and checks it against RTD's published numbers. On approval, sitting 6: I7 mock-ups (Opus).
+

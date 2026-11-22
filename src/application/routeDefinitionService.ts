@@ -16,7 +16,7 @@ import { adjustBlockReferences } from '../domain/trips';
 import { normalizePlacements, normalizeStopLocation, normalizeTimepointLocations, normalizeTimepointStopCodes, pruneRouteStopSets, reconcilePlacements, reconcileTimepointLocations, reconcileTimepointStopCodes, validateRouteStopSet } from '../domain/stops';
 import { applyStopPlacementPlan, applyTimepointCodePlan, applyTimepointLocationPlan, planStopCopy, planStopFill, stopCopyCandidatePatternIds, type StopPlacementPlan } from '../domain/stopPlacementMatching';
 import { authoritativeTripsCsv, blockActivitiesCsv, blocksCsv, directionColumnsCsv, directionsCsv, generationSetsCsv, nodesCsv, patternPointsCsv, patternsCsv, routeCsv, runtimeBandsCsv, scheduledPointsCsv, tripsCsv } from '../persistence/csv';
-import type { BackupPort, LocalDataProtection, RouteDefinitionRepository, SaveStatus } from './ports';
+import type { BackupPort, LocalDataProtection, ProjectImportOptions, RouteDefinitionRepository, SaveStatus } from './ports';
 import { assertReviewCurrent, fingerprint } from './reviewToken';
 import { SaveStatusPublisher, type LocalDataProtectionService } from './saveStatus';
 
@@ -1130,7 +1130,7 @@ export class RouteDefinitionService {
     this.protection?.recordBackupExported(projectId);
     return payload;
   }
-  async importProject(payload: string): Promise<Project> { return this.save(() => this.backup.importProject(payload, 'copy')); }
+  async importProject(payload: string, options: ProjectImportOptions = {}): Promise<Project> { return this.save(() => this.backup.importProject(payload, 'copy', options)); }
   /**
    * Exports route-level records for the route currently open in the workspace.
    * Blocks are included only when they reference one of the selected route's

@@ -905,8 +905,11 @@ export function importProjectJson(payload: string): ProjectSnapshot {
   return parseProjectBackup(payload);
 }
 
-/** Create an import-as-copy graph with fresh identifiers and independent references. */
-export function cloneProjectSnapshot(source: ProjectSnapshot, now = new Date().toISOString()): ProjectSnapshot {
+/**
+ * Create an import-as-copy graph with fresh identifiers and independent references. The copied Project is named `name` when given, and
+ * otherwise "<source name> Copy".
+ */
+export function cloneProjectSnapshot(source: ProjectSnapshot, now = new Date().toISOString(), name?: string): ProjectSnapshot {
   const projectId = newId();
   const scenarioIds = new Map(source.scenarios.map((scenario) => [scenario.id, newId()]));
   const routeIds = new Map(source.routes.map((route) => [route.id, newId()]));
@@ -933,7 +936,7 @@ export function cloneProjectSnapshot(source: ProjectSnapshot, now = new Date().t
     ...metadata(now),
   }));
 
-  const project: Project = { ...source.project, id: projectId, name: `${source.project.name} Copy`, ...metadata(now) };
+  const project: Project = { ...source.project, id: projectId, name: name ?? `${source.project.name} Copy`, ...metadata(now) };
   const scenarios = source.scenarios.map((scenario) => ({ ...scenario, id: scenarioIds.get(scenario.id)!, projectId, sourceScenarioId: scenarioIds.get(scenario.sourceScenarioId ?? ''), ...(scenario.importNotes ? { importNotes: remapImportNotes(scenario.importNotes, serviceDayIds) } : {}), ...metadata(now) }));
   const routes = source.routes.map((route) => ({ ...route, id: routeIds.get(route.id)!, scenarioId: scenarioIds.get(route.scenarioId)!, ...(route.ownAnnualServiceDays ? { ownAnnualServiceDays: remapOwnAnnualServiceDays(route.ownAnnualServiceDays, serviceDayIds) } : {}), ...metadata(now) }));
   const nodes = source.nodes.map((node) => ({ ...node, id: nodeIds.get(node.id)!, scenarioId: scenarioIds.get(node.scenarioId)!, routeId: routeIds.get(node.routeId)!, ...metadata(now) }));
