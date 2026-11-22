@@ -184,6 +184,6 @@ export function buildFeed(records: ScenarioRecords, request: GtfsExportRequest, 
   return {
     check: { ready, refusals: result.refusals, warnings: result.warnings, ...(ready ? { counts: countsOf(result) } : {}) },
     files: ready && withFiles ? result.files : [],
-    reportCsv: ready && withFiles ? reportCsvText(result.report, result.warnings) : '',
+    reportCsv: ready && withFiles ? reportCsvText(result.report, result.warnings, result.exportRouteIds) : '',
   };
 }

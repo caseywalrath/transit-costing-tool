@@ -108,6 +108,7 @@ export type GtfsExportIssueCode =
   | 'gtfsExport.rangeEmpty'
   | 'gtfsExport.agencyNameBlank'
   | 'gtfsExport.agencyUrlBlank'
+  | 'gtfsExport.agencyUrlInvalid'
   | 'gtfsExport.agencyTimezoneBlank'
   | 'gtfsExport.routeSkipped'
   | 'gtfsExport.daySkipped'
@@ -168,4 +169,6 @@ export interface GtfsExportResult {
   report: ExportReportRow[];
   refusals: GtfsExportIssue[];
   warnings: GtfsExportIssue[];
+  /** Route entity ID → export route_id, for each exported Route. A skipped or unselected Route has none. */
+  exportRouteIds: ReadonlyMap<EntityId, string>;
 }

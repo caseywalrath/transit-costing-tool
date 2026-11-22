@@ -184,7 +184,7 @@ export function buildGtfsExport(input: BuildGtfsExportInput): GtfsExportResult {
   // Decision 0090 item 20: a block that also serves an unselected Route keeps its block_id on the selected Trips, and is listed.
   warnings.push(...sharedBlockWarnings(input, selectedRouteIds, new Set(records.map((record) => record.trip.id))));
 
-  if (refusals.length > 0 || range === undefined) return { files: [], report: [], refusals, warnings };
+  if (refusals.length > 0 || range === undefined) return { files: [], report: [], refusals, warnings, exportRouteIds: routeIdByRouteId };
 
   const plan = planCalendar({
     range,
@@ -203,12 +203,12 @@ export function buildGtfsExport(input: BuildGtfsExportInput): GtfsExportResult {
     { name: 'stop_times.txt', text: stopTimesText(records) },
     { name: 'calendar.txt', text: calendarText(plan) },
   ];
-  if (settings.holidays.length > 0) files.push({ name: 'calendar_dates.txt', text: calendarDatesText(plan) });
+  if (plan.calendarDates.length > 0) files.push({ name: 'calendar_dates.txt', text: calendarDatesText(plan) });
   if (straight) files.push({ name: 'shapes.txt', text: shapesText(shapes) });
   files.push({ name: 'feed_info.txt', text: feedInfoText(settings, range, feedVersion) });
 
   const report = reportRows({ exported, records, usedServices, datesInRange: plan.datesInRange, straight, shapeIdByPatternId, notes });
-  return { files, report, refusals: [], warnings };
+  return { files, report, refusals: [], warnings, exportRouteIds: routeIdByRouteId };
 }
 
 /** Decision 0090 item 9: route_id = gtfsRouteId, else the short name, else the name; made unique with -2, -3. */
@@ -458,7 +458,7 @@ function shapesFor(exported: readonly ExportedRoute[], shapeIdByPatternId: Map<E
       const base = `${route.routeId}-${label}`;
       let candidate = base;
       for (let suffix = 2; used.has(candidate); suffix += 1) candidate = `${base}-${suffix}`;
-      if (candidate !== base) notes.push({ kind: 'note', text: `Pattern ${pattern.name} of Route ${route.aggregate.route.name} is shape_id ${candidate}; ${base} is already used.` });
+      if (straight && candidate !== base) notes.push({ kind: 'note', text: `Pattern ${pattern.name} of Route ${route.aggregate.route.name} is shape_id ${candidate}; ${base} is already used.` });
       used.add(candidate);
       shapeIdByPatternId.set(pattern.id, candidate);
       if (straight) shapes.push({ shapeId: candidate, points: patternShapePoints(pattern, route.aggregate.nodes, route.set) });

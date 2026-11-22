@@ -69,7 +69,7 @@ export function gtfsDateFromIso(value: string): GtfsDate | undefined {
 
 /**
  * Decision 0090 items 13 and 14. A holiday adds its service on its date (exception 1) when that service is in use, and removes each
- * weekday-kind service that is in use and would run that day (exception 2), except the holiday's own service. Throws when two of the
+ * other service that is in use and would run on that day, whatever its kind (exception 2), except the holiday's own service. Throws when two of the
  * exceptions disagree on one service and date (the caller refuses duplicate holiday dates before this).
  */
 export function planCalendar(input: { range: CalendarRange; services: readonly CalendarService[]; holidays: readonly CalendarHoliday[] }): CalendarPlan {
@@ -90,10 +90,9 @@ export function planCalendar(input: { range: CalendarRange; services: readonly C
 
   for (const holiday of input.holidays) {
     if (kindById.has(holiday.serviceId)) setException(holiday.serviceId, holiday.date, 1);
-    // A Saturday or a Sunday holiday removes no weekday service: no weekday runs on those days.
-    if (dayOfWeek(holiday.date) > 4) continue;
+    // Every other in-use service that would run on that date is replaced, a Saturday or Sunday service on its day included.
     for (const service of services) {
-      if (service.kind === 'weekday' && service.serviceId !== holiday.serviceId) setException(service.serviceId, holiday.date, 2);
+      if (service.serviceId !== holiday.serviceId && WEEKDAY_FLAGS[service.kind][dayOfWeek(holiday.date)]) setException(service.serviceId, holiday.date, 2);
     }
   }
 

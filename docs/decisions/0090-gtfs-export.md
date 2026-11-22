@@ -38,7 +38,7 @@ Planners want to see this tool's schedules in the Analysis app and other GTFS to
 ### E. Dates (G-E2, G-E5, G-E6)
 
 13. `calendar.txt`: one row per used service day over the chosen range. Weekday kind Monday–Friday; Saturday; Sunday; Holiday and custom days no weekdays.
-14. Each holiday date names the service day it runs (default Holiday); a date appears at most once: that day is added (1), and a weekday-kind day that would run on that date is removed (2).
+14. Each holiday date names the service day it runs (default Holiday); a date appears at most once: that day is added (1), and every other day that would run on that date is removed (2).
 15. Routes on their own counts use the Scenario calendar and are listed (G-E6).
 16. The range, holidays, agency details and map-line choice are remembered on the Scenario as optional `gtfsExportSettings` (backup schema 18). An imported Scenario defaults its range to its import note's dates.
 

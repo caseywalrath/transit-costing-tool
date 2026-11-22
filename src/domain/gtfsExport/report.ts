@@ -47,14 +47,15 @@ function reportRecord(row: ExportReportRow): Record<string, CsvCell> {
 
 /**
  * The report CSV: the rows of the report, then every warning (Decision 0090 item 21). The header row names the columns; a row fills only
- * the columns its kind has. Written only when the export is written (there is no report while a refusal stands).
+ * the columns its kind has. A warning's route_id is the export route_id of its Route (`exportRouteIds`), blank when it has none. Written only when the export is written (there is no report while a refusal stands).
  */
-export function reportCsvText(rows: readonly ExportReportRow[], warnings: readonly GtfsExportIssue[]): string {
+export function reportCsvText(rows: readonly ExportReportRow[], warnings: readonly GtfsExportIssue[], exportRouteIds: ReadonlyMap<string, string> = new Map()): string {
   const records: Array<Record<string, CsvCell>> = [
     ...rows.map(reportRecord),
     ...warnings.map((warning) => ({
       kind: 'warning',
-      route_id: warning.routeId,
+      // The export route_id, as in the feed; blank for a warning with no exported Route (a skipped or unselected Route, a service day).
+      route_id: warning.routeId === undefined ? undefined : exportRouteIds.get(warning.routeId),
       route_name: protectFormula(warning.routeName),
       code: warning.code,
       detail: protectFormula(describeIssue(warning)),

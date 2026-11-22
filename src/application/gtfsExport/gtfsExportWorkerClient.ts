@@ -54,7 +54,7 @@ export function createGtfsExportEngine(createWorker: () => ExportWorkerLike | un
   let attempted = false;
   let nextId = 1;
   const pending = new Map<number, Pending>();
-  // The main-thread path keeps its own copy of the loaded records.
+  // A copy of the loaded records: the main-thread path (no Worker, or one that crashed) runs on it.
   let localRecords: ScenarioRecords | undefined;
   // Checks: one in flight, the newest waiting.
   let checking = false;
@@ -136,8 +136,10 @@ export function createGtfsExportEngine(createWorker: () => ExportWorkerLike | un
 
   return {
     async load(records) {
+      // Always kept: when the worker crashes later, the main-thread path still has the records.
+      localRecords = records;
       const active = ensureWorker();
-      if (!active) { localRecords = records; return; }
+      if (!active) return;
       const response = await send(active, { type: 'load', records });
       if (response.type !== 'loaded') throw new Error('The export worker sent an unexpected answer.');
     },

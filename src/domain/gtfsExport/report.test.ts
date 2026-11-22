@@ -26,10 +26,17 @@ describe('reportCsvText (Decision 0090 item 21)', () => {
       { code: 'gtfsExport.routeSkipped', routeId: 'route-idle', routeName: 'Idle Line' },
     ];
 
-    const lines = reportCsvText([], warnings).split('\n');
+    const lines = reportCsvText([], warnings, new Map([['route-t1', 'T1']])).split('\n');
 
-    expect(lines[1]).toBe('warning,route-t1,Test Line,,,,,,,,,gtfsExport.stopIdGenerated,Route Test Line; stop Main & 1st; stop ID T1-1');
-    expect(lines[2]).toBe('warning,route-idle,Idle Line,,,,,,,,,gtfsExport.routeSkipped,Route Idle Line');
+    // route_id is the export route_id, never the internal ID; a Route that is not exported has none.
+    expect(lines[1]).toBe('warning,T1,Test Line,,,,,,,,,gtfsExport.stopIdGenerated,Route Test Line; stop Main & 1st; stop ID T1-1');
+    expect(lines[2]).toBe('warning,,Idle Line,,,,,,,,,gtfsExport.routeSkipped,Route Idle Line');
+  });
+
+  it('leaves route_id blank for a warning that names no Route', () => {
+    const lines = reportCsvText([], [{ code: 'gtfsExport.daySkipped', serviceDayName: 'Sunday' }]).split('\n');
+
+    expect(lines[1]).toBe('warning,,,,,,,,,,,gtfsExport.daySkipped,service day Sunday');
   });
 
   it('protects free text against spreadsheet formulas with an apostrophe, and quotes a name that holds a comma', () => {

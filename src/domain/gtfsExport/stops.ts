@@ -31,8 +31,15 @@ interface StopRecord {
   stopId: string;
   /** True when the stop ID was generated (Decision 0090 item 6) rather than entered. */
   generated: boolean;
-  /** Set only on a generated timepoint ID: the Node and direction it names. Records with equal keys may share that ID. */
-  generatedMergeKey?: string;
+  /**
+   * Set only on a generated ID: the record's identity for generated IDs (a Route stop alone, or a timepoint's Route, Node and direction).
+   * Records with equal keys share one generated ID; records with different keys never do.
+   */
+  generatedKey?: string;
+  /** Whether records with this generated key may merge (a timepoint of one Route, Node and direction). A generated Route stop never merges. */
+  mergeable?: boolean;
+  /** Where the final stop ID is written once the IDs are settled: the Route's or pattern's map and the entry's key. */
+  bind: { map: Map<string, string>; key: string };
   location?: Location;
 }
 
@@ -61,8 +68,7 @@ export function exportStops(input: ExportStopInput): ExportStopsResult {
 
   const addRecord = (record: StopRecord): void => {
     records.push(record);
-    if (record.generated) warnings.push(issueOf('gtfsExport.stopIdGenerated', record));
-    if (record.location === undefined) refusals.push(issueOf('gtfsExport.stopUnlocated', record));
+    record.bind.map.set(record.bind.key, record.stopId);
   };
 
   for (const route of input.routes) {
@@ -80,7 +86,6 @@ export function exportStops(input: ExportStopInput): ExportStopsResult {
         stopId = `${route.routeId}-${unnamedCount}`;
       }
       if (!placed.has(routeStop.id)) continue;
-      routeStopIds.set(routeStop.id, stopId);
       addRecord({
         kind: 'routeStop',
         routeId: route.id,
@@ -88,6 +93,9 @@ export function exportStops(input: ExportStopInput): ExportStopsResult {
         stopName: routeStop.name.trim(),
         stopId,
         generated,
+        generatedKey: generated ? `routeStop|${route.id}|${routeStop.id}` : undefined,
+        mergeable: false,
+        bind: { map: routeStopIds, key: routeStop.id },
         location: hasCoordinates(routeStop) ? { latitude: routeStop.latitude, longitude: routeStop.longitude } : undefined,
       });
     }
@@ -106,7 +114,6 @@ export function exportStops(input: ExportStopInput): ExportStopsResult {
         const enteredCode = blankToUndefined(point.stopCode);
         // Decision 0090 item 6: a timepoint without an ID is named after its Node's short name, or its name, and its direction.
         const stopId = enteredCode ?? `${route.routeId}-${node.shortName?.trim() || name}-${directionDigit}`;
-        timepointIds.set(point.id, stopId);
         addRecord({
           kind: 'timepoint',
           routeId: route.id,
@@ -117,14 +124,27 @@ export function exportStops(input: ExportStopInput): ExportStopsResult {
           stopName: name,
           stopId,
           generated: enteredCode === undefined,
-          generatedMergeKey: enteredCode === undefined ? `${node.id}|${directionDigit}` : undefined,
+          generatedKey: enteredCode === undefined ? `timepoint|${route.id}|${node.id}|${directionDigit}` : undefined,
+          mergeable: true,
+          bind: { map: timepointIds, key: point.id },
           location: hasCoordinates(point) ? { latitude: point.latitude, longitude: point.longitude } : undefined,
         });
       }
     }
   }
 
-  // Decision 0090 item 7: a record without a location refuses the export (already listed by addRecord). It is not a stop.
+  assignGeneratedIds(records);
+  const warnedIds = new Set<string>();
+  for (const record of records) {
+    // Once per distinct generated stop ID, not per record.
+    if (record.generated && !warnedIds.has(record.stopId)) {
+      warnedIds.add(record.stopId);
+      warnings.push(issueOf('gtfsExport.stopIdGenerated', record));
+    }
+    if (record.location === undefined) refusals.push(issueOf('gtfsExport.stopUnlocated', record));
+  }
+
+  // Decision 0090 item 7: a record without a location refuses the export (listed above). It is not a stop.
   const groups = new Map<string, LocatedRecord[]>();
   for (const record of records.filter(isLocated)) {
     const group = groups.get(record.stopId);
@@ -148,6 +168,29 @@ export function exportStops(input: ExportStopInput): ExportStopsResult {
   return { stops, byRouteStop, byTimepoint, refusals, warnings };
 }
 
+/**
+ * Decision 0090 item 6, as amended. A generated stop ID is made unique: when it equals an entered stop ID or an ID already generated for
+ * another stop, `-2`, `-3` ... is added to it. Entered IDs are never changed. Records are visited in record order, so the result is
+ * the same for the same data.
+ */
+function assignGeneratedIds(records: StopRecord[]): void {
+  const taken = new Set(records.filter((record) => !record.generated).map((record) => record.stopId));
+  const idByKey = new Map<string, string>();
+  for (const record of records) {
+    if (!record.generated || record.generatedKey === undefined) continue;
+    let stopId = idByKey.get(record.generatedKey);
+    if (stopId === undefined) {
+      const base = record.stopId;
+      stopId = base;
+      for (let suffix = 2; taken.has(stopId); suffix += 1) stopId = `${base}-${suffix}`;
+      taken.add(stopId);
+      idByKey.set(record.generatedKey, stopId);
+    }
+    record.stopId = stopId;
+    record.bind.map.set(record.bind.key, stopId);
+  }
+}
+
 function isLocated(record: StopRecord): record is LocatedRecord {
   return record.location !== undefined;
 }
@@ -159,7 +202,7 @@ function isLocated(record: StopRecord): record is LocatedRecord {
  */
 function mayMerge(first: StopRecord, other: StopRecord): boolean {
   if (!first.generated && !other.generated) return true;
-  return first.generatedMergeKey !== undefined && first.generatedMergeKey === other.generatedMergeKey;
+  return first.mergeable === true && first.generatedKey !== undefined && first.generatedKey === other.generatedKey;
 }
 
 function issueOf(code: GtfsExportStopIssueCode, record: StopRecord): GtfsExportStopIssue {

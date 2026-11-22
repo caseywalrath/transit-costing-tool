@@ -13,6 +13,7 @@ import {
   draftProblem,
   type GtfsExportDraft,
   holidayProblem,
+  holidayResetNote,
   holidayRowProblems,
   initialDraft,
   problemRows,
@@ -249,11 +250,11 @@ export function GtfsExportDialog(props: GtfsExportDialogProps) {
               <thead><tr><th>Date</th><th>Runs</th><th /></tr></thead>
               <tbody>
                 {draft.holidays.map((holiday, index) => <tr key={holiday.date} className={rowProblems[index] ? 'gtfs-skipped' : undefined}>
-                  <td>{holiday.date} {weekdayLabel(holiday.date)}{rowProblems[index] && <span className="gtfs-chip gtfs-chip--warn">{rowProblems[index]}</span>}</td>
-                  <td><select aria-label={`Runs on ${holiday.date}`} value={holiday.serviceDayId} onChange={(event) => change({ holidays: draft.holidays.map((item, itemIndex) => (itemIndex === index ? { ...item, serviceDayId: event.currentTarget.value } : item)) })}>
+                  <td>{holiday.date} {weekdayLabel(holiday.date)}{rowProblems[index] && <span className="gtfs-chip gtfs-chip--warn">{rowProblems[index]}</span>}{holidayResetNote(context, draft, holiday) && <span className="gtfs-note" role="status"> {holidayResetNote(context, draft, holiday)}</span>}</td>
+                  <td><select aria-label={`Runs on ${holiday.date}`} value={holiday.serviceDayId} onChange={(event) => change({ resetHolidayDates: draft.resetHolidayDates.filter((date) => date !== holiday.date), holidays: draft.holidays.map((item, itemIndex) => (itemIndex === index ? { ...item, serviceDayId: event.currentTarget.value } : item)) })}>
                     {holidayServiceChoices.map((day) => <option key={day.id} value={day.id}>{day.name}</option>)}
                   </select></td>
-                  <td><button type="button" className="gtfs-link" aria-label={`Remove holiday ${holiday.date}`} onClick={() => change({ holidays: draft.holidays.filter((_, itemIndex) => itemIndex !== index) })}>Remove</button></td>
+                  <td><button type="button" className="gtfs-link" aria-label={`Remove holiday ${holiday.date}`} onClick={() => change({ resetHolidayDates: draft.resetHolidayDates.filter((date) => date !== holiday.date), holidays: draft.holidays.filter((_, itemIndex) => itemIndex !== index) })}>Remove</button></td>
                 </tr>)}
               </tbody>
             </table>}

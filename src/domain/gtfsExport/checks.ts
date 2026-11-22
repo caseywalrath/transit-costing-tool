@@ -5,11 +5,22 @@ import type { GtfsExportSettings } from '../types';
 import { gtfsDateFromIso, type CalendarRange } from './calendar';
 import type { GtfsExportIssue } from './types';
 
-/** Decision 0090 item 19. A blank agency name, URL or time zone refuses the export. */
+/** Whether a text is an absolute http or https URL with a host (GTFS agency_url). */
+function isHttpUrl(text: string): boolean {
+  try {
+    const url = new URL(text);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname !== '';
+  } catch {
+    return false;
+  }
+}
+
+/** Decision 0090 item 19. A blank agency name, URL or time zone refuses the export, and so does a website that is not an http or https URL. */
 export function agencyRefusals(settings: GtfsExportSettings): GtfsExportIssue[] {
   const refusals: GtfsExportIssue[] = [];
   if (!settings.agencyName?.trim()) refusals.push({ code: 'gtfsExport.agencyNameBlank' });
   if (!settings.agencyUrl?.trim()) refusals.push({ code: 'gtfsExport.agencyUrlBlank' });
+  else if (!isHttpUrl(settings.agencyUrl.trim())) refusals.push({ code: 'gtfsExport.agencyUrlInvalid' });
   if (!settings.agencyTimezone?.trim()) refusals.push({ code: 'gtfsExport.agencyTimezoneBlank' });
   return refusals;
 }

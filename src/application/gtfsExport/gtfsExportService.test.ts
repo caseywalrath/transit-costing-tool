@@ -198,6 +198,17 @@ describe('the export engine with a worker', () => {
     await expect(loading).rejects.toThrow('broken');
   });
 
+  it('falls back to the main thread with the loaded records after the worker crashes', async () => {
+    const { worker, posted, reply } = fakeWorker();
+    const engine = createGtfsExportEngine(() => worker);
+    const loading = engine.load(miniRecords());
+    reply({ id: posted[0].id, type: 'loaded' });
+    await loading;
+    worker.onerror?.({ message: 'crashed' } as ErrorEvent);
+    await expect(engine.check(request())).resolves.toMatchObject({ ready: true });
+    engine.dispose();
+  });
+
   it('runs on the main thread when the browser has no worker', async () => {
     const engine = createGtfsExportEngine(() => undefined);
     await engine.load(miniRecords());

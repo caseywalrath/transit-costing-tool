@@ -6,6 +6,7 @@ import {
   draftProblem,
   exportedNoticeText,
   holidayProblem,
+  holidayResetNote,
   initialDraft,
   problemRows,
   problemsCsv,
@@ -48,6 +49,33 @@ describe('initialDraft', () => {
     const draft = initialDraft(saved, {});
     expect(draft).toMatchObject({ startDate: '2026-09-21', endDate: '2027-01-10', agencyName: 'Own', agencyUrl: 'https://x.org', agencyTimezone: 'America/Denver', mapLines: 'none' });
     expect(draft.holidays.map((holiday) => holiday.date)).toEqual(['2026-11-26', '2026-12-25']);
+  });
+});
+
+describe('a remembered holiday whose service day was deleted', () => {
+  const saved = { startDate: '2026-09-21', endDate: '2027-01-10', holidays: [{ date: '2026-11-26', serviceDayId: 'gone' }, { date: '2026-12-25', serviceDayId: 'wkd' }], agencyName: 'Own', agencyUrl: 'https://x.org', agencyTimezone: 'America/Denver', mapLines: 'straight' as const };
+
+  it('is reset to the default Holiday day and marked, and the others are kept', () => {
+    const draft = initialDraft({ ...context, saved }, {});
+
+    expect(draft.holidays).toEqual([{ date: '2026-11-26', serviceDayId: 'hol' }, { date: '2026-12-25', serviceDayId: 'wkd' }]);
+    expect(draft.resetHolidayDates).toEqual(['2026-11-26']);
+    expect(holidayResetNote({ ...context, saved }, draft, draft.holidays[0])).toBe('The day this holiday ran was deleted; now Holiday');
+    expect(holidayResetNote({ ...context, saved }, draft, draft.holidays[1])).toBeUndefined();
+    expect(requestOf(context, draft).settings.holidays.map((holiday) => holiday.serviceDayId)).toEqual(['hol', 'wkd']);
+  });
+
+  it('has no mark when nothing is remembered or every day still exists', () => {
+    expect(initialDraft(context, {}).resetHolidayDates).toEqual([]);
+    expect(initialDraft({ ...context, saved: { ...saved, holidays: [{ date: '2026-12-25', serviceDayId: 'wkd' }] } }, {}).resetHolidayDates).toEqual([]);
+  });
+});
+
+describe('the agency website refusal', () => {
+  it('has a plain message', () => {
+    const rows = problemRows([{ code: 'gtfsExport.agencyUrlInvalid' }]);
+
+    expect(rows[0].problem).toBe('Agency website must be a web address starting with http:// or https://');
   });
 });
 

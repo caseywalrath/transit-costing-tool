@@ -23,6 +23,8 @@ export interface GtfsExportDraft {
   agencyUrl: string;
   agencyTimezone: string;
   mapLines: 'straight' | 'none';
+  /** Dates of remembered holidays whose service day no longer exists and were reset to the default; the row says so until it is changed. */
+  resetHolidayDates: string[];
 }
 
 /** The starting draft: the remembered settings, else the import note's dates and agency name, else blank (card E4, item 1). */
@@ -32,6 +34,10 @@ export function initialDraft(context: GtfsExportContext, working: { tripProfileI
   const blockingScenarioId = blockingOfProfile.find((item) => item.id === working.blockingScenarioId)?.id ?? blockingOfProfile[0]?.id ?? '';
   const saved = context.saved;
   const note = context.fromImportNote;
+  // A remembered holiday whose service day was deleted since: it runs by the default Holiday day instead, and its row says so.
+  const defaultDayId = defaultHolidayServiceDayId(context);
+  const dayIds = new Set(context.serviceDays.map((day) => day.id));
+  const savedHolidays = sortedHolidays(saved?.holidays ?? []).map((value) => ({ value, reset: !dayIds.has(value.serviceDayId) }));
   return {
     routeMode: 'all',
     chosenRouteIds: [],
@@ -39,12 +45,20 @@ export function initialDraft(context: GtfsExportContext, working: { tripProfileI
     blockingScenarioId,
     startDate: saved?.startDate ?? note?.startDate ?? '',
     endDate: saved?.endDate ?? note?.endDate ?? '',
-    holidays: saved ? sortedHolidays(saved.holidays) : [],
+    holidays: savedHolidays.map((holiday) => (holiday.reset ? { date: holiday.value.date, serviceDayId: defaultDayId } : holiday.value)),
+    resetHolidayDates: savedHolidays.filter((holiday) => holiday.reset).map((holiday) => holiday.value.date),
     agencyName: saved?.agencyName ?? note?.agencyName ?? '',
     agencyUrl: saved?.agencyUrl ?? '',
     agencyTimezone: saved?.agencyTimezone ?? '',
     mapLines: saved?.mapLines ?? 'straight',
   };
+}
+
+/** The note under a holiday row whose service day was deleted, or undefined. It stays until the planner picks a day or removes the row. */
+export function holidayResetNote(context: GtfsExportContext, draft: GtfsExportDraft, holiday: GtfsExportHoliday): string | undefined {
+  if (!draft.resetHolidayDates.includes(holiday.date)) return undefined;
+  const name = context.serviceDays.find((day) => day.id === holiday.serviceDayId)?.name ?? 'Holiday';
+  return `The day this holiday ran was deleted; now ${name}`;
 }
 
 export function sortedHolidays(holidays: readonly GtfsExportHoliday[]): GtfsExportHoliday[] {
@@ -155,6 +169,7 @@ const REFUSAL_TEXT: Partial<Record<GtfsExportIssueCode, string>> = {
   'gtfsExport.rangeEmpty': 'The date range has no dates',
   'gtfsExport.agencyNameBlank': 'Agency name is blank',
   'gtfsExport.agencyUrlBlank': 'Agency website is blank',
+  'gtfsExport.agencyUrlInvalid': 'Agency website must be a web address starting with http:// or https://',
   'gtfsExport.agencyTimezoneBlank': 'Agency time zone is not chosen',
 };
 

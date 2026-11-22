@@ -43,10 +43,26 @@ describe('planCalendar (Decision 0090 items 13 to 15)', () => {
     expect(plan.runsOn('HOL', '20270118')).toBe(true);
   });
 
-  it('removes no weekday service for a holiday on a Saturday or a Sunday', () => {
-    const plan = planCalendar({ range: RANGE, services: SERVICES, holidays: [{ date: '20270109', serviceId: 'HOL' }] });
+  it('removes the Saturday and the Sunday service for a holiday on a Saturday or a Sunday, and no weekday service', () => {
+    const services = [...SERVICES, { serviceId: 'SUN', kind: 'sunday' as const }];
+    const saturday = planCalendar({ range: RANGE, services, holidays: [{ date: '20270109', serviceId: 'HOL' }] });
+    const sunday = planCalendar({ range: RANGE, services, holidays: [{ date: '20270110', serviceId: 'HOL' }] });
 
-    expect(plan.calendarDates).toEqual([{ serviceId: 'HOL', date: '20270109', exceptionType: 1 }]);
+    expect(saturday.calendarDates).toEqual([
+      { serviceId: 'HOL', date: '20270109', exceptionType: 1 },
+      { serviceId: 'SAT', date: '20270109', exceptionType: 2 },
+    ]);
+    expect(saturday.runsOn('SAT', '20270109')).toBe(false);
+    expect(sunday.calendarDates).toEqual([
+      { serviceId: 'HOL', date: '20270110', exceptionType: 1 },
+      { serviceId: 'SUN', date: '20270110', exceptionType: 2 },
+    ]);
+  });
+
+  it('keeps a holiday\'s own service when it is a Saturday service on a Saturday', () => {
+    const plan = planCalendar({ range: RANGE, services: SERVICES, holidays: [{ date: '20270109', serviceId: 'SAT' }] });
+
+    expect(plan.calendarDates).toEqual([{ serviceId: 'SAT', date: '20270109', exceptionType: 1 }]);
   });
 
   it('counts the dates of the range on which each service runs', () => {

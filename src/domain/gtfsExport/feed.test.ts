@@ -241,6 +241,44 @@ describe('buildGtfsExport: feed details (Decision 0090 items 9 to 12, 17 and 18)
     expect(result.report.find((row) => row.kind === 'pattern')).toMatchObject({ shapeId: undefined });
   });
 
+  it('has no shape_id notes in the report when the map lines are none, and has them when straight', () => {
+    const build = (mapLines: 'straight' | 'none') => {
+      const input = miniInput();
+      input.settings.mapLines = mapLines;
+      // Two patterns with one short name: the second shape_id is made unique.
+      input.routes[0].patterns = input.routes[0].patterns.map((pattern) => ({ ...pattern, directionLabel: 'X' }));
+      return buildGtfsExport(input).report.filter((row) => row.kind === 'note' && row.text.includes('shape_id'));
+    };
+
+    expect(build('straight').some((row) => row.kind === 'note' && row.text.includes('is shape_id T1-X-2'))).toBe(true);
+    expect(build('none').filter((row) => row.kind === 'note' && /is shape_id/.test(row.text))).toEqual([]);
+  });
+
+  it('writes no calendar_dates.txt when the holidays leave no exception', () => {
+    const input = miniInput();
+    input.serviceDays.push({ id: 'day-sun', scenarioId: 'scenario-mini', kind: 'sunday', name: 'Sunday', annualServiceDays: 52, sequence: 2, abbreviation: 'SUN', ...META });
+    // A Sunday holiday that runs an unused service: no weekday, Saturday or Holiday service runs on a Sunday, so nothing is added or removed.
+    input.settings.holidays = [{ date: '2027-01-17', serviceDayId: 'day-sun' }];
+
+    const result = buildGtfsExport(input);
+
+    expect(result.refusals).toEqual([]);
+    expect(result.files.map((file) => file.name)).not.toContain('calendar_dates.txt');
+  });
+
+  it('refuses an agency website that is not an http or https URL (gtfsExport.agencyUrlInvalid)', () => {
+    for (const url of ['example.org', 'ftp://example.org', 'https://', 'not a url']) {
+      const input = miniInput();
+      input.settings.agencyUrl = url;
+      const result = buildGtfsExport(input);
+      expect(result.refusals.map((issue) => issue.code), url).toEqual(['gtfsExport.agencyUrlInvalid']);
+      expect(result.files).toEqual([]);
+    }
+    const ok = miniInput();
+    ok.settings.agencyUrl = ' http://example.org/path ';
+    expect(buildGtfsExport(ok).refusals).toEqual([]);
+  });
+
   it('writes route_color only when a Route has a colour, as six hex digits', () => {
     const input = miniInput();
     input.routes[0].route = { ...input.routes[0].route, color: 'D62828' };

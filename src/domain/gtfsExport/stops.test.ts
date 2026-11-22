@@ -243,23 +243,80 @@ describe('exportStops: generated stop IDs (Decision 0090 item 6)', () => {
     expect(result.stops.map((stop) => stop.stopId)).toEqual(['T1-Bravo-0']);
   });
 
-  it('refuses a generated ID shared by two Nodes with one name, however close', () => {
+  it('makes the generated ID of a second Node with one name unique, however close', () => {
     const route = routeWith('route-t1', 'T1', [
       onePoint('pat-1', 'pp-1', 'n-bravo', undefined, 39.718),
       onePoint('pat-2', 'pp-2', 'n-bravo-2', undefined, 39.718),
     ]);
     const result = exportStops(inputOf([route], [...NODES, { id: 'n-bravo-2', name: 'Bravo' }]));
 
-    expect(result.refusals).toMatchObject([{ code: 'gtfsExport.stopIdConflict', patternId: 'pat-2', stopId: 'T1-Bravo-0' }]);
+    expect(result.refusals).toEqual([]);
+    expect(result.byTimepoint.get('pat-1')?.get('pp-1')).toBe('T1-Bravo-0');
+    expect(result.byTimepoint.get('pat-2')?.get('pp-2')).toBe('T1-Bravo-0-2');
+    expect(result.stops.map((stop) => stop.stopId)).toEqual(['T1-Bravo-0', 'T1-Bravo-0-2']);
   });
 
-  it('never merges a generated Route stop ID, even with an entered timepoint ID at the same place', () => {
+  it('never merges a generated Route stop ID with an entered ID: the generated one gets a suffix', () => {
     const route = routeWith('route-t1', 'T1', [onePoint('pat-1', 'pp-1', 'n-alpha', 'T1-1', 39.709)]);
     route.routeStops = [{ id: 'rs-g', name: 'Unnamed stop', latitude: 39.709, longitude: -105 }];
     route.patterns[0].routeStopIds = ['rs-g'];
     const result = exportStops(inputOf([route]));
 
-    expect(result.refusals).toMatchObject([{ code: 'gtfsExport.stopIdConflict', patternId: 'pat-1', stopId: 'T1-1' }]);
+    expect(result.refusals).toEqual([]);
+    expect(result.byTimepoint.get('pat-1')?.get('pp-1')).toBe('T1-1');
+    expect(result.byRouteStop.get('route-t1')?.get('rs-g')).toBe('T1-1-2');
+    expect(result.stops.map((stop) => stop.stopId)).toEqual(['T1-1', 'T1-1-2']);
+  });
+
+  it('keeps generated IDs of different Routes apart (Route "R" stop 2-1 and Route "R-2" stop 1) and is stable', () => {
+    const build = () => {
+      const first = routeWith('route-a', 'R', [onePoint('pat-a', 'pp-a', 'n-alpha', '1001', 39.7)]);
+      first.routeStops = [1, 2].map((n) => ({ id: `a${n}`, name: `A${n}`, latitude: 39.7 + n / 100, longitude: -105 }));
+      first.patterns[0].routeStopIds = ['a1', 'a2'];
+      const second = routeWith('route-b', 'R-2', [onePoint('pat-b', 'pp-b', 'n-alpha', '1001', 39.7)]);
+      second.routeStops = [{ id: 'b1', name: 'B1', latitude: 39.8, longitude: -105 }];
+      second.patterns[0].routeStopIds = ['b1'];
+      return exportStops(inputOf([first, second]));
+    };
+    const result = build();
+
+    expect(result.refusals).toEqual([]);
+    expect(result.byRouteStop.get('route-a')).toEqual(new Map([['a1', 'R-1'], ['a2', 'R-2']]));
+    expect(result.byRouteStop.get('route-b')).toEqual(new Map([['b1', 'R-2-1']]));
+    expect(new Set(result.stops.map((stop) => stop.stopId)).size).toBe(result.stops.length);
+    expect(build()).toEqual(result);
+
+    // A Route stop of Route "R" that is generated 'R-2-1' would collide with Route "R-2" stop 1.
+    const third = routeWith('route-a', 'R', [onePoint('pat-a', 'pp-a', 'n-alpha', 'R-2-1', 39.7)]);
+    const fourth = routeWith('route-b', 'R-2', []);
+    fourth.routeStops = [{ id: 'b1', name: 'B1', latitude: 39.8, longitude: -105 }];
+    fourth.patterns = [{ ...onePoint('pat-b', 'pp-b', 'n-alpha', '1001', 39.7), routeStopIds: ['b1'] }];
+    const collided = exportStops(inputOf([third, fourth]));
+    expect(collided.byRouteStop.get('route-b')?.get('b1')).toBe('R-2-1-2');
+  });
+
+  it('writes a suffixed ID for two generated IDs that are equal, and keeps merging only one Route, Node and direction', () => {
+    const route = routeWith('route-t1', 'T1', [
+      onePoint('pat-1', 'pp-1', 'n-bravo', undefined, 39.718),
+      onePoint('pat-2', 'pp-2', 'n-bravo', undefined, north(39.718, 20)),
+      onePoint('pat-3', 'pp-3', 'n-bravo-2', undefined, 39.718),
+    ]);
+    const result = exportStops(inputOf([route], [...NODES, { id: 'n-bravo-2', name: 'Bravo' }]));
+
+    expect(result.byTimepoint.get('pat-1')?.get('pp-1')).toBe('T1-Bravo-0');
+    expect(result.byTimepoint.get('pat-2')?.get('pp-2')).toBe('T1-Bravo-0');
+    expect(result.byTimepoint.get('pat-3')?.get('pp-3')).toBe('T1-Bravo-0-2');
+    expect(result.stops).toHaveLength(2);
+  });
+
+  it('warns once per distinct generated stop ID, not once per record', () => {
+    const route = routeWith('route-t1', 'T1', [
+      onePoint('pat-1', 'pp-1', 'n-bravo', undefined, 39.718),
+      onePoint('pat-2', 'pp-2', 'n-bravo', undefined, north(39.718, 20)),
+    ]);
+    const result = exportStops(inputOf([route]));
+
+    expect(result.warnings.filter((warning) => warning.code === 'gtfsExport.stopIdGenerated').map((warning) => warning.stopId)).toEqual(['T1-Bravo-0']);
   });
 });
 
