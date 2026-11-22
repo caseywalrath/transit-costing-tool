@@ -1,6 +1,6 @@
 # GTFS export (phase E) — plan
 
-> **Status:** Approved 2026-11-22; gates G-E1 to G-E8 answered as recommended. V-E is a later checkpoint. No package started; next is E0.
+> **Status:** Approved 2026-11-22; gates G-E1 to G-E8 answered as recommended. V-E is a later checkpoint. E0 done in sitting 1 (Decision 0090, cards `gtfs-export-phase-e-cards.md`, fixture `tests/fixtures/gtfs-export/`), awaiting user review.
 >
 > **Parent plan:** `docs/implementation/gtfs-interoperability.md`, Part 6 "E". This file expands that section; the parent's fixed decisions (Part 8) and run rules (Part 7) apply unless this file says otherwise.
 >
@@ -245,3 +245,9 @@ Drafted from the parent plan's section E and the deferred plan's C1 and C2, upda
 ### 2026-11-22 — Gates answered (user)
 
 The user approved all eight recommendations (G-E1 to G-E8: Option A each). Next: sitting 1, E0 (Decision 0090, sub-plan and cards, fixtures), when the user says to proceed.
+
+### 2026-11-22 — Sitting 1: E0 (Opus)
+
+- Decision 0090 (21 rules), sub-plan with cards E1, E1b, E2, and a hand-worked expected export (`tests/fixtures/gtfs-export/`: one Route, three timepoints, one stop without ID, three service days, a holiday, one block).
+- One addition beyond the gates: package E1b stores the remembered settings (backup schema 18), as G-E2 A requires.
+- Hand-off: next is sitting 2, E1 and E1b in parallel, then E2 (Haiku), after the user reviews E0.

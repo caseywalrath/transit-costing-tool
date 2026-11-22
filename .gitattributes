@@ -1,1 +1,2 @@
 tests/fixtures/gtfs/** -text
+tests/fixtures/gtfs-export/** -text
