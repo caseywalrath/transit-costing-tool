@@ -25,5 +25,6 @@ See `docs/backlog.md`, "GTFS export follow-ups". Gate V-E (load an export in the
 
 ## Verification
 
-- Unit tests: 2,361 passed; typecheck clean; build succeeds.
-- Browser: see the final run below.
+- Code review at high effort on the three export folders: 3 bugs and 6 small output problems, all fixed (worker fallback, unique generated stop IDs, deleted holiday day, warning count, report route_id, shape notes, empty calendar_dates, weekend holidays, website check).
+- Unit tests: 2,373 passed; typecheck clean; build succeeds.
+- Full browser suite on the final code: 427 passed, 3 skipped, 1 failed (`costing-workspace.spec.ts:114`), which then passed 3 of 3 alone, with `drafts-and-preferences.spec.ts` (45 of 45). Treated as a load flake.

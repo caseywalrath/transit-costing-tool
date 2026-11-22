@@ -1,6 +1,6 @@
 # GTFS export (phase E) — plan
 
-> **Status:** Approved 2026-11-22; gates G-E1 to G-E8 answered as recommended. V-E is a later checkpoint. E0 done in sitting 1 (Decision 0090, cards `gtfs-export-phase-e-cards.md`, fixture `tests/fixtures/gtfs-export/`), awaiting user review.
+> **Status:** Implemented 2026-11-22 (closeout `gtfs-export-closeout.md`); gates G-E1 to G-E8 answered as recommended. V-E is a later checkpoint. E0 done in sitting 1 (Decision 0090, cards `gtfs-export-phase-e-cards.md`, fixture `tests/fixtures/gtfs-export/`), awaiting user review.
 >
 > **Parent plan:** `docs/implementation/gtfs-interoperability.md`, Part 6 "E". This file expands that section; the parent's fixed decisions (Part 8) and run rules (Part 7) apply unless this file says otherwise.
 >
@@ -255,3 +255,7 @@ The user approved all eight recommendations (G-E1 to G-E8: Option A each). Next:
 ### 2026-11-22 — Sitting 3: E3 mock-up (Opus)
 
 `docs/implementation/gtfs-export/mockup.html`: frame 1 ready to export, frame 2 problems list. Stops for user approval and questions A–C on the sheet. Next: sitting 4, E4 (Sonnet).
+
+### 2026-11-22 — Sittings 4–5: E4, E5, E6 (Sonnet, Haiku; Opus review)
+
+Dialog, worker and menus built; read-back test and RTD whole-feed round trip identical; code-review fixes; closeout written. Open for the user: gate V-E (Analysis app load and MobilityData validator). No pull request opened.
