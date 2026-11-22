@@ -458,3 +458,25 @@ It reads the ZIP with I1's reader (`readZipEntries`, `findFeedFiles`, `readFeedT
 - **Tests (fake-indexeddb):** each level on `mini`; level C leaves the Scenario's counts unchanged, renames a clash, and its Undo removes exactly the added records; restore-point coverage tests include the new kind.
 
 **Run:** the I6 row of section 4 (`undo-history.spec.ts`, `data-safety.spec.ts`), `pnpm typecheck`, `pnpm test`.
+
+## 18. Sitting 7: user answers to the mock-ups (2026-11-22)
+
+All approved: A (screens as drawn), B (Holidays open when present; Day groups and Part-year routes closed unless they find something), C (patterns of one direction that share a headsign are named "{headsign} (to {last timepoint name})", and only when that still clashes, " 2", " 3"), D (timepoint review on step 5). Mock-ups: `docs/implementation/gtfs-import/mockups.html`.
+
+## 19. Card I8 — Import dialog, steps 1–3, and the data it needs
+
+**Model:** Haiku, effort `high`. **Rules:** Decision 0089; the mock-ups (sections "Entry points" excluded, "Step 1", "Step 2", "Step 3"); section 18.
+
+**Files:** new `src/ui/gtfs/GtfsImportDialog.tsx`, `src/ui/gtfs/importSteps.tsx` (steps 1–3 as components), `src/ui/gtfs/gtfsImportModel.ts` (pure view state and derived rows, with test), `src/ui/styles/gtfs-import.css` (imported from `src/ui/styles/index.css`); `src/domain/gtfs/dayGroups.ts` (add `serviceDayGroups`); `src/domain/gtfs/patternsFromFeed.ts` (naming rule C) with tests; `src/application/gtfs/gtfsWorkerClient.ts` and `gtfsWorker.ts` (two new jobs); new `tests/ui/gtfs-import.spec.ts`. **Do not touch** `App.tsx` or the menus (I9). The spec opens the dialog through a test-only hook: export `openGtfsImportForTest` from `GtfsImportDialog.tsx` only if no cleaner way exists; prefer rendering it from a tiny dev-only route — ask if unsure.
+
+1. **Jobs.** `readFeedOverview(bytes)` → tables without `stopTimes` + `feedSummary` (step 1, 2). `readRouteStopTimes(bytes, routeIds)` → `stopTimes` for those routes (after step 2's Next, and in the background when the selection settles for 600 ms, to fill the Patterns column). Both through the worker with the existing main-thread fallback; progress per file.
+2. **Step 1** as drawn: file input (accept `.zip`), Feed panel, Reading panel with Cancel, expiry warning (only `expired` / `endsWithin30Days`), refusal text from `GtfsFeedError`/`ZipReadError` with Next disabled.
+3. **Step 2** as drawn: search (short or long name, case-insensitive), type filter, Select all shown, Clear, running total "n routes selected · m weekday trips", rows sorted by route order (numeric part, then text), colour dot, Patterns column ("—" until counted). Weekday trips counted on the default weekday date. Size warning above 40 routes or 5,000 weekday trips. Next needs ≥ 1 route.
+4. **Step 3** as drawn: one row per service day with a date input (limited to the feed range), "typical"/"chosen" chip, trips, dates in feed, editable annual days (whole numbers ≥ 0; total must be ≤ 365 or Next is off with the message used by the Annual service days panel), basis text. Sections: Holidays (open when any) with per-route classes and a class menu (Saturday, Sunday, Weekday (reduced), Holiday, Holiday 2…, Not a holiday = `weekdayAsNormal`); Day groups (closed unless a service day has more than one group) using `serviceDayGroups`; Part-year routes (closed unless any) with own date and the own-counts switch.
+5. **`serviceDayGroups(tables, routeIds, key)`**: the day groups restricted to the dates of that service day's days of the week, each with dates, trips, and the difference from that day's typical set. RTD Sunday: one group of 14 dates (holidays are listed under Holidays, not here).
+6. **Naming rule C** in `patternsFromFeed.ts`. Test: RTD-like fixture with three patterns of one direction sharing headsign "Evans" → "Evans (to {last timepoint})" each.
+7. **Model** `gtfsImportModel.ts` holds every choice as plain data, and produces the `FeedPlanOptions` for the service (`dates`, `holidayClasses`, `routeOwnCountsOn`, counts edits). Unit-test the derivations.
+8. **Accessibility:** the dialog uses `ModalDialog` (draggable, Decision 0068); the steps bar is a list with `aria-current="step"`; tables have headers; every input has a label.
+9. **Spec** `tests/ui/gtfs-import.spec.ts`: upload `tests/fixtures/gtfs/zips/mini-deflate.zip`; step 1 shows "Mini Test Transit"; step 2 lists B1, F1, R1 in route order and totals; step 3 shows Weekday 20 Jan 2026, the holiday rows (19 Jan Sunday; 24 and 30 Jan unique), counts 235/39/65/13/13; a refused file shows its reason.
+
+**Run:** unit tests for changed files, `pnpm typecheck`, `pnpm test`, the new spec plus `draggable-dialogs.spec.ts` and `keyboard.spec.ts`, `pnpm build`. Take a screenshot of each step at 1440 px into the scratchpad (`/tmp/claude-0/-home-user/3bdc75fd-55d7-5724-ad85-d8deb92c9cc0/scratchpad/i8/`) for review.
