@@ -220,7 +220,8 @@ export function costingCsvFiles(
   const exclusionsContents = toCsv(exclusionHeaders, exclusionRows, ['scenarioName', 'blockingScenarioName', 'tripProfileName', 'serviceDayName', 'blockLabel']);
 
   // Decision 0077 item 4: one row per Route service day and one total row per Route, in the result's Route order (Unattributed last).
-  const routeHeaders = ['projectId', 'scenarioId', 'scenarioName', 'blockingScenarioId', 'blockingScenarioName', 'tripProfileId', 'tripProfileName', 'routeId', 'routeName', 'rowType', 'serviceDayId', 'serviceDayName', 'annualServiceDays', 'tripCount', 'blockCount', 'unassignedTripCount', 'runningHoursPerDay', 'revenueHoursPerDay', 'platformHoursPerDay', 'annualRevenueHours', 'annualPlatformHours', 'firstYear', 'firstYearAnnualCostUsd'];
+  // Decision 0089 item 41: `countSource` says whether a route-day's annual service days are the Scenario's count or the Route's own.
+  const routeHeaders = ['projectId', 'scenarioId', 'scenarioName', 'blockingScenarioId', 'blockingScenarioName', 'tripProfileId', 'tripProfileName', 'routeId', 'routeName', 'rowType', 'serviceDayId', 'serviceDayName', 'annualServiceDays', 'tripCount', 'blockCount', 'unassignedTripCount', 'runningHoursPerDay', 'revenueHoursPerDay', 'platformHoursPerDay', 'annualRevenueHours', 'annualPlatformHours', 'firstYear', 'firstYearAnnualCostUsd', 'countSource'];
   const firstYear = result.yearRows[0]?.serviceYear;
   const firstYearCostOf = (day: CostingRouteResult['days'][number]) => firstYear === undefined ? undefined : day.yearCosts.find((item) => item.serviceYear === firstYear)?.annualCostUsd;
   const routeResultRows: ResultRow[] = result.routeRows.flatMap((route) => {
@@ -230,7 +231,7 @@ export function costingCsvFiles(
       tripCount: day.tripCount, blockCount: day.blockCount, unassignedTripCount: day.unassignedTripCount,
       runningHoursPerDay: hours(day.runningHoursPerDay), revenueHoursPerDay: hours(day.revenueHoursPerDay), platformHoursPerDay: hours(day.platformHoursPerDay),
       annualRevenueHours: hours(day.annualRevenueHours), annualPlatformHours: hours(day.annualPlatformHours),
-      firstYear, firstYearAnnualCostUsd: usd(firstYearCostOf(day)),
+      firstYear, firstYearAnnualCostUsd: usd(firstYearCostOf(day)), countSource: day.countSource ?? 'scenario',
     }));
     // The total row sums its service-day rows; a column any day leaves blank is blank in the total (sumWhenKnown).
     const totalRow: ResultRow = {
@@ -245,6 +246,12 @@ export function costingCsvFiles(
     };
     return [...dayRows, totalRow];
   });
+
+  // Decision 0089 item 41: one note row names the Routes on their own annual service days (none on a Scenario-count result).
+  const routesOnOwnCounts = result.routeRows.filter((route) => route.routeId !== null && route.days.some((day) => day.countSource === 'route'));
+  if (routesOnOwnCounts.length > 0) {
+    routeResultRows.push({ rowType: 'note', ...context, routeName: `Routes on their own annual service days: ${routesOnOwnCounts.map((route) => route.routeName || 'Untitled route').join('; ')}` });
+  }
 
   return [
     { suffix: 'costing-assumptions', contents: assumptionsContents },

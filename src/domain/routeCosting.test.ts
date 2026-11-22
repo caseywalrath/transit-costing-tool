@@ -38,10 +38,12 @@ const factors = (allDays: CostingEstimateFactors['allDays'], ...rows: CostingEst
 interface EstimateOptions {
   profile?: CostingEstimateFactors;
   routeFactors?: { routeId: string; factors: CostingEstimateFactors }[];
+  /** Decision 0089 item 41: Routes with their own annual service days, in place of the fixture Routes. */
+  routes?: Route[];
 }
 function estimate(trips: Trip[], options: EstimateOptions = {}) {
   const input: EstimatedCostingInput = {
-    scenario, serviceDays: serviceDays(), tripProfile, trips, routes,
+    scenario, serviceDays: serviceDays(), tripProfile, trips, routes: options.routes ?? routes,
     assumptions: {
       ...assumptions,
       ...(options.profile ? { estimateFactors: options.profile } : {}),
@@ -137,6 +139,68 @@ describe('estimated basis: costing grouped by Route', () => {
     expect(result.state).toBe('invalid');
     expect(result.routeRows).toEqual([]);
   });
+
+  // Decision 0089 item 41, estimated basis. Alpha has its own weekday count of 62 (the Scenario has 255); Beta keeps the Scenario's count.
+  // Profile factors: layover 20%, deadhead 10%. Alpha runs 8 h on weekdays (10 h revenue), Beta 4 h (5 h) and 2 h on Saturday (2.5 h).
+  const ownAlpha = (countsByServiceDayId: Record<string, number>, enabled = true): Route[] => routes.map((route) => (route.id === 'route-a'
+    ? { ...route, ownAnnualServiceDays: { enabled, countsByServiceDayId } }
+    : route));
+  const withProfile = (routeOverrides: Route[] | undefined) => estimate(estimateTrips(), { profile: factors({ layoverFraction: 0.2, deadheadFraction: 0.1 }), routes: routeOverrides });
+
+  it('uses a Route\'s own count for its row, and the day and year figures are the sum of the Route rows', () => {
+    const result = withProfile(ownAlpha({ weekday: 62 }));
+    expect(result.state).toBe('complete');
+    expect(dayOf(routeOf(result.routeRows, 'route-a'), 'weekday')).toMatchObject({ annualServiceDays: 62, countSource: 'route' });
+    expect(dayOf(routeOf(result.routeRows, 'route-a'), 'weekday').annualRevenueHours).toBeCloseTo(620, 9);
+    expect(dayOf(routeOf(result.routeRows, 'route-b'), 'weekday')).toMatchObject({ annualServiceDays: 255, countSource: 'scenario' });
+    const weekday = result.dailyRows.find((day) => day.serviceDayId === 'weekday')!;
+    expect(weekday).toMatchObject({ annualServiceDays: 255, usesRouteCounts: true });
+    expect(weekday.annualRevenueHours).toBeCloseTo(620 + 1275, 9);
+    expect(weekday.annualRunningHours).toBeCloseTo(8 * 62 + 4 * 255, 9);
+    expect(result.dailyRows.every((day) => day.usesRouteCounts === true)).toBe(true);
+    expect(result.dailyRows.find((day) => day.serviceDayId === 'saturday')!.annualRevenueHours).toBeCloseTo(2.5 * 52, 9);
+    for (const day of result.dailyRows) {
+      expect(sum(result.routeRows.map((row) => dayOf(row, day.serviceDayId).annualRevenueHours!))).toBeCloseTo(day.annualRevenueHours!, 9);
+    }
+    // Rate 100 in 2026: Alpha 10 h x 62 and Beta 5 h x 255 on weekdays, and Beta 2.5 h x 52 on Saturdays.
+    expect(result.yearRows[0].annualCostUsd).toBeCloseTo(10 * 100 * 62 + 5 * 100 * 255 + 2.5 * 100 * 52, 6);
+    expect(result.findings.find((finding) => finding.ruleId === 'costing.routeCountsInUse')).toMatchObject({ severity: 'warning', parameters: { routes: 'Alpha' } });
+  });
+
+  it('names a Route on its own count even when that count equals the Scenario\'s, with the same numbers', () => {
+    const same = withProfile(ownAlpha({ weekday: 255 }));
+    const baseline = withProfile(undefined);
+    expect(dayOf(routeOf(same.routeRows, 'route-a'), 'weekday').countSource).toBe('route');
+    for (const [index, day] of same.dailyRows.entries()) {
+      expect(day.annualRevenueHours!).toBeCloseTo(baseline.dailyRows[index].annualRevenueHours!, 9);
+      expect(day.annualRunningHours).toBeCloseTo(baseline.dailyRows[index].annualRunningHours, 9);
+    }
+    expect(same.yearRows[0].annualCostUsd).toBeCloseTo(baseline.yearRows[0].annualCostUsd, 6);
+  });
+
+  it('gives the Scenario counts, with the same result as no own counts, once the Route is switched off', () => {
+    const switchedOff = withProfile(ownAlpha({ weekday: 62 }, false));
+    expect(switchedOff).toEqual(withProfile(undefined));
+    expect(switchedOff.dailyRows.some((day) => 'usesRouteCounts' in day)).toBe(false);
+    expect(switchedOff.findings.some((finding) => finding.ruleId === 'costing.routeCountsInUse')).toBe(false);
+  });
+
+  it('refuses a switched-on Route whose count is not a whole number, is negative, or takes the Route above 365 days in total', () => {
+    const fractional = withProfile(ownAlpha({ weekday: 62.5 }));
+    expect(fractional.state).toBe('invalid');
+    expect(fractional.findings).toContainEqual(expect.objectContaining({ ruleId: 'costing.routeAnnualServiceDaysInvalid', severity: 'error', entityType: 'route', entityId: 'route-a', parameters: expect.objectContaining({ serviceDayId: 'weekday' }) }));
+    expect(withProfile(ownAlpha({ weekday: -1 })).state).toBe('invalid');
+    const above = withProfile(ownAlpha({ weekday: 200, saturday: 200 }));
+    expect(above.state).toBe('invalid');
+    expect(above.findings).toContainEqual(expect.objectContaining({ ruleId: 'costing.routeAnnualServiceDaysInvalid', parameters: { routeId: 'route-a', total: 400 } }));
+    expect(above.routeRows).toEqual([]);
+  });
+
+  it('does not check the counts of a Route switched off, because they are not used', () => {
+    const off = withProfile(ownAlpha({ weekday: 62.5, saturday: 200 }, false));
+    expect(off.state).toBe('complete');
+    expect(off.findings.some((finding) => finding.ruleId === 'costing.routeAnnualServiceDaysInvalid')).toBe(false);
+  });
 });
 
 describe('blocked basis: costing grouped by Route', () => {
@@ -225,6 +289,55 @@ describe('blocked basis: costing grouped by Route', () => {
     const none = blocked({ blocks: [], blockSummaries: [] });
     expect(none.noEstimateReason).toBe('noEligibleBlocks');
     expect(none.routeRows).toEqual([]);
+  });
+
+  // Decision 0089 item 41. Alpha has its own count of 62 on the weekday; the Scenario has 255. Block b2 joins Alpha and Beta, so it is Unattributed.
+  const withOwnCount = (routeId: string, countsByServiceDayId: Record<string, number>, enabled = true): Route[] => routes.map((route) => (route.id === routeId
+    ? { ...route, ownAnnualServiceDays: { enabled, countsByServiceDayId } }
+    : route));
+
+  it('uses a Route\'s own count for its row and the totals, and the largest count for the Unattributed row, with a warning', () => {
+    const result = blocked({ routes: withOwnCount('route-a', { weekday: 62 }) });
+    expect(dayOf(routeOf(result.routeRows, 'route-a'), 'weekday')).toMatchObject({ annualServiceDays: 62, countSource: 'route', revenueHoursPerDay: 1, annualRevenueHours: 62 });
+    expect(dayOf(routeOf(result.routeRows, 'route-b'), 'saturday')).toMatchObject({ annualServiceDays: 52, countSource: 'scenario', annualRevenueHours: 26 });
+    expect(dayOf(routeOf(result.routeRows, null), 'weekday')).toMatchObject({ annualServiceDays: 255, countSource: 'scenario', revenueHoursPerDay: 2, annualRevenueHours: 510 });
+    const weekday = result.dailyRows.find((row) => row.serviceDayId === 'weekday')!;
+    expect(weekday).toMatchObject({ annualServiceDays: 255, usesRouteCounts: true, annualRevenueHours: 572, annualPlatformHours: 951 });
+    expect(result.dailyRows.every((row) => row.usesRouteCounts === true)).toBe(true);
+    for (const day of result.dailyRows) {
+      expect(sum(result.routeRows.map((row) => dayOf(row, day.serviceDayId).annualRevenueHours!))).toBeCloseTo(day.annualRevenueHours, 9);
+    }
+    // Rate 100 in 2026 (no escalation in the first year): weekday 1 h x 62 + 2 h x 255 at 100, and Saturday 0.5 h x 52 at 100.
+    expect(result.yearRows[0].annualCostUsd).toBeCloseTo(57200 + 2600, 6);
+    expect(result.findings.find((finding) => finding.ruleId === 'costing.unattributedUsesLargestCount')).toMatchObject({
+      severity: 'warning', entityType: 'serviceDay', entityId: 'weekday', parameters: { serviceDayId: 'weekday', annualServiceDays: 255 },
+    });
+    expect(result.findings.find((finding) => finding.ruleId === 'costing.routeCountsInUse')).toMatchObject({ severity: 'warning', parameters: { routes: 'Alpha' } });
+  });
+
+  it('names a Route on its own count even when that count equals the Scenario\'s, and gives no largest-count warning', () => {
+    const result = blocked({ routes: withOwnCount('route-a', { weekday: 255 }) });
+    expect(result.findings.some((finding) => finding.ruleId === 'costing.unattributedUsesLargestCount')).toBe(false);
+    expect(dayOf(routeOf(result.routeRows, 'route-a'), 'weekday').countSource).toBe('route');
+    // A tie between equal counts goes to the Route's own count, so the Unattributed row names that source too.
+    expect(dayOf(routeOf(result.routeRows, null), 'weekday').countSource).toBe('route');
+    expect(result.findings.some((finding) => finding.ruleId === 'costing.routeCountsInUse')).toBe(true);
+  });
+
+  it('gives the same result as no own counts once the Route is switched off, with the counts kept', () => {
+    const switchedOff = blocked({ routes: withOwnCount('route-a', { weekday: 62 }, false) });
+    expect(switchedOff).toEqual(blocked());
+    expect(switchedOff.dailyRows.some((row) => 'usesRouteCounts' in row)).toBe(false);
+    expect(switchedOff.findings.some((finding) => finding.ruleId === 'costing.routeCountsInUse')).toBe(false);
+  });
+
+  it('is invalid for a switched-on Route whose count is not a whole number, is negative, or takes the Route above 365 days in total', () => {
+    const negative = blocked({ routes: withOwnCount('route-a', { weekday: -1 }) });
+    expect(negative.state).toBe('invalid');
+    expect(negative.findings).toContainEqual(expect.objectContaining({ ruleId: 'costing.routeAnnualServiceDaysInvalid', severity: 'error', entityId: 'route-a' }));
+    const above = blocked({ routes: withOwnCount('route-a', { weekday: 200, saturday: 200 }) });
+    expect(above.findings).toContainEqual(expect.objectContaining({ ruleId: 'costing.routeAnnualServiceDaysInvalid', parameters: { routeId: 'route-a', total: 400 } }));
+    expect(blocked({ routes: withOwnCount('route-a', { weekday: -1 }, false) }).state).not.toBe('invalid');
   });
 });
 

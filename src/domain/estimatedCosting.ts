@@ -1,8 +1,12 @@
 import {
   costingAppliedRates,
   costingYearCostsForDay,
+  ownOrScenarioCount,
+  routeCountsInUseFinding,
+  routeCountsSwitchedOn,
   validateAnnualServiceDays,
   validateCostingAssumptions,
+  validateRouteAnnualServiceDays,
   type CostingAssumptionsInput,
   type CostingDailyYearResult,
   type CostingEstimateState,
@@ -311,6 +315,8 @@ export interface EstimatedCostingDailyResult {
   impliedService?: ImpliedRouteService[];
   revenueHoursPerDay?: number; platformHoursPerDay?: number;
   annualRevenueHours?: number; annualPlatformHours?: number;
+  /** Decision 0089 item 41: present and true when a Route is switched on. The day's annual figures are then the sum of its Route rows. */
+  usesRouteCounts?: true;
   yearCosts: CostingDailyYearResult[]; // empty without a rate or without revenue hours
 }
 export interface EstimatedCostingYearResult {
@@ -357,6 +363,7 @@ export function calculateEstimatedCosting(input: EstimatedCostingInput): Estimat
   const findings = [
     ...validateCostingAssumptions(assumptions, scenario.id),
     ...validateAnnualServiceDays(serviceDays, scenario.id),
+    ...validateRouteAnnualServiceDays(input.routes),
   ];
   if (tripProfile.scenarioId !== scenario.id) findings.push(finding('costing.tripProfileMismatch', 'error', 'tripProfile', tripProfile.id));
   const serviceDayIds = new Set(serviceDays.map((day) => day.id));
@@ -419,6 +426,9 @@ export function calculateEstimatedCosting(input: EstimatedCostingInput): Estimat
   // Decision 0077 item 2.2: each Route's factors, per service day. A Route with no entry inherits the Trip Profile's factors.
   const routeEntryFactors = new Map((assumptions.routeEstimateFactors ?? []).map((entry) => [entry.routeId, entry.factors]));
   const routeNames = new Map((input.routes ?? []).map((route) => [route.id, route.name]));
+  const routeById = new Map((input.routes ?? []).map((route) => [route.id, route]));
+  // Decision 0089 item 41. With a Route switched on, each day's annual figures are the sum of its Route rows; the rows use each Route's own count.
+  const usesRouteCounts = routeCountsSwitchedOn(input.routes);
   const routeRows: CostingRouteResult[] = sortRouteResults([...perRouteDay.keys()].map((routeId) => ({
     routeId,
     ...(routeNames.has(routeId) ? { routeName: routeNames.get(routeId) } : {}),
@@ -426,10 +436,12 @@ export function calculateEstimatedCosting(input: EstimatedCostingInput): Estimat
       const quantities = perRouteDay.get(routeId)!.get(day.id) ?? { seconds: 0, tripCount: 0, withoutRunTime: 0 };
       const runningHoursPerDay = quantities.seconds / 3600;
       const factors = resolveRouteDayFactors(routeEntryFactors.get(routeId), assumptions.estimateFactors, day.id);
+      const choice = ownOrScenarioCount(routeById.get(routeId), day);
       const row: CostingRouteDayResult = {
         serviceDayId: day.id,
         serviceDayName: day.name,
-        annualServiceDays: day.annualServiceDays,
+        annualServiceDays: choice.count,
+        countSource: choice.source,
         tripCount: quantities.tripCount,
         tripsWithoutRunTimeCount: quantities.withoutRunTime,
         runningHoursPerDay,
@@ -443,11 +455,15 @@ export function calculateEstimatedCosting(input: EstimatedCostingInput): Estimat
         row.revenueHoursPerDay = runningHoursPerDay / (1 - factors.layoverFraction);
         if (factors.deadheadFraction !== undefined) row.platformHoursPerDay = row.revenueHoursPerDay / (1 - factors.deadheadFraction);
       }
-      if (row.revenueHoursPerDay !== undefined) row.annualRevenueHours = row.revenueHoursPerDay * day.annualServiceDays;
-      if (row.platformHoursPerDay !== undefined) row.annualPlatformHours = row.platformHoursPerDay * day.annualServiceDays;
+      if (row.revenueHoursPerDay !== undefined) row.annualRevenueHours = row.revenueHoursPerDay * choice.count;
+      if (row.platformHoursPerDay !== undefined) row.annualPlatformHours = row.platformHoursPerDay * choice.count;
       return row;
     }),
   })));
+  const routeCountsFinding = routeCountsInUseFinding(scenario.id, routeRows
+    .filter((route) => route.days.some((day) => day.countSource === 'route'))
+    .map((route) => route.routeName ?? route.routeId ?? ''));
+  if (routeCountsFinding) findings.push(routeCountsFinding);
 
   const dailyRows: EstimatedCostingDailyResult[] = sortedDays.map((day, index) => {
     const quantities = perDay.get(day.id)!;
@@ -462,7 +478,9 @@ export function calculateEstimatedCosting(input: EstimatedCostingInput): Estimat
       tripCount: quantities.tripCount,
       tripsWithoutRunTimeCount: quantities.withoutRunTime,
       runningHoursPerDay,
-      annualRunningHours: runningHoursPerDay * day.annualServiceDays,
+      annualRunningHours: usesRouteCounts
+        ? dayRouteRows.reduce((sum, route) => sum + route.runningHoursPerDay! * route.annualServiceDays, 0)
+        : runningHoursPerDay * day.annualServiceDays,
       factors,
       ...(input.patterns ? { impliedService: deriveImpliedService(tripsByDay.get(day.id) ?? [], input.patterns, (routeId) => {
         // Decision 0077: each Route's implied service uses that Route's resolved layover, as its cost row does.
@@ -482,8 +500,13 @@ export function calculateEstimatedCosting(input: EstimatedCostingInput): Estimat
       row.revenueHoursPerDay = runningHoursPerDay / (1 - factors.layoverFraction);
       if (factors.deadheadFraction !== undefined) row.platformHoursPerDay = row.revenueHoursPerDay / (1 - factors.deadheadFraction);
     }
-    if (row.revenueHoursPerDay !== undefined) row.annualRevenueHours = row.revenueHoursPerDay * day.annualServiceDays;
-    if (row.platformHoursPerDay !== undefined) row.annualPlatformHours = row.platformHoursPerDay * day.annualServiceDays;
+    if (usesRouteCounts) row.usesRouteCounts = true;
+    if (row.revenueHoursPerDay !== undefined) {
+      row.annualRevenueHours = usesRouteCounts ? sumDefined(dayRouteRows.map((route) => route.annualRevenueHours)) : row.revenueHoursPerDay * day.annualServiceDays;
+    }
+    if (row.platformHoursPerDay !== undefined) {
+      row.annualPlatformHours = usesRouteCounts ? sumDefined(dayRouteRows.map((route) => route.annualPlatformHours)) : row.platformHoursPerDay * day.annualServiceDays;
+    }
     return row;
   });
 
@@ -514,14 +537,20 @@ export function calculateEstimatedCosting(input: EstimatedCostingInput): Estimat
     return result('invalid', [], []);
   }
 
-  const costedRows = dailyRows.map((row) => ({
-    ...row,
-    yearCosts: appliedRates.map(({ serviceYear, rate }) => ({
-      serviceYear,
-      costPerDayUsd: row.revenueHoursPerDay! * rate,
-      annualCostUsd: row.revenueHoursPerDay! * rate * row.annualServiceDays,
-    })),
-  }));
+  const costedRows = dailyRows.map((row, index) => {
+    // Decision 0089 item 41: with a Route switched on, a day's cost is the sum of its Route rows' costs at their own counts.
+    const dayRouteRows = routeRows.map((route) => route.days[index]);
+    return {
+      ...row,
+      yearCosts: appliedRates.map(({ serviceYear, rate }) => ({
+        serviceYear,
+        costPerDayUsd: row.revenueHoursPerDay! * rate,
+        annualCostUsd: usesRouteCounts
+          ? dayRouteRows.reduce((sum, route) => sum + route.revenueHoursPerDay! * rate * route.annualServiceDays, 0)
+          : row.revenueHoursPerDay! * rate * row.annualServiceDays,
+      })),
+    };
+  });
   const platformKnown = costedRows.every((row) => row.annualPlatformHours !== undefined);
   const yearRows: EstimatedCostingYearResult[] = appliedRates.map(({ serviceYear, rate }) => ({
     serviceYear,

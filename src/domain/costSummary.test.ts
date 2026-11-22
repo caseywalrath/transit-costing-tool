@@ -76,6 +76,18 @@ describe('buildCostSummary (Decision 0054)', () => {
       expect(summary.days).toHaveLength(2);
     });
 
+    it('names the Routes on their own annual service days, and leaves the note out when every Route uses the Scenario count', () => {
+      const own = { ...routeDay('weekday', 'Weekday', 62, 10, 62_000), countSource: 'route' as const };
+      const scenarioCount = { ...routeDay('saturday', 'Saturday', 52, 5, 26_000), countSource: 'scenario' as const };
+      const withOwn = blocked({ routeRows: [
+        { routeId: 'alpha', routeName: 'Alpha', days: [own] },
+        { routeId: 'beta', routeName: 'Beta', days: [scenarioCount] },
+      ] });
+      expect(buildCostSummary(withOwn, heading)!.routeCountsInUse).toEqual(['Alpha']);
+      const scenarioOnly = blocked({ routeRows: [{ routeId: 'beta', routeName: 'Beta', days: [scenarioCount] }] });
+      expect(buildCostSummary(scenarioOnly, heading)).not.toHaveProperty('routeCountsInUse');
+    });
+
     it('leaves a Route figure out when a day has no first-year cost, and reports no Routes without Route rows', () => {
       const result = blocked({ routeRows: [{ routeId: 'alpha', routeName: 'Alpha', days: [{ ...routeDay('weekday', 'Weekday', 255, 10, 255_000), yearCosts: [] }] }] });
       const [route] = buildCostSummary(result, heading)!.routes;
