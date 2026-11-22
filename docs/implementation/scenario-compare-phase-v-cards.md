@@ -142,3 +142,60 @@ As in the plan, Part 5. The worked-example test (V1) and the equality with Costi
   - Pass the save stamp from `createSaveStamp(saveStatus)`.
   - Call `dispose()` on teardown.
 - Hand-off: next is sitting 3, V4 (the tab), with its card written at the start.
+
+## 10. Card V4 — The Compare tab
+
+**Rules:** 0091 items 1–18; plan Part 4 and V-D1, V-D2. **Look:** the mock-up, frames 1–5. **Model:** Sonnet.
+
+**Build** in `src/ui/compare/` (plus the wiring below):
+
+1. **The tab.**
+   - Add `'compare'` to `ActiveTab` in `src/ui/App.tsx`, labelled "Compare", after Costing.
+   - Enabled once the Project has a Scenario. It picks its own sides, so it does not use the header's Scenario, Trip profile or Blocking switchers. Hide those crumbs on this tab.
+   - It is read only (V-D1): no save, no undo entry, no navigation guard.
+2. **Header (frame 1).**
+   - Two side pickers, Baseline and Proposed, each with Scenario, Trip profile and Blocking scenario. The Blocking menu has "None (estimate)" at the end.
+   - A Day menu: the matched day pairs from the result, then "Annual".
+   - Rates and Counts menus: "Baseline's" (default), "Proposed's", "Each side's own".
+   - A "Download CSV" button, using `comparisonCsvText` and `comparisonFileName`.
+   - First open, with nothing remembered: Baseline is the Scenario selected in the app; Proposed is the first other Scenario, or the same Scenario if it is the only one.
+3. **Warnings line (frame 3).**
+   - One line per item in `differences` (rates, counts, basis), plus the comparison's own warnings (`compare.ambiguousRoute` and the rest), in plain words.
+   - A side error explains the fix:
+     - `compare.costingNoEstimate` or `compare.costingInvalid` with no rate: "Enter a rate on the Costing tab for <Scenario>, or set Rates to the other side's."
+     - Any other Costing finding: show its message using the existing `errorMessages.ts` helpers.
+   - The other side's figures are not shown as zeros.
+4. **Calculating (frame 3).**
+   - Show progress messages from `onProgress`. Keep the previous result visible but dimmed.
+   - Drop stale results with `latestRequest.ts`.
+5. **Totals tiles (frame 1).** Trips, miles, revenue hours, peak vehicles and cost, each with Baseline → Proposed and the change (number and %).
+6. **Route table (frames 1, 2 and 4).**
+   - Columns as in the mock-up, in the 0091 order: largest absolute hours change first, Unattributed last, Unchanged rows folded under "n unchanged routes" (expandable).
+   - Status chip: New, Discontinued, Changed, Unchanged. "—" for % on New and Discontinued rows.
+   - Clicking a row opens its detail in place (frame 2), one at a time. The detail shows span, the headway by period and the other measures, with the cells that differ in bold accent colour.
+   - Rows are buttons or have `aria-expanded`, and work with the keyboard.
+7. **Annual (frame 4).** Same table, with peak as the highest of the days.
+8. **Narrow (frame 5).** Below the existing narrow breakpoint, the side pickers stack and the table shows Route, Status, Hours Δ and Cost Δ. The rest is in the detail. No horizontal page scroll at 390 px.
+9. **Remembered on the device.** Sides, day, rates and counts are stored per Project, through `src/ui/preferences.ts`, the same as `COST_BASIS_KIND_KEY`. A remembered id that no longer exists falls back to the first-open rule.
+10. **Wiring.** Do this in `src/main.tsx` as described in §9, and pass the service down the way `costingService` is passed. Call `dispose()` on teardown.
+11. **Styles.** Use the existing tokens and table styles in `src/ui/styles/`, with no raw hex for chrome. Light and dark must both work.
+
+**Tests:**
+- `tests/ui/compare.spec.ts`, using the worked example.
+  - Build the example's two Scenarios through the UI or the existing test-seeding helpers that other specs use (look in `tests/ui/` for the pattern).
+  - Check the Weekday totals: trips 9→10, hours 4.15→4.85, peak 2→3, cost $104,165→$121,735.
+  - Check Annual: hours 1,062.45→1,248.55.
+  - Check R3 New, R2 Discontinued, R1 Changed.
+  - Open a row's detail.
+  - Download the CSV and check its name and header.
+  - Make a no-rate side and check the fix message.
+  - Reload and check the choices are remembered.
+  - Check 390 px width has no horizontal scroll.
+- Add the Compare tab to `tests/ui/keyboard.spec.ts` (axe, no violations).
+- Unit tests for any pure helpers in `src/ui/compare/`.
+
+**Run:** `pnpm typecheck`; `pnpm test`; `pnpm build`. Then:
+- `pnpm exec playwright test tests/ui/compare.spec.ts tests/ui/keyboard.spec.ts tests/ui/app-shell.spec.ts --trace off`, and any spec touching tabs;
+- screenshots at 1440 and 390 px, light and dark, saved to the scratchpad and inspected.
+
+**Files:** `src/ui/compare/**`, `src/ui/App.tsx`, `src/main.tsx`, `src/ui/preferences.ts`, `src/ui/styles/**`, `tests/ui/compare.spec.ts`, `tests/ui/keyboard.spec.ts`. Change `src/application/compare/` or `src/domain/compare/` only to fix a bug found here. Report any such fix.
