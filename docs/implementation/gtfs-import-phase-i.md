@@ -341,3 +341,62 @@ The agent's listed non-blocking choices are accepted.
 
 - `routeFromFeed` can throw on an odd route: conflicting stop order between two patterns of one direction (`mapPatternPointsToDirection`). Also, stop IDs that differ only by case give `codeDuplicate`, and a stop repeated within one segment gives `stopPlacement.repeatedInSegment`. The I4 card must catch each per route: that route is not imported, it is listed with the reason, and the rest of the import goes on (0089 item 12).
 - Route stops come only from each pattern's most common variant. Stops served only by merged variants are not imported; the `mergedVariant` findings list those trips.
+
+## 13. Card I4 — Translation part 2: run times, trips, service days, blocks, report
+
+**Model:** Haiku, effort `xhigh`. **Rules:** 0089 items 12, 19 (Holiday trips), 30–37, 44; section 12b.
+
+**Files to create in `src/domain/gtfs/`:** `runtimesFromFeed.ts`, `tripsFromFeed.ts`, `blocksFromFeed.ts`, `reportFromFeed.ts`, `translateFeed.ts`, a test beside each. Reuse `routeFromFeed` (I3), `tripsOnDate` (I2), `tripCalculationSource` and `validateRuntimeProfile` (`src/domain/runtime.ts`), `createBlockingBlock`, `normalizeBlockActivities` and `validateBlockingBlock` (`src/domain/blocking.ts`), `newId`/`metadata`. **Do not touch** other files.
+
+**Main API:**
+
+```ts
+export interface TranslateServiceDay { key: string; serviceDayId: EntityId; name: string; date: GtfsDate; dateByRouteId?: Record<string, GtfsDate> }
+export interface TranslateFeedInput {
+  tables: GtfsTables; routeIds: string[]; scenarioId: EntityId; tripProfileId: EntityId;
+  serviceDays: TranslateServiceDay[];
+  blocks: { import: boolean; blockingScenarioId?: EntityId; pullOutMinutes?: number; pullInMinutes?: number };
+  timepointOverrides?: Record<string, Record<string, string[]>>;  // routeId → pattern key → stop IDs
+  existingRouteNames?: string[];                                  // level C clash rule (0089 item 4)
+  now: string;
+}
+export interface TranslatedRoute extends RouteFromFeed { runtimeProfiles: RuntimeProfile[]; runtimeAssignments: RuntimeAssignment[]; trips: Trip[] }
+export interface FeedTranslation { routes: TranslatedRoute[]; blocks: BlockingBlock[]; skippedRoutes: Array<{ routeId: string; reason: string }>; report: ImportReport }
+export function translateFeed(input: TranslateFeedInput): FeedTranslation;
+export function importReportCsv(report: ImportReport): string;
+```
+
+- For each route, collect its trips on every service day's date (or its own `dateByRouteId` date), call `routeFromFeed` once with all of them, then build profiles, trips and blocks per service day.
+- **Per-route failure (12b):** if `routeFromFeed` throws, or the built stop set has an error-level finding, the route goes to `skippedRoutes` with the message and the rest continues.
+- **Profiles (item 30):** one per pattern and service day that has trips; name "{service day name} from feed"; method `segmentStart`; `validateRuntimeProfile` must return no error. A band's `segmentRuntimeSeconds[i]` = median over its trips of (time at point i+1 − time at point i), where the time at a point is the departure, and the arrival at the last point.
+- **Trips (item 31):** `stopTimes` from the I3 placements; `provenance` = `{ kind: 'generated', creationMethod: 'feed', manuallyChangedFields: [], runtimeProfileId, runtimeCalculationRevision, calculationSource: tripCalculationSource(profile) }`; `tripProfileId` from the input; `publicLabel` = `trip_short_name`.
+- **Blocks (items 33–35):** rule as written; deadheads with `minutesAfterPreviousTrip: 0` and no miles; each block must pass `validateBlockingBlock`. If one does not, leave it out, list it with the finding, and report this to the orchestrator (the decision says the question returns to the user).
+- **Size warning (item 44):** `report.sizeWarning` true above 40 routes or 5,000 trips on any service day.
+- **Report (items 36–37):** per route: patterns, timepoints, stops, trips per service day, blocks; every I3 finding; invalid trips; not-imported files; approximate frequency trips; skipped routes; blocks left out with "also serves". **Fidelity:** per service day and route, feed trips and running seconds on the date (from `tripsOnDate`) vs imported trips and running seconds (first to last stop time); `report.fidelityOk` true only when all are equal. `importReportCsv` writes one row per finding, with columns `section,routeId,serviceDay,tripId,stopId,code,detail`.
+
+**Worked examples:**
+- `edge-no-direction`, Weekday 20260105: 3 trips; Outbound profile "Weekday from feed" with bands 06:00–07:00 [720] and 07:00–08:00 [840]; Inbound one band [720]; fidelity OK.
+- `edge-multi-route-blocks`, Weekday, blocks on, pull-out/in 10: M1 only → block `Y` imported (2 revenue trips), `X` left out "also serves M2"; both routes → `X`, `Y`, `Z` imported, `X` has 3 revenue trips across two Routes.
+- `mini`, all routes, Weekday 20260112 and Saturday 20260117: Weekday trips B1 5, R1 2, F1 18; running seconds B1 6000, R1 4440, F1 16200; fidelity OK; 1 invalid trip (`B1_W_BAD`) listed; F1's generated trips marked approximate only for `F1_W_FREQ` (9).
+- Clash: `existingRouteNames: ['main st, crosstown']` → B1 is named "Main St, Crosstown (feed)" and listed.
+- Every trip of every example: `tripRuntimeSourceIsCurrent(trip.provenance.calculationSource, profile)` is true.
+
+**Run:** `pnpm exec vitest run src/domain/gtfs`, `pnpm typecheck`, `pnpm test` once at the end.
+
+## 14. Card I5b — Costing with per-route annual counts
+
+**Model:** Haiku, effort `xhigh`. **Rules:** 0089 item 41.
+
+**Files:** `src/domain/costing.ts`, `src/domain/routeCosting.ts`, `src/application/costingService.ts`, `src/domain/costSummary.ts`, `src/persistence/csv.ts` (cost CSV columns only), and their tests. **Do not touch** UI files (I9b shows the markers) or any GTFS file.
+
+**Rule:** a Route's count for a service day = its own count when `ownAnnualServiceDays.enabled` and the day is in `countsByServiceDayId`; otherwise the Scenario's count. Read `costing.ts` and `routeCosting.ts` first and write down, in your report, where service-day annual hours are computed today.
+1. **Route rows:** annual hours = hours per day × the Route's count. The Unattributed row uses the largest count among the Routes of its Blocks, with a warning finding `costing.unattributedUsesLargestCount`.
+2. **Totals:** when any Route of the Scenario is switched on, each service day's annual hours and cost are the sum of its route rows (incl. Unattributed), not hours per day × the Scenario's count. Each service-day row keeps showing the Scenario's count as `annualServiceDays`, and gains `usesRouteCounts: true`. With no Route switched on, nothing changes.
+3. **Both cost bases** (revenue and platform) follow the same counts.
+4. **Cost summary and CSV:** a finding or note `costing.routeCountsInUse` listing the Routes on their own counts; the route-day CSV rows write the count actually used in `annualServiceDays`, and a new last column `countSource` (`scenario` or `route`).
+5. **Unchanged-totals test (never cut):** the existing Costing tests pass unchanged, and a new test runs the Federal BRT golden scenario with every Route's `ownAnnualServiceDays` absent and then with `enabled: false` and other counts present: every number equals the baseline.
+6. **New tests:** two Routes, one with Weekday 62 of the Scenario's 255: its row and the totals use 62 for it and 255 for the other; an interlined Block over both uses 255 with the warning; switching off restores the baseline.
+
+If the costing structure makes rule 2 need a change outside these files, stop and report.
+
+**Run:** costing unit tests, `pnpm typecheck`, `pnpm test`; `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm exec playwright test tests/ui/costing` (all costing specs).
