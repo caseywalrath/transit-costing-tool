@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { exportProjectJson, parseProjectBackup } from '../../persistence/backup';
 import { loadFeedTables } from './testFeeds';
-import { type ScenarioFromFeedOptions, projectFromFeed, scenarioFromFeed } from './scenarioFromFeed';
+import { type ScenarioFromFeedOptions, planFeedDays, projectFromFeed, scenarioFromFeed } from './scenarioFromFeed';
 
 const NOW = '2026-11-22T09:00:00.000Z';
 
@@ -70,6 +70,22 @@ describe('scenarioFromFeed', () => {
 
     const merged = scenarioFromFeed('project-1', 'Existing service', options('cal-holiday-unique', { keepExtraHolidayDays: false })).records;
     expect(merged.serviceDays.map((day) => day.name)).not.toContain('Holiday 2');
+  });
+
+  it('uses the planner annual count for a service day, and keeps the proposal beside it', () => {
+    const result = scenarioFromFeed('project-1', 'Existing service', options('mini', { annualCountOverrides: { weekday: 200 } }));
+    expect(result.records.serviceDays.find((day) => day.name === 'Weekday')?.annualServiceDays).toBe(200);
+    expect(result.records.serviceDays.find((day) => day.name === 'Saturday')?.annualServiceDays).toBe(
+      result.counts.countsByKey.saturday,
+    );
+    expect(result.counts.countsByKey.weekday).toBe(235);
+  });
+
+  it('gives a part-year Route the planner own date for a service day, in place of the suggested date', () => {
+    const plan = planFeedDays(options('cal-part-year', { routeDates: { R2: { weekday: '20260707' } } }));
+    expect(plan.days.find((day) => day.key === 'weekday')?.dateByRouteId).toEqual({ R2: '20260707' });
+    const suggested = planFeedDays(options('cal-part-year'));
+    expect(suggested.days.find((day) => day.key === 'weekday')?.dateByRouteId).toEqual({ R2: '20260716' });
   });
 
   it('gives a part-year Route its proposed own counts, switched off unless the planner lists it', () => {

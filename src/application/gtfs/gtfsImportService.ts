@@ -79,7 +79,12 @@ async function requireColumns(bytes: Uint8Array, file: string, entry: ZipEntry):
  * row is read. Routes, trips and the calendars are read first; stop_times.txt is read once, keeping only the rows of trips of the selected
  * Routes. A refused feed returns nothing.
  */
-export async function readFeedTables(bytes: Uint8Array, routeIds: readonly string[], onFile?: (file: string) => void): Promise<GtfsTables> {
+export async function readFeedTables(
+  bytes: Uint8Array,
+  routeIds: readonly string[],
+  onFile?: (file: string) => void,
+  options: { skipStopTimes?: boolean } = {},
+): Promise<GtfsTables> {
   const files = findFeedFiles(readZipEntries(bytes));
   requireFiles(files);
   for (const file of Object.keys(REQUIRED_COLUMNS)) {
@@ -105,7 +110,8 @@ export async function readFeedTables(bytes: Uint8Array, routeIds: readonly strin
   const shapes = await read('shapes.txt');
   const feedInfo = await read('feed_info.txt');
   const stops = await read('stops.txt');
-  const stopTimes = await read('stop_times.txt', (row) => selectedTripIds.has(row.trip_id));
+  // The overview reads no stop times: the planner chooses Routes first, and the large file is read for those Routes only (Decision 0089 item 8).
+  const stopTimes = options.skipStopTimes ? [] : await read('stop_times.txt', (row) => selectedTripIds.has(row.trip_id));
 
   return {
     agency,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { commonVariant, draftPatterns, mergedVariantTrips, patternKeyOf, patternNameOf, uniquePatternNames, variantsOf } from './patternsFromFeed';
+import { commonVariant, directionalPatternNames, draftPatterns, mergedVariantTrips, patternKeyOf, patternNameOf, uniquePatternNames, variantsOf } from './patternsFromFeed';
 import { type FeedTrip } from './tripsOnDate';
 
 const at = (hour: number, minute = 0): number => hour * 3600 + minute * 60;
@@ -99,5 +99,33 @@ describe('uniquePatternNames', () => {
 
   it('skips a suffix that another name already uses', () => {
     expect(uniquePatternNames(['Name', 'Name 2', 'Name'])).toEqual(['Name', 'Name 2', 'Name 3']);
+  });
+});
+
+describe('directionalPatternNames (sub-plan I8, section 18, answer C)', () => {
+  it('names each of three outbound patterns that share the headsign "Evans" after its last timepoint', () => {
+    const names = directionalPatternNames([
+      { group: 'outbound', name: 'Evans', headsign: 'Evans', lastName: 'Evans Station' },
+      { group: 'outbound', name: 'Evans', headsign: 'Evans', lastName: 'Lincoln Park' },
+      { group: 'outbound', name: 'Evans', headsign: 'Evans', lastName: 'Union Station' },
+    ]);
+    expect(names).toEqual(['Evans (to Evans Station)', 'Evans (to Lincoln Park)', 'Evans (to Union Station)']);
+  });
+
+  it('leaves a shared headsign alone when only one pattern of its direction has it', () => {
+    const names = directionalPatternNames([
+      { group: 'outbound', name: 'Evans', headsign: 'Evans', lastName: 'Evans Station' },
+      { group: 'inbound', name: 'Evans', headsign: 'Evans', lastName: 'Downtown' },
+    ]);
+    expect(names).toEqual(['Evans', 'Evans']);
+  });
+
+  it('keeps names that are not headsigns, and names given by "from to" when the headsign is blank', () => {
+    const names = directionalPatternNames([
+      { group: 'outbound', name: 'Hub to Far', headsign: undefined, lastName: 'Far' },
+      { group: 'outbound', name: 'Hub to Far', headsign: undefined, lastName: 'Far' },
+      { group: 'outbound', name: 'Crosstown', headsign: 'Crosstown', lastName: 'Hub' },
+    ]);
+    expect(names).toEqual(['Hub to Far', 'Hub to Far', 'Crosstown']);
   });
 });

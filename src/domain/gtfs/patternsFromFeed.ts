@@ -80,6 +80,32 @@ export function patternNameOf(trips: readonly FeedTrip[], firstName: string, las
   return commonHeadsign(trips) ?? `${firstName} to ${lastName}`;
 }
 
+/** One pattern for the naming rule: its direction, the name it would have, the headsign it is named after, and its last timepoint's name. */
+export interface NamingEntry {
+  group: DirectionGroup;
+  name: string;
+  headsign: string | undefined;
+  lastName: string;
+}
+
+/**
+ * Sub-plan I8, section 18 (answer C). Patterns of one direction that share a headsign are named "{headsign} (to {last timepoint name})".
+ * Only those patterns change; the other names are kept. The clash suffixes come after this, across the whole Route (uniquePatternNames).
+ */
+export function directionalPatternNames(entries: readonly NamingEntry[]): string[] {
+  const shared = new Map<string, number>();
+  for (const entry of entries) {
+    if (entry.headsign === undefined) continue;
+    const key = `${entry.group}|${entry.headsign}`;
+    shared.set(key, (shared.get(key) ?? 0) + 1);
+  }
+  return entries.map((entry) => {
+    if (entry.headsign === undefined || entry.name !== entry.headsign) return entry.name;
+    if ((shared.get(`${entry.group}|${entry.headsign}`) ?? 0) < 2) return entry.name;
+    return `${entry.headsign} (to ${entry.lastName})`;
+  });
+}
+
 /**
  * Decision 0089 item 25. A repeated name gets " 2", " 3" and so on in the order the patterns are given. A suffix that would
  * clash with another name is skipped.

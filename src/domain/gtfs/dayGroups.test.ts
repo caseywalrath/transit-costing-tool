@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dayGroups, defaultDates, partYearRoutes } from './dayGroups';
+import { dayGroups, defaultDates, partYearRoutes, serviceDayGroups } from './dayGroups';
 import { loadFeedTables, tablesWith } from './testFeeds';
 
 const mini = loadFeedTables('mini');
@@ -169,5 +169,48 @@ describe('partYearRoutes', () => {
   it('flags nothing for a service day that has no chosen date', () => {
     const tables = loadFeedTables('cal-part-year');
     expect(partYearRoutes(tables, new Set(['R1', 'R2']), {})).toEqual([]);
+  });
+});
+
+describe('serviceDayGroups (mini feed, hand-worked from the dayGroups figures)', () => {
+  it('keeps only the Sundays for Sunday: one group of four dates, the Monday holiday left out', () => {
+    const groups = serviceDayGroups(mini, miniRoutes, 'sunday');
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({
+      serviceIds: ['SUN'],
+      dates: ['20260111', '20260118', '20260125', '20260201'],
+      daysOfWeek: [6],
+      tripCount: 1,
+      addedServiceIds: [],
+      removedServiceIds: [],
+      tripDelta: 0,
+    });
+  });
+
+  it('gives Saturday its typical group and the event Saturday as a group that adds EVT', () => {
+    const groups = serviceDayGroups(mini, miniRoutes, 'saturday');
+    expect(groups.map((group) => [group.serviceIds, group.dates.length, group.tripCount, group.tripDelta])).toEqual([
+      [['SAT'], 3, 6, 0],
+      [['EVT', 'SAT'], 1, 7, 1],
+    ]);
+    expect(groups[1]).toMatchObject({ dates: ['20260124'], addedServiceIds: ['EVT'], removedServiceIds: [] });
+  });
+
+  it('takes the Friday with Saturday service out of the weekday typical set and gives the difference in trips', () => {
+    const groups = serviceDayGroups(mini, miniRoutes, 'weekday');
+    const typical = groups.find((group) => group.serviceIds.join() === 'WKDY');
+    expect(typical).toMatchObject({ tripCount: 25, tripDelta: 0, addedServiceIds: [], removedServiceIds: [] });
+    expect(typical?.dates).toHaveLength(18);
+    const friday = groups.find((group) => group.serviceIds.join() === 'SAT,WKDY');
+    expect(friday).toMatchObject({ dates: ['20260130'], tripCount: 31, addedServiceIds: ['SAT'], removedServiceIds: [], tripDelta: 6 });
+  });
+
+  it('leaves the excluded holiday candidate dates out of the groups', () => {
+    const groups = serviceDayGroups(mini, miniRoutes, 'saturday', new Set(['20260124']));
+    expect(groups.map((group) => [group.serviceIds, group.dates.length])).toEqual([[['SAT'], 3]]);
+  });
+
+  it('has no groups for Holiday, which has no days of the week', () => {
+    expect(serviceDayGroups(mini, miniRoutes, 'holiday')).toEqual([]);
   });
 });

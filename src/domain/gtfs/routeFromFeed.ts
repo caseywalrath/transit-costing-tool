@@ -18,10 +18,11 @@ import type {
   TimepointStopCodes,
 } from '../types';
 import { commonShapeId, measurePattern, stopCoordinates } from './distancesFromFeed';
-import { directionNames, splitDirections } from './directionsFromFeed';
+import { commonHeadsign, directionNames, splitDirections } from './directionsFromFeed';
 import { GtfsFeedError, type Row } from './feedTables';
 import {
   commonVariant,
+  directionalPatternNames,
   draftPatterns,
   mergedVariantTrips,
   patternKeyOf,
@@ -179,8 +180,19 @@ export function routeFromFeed(input: RouteFromFeedInput): RouteFromFeed {
     if (result.method === 'unmeasured') findings.push({ code: 'unmeasuredPattern', routeId: feedRouteId, patternKey: draft.key });
     return result.cumulativeMiles;
   });
+  // Rule C first (sub-plan I8, section 18), then the " 2", " 3" suffixes for any name that still clashes across the whole Route.
   const patternNames = uniquePatternNames(
-    drafts.map((draft) => patternNameOf(draft.trips, stopName(draft.timepointIds[0]), stopName(lastOf(draft.timepointIds)))),
+    directionalPatternNames(
+      drafts.map((draft) => {
+        const lastName = stopName(lastOf(draft.timepointIds));
+        return {
+          group: draft.group,
+          name: patternNameOf(draft.trips, stopName(draft.timepointIds[0]), lastName),
+          headsign: commonHeadsign(draft.trips),
+          lastName,
+        };
+      }),
+    ),
   );
 
   // Nodes: one per distinct timepoint stop ID. A terminal is a first or last point of some pattern.

@@ -312,3 +312,67 @@ export function partYearRoutes(
   }
   return flagged;
 }
+
+/**
+ * The day groups of one ordinary service day (sub-plan I8, item 5): the groups of dayGroups, restricted to the dates on that service
+ * day's days of the week. Holiday dates are left out because they are listed under Holidays. The difference is taken from the service
+ * day's typical set: the set the default date uses (Monday to Friday: the set covering the most Monday to Friday dates). Holiday has no
+ * days of the week, so it has no groups.
+ */
+export function serviceDayGroups(
+  tables: GtfsTables,
+  routeIds: ReadonlySet<string>,
+  key: ServiceDayKey,
+  excludeDates: ReadonlySet<GtfsDate> = new Set(),
+): DayGroup[] {
+  if (key !== 'weekday' && key !== 'saturday' && key !== 'sunday') return [];
+  const { range, dates, finder, keyOf, typical } = analyseDays(tables, routeIds);
+  if (!range) return [];
+  const days: readonly number[] = SERVICE_DAY_OF_WEEK[key];
+
+  // Holiday candidates are listed under Holidays, so the caller passes them here and they are left out of the groups.
+  const byKey = new Map<string, { ids: string[]; dates: GtfsDate[] }>();
+  for (const date of dates) {
+    if (!days.includes(dayOfWeek(date)) || excludeDates.has(date)) continue;
+    const groupKey = keyOf.get(date) as string;
+    const entry = byKey.get(groupKey);
+    if (entry) entry.dates.push(date);
+    else byKey.set(groupKey, { ids: finder.on(date), dates: [date] });
+  }
+  const typicalKey = wantedSetKey(key, [...byKey.values()].flatMap((entry) => entry.dates), keyOf, typical);
+  const typicalEntry = typicalKey === undefined ? undefined : byKey.get(typicalKey);
+  if (!typicalEntry) return [];
+  const typicalIds = new Set(typicalEntry.ids);
+  const typicalTrips = totalTrips(tables, routeIds, typicalEntry.dates[0]);
+
+  const routesOfService = new Map<string, Set<string>>();
+  for (const trip of tables.trips) {
+    if (!routeIds.has(trip.route_id)) continue;
+    const routes = routesOfService.get(trip.service_id) ?? new Set<string>();
+    routes.add(trip.route_id);
+    routesOfService.set(trip.service_id, routes);
+  }
+
+  const groups: DayGroup[] = [...byKey.values()].map((entry) => {
+    const ids = new Set(entry.ids);
+    const added = entry.ids.filter((id) => !typicalIds.has(id)).sort(compareText);
+    const removed = [...typicalIds].filter((id) => !ids.has(id)).sort(compareText);
+    const affected = new Set<string>();
+    for (const id of [...added, ...removed]) {
+      for (const routeId of routesOfService.get(id) ?? []) affected.add(routeId);
+    }
+    const tripCount = entry.ids.length === 0 ? 0 : totalTrips(tables, routeIds, entry.dates[0]);
+    return {
+      serviceIds: entry.ids,
+      dates: entry.dates,
+      daysOfWeek: [...new Set(entry.dates.map(dayOfWeek))].sort((a, b) => a - b),
+      tripCount,
+      addedServiceIds: added,
+      removedServiceIds: removed,
+      tripDelta: tripCount - typicalTrips,
+      routeIdsAffected: [...affected].sort(compareText),
+    };
+  });
+  groups.sort((a, b) => b.dates.length - a.dates.length || compareText(a.dates[0], b.dates[0]));
+  return groups;
+}

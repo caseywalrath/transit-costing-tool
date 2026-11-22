@@ -40,6 +40,16 @@ export interface ScenarioFromFeedOptions {
   routeOwnCountsOn?: string[];
   /** Absent: no blocks are imported. */
   blocks?: { import: boolean; pullOutMinutes: number; pullInMinutes: number };
+  /**
+   * The planner's annual count for a service day, by service day key (sub-plan I8, item 5). An absent key keeps the proposed count, and
+   * the proposal stays in `counts` so the dialog can show both.
+   */
+  annualCountOverrides?: Partial<Record<string, number>>;
+  /**
+   * The planner's own date for a part-year Route on an ordinary service day (sub-plan I8, item 6). It replaces the suggested date of that
+   * Route on that day; a Route that is not part-year is not affected.
+   */
+  routeDates?: Record<string, Partial<Record<'weekday' | 'saturday' | 'sunday', GtfsDate>>>;
 }
 
 export interface ScenarioFromFeed {
@@ -49,7 +59,7 @@ export interface ScenarioFromFeed {
 }
 
 /** The planner's choices that decide the dates and counts. */
-export type FeedDayOptions = Pick<ScenarioFromFeedOptions, 'tables' | 'routeIds' | 'dates' | 'holidayClasses' | 'keepExtraHolidayDays'>;
+export type FeedDayOptions = Pick<ScenarioFromFeedOptions, 'tables' | 'routeIds' | 'dates' | 'holidayClasses' | 'keepExtraHolidayDays' | 'routeDates'>;
 
 /** A service day of the feed and the date it takes. `dateByRouteId` gives a part-year Route its own date (Decision 0089 item 17). */
 export interface FeedDayDate {
@@ -173,7 +183,10 @@ export function planFeedDays(options: FeedDayOptions): FeedDayPlan {
   const partYearDatesOf = (key: string): Record<string, GtfsDate> | undefined => {
     const byRoute: Record<string, GtfsDate> = {};
     for (const flag of partYear) {
-      if (flag.serviceDay === key && flag.suggestedDate !== undefined) byRoute[flag.routeId] = flag.suggestedDate;
+      if (flag.serviceDay !== key) continue;
+      const own = options.routeDates?.[flag.routeId]?.[flag.serviceDay];
+      const date = own ?? flag.suggestedDate;
+      if (date !== undefined) byRoute[flag.routeId] = checkGtfsDate(date);
     }
     return Object.keys(byRoute).length > 0 ? byRoute : undefined;
   };
@@ -244,7 +257,7 @@ export function scenarioFromFeed(projectId: EntityId, scenarioName: string, opti
   }
   const serviceDays: ServiceDayDefinition[] = keyed.map(({ key, day }) => ({
     ...day,
-    annualServiceDays: plan.counts.countsByKey[key] ?? 0,
+    annualServiceDays: options.annualCountOverrides?.[key] ?? plan.counts.countsByKey[key] ?? 0,
   }));
   const dayIdByKey = new Map(keyed.map(({ key, day }) => [key, day.id]));
   const idOf = (key: string): EntityId => {

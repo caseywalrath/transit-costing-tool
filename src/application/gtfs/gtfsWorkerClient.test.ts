@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { type FeedJob, runFeedJob } from './gtfsImportService';
-import { createGtfsFeedJobClient, type FeedWorkerLike, type GtfsWorkerRequest, type GtfsWorkerResponse } from './gtfsWorkerClient';
+import { loadFeedTables } from '../../domain/gtfs/testFeeds';
+import { createGtfsFeedJobClient, type FeedWorkerLike, type GtfsWorkerRequest, type GtfsWorkerResponse, readRouteStopTimes } from './gtfsWorkerClient';
 
 const NOW = '2026-11-22T09:00:00.000Z';
 const FIXTURES = fileURLToPath(new URL('../../../tests/fixtures/gtfs/', import.meta.url));
@@ -116,5 +117,48 @@ describe('feed job client, worker path', () => {
     client.dispose();
     await expect(waiting).rejects.toThrow('cancelled');
     expect(worker.terminated).toBe(true);
+  });
+});
+
+describe('stop-times read (sub-plan I8, item 1)', () => {
+  const bytes = new Uint8Array(readFileSync(join(FIXTURES, 'zips/mini-deflate.zip')));
+  const selectedTripIds = new Set(loadFeedTables('mini').trips.filter((trip) => ROUTE_IDS.includes(trip.route_id)).map((trip) => trip.trip_id));
+  const expected = loadFeedTables('mini').stopTimes.filter((row) => selectedTripIds.has(row.trip_id));
+
+  /** A worker that answers a stop-times task the way gtfsWorker.ts does, so the test sees the same messages a browser worker would send. */
+  class StopTimesWorker extends LoopbackWorker {
+    override postMessage(request: GtfsWorkerRequest, transfer: Transferable[]): void {
+      if (request.task !== 'stopTimes') return super.postMessage(request, transfer);
+      this.requests.push(request);
+      const { id, job } = request;
+      const progress = (file: string) => queueMicrotask(() => this.onmessage?.({ data: { id, type: 'progress', file } } as MessageEvent<GtfsWorkerResponse>));
+      readRouteStopTimes(new Uint8Array(job.bytes), job.routeIds, progress)
+        .then((result) => queueMicrotask(() => this.onmessage?.({ data: structuredClone({ id, type: 'result', result }) } as MessageEvent<GtfsWorkerResponse>)))
+        .catch((error: Error) => queueMicrotask(() => this.onmessage?.({ data: { id, type: 'error', message: error.message, name: error.name } } as MessageEvent<GtfsWorkerResponse>)));
+      return undefined;
+    }
+  }
+
+  it('reads the stop-time rows of the selected Routes on the main thread, the same rows the import reads', async () => {
+    const result = await createGtfsFeedJobClient(() => undefined).readStopTimes({ bytes, routeIds: ROUTE_IDS });
+    expect(result.stopTimes).toEqual(expected);
+  });
+
+  it('reads the same rows through a worker and reports the stop_times.txt read', async () => {
+    const read: string[] = [];
+    const result = await createGtfsFeedJobClient(() => new StopTimesWorker()).readStopTimes({ bytes, routeIds: ROUTE_IDS }, (file) => read.push(file));
+    expect(result.stopTimes).toEqual(expected);
+    expect(read).toContain('stop_times.txt');
+  });
+});
+
+describe('feed overview (sub-plan I8, step 1)', () => {
+  it('reads the tables without stop times and the summary, and never opens stop_times.txt', async () => {
+    const read: string[] = [];
+    const result = await createGtfsFeedJobClient(() => undefined).readOverview({ bytes: new Uint8Array(readFileSync(join(FIXTURES, 'zips/mini-deflate.zip'))), now: NOW }, (file) => read.push(file));
+    expect(result.tables.stopTimes).toEqual([]);
+    expect(read).not.toContain('stop_times.txt');
+    expect(result.summary.agencies[0]?.name).toBe('Mini Test Transit');
+    expect(result.summary.routes.map((row) => row.shortName).sort()).toEqual(['B1', 'F1', 'R1']);
   });
 });
