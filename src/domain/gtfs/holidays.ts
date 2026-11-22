@@ -6,7 +6,7 @@ import {
 } from './dayGroups';
 import { type GtfsTables, type Row } from './feedTables';
 import { dayOfWeek, type GtfsDate } from './time';
-import { type FeedTrip, tripsOnDate } from './tripsOnDate';
+import { type FeedTrip, stopIdKey, tripsOnDate } from './tripsOnDate';
 
 export type HolidayClass = 'saturday' | 'sunday' | 'reducedWeekday' | 'unique' | 'none';
 
@@ -26,7 +26,7 @@ export interface HolidayCandidate {
 function tripKey(trip: FeedTrip): string {
   const first = trip.stopTimes[0];
   const departure = first?.departure ?? first?.arrival ?? '';
-  return `${trip.directionId ?? ''}|${trip.stopTimes.map((stop) => stop.stopId).join(',')}|${departure}`;
+  return `${trip.directionId ?? ''}|${stopIdKey(trip.stopTimes)}|${departure}`;
 }
 
 /** Per route, the sorted identity keys of its trips on the date. Routes with no trip are absent. */

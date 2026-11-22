@@ -3,7 +3,7 @@
 
 import type { DirectionGroup } from '../directions';
 import { commonHeadsign, compareTripsByOrigin } from './directionsFromFeed';
-import type { FeedTrip } from './tripsOnDate';
+import { type FeedTrip, stopIdKey } from './tripsOnDate';
 
 /** Trips that share one exact sequence of stops. */
 export interface VariantGroup {
@@ -16,9 +16,8 @@ export interface VariantGroup {
 export function variantsOf(trips: readonly FeedTrip[]): VariantGroup[] {
   const byKey = new Map<string, VariantGroup>();
   for (const trip of [...trips].sort(compareTripsByOrigin)) {
-    const stopIds = trip.stopTimes.map((stop) => stop.stopId);
-    const key = JSON.stringify(stopIds);
-    const group = byKey.get(key) ?? { stopIds, trips: [] };
+    const key = stopIdKey(trip.stopTimes);
+    const group = byKey.get(key) ?? { stopIds: trip.stopTimes.map((stop) => stop.stopId), trips: [] };
     group.trips.push(trip);
     byKey.set(key, group);
   }

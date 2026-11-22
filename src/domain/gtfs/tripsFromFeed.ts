@@ -3,10 +3,24 @@
 
 import { metadata, newId } from '../ids';
 import { runtimeCalculationRevision, tripCalculationSource } from '../runtime';
-import type { EntityId, RoutePattern, RuntimeProfile, Trip } from '../types';
+import type { EntityId, RoutePattern, RuntimeProfile, Trip, TripCalculationSource } from '../types';
 import type { TripPlacement } from './routeFromFeed';
 import { timesAtPatternPoints } from './runtimesFromFeed';
 import type { FeedTrip } from './tripsOnDate';
+
+// Every Trip of a pattern and service day shares one run-time profile, and its calculation source is the same for each of them. The
+// source's signature serialises the profile's bands, so it is worked out once per profile object instead of once per Trip. Each Trip
+// gets its own copy, so no two Trips share an object they could change.
+const calculationSources = new WeakMap<RuntimeProfile, TripCalculationSource>();
+
+function calculationSourceOf(profile: RuntimeProfile): TripCalculationSource {
+  let source = calculationSources.get(profile);
+  if (!source) {
+    source = tripCalculationSource(profile);
+    calculationSources.set(profile, source);
+  }
+  return { ...source };
+}
 
 export interface TripFromFeedInput {
   scenarioId: EntityId;
@@ -53,7 +67,7 @@ export function tripFromFeed({
       manuallyChangedFields: [],
       runtimeProfileId: profile.id,
       runtimeCalculationRevision: runtimeCalculationRevision(profile),
-      calculationSource: tripCalculationSource(profile),
+      calculationSource: calculationSourceOf(profile),
     },
     ...metadata(now),
   };

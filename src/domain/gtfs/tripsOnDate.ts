@@ -55,7 +55,7 @@ interface ReadStops {
 export function tripsOnDate(tables: GtfsTables, date: GtfsDate, routeIds?: ReadonlySet<string>): TripsOnDate {
   const active = serviceIdsActiveOn(tables, date);
   const trips = tables.trips.filter((trip) => active.has(trip.service_id) && (!routeIds || routeIds.has(trip.route_id)));
-  const rowsByTrip = groupStopTimes(tables.stopTimes, new Set(trips.map((trip) => trip.trip_id)));
+  const stopTimes = stopTimeIndexOf(tables.stopTimes);
   const { windows, skipped } = frequencyWindows(tables);
   // A trip with any frequencies.txt row is a template, even when none of its rows is usable; it is never returned as an ordinary trip.
   const templateIds = new Set([...windows.keys(), ...skipped.map((row) => row.tripId)]);
@@ -64,7 +64,7 @@ export function tripsOnDate(tables: GtfsTables, date: GtfsDate, routeIds?: Reado
   const invalid: TripsOnDate['invalid'] = [];
   for (const row of trips) {
     const tripId = row.trip_id;
-    const read = readStopTimes(rowsByTrip.get(tripId) ?? []);
+    const read = readTrip(stopTimes, tripId);
     if ('reason' in read) {
       invalid.push({ tripId, routeId: row.route_id, reason: read.reason });
       continue;
@@ -82,13 +82,15 @@ export function tripsOnDate(tables: GtfsTables, date: GtfsDate, routeIds?: Reado
   }
 
   // Malformed frequencies.txt rows are listed for the templates in scope, so the planner can see what was left out.
-  const rowById = new Map<string, Row>();
-  for (const row of trips) {
-    if (!rowById.has(row.trip_id)) rowById.set(row.trip_id, row);
-  }
-  for (const skip of skipped) {
-    const row = rowById.get(skip.tripId);
-    if (row) invalid.push({ tripId: skip.tripId, routeId: row.route_id, reason: skip.reason });
+  if (skipped.length > 0) {
+    const rowById = new Map<string, Row>();
+    for (const row of trips) {
+      if (!rowById.has(row.trip_id)) rowById.set(row.trip_id, row);
+    }
+    for (const skip of skipped) {
+      const row = rowById.get(skip.tripId);
+      if (row) invalid.push({ tripId: skip.tripId, routeId: row.route_id, reason: skip.reason });
+    }
   }
 
   const byRoute = new Map<string, FeedTrip[]>();
@@ -113,20 +115,62 @@ export function runningSeconds(trip: FeedTrip): number {
   return end - start;
 }
 
+const stopIdKeys = new WeakMap<readonly FeedStopTime[], string>();
+
+/**
+ * The stop IDs of a trip in order, as one string that is the same for two trips with the same stops. A trip's stop times are
+ * shared by all of its dates (see stopTimeIndexOf), so the string is built once per trip rather than once per date.
+ */
+export function stopIdKey(stopTimes: readonly FeedStopTime[]): string {
+  let key = stopIdKeys.get(stopTimes);
+  if (key === undefined) {
+    key = JSON.stringify(stopTimes.map((stop) => stop.stopId));
+    stopIdKeys.set(stopTimes, key);
+  }
+  return key;
+}
+
 function compareText(a: string, b: string): number {
   if (a === b) return 0;
   return a < b ? -1 : 1;
 }
 
-function groupStopTimes(rows: Row[], tripIds: Set<string>): Map<string, Row[]> {
-  const byTrip = new Map<string, Row[]>();
-  for (const row of rows) {
-    if (!tripIds.has(row.trip_id)) continue;
-    const list = byTrip.get(row.trip_id) ?? [];
-    list.push(row);
-    byTrip.set(row.trip_id, list);
+/**
+ * The stop_times rows of each trip, and each trip's read of them, kept for the feed. A trip's stop times do not depend on the date,
+ * but tripsOnDate is asked once per date, and a fresh grouping of the whole stop_times list on every call made a feed of 800,000
+ * rows cost one scan and one parse of its times for every date. The feed's rows are not changed after they are read, so the index
+ * is kept against the list itself and is not rebuilt unless the list is a different one.
+ */
+interface StopTimeIndex {
+  rowsByTrip: Map<string, Row[]>;
+  readByTrip: Map<string, ReadStops | { reason: InvalidTripReason }>;
+}
+
+const stopTimeIndexes = new WeakMap<Row[], StopTimeIndex>();
+
+function stopTimeIndexOf(stopTimes: Row[]): StopTimeIndex {
+  const existing = stopTimeIndexes.get(stopTimes);
+  if (existing) return existing;
+  const rowsByTrip = new Map<string, Row[]>();
+  for (const row of stopTimes) {
+    const list = rowsByTrip.get(row.trip_id);
+    if (list) list.push(row);
+    else rowsByTrip.set(row.trip_id, [row]);
   }
-  return byTrip;
+  const index: StopTimeIndex = { rowsByTrip, readByTrip: new Map() };
+  stopTimeIndexes.set(stopTimes, index);
+  return index;
+}
+
+// Trips made from one trip's stop times share its stopTimes array. Nothing in the rules changes a FeedTrip's stop times after
+// they are read, so the array is shared rather than copied on every date.
+function readTrip(index: StopTimeIndex, tripId: string): ReadStops | { reason: InvalidTripReason } {
+  let read = index.readByTrip.get(tripId);
+  if (!read) {
+    read = readStopTimes(index.rowsByTrip.get(tripId) ?? []);
+    index.readByTrip.set(tripId, read);
+  }
+  return read;
 }
 
 // A malformed value makes only its own trip invalid: a sequence that is not a whole number, or a time that

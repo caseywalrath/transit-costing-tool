@@ -538,3 +538,21 @@ Accepted: step 2 weekday trip counts come from calendars and trips without `stop
 
 - Built: the own-counts switch and "This route" column (`AnnualServiceDaysPanel.tsx`, `ownCounts.ts`), `updateRouteOwnCounts` and `addServiceDay` in `routeDefinitionService.ts`, the "Own counts" marker and day rows in Costing, plain messages for the three costing codes (in `CostingWorkspace.tsx`, where costing messages live), and the Cost summary names. A Route's column, blanks counted as the Scenario's value, totals at most 365.
 - Not built, split to a later card I9c: Delete for a custom service day. No service-day deletion, review or restore-point kind exists yet; it needs a cascade over trips, blocks, run-time assignments, generation sets, planned frequencies and estimate factors, and calls `removeServiceDayFromFeedFields`. Also the Day-toggle fallback to a menu at five or more days (`App.tsx`, `BlockingWorkspace.tsx`, `PlannedFrequenciesPanel.tsx`).
+
+## 26. I10 as built (2026-11-22)
+
+Whole RTD feed: 130 Routes, 26,139 trips, 1,961 blocks. Translation output is byte-identical before and after the fixes.
+
+| Step | Before | After |
+|---|---|---|
+| Parse feed files | 2.4–2.7 s | same |
+| planFeedDays | 1.8 s | 0.75 s |
+| scenarioFromFeed | 3.8 s | 1.1 s |
+| Browser: import backup (81.7 MB, with blocks) | 8.4 s | not re-timed |
+| Route switcher opens / switch Route | 0.05 s / 1.3 s | — |
+| Costing estimate (116 rows) | 9.0–9.5 s | — |
+| Blocking ready | 0.4 s | — |
+
+- Fixes: `tripsOnDate.ts` groups stop times once per feed and caches each trip's parse; `tripsFromFeed.ts` builds the run-time source once per profile; `holidays.ts` and `patternsFromFeed.ts` share `stopIdKey`. New `feedScale.test.ts` (150 × 60 × 30, under 20 s).
+- **Open finding for I11 (must fix before closeout):** the Trips tab shows no trips once a Scenario holds more than about 3,600 trips (3,584 shows rows; 6,614 shows none), with no error. Cause not found; likely `src/ui/trips` or the application read path.
+- Costing at 9 s is computation and reads, not table drawing; "Top 20 / All" (M2) would not help. M1 and M3 are usability, not speed. No hard import limit is proposed; the warning above 40 Routes or 5,000 trips stays.
