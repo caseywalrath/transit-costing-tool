@@ -1,6 +1,6 @@
 # GTFS export (phase E) — plan
 
-> **Status:** Draft 2026-11-22, for user review. No gate answered, no package started.
+> **Status:** Approved 2026-11-22; gates G-E1 to G-E8 answered as recommended. V-E is a later checkpoint. No package started; next is E0.
 >
 > **Parent plan:** `docs/implementation/gtfs-interoperability.md`, Part 6 "E". This file expands that section; the parent's fixed decisions (Part 8) and run rules (Part 7) apply unless this file says otherwise.
 >
@@ -214,14 +214,14 @@ If you say "your call": Option A.
 
 | Gate | Topic | Recommendation | Answer | Date |
 |---|---|---|---|---|
-| G-E1 | Shared stops | A: merge same ID within 30 m | | |
-| G-E2 | Dates | A: dialog, remembered per Scenario | | |
-| G-E3 | Map lines | A: straight lines | | |
-| G-E4 | Unlocated stops | A: refuse and list | | |
-| G-E5 | Custom days | A: date-only service | | |
-| G-E6 | Own counts | A: report only | | |
-| G-E7 | Non-timepoint stops | A: write with `timepoint=0` | | |
-| G-E8 | Trip ids | A: readable | | |
+| G-E1 | Shared stops | A: merge same ID within 30 m | Approved as recommended | 2026-11-22 |
+| G-E2 | Dates | A: dialog, remembered per Scenario | Approved as recommended | 2026-11-22 |
+| G-E3 | Map lines | A: straight lines | Approved as recommended | 2026-11-22 |
+| G-E4 | Unlocated stops | A: refuse and list | Approved as recommended | 2026-11-22 |
+| G-E5 | Custom days | A: date-only service | Approved as recommended | 2026-11-22 |
+| G-E6 | Own counts | A: report only | Approved as recommended | 2026-11-22 |
+| G-E7 | Non-timepoint stops | A: write with `timepoint=0` | Approved as recommended | 2026-11-22 |
+| G-E8 | Trip ids | A: readable | Approved as recommended | 2026-11-22 |
 | V-E | User check: load an export in the Analysis app and the MobilityData validator | Before closeout | | |
 
 ---
@@ -241,3 +241,7 @@ If you say "your call": Option A.
 ### 2026-11-22 — Draft (Opus)
 
 Drafted from the parent plan's section E and the deferred plan's C1 and C2, updated for phase I as built. Eight gates proposed, with recommendations. Next: user review and gate answers, then E0.
+
+### 2026-11-22 — Gates answered (user)
+
+The user approved all eight recommendations (G-E1 to G-E8: Option A each). Next: sitting 1, E0 (Decision 0090, sub-plan and cards, fixtures), when the user says to proceed.
