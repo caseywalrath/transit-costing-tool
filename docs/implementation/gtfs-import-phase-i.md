@@ -480,3 +480,25 @@ All approved: A (screens as drawn), B (Holidays open when present; Day groups an
 9. **Spec** `tests/ui/gtfs-import.spec.ts`: upload `tests/fixtures/gtfs/zips/mini-deflate.zip`; step 1 shows "Mini Test Transit"; step 2 lists B1, F1, R1 in route order and totals; step 3 shows Weekday 20 Jan 2026, the holiday rows (19 Jan Sunday; 24 and 30 Jan unique), counts 235/39/65/13/13; a refused file shows its reason.
 
 **Run:** unit tests for changed files, `pnpm typecheck`, `pnpm test`, the new spec plus `draggable-dialogs.spec.ts` and `keyboard.spec.ts`, `pnpm build`. Take a screenshot of each step at 1440 px into the scratchpad (`/tmp/claude-0/-home-user/3bdc75fd-55d7-5724-ad85-d8deb92c9cc0/scratchpad/i8/`) for review.
+
+## 20. I8 as built (2026-11-22)
+
+Accepted: step 2 weekday trip counts come from calendars and trips without `stop_times`, so they include invalid trips (mini B1 shows 6, step 5's fidelity shows 5). Holiday "What the feed does" shows service IDs. Test mount helper: `tests/ui/support/gtfsImport.ts`.
+
+## 21. Card I9 — Steps 4–5, Import, menus, notice, import note, "Feed" tag
+
+**Model:** Sonnet, effort `high`. **Rules:** Decision 0089; mock-ups ("Entry points", "Step 4", "Step 5", "After import" items 1–3); sections 18 and 20.
+
+**Files:** `src/ui/gtfs/**`; `src/ui/App.tsx` (three menu entries, dialog mount, notice); the Scenario switcher component (import note line); the Cost summary footnote (`CostSummaryView`); the Trips table status cell (the "Feed" tag); a domain helper for step 5 if needed (`src/domain/gtfs/timepointReview.ts`: every stop of a pattern's most common variant with its median offset); `tests/ui/gtfs-import.spec.ts` and `tests/ui/support/ui.ts` if a control is reached through it. **Do not touch** per-route counts screens or Costing markers (I9b).
+
+1. **Step 4** as drawn: timepoints (feed's / suggested), patterns note, blocks (checkbox shown only when the feed has `block_id`; pull-out/in minutes required, whole ≥ 0, pre-filled 10), level C Trip profile and Blocking scenario (with "Don't import blocks"), planned frequencies (disabled without `frequencies.txt`; if the service has no seeding yet, keep it disabled with the note "Not available yet" and report it).
+2. **Step 5** as drawn: per-route table from the translation (patterns, timepoints, stops, trips per standard day, weekday running hours, blocks, notes), "Matches the feed" / "Differs" chip from `fidelityOk`, skipped routes as warning rows, patterns list of the selected route, timepoint review (every stop of the pattern in order with its median time; terminals locked; at most 30; edits feed `timepointOverrides` and re-run the translation), "Download import report (CSV)" (`importReportCsv`), footer "Creates …" line. Translation runs through the worker client.
+3. **Import** calls `GtfsImportService` for the level (A `importAsProject`, B `importAsScenario`, C `addRoutes`) with the model's options. While running, buttons are disabled; on error the dialog stays open with the message.
+4. **Menus:** Project menu "New project from GTFS feed…", Scenario commands "New scenario from GTFS feed…", Route switcher commands "Add routes from GTFS feed…" (enabled only with a Scenario open), each opening the dialog with its level. Follow how the existing entries are declared in `App.tsx`.
+5. **After import:** the existing notice: "{n} routes imported from {file}" with Undo for level C (the restore point id) and a "Download report" action; reload to the new Project/Scenario and open the first imported Route on the Route tab.
+6. **Import note (S1):** a muted line under the Scenario name in the switcher list, "From {publisher} feed {version} · imported {date} · {n} routes" (latest note), and the same sentence in the Cost summary footnote.
+7. **"Feed" tag (S2):** in the Trips table status cell, a quiet chip "Feed" when `creationMethod === 'feed'` and the trip is current against its profile; when it is not current, the existing "Run times changed" mark shows instead.
+8. **Polish from I8 screenshots:** service-day names in step 3 at body size, not caption; show the date once (the input), drop the duplicate text; the dialog body scrolls inside a max height so the header and footer stay on screen at 900 px.
+9. **Spec:** extend `tests/ui/gtfs-import.spec.ts`: a full level A import of the mini feed through the menu (Project shows, B1 opens on the Route tab, trips carry "Feed"); level C into a Scenario with a clash, then Undo removes the routes; the report download.
+
+**Run:** the I8–I9 row of section 4 (`gtfs-import`, `draggable-dialogs`, `keyboard`, `project-context-menu`, `scenario-context-menu`, `context-line`), plus `trips*.spec.ts` touched by the tag and `costing-summary.spec.ts`; `pnpm typecheck`, `pnpm test`, `pnpm build`; screenshots of steps 4, 5 and the after-import views into the scratchpad `i9/` folder.
