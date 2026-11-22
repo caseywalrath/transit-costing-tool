@@ -400,3 +400,61 @@ export function importReportCsv(report: ImportReport): string;
 If the costing structure makes rule 2 need a change outside these files, stop and report.
 
 **Run:** costing unit tests, `pnpm typecheck`, `pnpm test`; `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium pnpm exec playwright test tests/ui/costing` (all costing specs).
+
+## 15. Sitting 5 split
+
+I6 is split. **I6a** (pure scenario builder and converter) comes first, because Gate V-I needs only the converter. **I6b** (application service for levels A–C, restore point, worker) runs while the orchestrator makes the Gate V-I backups.
+
+## 16. Card I6a — Scenario builder and `tools/gtfs_to_backup.mjs`
+
+**Model:** Haiku, effort `high`. **Rules:** 0089 items 2, 13, 19–21, 39, 41.
+
+**Files to create:** `src/domain/gtfs/scenarioFromFeed.ts` and its test; `tools/gtfs_to_backup.mjs`. **Do not touch** other files.
+
+```ts
+export interface ScenarioFromFeedOptions {
+  tables: GtfsTables; routeIds: string[]; fileName: string; now: string;
+  /** Planner choices; each absent value uses the I2b default. */
+  dates?: Partial<Record<'weekday' | 'saturday' | 'sunday', GtfsDate>>;
+  holidayClasses?: Record<GtfsDate, 'saturday' | 'sunday' | 'reducedWeekday' | 'unique' | 'weekdayAsNormal'>;
+  keepExtraHolidayDays?: boolean;          // default true: "Holiday 2", … as custom days
+  routeOwnCountsOn?: string[];             // feed route IDs whose proposed own counts are switched on
+  blocks?: { import: boolean; pullOutMinutes: number; pullInMinutes: number };
+}
+export interface ScenarioFromFeed { records: ScenarioRecords; translation: FeedTranslation; counts: AnnualCountProposal }
+export function scenarioFromFeed(projectId: EntityId, scenarioName: string, options: ScenarioFromFeedOptions): ScenarioFromFeed;
+export function projectFromFeed(options: ScenarioFromFeedOptions): ProjectSnapshot;  // level A
+```
+
+- Start from `createScenarioRecords` (four standard days, Default Trip profile, Default Blocking scenario). Add custom days from `proposeHolidayDays` when kept, with sequence after Holiday and `kind: 'custom'`.
+- Dates: I2b `defaultDates`, `partYearRoutes` (a flagged route gets its `suggestedDate` as `dateByRouteId`), `holidayCandidates`, `proposeHolidayDays`; Holiday's date is the proposed one; a service day with no date gets no trips.
+- Annual counts from `proposeAnnualCounts` with the classification; set each service day's `annualServiceDays`. Own counts from `proposeRouteOwnCounts` for part-year routes, stored on the Route with `enabled` true only when listed in `routeOwnCountsOn`.
+- Blocks: when imported, add a Blocking scenario "From feed" on the Default Trip profile and put the blocks there.
+- `importNotes`: one entry (publisher = first agency name, `feedVersion` from `feed_info`, file name, dates as YYYY-MM-DD, route count, `importedAt` = now).
+- Merge `translateFeed` output into the records (routes, nodes, directions, patterns, stop sets, profiles, assignments, trips, blocks).
+- `projectFromFeed`: `createProject("{agency} ({feed version or first date})")`, one Scenario "Existing service".
+- **Test:** for `mini` and every `edge-*` feed, `parseProjectBackup(exportProjectJson(projectFromFeed(...)))` succeeds (backup validation is the gate), counts total ≤ 365, and the mini Weekday has 25 trips; `edge-multi-route-blocks` with blocks has a "From feed" Blocking scenario with 3 blocks.
+
+**Converter** `tools/gtfs_to_backup.mjs`, following `tools/validate_federal_brt_backup.mjs` (Vite `ssrLoadModule`):
+
+```
+node tools/gtfs_to_backup.mjs <feed.zip> <out.json> [--routes 31,0,0L] [--blocks 10,10] [--own-counts 0L] [--report out.csv]
+```
+
+It reads the ZIP with I1's reader (`readZipEntries`, `findFeedFiles`, `readFeedTable`; `stop_times.txt` filtered to the selected routes' trips), builds `GtfsTables`, calls `projectFromFeed`, writes `exportProjectJson`, writes the report CSV when asked, and prints per route: patterns, Nodes, stops, trips per service day, blocks, plus the counts and the fidelity result. It exits non-zero when `fidelityOk` is false. Run it on `tests/fixtures/gtfs/zips/mini-deflate.zip` into the scratch folder and report the printout.
+
+**Run:** `pnpm exec vitest run src/domain/gtfs`, `pnpm typecheck`, `pnpm test` once, the converter on the mini ZIP.
+
+## 17. Card I6b — Import service, restore point, worker
+
+**Model:** Haiku, effort `high`. **Rules:** 0089 items 2–5, 9.
+
+**Files:** `src/application/gtfs/gtfsImportService.ts` and test; `src/application/gtfs/gtfsWorker.ts` (Web Worker entry) and `gtfsWorkerClient.ts`; the restore-point kind `importGtfsRoutes` in `src/domain/types.ts`, `src/domain/restorePoints.ts`, `src/application/restorePointCoverage.ts` and their tests. **Do not touch** UI files.
+
+- `importAsProject(options)` → level A through `RouteDefinitionService.importProject(exportProjectJson(projectFromFeed(options)))`.
+- `importAsScenario(projectId, options)` → level B: `scenarioFromFeed` written with one Scenario write (find the existing write used by Scenario copy, `projectSnapshotWithScenario`).
+- `addRoutes(scenarioId, tripProfileId, blockingScenarioId | undefined, options)` → level C: take the restore point `importGtfsRoutes` first; translate with `existingRouteNames`; add only the new records; do **not** change service days or counts; return the report with the proposed-vs-Scenario count differences. Undo of the restore point removes the added Routes and all they own (follow how `deleteRoute` is covered).
+- Worker: `gtfsWorker.ts` reads the file bytes and runs the read + `scenarioFromFeed`/`translateFeed` steps, posting progress per file; `gtfsWorkerClient.ts` falls back to the same code on the main thread when `Worker` is unavailable. Results are plain data (structured clone).
+- **Tests (fake-indexeddb):** each level on `mini`; level C leaves the Scenario's counts unchanged, renames a clash, and its Undo removes exactly the added records; restore-point coverage tests include the new kind.
+
+**Run:** the I6 row of section 4 (`undo-history.spec.ts`, `data-safety.spec.ts`), `pnpm typecheck`, `pnpm test`.
