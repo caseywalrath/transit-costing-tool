@@ -313,6 +313,8 @@ Kept as written in the deferred plan (dialog, file list, mapping table, pre-expo
 
 ### V — Scenario comparison, then blocks timeline and Marey chart (old C3)
 
+**Plan:** `docs/implementation/scenario-compare-phase-v.md` (draft 2026-11-22, gates G-V1 to G-V9, mock-up `scenario-compare/mockup.html`).
+
 Kept, with the comparison first (old G-C3 Option A). An imported baseline makes "Existing service vs Proposed" the main use: change in trips, revenue hours, peak vehicles and cost, by route. The timeline and Marey chart are optional and can be dropped without a gate.
 
 ### X — Interlining (old C4)
