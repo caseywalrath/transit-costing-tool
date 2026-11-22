@@ -23,6 +23,17 @@
 .service-days-table td:nth-child(2) input { text-align: center; text-transform: uppercase; }
 .service-days-table td:nth-child(2) input::placeholder { text-transform: uppercase; }
 .service-days-table td:last-child input { text-align: right; }
+/* Plan U1: the switch above the table, and the Route's own column. A blank cell's placeholder is the Scenario's count, shown faintly. */
+.own-counts-switch { display: inline-flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); font-size: var(--font-size-label); font-weight: var(--font-weight-semibold); }
+.own-counts-switch input { width: auto; min-height: 0; margin: 0; }
+/* Four columns share the panel, so the number and Abbr. columns narrow and the name keeps its room. */
+.service-days-table table.service-days-table--own th:nth-child(2), .service-days-table table.service-days-table--own td:nth-child(2) { width: 4.2em; }
+.service-days-table table.service-days-table--own th:nth-child(n+3), .service-days-table table.service-days-table--own td:nth-child(n+3) { width: 4.8em; }
+.service-days-table table.service-days-table--own td:nth-child(3) input { text-align: right; }
+.service-days-table .own-count-input { text-align: right; }
+.service-days-table .own-count-input::placeholder { color: var(--color-text-subtle); opacity: .75; }
+.service-days-add { margin-top: var(--space-2); padding-left: var(--space-1); font-weight: var(--font-weight-semibold); }
+.service-days-hint { margin: 0; color: var(--color-text-muted); font-size: var(--font-size-note); }
 .service-days-total { margin-top: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-note); }
 .service-days-total.value-invalid { color: var(--color-danger); }
 .table-add-row td, .table-add-row td:first-child { background: var(--color-surface); }

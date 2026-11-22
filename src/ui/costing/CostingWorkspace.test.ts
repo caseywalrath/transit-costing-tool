@@ -13,7 +13,7 @@ describe('sortCostBasisOptions', () => {
 });
 
 const finding = (messageKey: string, entityId = 'x', parameters?: Record<string, string | number>): ValidationFinding => ({ ruleId: messageKey, severity: 'error', entityType: 'scenario', entityId, messageKey, ...(parameters ? { parameters } : {}) });
-const everyKey = ['costing.annualServiceDaysExceed365', 'costing.annualServiceDaysInvalid', 'costing.duplicateServiceDay', 'costing.serviceDayScenarioMismatch', 'costing.blockingScenarioMismatch', 'costing.tripProfileMismatch', 'costing.duplicateTrip', 'costing.duplicateBlock', 'costing.tripSourceMismatch', 'costing.blockSourceMismatch', 'costing.adjustedRateInvalid', 'costing.calculationOverflow', 'costing.rateInvalid', 'costing.rateYearInvalid', 'costing.baseServiceYearInvalid', 'costing.rateYearAfterBaseServiceYear', 'costing.futureYearCountInvalid', 'costing.projectionYearOutOfRange', 'costing.annualEscalationInvalid'];
+const everyKey = ['costing.annualServiceDaysExceed365', 'costing.annualServiceDaysInvalid', 'costing.duplicateServiceDay', 'costing.serviceDayScenarioMismatch', 'costing.blockingScenarioMismatch', 'costing.tripProfileMismatch', 'costing.duplicateTrip', 'costing.duplicateBlock', 'costing.tripSourceMismatch', 'costing.blockSourceMismatch', 'costing.adjustedRateInvalid', 'costing.calculationOverflow', 'costing.rateInvalid', 'costing.rateYearInvalid', 'costing.baseServiceYearInvalid', 'costing.rateYearAfterBaseServiceYear', 'costing.futureYearCountInvalid', 'costing.projectionYearOutOfRange', 'costing.annualEscalationInvalid', 'costing.routeCountsInUse', 'costing.unattributedUsesLargestCount', 'costing.routeAnnualServiceDaysInvalid'];
 
 describe('costingFindingMessage', () => {
   it('says what is wrong and what to do for the 365-day total', () => {
@@ -25,6 +25,16 @@ describe('costingFindingMessage', () => {
     expect(costingFindingMessage(finding('costing.annualServiceDaysInvalid', 'saturday'), names)).toMatch(/^Saturday has an annual count/);
     expect(costingFindingMessage(finding('costing.tripSourceMismatch', 't1', { serviceDayId: 'saturday' }), names)).toMatch(/does not belong to Saturday/);
     expect(costingFindingMessage(finding('costing.annualServiceDaysInvalid', 'unknown'), names)).toMatch(/^a service day has an annual count/);
+  });
+
+  it('names the routes on their own counts, the day an Unattributed block uses the largest count for, and the route with a bad count', () => {
+    const days = (id: string) => ({ weekday: 'Weekday' } as Record<string, string>)[id];
+    const routes = (id: string) => ({ r1: 'Route 31' } as Record<string, string>)[id];
+    expect(costingFindingMessage(finding('costing.routeCountsInUse', 'scenario', { routes: 'Route 31; Route 0' }))).toMatch(/own annual service days.*Route 31; Route 0.*This route uses its own counts/);
+    expect(costingFindingMessage(finding('costing.unattributedUsesLargestCount', 'weekday', { serviceDayId: 'weekday', annualServiceDays: 255 }), days)).toMatch(/^A block of Weekday .*largest count, 255 days/);
+    expect(costingFindingMessage(finding('costing.routeAnnualServiceDaysInvalid', 'r1', { routeId: 'r1', serviceDayId: 'weekday' }), days, routes)).toMatch(/^Route 31 has an annual count for Weekday that is not a whole number/);
+    expect(costingFindingMessage(finding('costing.routeAnnualServiceDaysInvalid', 'r1', { routeId: 'r1', total: 400 }), days, routes)).toMatch(/^Route 31 has its own annual service days totalling more than 365/);
+    expect(costingFindingMessage(finding('costing.routeAnnualServiceDaysInvalid', 'zz', { routeId: 'zz', total: 400 }), days, routes)).toMatch(/^A route has/);
   });
 
   it('never shows a message key or an identifier, for every rule the estimate can report', () => {

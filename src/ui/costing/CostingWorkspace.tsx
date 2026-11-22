@@ -55,9 +55,15 @@ const BLOCKING_REVIEW = 'Open Blocking and review the blocking scenario.';
  * The text for one finding of an invalid Costing estimate (review issue I-031). `serviceDayName` names the service day that a finding
  * identifies by id, when the screen knows it. Every message ends with what the planner can do next.
  */
-export function costingFindingMessage(finding: ValidationFinding, serviceDayName?: (id: string) => string | undefined): string {
+export function costingFindingMessage(finding: ValidationFinding, serviceDayName?: (id: string) => string | undefined, routeName?: (id: string) => string | undefined): string {
   const day = (id: string | undefined) => (id ? serviceDayName?.(id) : undefined) ?? 'a service day';
+  const route = (id: string | undefined) => (id ? routeName?.(id) : undefined) || 'A route';
   switch (finding.messageKey) {
+    case 'costing.routeCountsInUse': return `These routes use their own annual service days instead of the scenario's: ${String(finding.parameters?.routes ?? '')}. To use the scenario's counts, switch off "This route uses its own counts" on the Route screen.`;
+    case 'costing.unattributedUsesLargestCount': return `A block of ${day(String(finding.parameters?.serviceDayId ?? finding.entityId))} carries trips of routes with different annual service days, so its Unattributed hours use the largest count, ${finding.parameters?.annualServiceDays ?? ''} days. To change it, change the routes' counts on the Route screen.`;
+    case 'costing.routeAnnualServiceDaysInvalid': return finding.parameters?.total !== undefined
+      ? `${route(String(finding.parameters?.routeId ?? finding.entityId))} has its own annual service days totalling more than 365. Lower its counts on the Route screen.`
+      : `${route(String(finding.parameters?.routeId ?? finding.entityId))} has an annual count for ${day(String(finding.parameters?.serviceDayId ?? ''))} that is not a whole number of 0 or more. Correct it on the Route screen.`;
     case 'costing.annualServiceDaysExceed365': return 'Annual service days total more than 365. Correct the counts in the Service days table on the Route screen.';
     case 'costing.annualServiceDaysInvalid': return `${day(finding.entityId)} has an annual count that is not a whole number of 0 or more. Correct it in the Service days table on the Route screen.`;
     case 'costing.duplicateServiceDay': case 'costing.serviceDayScenarioMismatch': return 'The service days of this scenario are inconsistent. Reload the page. If this stays, export a backup and import it again.';
@@ -468,7 +474,8 @@ export function CostingWorkspace({ tripProfileId: workingTripProfileId, blocking
       context={canGroupByDay ? <MenuButton fieldLabel="Group by" label={groupingName} triggerAriaLabel={`Group by: ${groupingName}`} menuLabel="Group by" groups={groupingMenu} selectionStyle="highlight" menuAlign="start" /> : undefined}
       actions={<MenuButton label="Actions" triggerAriaLabel="Cost breakdown actions" menuLabel="Cost breakdown actions" groups={breakdownActionsMenu} disabled={!hasRouteRows} />}>
       {result?.state === 'noEstimate' && <InlineNote kind="warn" live>{noEstimateText(result, tripProfileName)}</InlineNote>}
-      {result?.state === 'invalid' && <div className="costing-alert error" role="alert"><p>The estimate cannot be calculated until the listed input or source-data problems are corrected.</p><ul>{result.findings.filter((finding) => finding.severity === 'error').map((finding, index) => <li key={`${finding.messageKey}-${finding.entityId}-${index}`}>{costingFindingMessage(finding, (id) => serviceDays.find((day) => day.id === id)?.name)}</li>)}</ul></div>}
+      {result?.state === 'invalid' && <div className="costing-alert error" role="alert"><p>The estimate cannot be calculated until the listed input or source-data problems are corrected.</p><ul>{result.findings.filter((finding) => finding.severity === 'error').map((finding, index) => <li key={`${finding.messageKey}-${finding.entityId}-${index}`}>{costingFindingMessage(finding, (id) => serviceDays.find((day) => day.id === id)?.name, (id) => routes.find((route) => route.id === id)?.name)}</li>)}</ul></div>}
+      {result && result.state !== 'invalid' && result.findings.filter((finding) => finding.messageKey === 'costing.routeCountsInUse' || finding.messageKey === 'costing.unattributedUsesLargestCount').map((finding, index) => <InlineNote key={`${finding.messageKey}-${finding.entityId}-${index}`} kind="warn">{costingFindingMessage(finding, (id) => serviceDays.find((day) => day.id === id)?.name)}</InlineNote>)}
       {result && result.dailyRows.length > 0 && <RouteCostTable result={result} selectedYear={selectedYear} totalDays={annualDays.total} expansion={routeExpansion} grouping={grouping}
         menuTarget={contextMenu.target(() => ({ heading: `Cost breakdown · ${selectedYear}`, groups: [...costingActionsMenu, ...breakdownActionsMenu] }))} />}
       {breakdownCopy && <InlineNote kind={breakdownCopy.kind} live>{breakdownCopy.text}</InlineNote>}

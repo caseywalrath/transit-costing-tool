@@ -533,3 +533,8 @@ Accepted: step 2 weekday trip counts come from calendars and trips without `stop
 2. **Fix** only what is slow in `src/domain/gtfs/**` and `src/application/gtfs/**` (for example `serviceIdsActiveOn` called per trip; cache per date). UI changes M1–M3 are proposed with numbers, not built.
 3. **Timing check:** a unit test that builds a synthetic feed of 150 routes × 60 trips × 30 stops and asserts translation finishes under a generous limit.
 4. **Run:** `capacity-read-paths.spec.ts`, `recalculation-capacity.spec.ts`, `pnpm typecheck`, `pnpm test`.
+
+## 25. I9b as built (2026-11-22)
+
+- Built: the own-counts switch and "This route" column (`AnnualServiceDaysPanel.tsx`, `ownCounts.ts`), `updateRouteOwnCounts` and `addServiceDay` in `routeDefinitionService.ts`, the "Own counts" marker and day rows in Costing, plain messages for the three costing codes (in `CostingWorkspace.tsx`, where costing messages live), and the Cost summary names. A Route's column, blanks counted as the Scenario's value, totals at most 365.
+- Not built, split to a later card I9c: Delete for a custom service day. No service-day deletion, review or restore-point kind exists yet; it needs a cascade over trips, blocks, run-time assignments, generation sets, planned frequencies and estimate factors, and calls `removeServiceDayFromFeedFields`. Also the Day-toggle fallback to a menu at five or more days (`App.tsx`, `BlockingWorkspace.tsx`, `PlannedFrequenciesPanel.tsx`).

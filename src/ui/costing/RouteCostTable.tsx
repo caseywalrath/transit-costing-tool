@@ -70,7 +70,13 @@ function UnassignedNote({ count: trips, scope }: { count: number; scope: string 
   return <span className="costing-route-note" title={text}><span aria-hidden="true">{trips} unassigned</span><span className="visually-hidden">, {text}</span></span>;
 }
 
-type Group = { key: string; name: string; row: BreakdownRow; withDaily: boolean; unassignedTrips?: number; children: Array<BreakdownRow & { unassignedTrips?: number }> };
+/** Decision 0089 item 41, plan U2: a Route whose annual counts are its own. The tooltip lists the counts the figures use. */
+function OwnCountsMarker({ text }: { text: string }) {
+  const title = `This route uses its own annual service days: ${text}`;
+  return <span className="costing-own-counts" title={title}><span aria-hidden="true">Own counts</span><span className="visually-hidden">, {title}</span></span>;
+}
+
+type Group = { key: string; name: string; row: BreakdownRow; withDaily: boolean; unassignedTrips?: number; ownCountsText?: string; children: Array<BreakdownRow & { unassignedTrips?: number }> };
 
 /**
  * The Cost breakdown by Route (Decision 0077 item 1) or by service day (Decision 0078). Each group row expands in place to its child rows.
@@ -82,7 +88,7 @@ export function RouteCostTable({ result, selectedYear, totalDays, expansion, men
   const { total } = routeBreakdownRows(result, selectedYear);
   const groups: Group[] = byDay
     ? dayBreakdownRows(result, selectedYear).days.map((day) => ({ key: day.key, name: day.name, row: day, withDaily: true, children: day.routeRows }))
-    : routeBreakdownRows(result, selectedYear).routes.map((route) => ({ key: route.key, name: route.name, row: route, withDaily: false, unassignedTrips: route.unassignedTrips, children: route.dayRows }));
+    : routeBreakdownRows(result, selectedYear).routes.map((route) => ({ key: route.key, name: route.name, row: route, withDaily: false, unassignedTrips: route.unassignedTrips, ...(route.ownCountsText ? { ownCountsText: route.ownCountsText } : {}), children: route.dayRows }));
   return <div className="table-scroll data-grid costing-results-table costing-route-table" {...menuTarget}><table>
     <colgroup><col className="costing-col-day" /><col className="costing-col-count" /><col className="costing-col-count" /><col className="costing-col-count" />{Array.from({ length: 3 }, (_, index) => <col key={index} className="costing-col-hours" />)}<col className="costing-col-money" /><col className="costing-col-hours" /><col className="costing-col-hours" /><col className="costing-col-total" /></colgroup>
     <thead><tr><th scope="col">{byDay ? 'Service day' : 'Route'}</th>{BREAKDOWN_COLUMNS.slice(1).map((name) => <th key={name} scope="col">{name}</th>)}</tr></thead>
@@ -98,13 +104,14 @@ export function RouteCostTable({ result, selectedYear, totalDays, expansion, men
                 <span aria-hidden="true">{open ? '▾' : '▸'}</span>
               </button>
               <span className="costing-route-name" title={group.name}>{group.name}</span>
+              {group.ownCountsText ? <OwnCountsMarker text={group.ownCountsText} /> : null}
               {group.unassignedTrips ? <UnassignedNote count={group.unassignedTrips} scope="" /> : null}
             </span>
           </th>
           {valueCells(group.row, group.withDaily)}
         </tr>
         {open && group.children.map((row) => <tr key={row.key} id={`${childId}-${row.key}`} className={byDay ? 'costing-route-day-row costing-day-route-row' : 'costing-route-day-row'}>
-          <th scope="row"><span className="costing-route-cell costing-route-day"><span className="costing-route-name" title={row.name}>{row.name}</span>{row.unassignedTrips ? <UnassignedNote count={row.unassignedTrips} scope=" on this day" /> : null}</span></th>
+          <th scope="row"><span className="costing-route-cell costing-route-day"><span className="costing-route-name" title={row.name}>{row.name}</span>{byDay && row.ownCount ? <OwnCountsMarker text={`${group.name} ${row.days}`} /> : null}{row.unassignedTrips ? <UnassignedNote count={row.unassignedTrips} scope=" on this day" /> : null}</span></th>
           {valueCells(row, true)}
         </tr>)}
       </tbody>;

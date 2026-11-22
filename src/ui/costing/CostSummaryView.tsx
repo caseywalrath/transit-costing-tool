@@ -60,7 +60,7 @@ export function CostSummaryView({ summary, importNote, onClose }: { summary: Cos
           <tbody>{summary.years.map((year) => <tr key={year.serviceYear}><th scope="row">{year.serviceYear}</th><td>{formatMoney(year.appliedRateUsdPerRevenueHour, { cents: true })}</td><td>{formatMoney(year.annualCostUsd)}</td><td>{formatMoney(year.cumulativeCostUsd)}</td></tr>)}</tbody>
         </table>
       </section>
-      <footer className="cost-summary-footer">Costs are based on annual revenue hours and {formatPercent(summary.annualEscalation * 100)} projected inflation.{importNote && <span className="cost-summary-import-note">{importNote}</span>}</footer>
+      <footer className="cost-summary-footer">Costs are based on annual revenue hours and {formatPercent(summary.annualEscalation * 100)} projected inflation.{summary.routeCountsInUse && <span className="cost-summary-import-note">Annual service days of {summary.routeCountsInUse.join(', ')} are the route's own counts; the Days / year column shows the scenario's counts.</span>}{importNote &&<span className="cost-summary-import-note">{importNote}</span>}</footer>
     </article>
   </ModalDialog>, document.body);
 }

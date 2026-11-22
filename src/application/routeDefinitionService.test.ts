@@ -1459,3 +1459,51 @@ describe('estimate factor entries, edit preview scope (Decision 0081)', () => {
     expect(service.routeEditPreviewScope(preview.previewToken)).toBeUndefined();
   });
 });
+
+describe('Route own annual counts and added service days (Decision 0089 items 41 and 43)', () => {
+  async function started() {
+    const { service } = createService();
+    const created = await service.createProject('Own counts');
+    const [weekday, saturday, sunday, holiday] = created.records.serviceDays;
+    const { records, route } = await service.addRoute(created.records);
+    const aggregate = (await service.loadWorkspace(created.project.id, created.records.scenario.id, route.id)).aggregate!;
+    return { service, records, aggregate, weekday, saturday, sunday, holiday, scenarioId: created.records.scenario.id };
+  }
+
+  it('adds a custom service day with a count of 0, after the others, and refuses a blank name or a taken abbreviation', async () => {
+    const { service, records, scenarioId } = await started();
+    const total = records.serviceDays.reduce((sum, day) => sum + day.annualServiceDays, 0);
+    const added = await service.addServiceDay(scenarioId, { name: ' Holiday 2 ', abbreviation: 'h2' });
+    expect(added.serviceDay).toMatchObject({ kind: 'custom', name: 'Holiday 2', annualServiceDays: 0, abbreviation: 'H2' });
+    expect(added.serviceDay.sequence).toBeGreaterThan(Math.max(...records.serviceDays.map((day) => day.sequence)));
+    expect(added.records.serviceDays).toHaveLength(5);
+    expect(added.records.serviceDays.reduce((sum, day) => sum + day.annualServiceDays, 0)).toBe(total);
+    await expect(service.addServiceDay(scenarioId, { name: '  ' })).rejects.toBeInstanceOf(ServiceDayValidationError);
+    await expect(service.addServiceDay(scenarioId, { name: 'Another', abbreviation: 'H2' })).rejects.toThrow(/abbreviation/);
+    expect((await service.addServiceDay(scenarioId, { name: 'Another', abbreviation: '' })).records.serviceDays).toHaveLength(6);
+  });
+
+  it('saves a Route\'s own counts, keeps them when switched off, and drops a day that is gone', async () => {
+    const { service, aggregate, weekday, saturday } = await started();
+    const on = await service.updateRouteOwnCounts(aggregate, { enabled: true, countsByServiceDayId: { [weekday.id]: 62, gone: 9 } });
+    expect(on.aggregate.route.ownAnnualServiceDays).toEqual({ enabled: true, countsByServiceDayId: { [weekday.id]: 62 } });
+    expect(on.records.routes.find((route) => route.id === aggregate.route.id)!.ownAnnualServiceDays?.enabled).toBe(true);
+    const off = await service.updateRouteOwnCounts(on.aggregate, { enabled: false, countsByServiceDayId: { [weekday.id]: 62, [saturday.id]: 0 } });
+    expect(off.aggregate.route.ownAnnualServiceDays).toEqual({ enabled: false, countsByServiceDayId: { [weekday.id]: 62, [saturday.id]: 0 } });
+  });
+
+  it('refuses a count that is not a whole number of 0 or more, and a column that totals more than 365', async () => {
+    const { service, aggregate, weekday, saturday } = await started();
+    await expect(service.updateRouteOwnCounts(aggregate, { enabled: true, countsByServiceDayId: { [weekday.id]: -1 } })).rejects.toThrow(/whole number/);
+    await expect(service.updateRouteOwnCounts(aggregate, { enabled: true, countsByServiceDayId: { [weekday.id]: 1.5 } })).rejects.toThrow(/whole number/);
+    // The Scenario's other days stand in for the blank cells, so a weekday count of 366 alone is over the limit.
+    await expect(service.updateRouteOwnCounts(aggregate, { enabled: true, countsByServiceDayId: { [saturday.id]: 366 } })).rejects.toThrow(/365/);
+  });
+
+  it('reaches storage through updateRoute only after the same checks', async () => {
+    const { service, aggregate, weekday } = await started();
+    const saved = await service.updateRoute(aggregate, { name: 'Own', ownAnnualServiceDays: { enabled: true, countsByServiceDayId: { [weekday.id]: 62 } } });
+    expect(saved.route).toMatchObject({ name: 'Own', ownAnnualServiceDays: { enabled: true, countsByServiceDayId: { [weekday.id]: 62 } } });
+    await expect(service.updateRoute(saved, { ownAnnualServiceDays: { enabled: true, countsByServiceDayId: { [weekday.id]: -4 } } })).rejects.toBeInstanceOf(ServiceDayValidationError);
+  });
+});
