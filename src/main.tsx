@@ -83,8 +83,7 @@ async function start() {
   }), repository, undefined, saveStatus);
 
   const plannedFrequencies = withRestorePoints(new PlannedFrequencyService(repository, undefined, saveStatus), PLANNED_FREQUENCY_COVERAGE, restorePoints, restorePoints, saveStatus, restoreLookup);
-  // The GTFS import service has no screen yet. Its covered command is wired here, as the Route commands are, so that the restore point for
-  // an import exists once the import screen calls it.
+  // The GTFS import service. Its covered command is wired here, as the Route commands are, so that adding Routes takes a restore point.
   const gtfsImport = withRestorePoints(new GtfsImportService(repository, routeDefinitionCore, saveStatus), GTFS_IMPORT_COVERAGE, restorePoints, restorePoints, saveStatus, restoreLookup);
   const restoreService = new RestorePointService(restorePoints, restorePoints, {
     getScenarioRecords: (id) => repository.getScenarioRecords(id),
@@ -94,7 +93,7 @@ async function start() {
     projectExists: async (id) => Boolean(await repository.db.projects.get(id)),
   }, saveStatus, () => routeDefinitionCore.forgetCopyUndos());
 
-  createRoot(document.getElementById('root')!).render(<React.StrictMode><App service={routeDefinition} tripService={tripGeneration} blockingService={blocking} costingService={costing} plannedFrequencyService={plannedFrequencies} session={tabGuard} restorePoints={restoreService} /></React.StrictMode>);
+  createRoot(document.getElementById('root')!).render(<React.StrictMode><App service={routeDefinition} tripService={tripGeneration} blockingService={blocking} costingService={costing} plannedFrequencyService={plannedFrequencies} gtfsImportService={gtfsImport} session={tabGuard} restorePoints={restoreService} /></React.StrictMode>);
 }
 
 void start();

@@ -577,3 +577,11 @@ V-I test routes: **31 Federal Blvd, 0 Broadway, 0L South Broadway Limited** (RTD
 - **Found while drawing:** (1) `dayGroups` groups by service set across days of the week, so ordinary Sundays and Sunday-service holidays form one group whose "added SU / removed WK" applies only to the holidays; the Days step groups within each service day's days of the week instead (I8 card). (2) Pattern names repeat when headsigns repeat ("Evans", "Evans 2", "Evans 3"); a naming proposal is asked of the user.
 - **Hand-off:** sitting 6 ends at the user's approval of the mock-ups (questions A–D on the sheet). Next is sitting 7: I8 and I9 (Haiku; Sonnet).
 
+### 2026-11-22 — Sitting 7: I8 (Haiku), I9 (Sonnet); Opus review
+
+- User approved the mock-up answers A–D.
+- **I8** (`fba9bf8`): the dialog and steps 1–3; questions answered in review (sub-plan sections 19–20).
+- **I9**: steps 4–5, Import for levels A–C, three menu entries, notice with Undo and report download, import note, "Feed" chip. It stopped first on a real gap: the timepoint choice and edits had no path to the import; additive options were allowed (section 22). Fix in review: Costing now opens on "From feed" after an import with blocks.
+- **Tests at the end:** typecheck clean; `pnpm test` 135 files, 2,225 passed; `pnpm build` ok; `gtfs-import.spec.ts` 13 tests, 65/65 over 5 repeats; keyboard (axe), context menus, context line, draggable dialogs and costing summary 35 passed; trips specs passed in the package run.
+- **Hand-off:** sitting 7 done. Next is sitting 8: I9b (Sonnet: per-route counts on the Route tab, Costing markers and messages from I5b, Add service day with `removeServiceDayFromFeedFields`) and I10 (Haiku: whole-feed scale).
+

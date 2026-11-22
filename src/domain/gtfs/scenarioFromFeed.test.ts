@@ -62,6 +62,30 @@ describe('scenarioFromFeed', () => {
     expect(records.blocks.every((block) => block.blockingScenarioId === fromFeed?.id)).toBe(true);
   });
 
+  it('takes the timepoint mode and the planner timepoint overrides through to the Routes', () => {
+    // On B1 only S1 and S3 are flagged, so the feed's flags give two Nodes and the suggested rule (3 stops for 20 minutes) gives three.
+    const tables = loadFeedTables('mini');
+    const b1Trips = new Set(tables.trips.filter((trip) => trip.route_id === 'B1').map((trip) => trip.trip_id));
+    const flagged = { ...tables, stopTimes: tables.stopTimes.map((row) => (b1Trips.has(row.trip_id) && row.stop_id === 'S2' ? { ...row, timepoint: '0' } : row)) };
+    const nodesOfB1 = (extra: Partial<ScenarioFromFeedOptions>): string[] => {
+      const { records } = scenarioFromFeed('project-1', 'Existing service', { ...options('mini', extra), tables: flagged, routeIds: ['B1'] });
+      return records.nodes.map((node) => node.name).sort();
+    };
+    expect(nodesOfB1({})).toHaveLength(2);
+    expect(nodesOfB1({ timepointMode: 'feed' })).toHaveLength(2);
+    expect(nodesOfB1({ timepointMode: 'suggested' })).toHaveLength(3);
+
+    const keyOfOutbound = scenarioFromFeed('project-1', 'Existing service', { ...options('mini'), tables: flagged, routeIds: ['B1'] }).translation.routes[0];
+    const outboundKey = Object.values(keyOfOutbound.patternKeys).find((key) => key.startsWith('outbound:'));
+    expect(outboundKey).toBe('outbound:S1>S3');
+    const overridden = scenarioFromFeed('project-1', 'Existing service', {
+      ...options('mini', { timepointOverrides: { B1: { 'outbound:S1>S3': ['S1', 'S2', 'S3'] } } }),
+      tables: flagged,
+      routeIds: ['B1'],
+    });
+    expect(Object.values(overridden.translation.routes[0].patternKeys)).toContain('outbound:S1>S2>S3');
+  });
+
   it('keeps unique holiday dates with different trips as "Holiday 2" when keepExtraHolidayDays is on, and drops them when it is off', () => {
     const kept = scenarioFromFeed('project-1', 'Existing service', options('cal-holiday-unique')).records;
     expect(kept.serviceDays.map((day) => day.name)).toContain('Holiday 2');

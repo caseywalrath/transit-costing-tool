@@ -282,6 +282,20 @@ describe('level C (addRoutes)', () => {
     expect(report.notImported.every((day) => day.reason === 'customDay')).toBe(true);
   });
 
+  it('passes the timepoint mode and overrides to the Routes it adds', async () => {
+    const { service, repository, scenario, tables, tripProfileId } = await miniProject();
+    const b1Trips = new Set(tables.trips.filter((trip) => trip.route_id === 'B1').map((trip) => trip.trip_id));
+    const flagged = { ...tables, stopTimes: tables.stopTimes.map((row) => (b1Trips.has(row.trip_id) && row.stop_id === 'S2' ? { ...row, timepoint: '0' } : row)) };
+    const nodesAdded = async (extra: Partial<ScenarioFromFeedOptions>): Promise<number> => {
+      const before = (await repository.getScenarioRecords(scenario.id))!.nodes.length;
+      await service.addRoutes(scenario.id, tripProfileId, undefined, optionsFrom(flagged, { routeIds: ['B1'], ...extra }));
+      return (await repository.getScenarioRecords(scenario.id))!.nodes.length - before;
+    };
+    expect(await nodesAdded({})).toBe(2);
+    expect(await nodesAdded({ timepointMode: 'suggested' })).toBe(3);
+    expect(await nodesAdded({ timepointOverrides: { B1: { 'outbound:S1>S3': ['S1', 'S2', 'S3'] } } })).toBe(3);
+  });
+
   it('does not import a feed custom day, and lists it with its proposed days', async () => {
     const tables = loadFeedTables('cal-holiday-unique');
     const options = optionsFrom(tables, { routeIds: tables.routes.map((route) => route.route_id), fileName: 'cal-holiday-unique.zip' });

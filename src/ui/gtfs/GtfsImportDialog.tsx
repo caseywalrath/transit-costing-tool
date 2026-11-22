@@ -1,18 +1,30 @@
-// The GTFS import dialog, steps 1 to 3 (Decision 0089; sub-plan I8). It holds the planner's choices, runs the feed reading through the
-// worker client, and builds what each step shows. Steps 4 and 5 and the import itself are sub-plan I9.
+// The GTFS import dialog (Decision 0089; sub-plans I8 and I9). It holds the planner's choices, runs the feed reading and the translation
+// through the worker client, builds what each step shows, and calls the import service when the planner presses Import.
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ModalDialog } from '../ModalDialog';
-import { createGtfsFeedJobClient, type GtfsFeedJobClient, type OverviewResult, type StopTimesResult } from '../../application/gtfs/gtfsWorkerClient';
+import { download } from '../shared/download';
+import {
+  createGtfsFeedJobClient,
+  type GtfsFeedJobClient,
+  type OverviewResult,
+  type StopTimesResult,
+} from '../../application/gtfs/gtfsWorkerClient';
+import type { AddRoutesReport } from '../../application/gtfs/gtfsImportService';
+import type { FeedJobResult } from '../../application/gtfs/gtfsImportService';
 import { type FeedSummary } from '../../domain/gtfs/summary';
 import { type GtfsTables, type Row } from '../../domain/gtfs/feedTables';
 import { defaultDates, type FeedRange, serviceDayGroups, type OrdinaryServiceDay } from '../../domain/gtfs/dayGroups';
 import { feedServiceRange } from '../../domain/gtfs/calendar';
 import { holidayCandidates, type HolidayCandidate } from '../../domain/gtfs/holidays';
 import { proposeRouteOwnCounts } from '../../domain/gtfs/annualCounts';
+import { importReportCsv, type ImportReport } from '../../domain/gtfs/reportFromFeed';
+import type { ScenarioFromFeed, ScenarioFromFeedOptions } from '../../domain/gtfs/scenarioFromFeed';
+import { withTimepointToggled } from '../../domain/gtfs/timepointReview';
 import { tripsOnDate } from '../../domain/gtfs/tripsOnDate';
 import type { GtfsDate } from '../../domain/gtfs/time';
+import type { Project } from '../../domain/types';
 import {
   annualDaysProblem,
   canContinueFromRoutes,
@@ -36,20 +48,76 @@ import {
   selectionTotals,
   tripCountsByRoute,
 } from './gtfsImportModel';
-import { DaysStep, type DaysStepView, FeedStep, type FeedStepView, type ImportLevel, RoutesStep, type RoutesStepView } from './importSteps';
+import {
+  addedRoutesDetail,
+  blocksActive,
+  createsLine,
+  defaultOptionChoices,
+  feedFactsOf,
+  type FeedFacts,
+  feedPlanOptions,
+  type ImportLevel,
+  importedTripCount,
+  optionsProblem,
+  type OptionChoices,
+  type TimepointOverrides,
+  withOverride,
+  withoutOverride,
+} from './gtfsImportReviewModel';
+import { DaysStep, type DaysStepView, FeedStep, type FeedStepView, RoutesStep, type RoutesStepView } from './importSteps';
+import { OptionsStep } from './optionsStep';
+import { buildReviewView, patternReviewOf, ReviewStep } from './reviewStep';
+
+export type { ImportLevel };
+
+/** The service calls the dialog makes (Decision 0089 items 2 to 5). The application passes its restore-point-covered service. */
+export interface GtfsImportCommands {
+  importAsProject(options: ScenarioFromFeedOptions): Promise<Project>;
+  importAsScenario(projectId: string, options: ScenarioFromFeedOptions): Promise<ScenarioFromFeed>;
+  addRoutes(scenarioId: string, tripProfileId: string, blockingScenarioId: string | undefined, options: ScenarioFromFeedOptions): Promise<AddRoutesReport>;
+}
+
+/** What the application needs after an import: where to go, what to say, and the report to download. */
+export interface GtfsImportOutcome {
+  level: ImportLevel;
+  fileName: string;
+  routeCount: number;
+  /** Level A: the new Project. Levels B and C: the Project the import went into. */
+  projectId?: string;
+  /** Level B: the new Scenario. Level C: the Scenario the Routes went into. */
+  scenarioId?: string;
+  /** Level C: the first Route added, to open on the Route tab. */
+  firstRouteId?: string;
+  /** The import report as CSV, for the notice's "Download report". */
+  reportCsv: string;
+  /** Level C: the one line about count differences and days not imported. */
+  detail?: string;
+}
 
 export interface GtfsImportDialogProps {
   level: ImportLevel;
   /** Level B: the Project the new Scenario goes into. */
+  projectId?: string;
   projectName?: string;
   /** Level C: the Scenario the Routes go into. */
+  scenarioId?: string;
   scenarioName?: string;
   /** Level C: the names of the Routes already in the Scenario, for the clash line. */
   existingRouteNames?: readonly string[];
+  /** Level C: the Scenario's service days, to show its annual days beside the proposal. */
+  scenarioServiceDays?: ReadonlyArray<{ kind: string; name: string; annualServiceDays: number; sequence: number }>;
+  /** Level C: the Scenario's Trip profiles and Blocking scenarios, and the Trip profile the planner is working in. */
+  tripProfiles?: ReadonlyArray<{ id: string; name: string }>;
+  workingTripProfileId?: string;
+  blockingScenarios?: ReadonlyArray<{ id: string; name: string; tripProfileId: string }>;
+  service?: GtfsImportCommands;
+  /** Called after a successful import. The application closes the dialog. Without it the dialog closes itself. */
+  onImported?: (outcome: GtfsImportOutcome) => void;
   onClose: () => void;
 }
 
 const STEP_NAMES = ['Feed', 'Routes', 'Days', 'Options', 'Review'] as const;
+type StepNumber = 1 | 2 | 3 | 4 | 5;
 /** The wait after the last change to the selection before the stop times are read (sub-plan I8, item 1). */
 const SELECTION_SETTLE_MS = 600;
 const EMPTY_FILTER: RouteFilter = { query: '' };
@@ -67,13 +135,21 @@ function errorMessageOf(error: unknown): string {
 const DAY_OF_KEY: Record<string, string> = { weekday: 'Weekday', saturday: 'Saturday', sunday: 'Sunday', holiday: 'Holiday' };
 const ORDINARY: OrdinaryServiceDay[] = ['weekday', 'saturday', 'sunday'];
 
+/** The result of translating the selection: with the planner's timepoint edits, and without (to find each pattern's key before the edits). */
+interface Translated {
+  baseline: FeedJobResult;
+  current: FeedJobResult;
+}
+
+type ReviewState = { status: 'running' } | { status: 'error'; message: string } | { status: 'ready'; key: string; translated: Translated };
+
 export function GtfsImportDialog(props: GtfsImportDialogProps) {
   const { title, target } = titleOf(props);
   const titleId = useId();
   const client = useMemo<GtfsFeedJobClient>(() => createGtfsFeedJobClient(), []);
   useEffect(() => () => client.dispose(), [client]);
 
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<StepNumber>(1);
   const [fileName, setFileName] = useState<string>();
   const [overview, setOverview] = useState<OverviewResult>();
   const [reading, setReading] = useState(false);
@@ -89,6 +165,14 @@ export function GtfsImportDialog(props: GtfsImportDialogProps) {
   const [stopsError, setStopsError] = useState<string>();
   const inFlightKey = useRef<string | undefined>(undefined);
   const [choices, setChoices] = useState<DayChoices>(NO_DAY_CHOICES);
+  const [optionEdits, setOptionEdits] = useState<Partial<OptionChoices>>({});
+  const [overrideState, setOverrideState] = useState<{ key: string; value: TimepointOverrides }>({ key: '', value: {} });
+  const [review, setReview] = useState<ReviewState>({ status: 'running' });
+  const [reviewRouteId, setReviewRouteId] = useState<string>();
+  const [reviewPatternLabel, setReviewPatternLabel] = useState<string>();
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string>();
+  const baselineCache = useRef<{ key: string; result: FeedJobResult } | undefined>(undefined);
 
   const tables = overview?.tables;
   const summary: FeedSummary | undefined = overview?.summary;
@@ -138,9 +222,10 @@ export function GtfsImportDialog(props: GtfsImportDialogProps) {
     return result;
   }, [planTables, selectedIds, selectedSet]);
 
-  // The Days step's plan. It is built only on step 3, once the stop times of the selection are in.
+  // The Days step's plan, from step 3 on: the later steps and the import read the same dates and counts. It is built once the stop times
+  // of the selection are in.
   const planned = useMemo(() => {
-    if (step !== 3 || !planTables || selectedIds.length === 0) return undefined;
+    if (step < 3 || !planTables || selectedIds.length === 0) return undefined;
     const range = feedServiceRange(planTables, selectedSet);
     const candidates = holidayRows(planTables, selectedSet, choices);
     try {
@@ -155,6 +240,60 @@ export function GtfsImportDialog(props: GtfsImportDialogProps) {
   const candidates: HolidayCandidate[] = planned?.candidates ?? [];
   const candidateDates = useMemo(() => new Set(candidates.map((candidate) => candidate.date)), [candidates]);
 
+  // Step 4: the options. The feed's facts decide what is offered and the starting choices; the planner's edits sit on top.
+  const facts: FeedFacts | undefined = useMemo(() => (planTables ? feedFactsOf(planTables, selectedIds) : undefined), [planTables, selectedIds]);
+  const tripProfiles = useMemo(() => [...(props.tripProfiles ?? [])], [props.tripProfiles]);
+  const blockingOf = (tripProfileId: string) => (props.blockingScenarios ?? []).filter((item) => item.tripProfileId === tripProfileId);
+  const optionChoices: OptionChoices | undefined = useMemo(() => {
+    if (!facts) return undefined;
+    const tripProfileId = props.workingTripProfileId ?? tripProfiles[0]?.id ?? '';
+    const base = defaultOptionChoices(facts, { tripProfileId, blockingScenarioId: (props.blockingScenarios ?? []).find((item) => item.tripProfileId === tripProfileId)?.id ?? '' });
+    const merged = { ...base, ...optionEdits };
+    // A selection that no longer has flagged timepoints cannot keep the feed's choice.
+    return merged.timepointMode === 'feed' && !facts.marksTimepoints ? { ...merged, timepointMode: 'suggested' } : merged;
+  }, [facts, optionEdits, props.workingTripProfileId, props.blockingScenarios, tripProfiles]);
+  const optionsBlocking = facts && optionChoices ? optionsProblem(optionChoices, facts, props.level) : undefined;
+
+  // The options handed to the translation and the import, and the key that says when a translation is out of date.
+  const planOptions = (overrides: TimepointOverrides) => (facts && optionChoices ? feedPlanOptions(choices, optionChoices, facts, props.level, overrides) : undefined);
+  const contextKey = useMemo(() => {
+    const options = facts && optionChoices ? feedPlanOptions(choices, optionChoices, facts, props.level, {}) : undefined;
+    return JSON.stringify([selectionKey, options]);
+  }, [facts, optionChoices, choices, props.level, selectionKey]);
+  // Timepoint edits belong to the choices they were made under; a changed choice drops them.
+  const overrides: TimepointOverrides = overrideState.key === contextKey ? overrideState.value : EMPTY_OVERRIDES;
+  const overridesKey = JSON.stringify(overrides);
+
+  const optionsReady = step === 5 && plan !== undefined && planTables !== undefined && facts !== undefined && optionChoices !== undefined && optionsBlocking === undefined && overview !== undefined;
+  const nowRef = useRef(new Date().toISOString());
+  const fileNameText = fileName ?? '';
+
+  // Step 5: translate the selection. The run without timepoint edits is kept while the choices stand, so a pattern's key before its edits
+  // can be found; with edits there is a second run.
+  useEffect(() => {
+    const bytes = bytesRef.current;
+    const withoutEdits = planOptions({});
+    const withEdits = planOptions(overrides);
+    if (!optionsReady || !bytes || !withoutEdits || !withEdits) return undefined;
+    let live = true;
+    setReview({ status: 'running' });
+    const job = (options: NonNullable<typeof withoutEdits>) => ({ bytes, fileName: fileNameText, routeIds: selectedIds, now: nowRef.current, plan: options });
+    void (async () => {
+      try {
+        const cached = baselineCache.current;
+        const baseline = cached && cached.key === contextKey ? cached.result : await client.run(job(withoutEdits));
+        baselineCache.current = { key: contextKey, result: baseline };
+        const current = overridesKey === '{}' ? baseline : await client.run(job(withEdits));
+        if (live) setReview({ status: 'ready', key: `${contextKey}|${overridesKey}`, translated: { baseline, current } });
+      } catch (error) {
+        if (live) setReview({ status: 'error', message: errorMessageOf(error) });
+      }
+    })();
+    return () => { live = false; };
+    // planOptions reads the same values as contextKey and overridesKey, which are listed instead of the function.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [optionsReady, contextKey, overridesKey, client, selectedIds, fileNameText]);
+
   async function chooseFile(file: File) {
     cancelledRef.current = false;
     setReadError(undefined);
@@ -164,6 +303,9 @@ export function GtfsImportDialog(props: GtfsImportDialogProps) {
     setStopTimes(undefined);
     setSelected(new Set());
     setChoices(NO_DAY_CHOICES);
+    setOptionEdits({});
+    setOverrideState({ key: '', value: {} });
+    baselineCache.current = undefined;
     setFileName(file.name);
     const started = performance.now();
     try {
@@ -231,13 +373,91 @@ export function GtfsImportDialog(props: GtfsImportDialogProps) {
   };
 
   // Step 3 view.
-  const daysView = plan && planTables && range && !planError ? buildDaysView({ plan, planTables, choices, selectedIds, selectedSet, range, candidates, candidateDates, routes }) : undefined;
+  const daysView = step === 3 && plan && planTables && range && !planError
+    ? buildDaysView({ plan, planTables, choices, selectedIds, selectedSet, range, candidates, candidateDates, routes, level: props.level, scenarioServiceDays: props.scenarioServiceDays })
+    : undefined;
   const problem = daysView?.problem;
+
+  // Step 5 view.
+  const ready = review.status === 'ready' && review.key === `${contextKey}|${overridesKey}` ? review : undefined;
+  const feedRouteLabels = useMemo(() => new Map(routes.map((route) => [route.routeId, route.shortName ? `${route.shortName} ${route.longName}`.trim() : route.longName || route.routeId])), [routes]);
+  const reviewInputs = ready && planTables && plan ? {
+    translation: ready.translated.current.translation,
+    baseline: ready.translated.baseline.translation,
+    tables: planTables,
+    plan,
+    feedRouteLabels,
+    overrides,
+    selectedRouteId: reviewRouteId,
+    selectedPatternLabel: reviewPatternLabel,
+  } : undefined;
+  const reviewView = reviewInputs
+    ? buildReviewView(reviewInputs)
+    : { status: review.status === 'error' ? 'error' as const : 'running' as const, ...(review.status === 'error' ? { error: review.message } : {}), dayNames: [], routes: [], skipped: [], patterns: [], summaryLine: '' };
+  const report = ready?.translated.current.translation.report;
+
+  function editTimepoint(change: (selection: NonNullable<ReturnType<typeof patternReviewOf>>) => TimepointOverrides) {
+    if (!reviewInputs) return;
+    const selection = patternReviewOf(reviewInputs);
+    if (!selection) return;
+    setOverrideState({ key: contextKey, value: change(selection) });
+  }
+
+  function downloadReport(source: ImportReport | undefined) {
+    if (!source) return;
+    const base = (fileName ?? 'gtfs-feed').replace(/\.zip$/i, '') || 'gtfs-feed';
+    download(`${base}-import-report.csv`, importReportCsv(source), 'text/csv;charset=utf-8');
+  }
+
+  async function runImport() {
+    if (!props.service || !planTables || !facts || !optionChoices || !fileName) return;
+    const withEdits = planOptions(overrides);
+    if (!withEdits) return;
+    setImporting(true);
+    setImportError(undefined);
+    const options: ScenarioFromFeedOptions = { ...withEdits, tables: planTables, routeIds: selectedIds, fileName, now: new Date().toISOString() };
+    try {
+      let outcome: GtfsImportOutcome;
+      if (props.level === 'A') {
+        const created = await props.service.importAsProject(options);
+        const previewReport = ready?.translated.current.translation.report;
+        if (!previewReport) throw new Error('The import report is not ready.');
+        outcome = { level: 'A', fileName, routeCount: ready?.translated.current.translation.routes.length ?? 0, projectId: created.id, reportCsv: importReportCsv(previewReport) };
+      } else if (props.level === 'B') {
+        if (!props.projectId) throw new Error('No Project is open to receive the Scenario.');
+        const created = await props.service.importAsScenario(props.projectId, options);
+        outcome = { level: 'B', fileName, routeCount: created.translation.routes.length, projectId: props.projectId, scenarioId: created.records.scenario.id, reportCsv: importReportCsv(created.translation.report) };
+      } else {
+        if (!props.scenarioId) throw new Error('No Scenario is open to receive the Routes.');
+        const added = await props.service.addRoutes(props.scenarioId, optionChoices.tripProfileId, blocksActive(optionChoices, facts, 'C') ? optionChoices.blockingScenarioId : undefined, options);
+        const detail = addedRoutesDetail(added);
+        outcome = {
+          level: 'C',
+          fileName,
+          routeCount: added.translation.routes.length,
+          scenarioId: props.scenarioId,
+          ...(added.translation.routes[0] ? { firstRouteId: added.translation.routes[0].route.id } : {}),
+          reportCsv: importReportCsv(added.translation.report),
+          ...(detail ? { detail } : {}),
+        };
+      }
+      if (props.onImported) props.onImported(outcome);
+      else props.onClose();
+    } catch (error) {
+      setImportError(errorMessageOf(error));
+    } finally {
+      setImporting(false);
+    }
+  }
 
   const canGoToRoutes = step === 1 && overview !== undefined && !reading;
   const canGoToDays = step === 2 && canContinueFromRoutes(selected);
+  const canGoToOptions = step === 3 && daysView !== undefined && problem === undefined;
+  const canGoToReview = step === 4 && facts !== undefined && optionsBlocking === undefined;
+  const canImport = step === 5 && ready !== undefined && props.service !== undefined && !importing;
+  const createsText = ready && report ? createsLine(props.level, ready.translated.current.translation.routes.length, importedTripCount(report), ready.translated.current.translation.blocks.length) : '';
 
-  return <ModalDialog labelledBy={titleId} className="confirm-dialog gtfs-import-dialog" onClose={props.onClose}>
+  return <ModalDialog labelledBy={titleId} className="confirm-dialog gtfs-import-dialog" onClose={props.onClose} busy={importing}>
     <div className="gtfs-import-head">
       <h2 id={titleId}>{title}</h2>
       <span className="gtfs-target">{target}</span>
@@ -245,7 +465,7 @@ export function GtfsImportDialog(props: GtfsImportDialogProps) {
     <ol className="gtfs-steps" aria-label="Import steps">
       {STEP_NAMES.map((name, index) => {
         const number = index + 1;
-        const current = number === step && number <= 3;
+        const current = number === step;
         return <li key={name} aria-current={current ? 'step' : undefined} className={current ? 'gtfs-step-on' : number < step ? 'gtfs-step-done' : undefined}>
           {number} {name}{number < step ? ' ✓' : ''}
         </li>;
@@ -269,24 +489,51 @@ export function GtfsImportDialog(props: GtfsImportDialogProps) {
           onOwnOn: (routeId, on) => setChoices((current) => ({ ...current, routeOwnCountsOn: on ? [...current.routeOwnCountsOn, routeId] : current.routeOwnCountsOn.filter((id) => id !== routeId) })),
         }} />
         : <p className="gtfs-note" role="status">{planError ?? (stopsError ? `The stop times could not be read: ${stopsError}` : 'Reading the stop times of the selected Routes…')}</p>)}
+      {step === 4 && (facts && optionChoices
+        ? <OptionsStep
+          view={{ level: props.level, facts, choices: optionChoices, tripProfiles, blockingScenarios: blockingOf(optionChoices.tripProfileId).map(({ id, name }) => ({ id, name })), blocksOn: blocksActive(optionChoices, facts, props.level) }}
+          handlers={{
+            onChange: (change) => setOptionEdits((current) => ({
+              ...current,
+              ...change,
+              // A new Trip profile brings its own Blocking scenarios, so the old choice cannot stand.
+              ...(change.tripProfileId !== undefined ? { blockingScenarioId: blockingOf(change.tripProfileId)[0]?.id ?? '' } : {}),
+            })),
+          }} />
+        : <p className="gtfs-note" role="status">Reading the stop times of the selected Routes…</p>)}
+      {step === 5 && <>
+        {importError && <p className="gtfs-refusal" role="alert">{importError}</p>}
+        <ReviewStep view={reviewView} handlers={{
+          onSelectRoute: (routeId) => { setReviewRouteId(routeId); setReviewPatternLabel(undefined); },
+          onSelectPattern: (patternId) => setReviewPatternLabel(reviewView.patterns.find((row) => row.patternId === patternId)?.label),
+          onToggleTimepoint: (position, on) => editTimepoint((selection) => withOverride(overrides, selection.feedRouteId, selection.originalKeys, withTimepointToggled(selection.stops, position, on))),
+          onRestoreTimepoints: () => editTimepoint((selection) => withoutOverride(overrides, selection.feedRouteId, selection.originalKeys)),
+          onDownloadReport: () => downloadReport(report),
+        }} />
+      </>}
     </div>
     <div className="gtfs-import-foot">
       <span className="gtfs-status" role="status">
         {step === 1 && (reading ? 'Reading the feed…' : overview ? 'Feed read.' : '')}
         {step === 2 && `${totals.routes} routes selected`}
         {step === 3 && (problem ?? (daysView ? `Counts total ${daysView.total}` : ''))}
+        {step === 4 && (optionsBlocking ?? '')}
+        {step === 5 && (importing ? 'Importing…' : createsText || (review.status === 'error' ? '' : 'Preparing the import…'))}
       </span>
       <div className="gtfs-buttons">
-        {step > 1 && <button type="button" onClick={() => setStep((current) => (current === 3 ? 2 : 1))}>Back</button>}
-        <button type="button" onClick={props.onClose}>Cancel</button>
+        {step > 1 && <button type="button" disabled={importing} onClick={() => setStep((current) => (current > 1 ? (current - 1) as StepNumber : current))}>Back</button>}
+        <button type="button" disabled={importing} onClick={props.onClose}>Cancel</button>
         {step === 1 && <button type="button" className="primary" disabled={!canGoToRoutes} onClick={() => setStep(2)}>Next</button>}
         {step === 2 && <button type="button" className="primary" disabled={!canGoToDays} onClick={() => setStep(3)}>Next</button>}
-        {step === 3 && <button type="button" className="primary" disabled aria-describedby={`${titleId}-next`}>Next</button>}
+        {step === 3 && <button type="button" className="primary" disabled={!canGoToOptions} onClick={() => setStep(4)}>Next</button>}
+        {step === 4 && <button type="button" className="primary" disabled={!canGoToReview} onClick={() => setStep(5)}>Next</button>}
+        {step === 5 && <button type="button" className="primary" disabled={!canImport} onClick={() => void runImport()}>Import</button>}
       </div>
     </div>
-    {step === 3 && <p id={`${titleId}-next`} className="gtfs-note gtfs-next-note">Options and Review come next.</p>}
   </ModalDialog>;
 }
+
+const EMPTY_OVERRIDES: TimepointOverrides = {};
 
 function isOrdinary(key: string): key is OrdinaryDay {
   return key === 'weekday' || key === 'saturday' || key === 'sunday';
@@ -299,7 +546,7 @@ function daysInclusive(start: GtfsDate, end: GtfsDate): number {
 }
 
 interface DaysInputs {
-  plan: ReturnType<typeof planForChoices>;
+  plan: NonNullable<ReturnType<typeof planForChoices>>;
   planTables: GtfsTables;
   choices: DayChoices;
   selectedIds: string[];
@@ -308,11 +555,13 @@ interface DaysInputs {
   candidates: HolidayCandidate[];
   candidateDates: ReadonlySet<GtfsDate>;
   routes: FeedRouteRow[];
+  level: ImportLevel;
+  scenarioServiceDays: GtfsImportDialogProps['scenarioServiceDays'];
 }
 
 /** Everything the Days step shows, from the plan and the choices. */
 function buildDaysView(input: DaysInputs): DaysStepView {
-  const { plan, planTables, choices, selectedIds, selectedSet, range, candidates, candidateDates, routes } = input;
+  const { plan, planTables, choices, selectedIds, selectedSet, range, candidates, candidateDates, routes, level } = input;
   const dateOfKey = (key: string): GtfsDate | undefined => plan.days.find((day) => day.key === key)?.date;
   const tripsOn = (date: GtfsDate | undefined): number => {
     if (!date) return 0;
@@ -324,9 +573,12 @@ function buildDaysView(input: DaysInputs): DaysStepView {
   const keys = Object.keys(plan.counts.countsByKey).sort((a, b) => keyOrder(a) - keyOrder(b) || a.localeCompare(b));
   const defaults = defaultDates(planTables, selectedSet);
   const rangeDates = plan.counts.rangeDates;
+  // Level C: the Scenario's own day of each standard kind, to show its annual days beside the proposal.
+  const scenarioDayOf = (key: string) => (input.scenarioServiceDays ?? []).filter((day) => day.kind === key).sort((a, b) => a.sequence - b.sequence)[0];
   const rows = keys.map((key) => {
     const proposed = plan.counts.countsByKey[key] ?? 0;
-    const override = choices.annualCountOverrides[key];
+    // Level C does not change the Scenario's counts, so the planner's edits do not apply there.
+    const override = level === 'C' ? undefined : choices.annualCountOverrides[key];
     const annualDays = override ?? proposed;
     const date = dateOfKey(key);
     const datesInFeed = plan.counts.datesByKey[key] ?? 0;
@@ -340,10 +592,11 @@ function buildDaysView(input: DaysInputs): DaysStepView {
       trips: tripsOn(date),
       datesInFeed,
       annualDays,
+      ...(level === 'C' ? { scenarioDays: scenarioDayOf(key)?.annualServiceDays } : {}),
       basis: datesInFeed === 0 ? 'No dates in feed' : `${datesInFeed} of ${rangeDates} days${plan.counts.scaled ? ', scaled to 365' : ''}`,
     };
   });
-  const problemText = annualDaysProblem(rows.map((row) => row.annualDays));
+  const problemText = level === 'C' ? undefined : annualDaysProblem(rows.map((row) => row.annualDays));
   const total = rows.reduce((sum, row) => sum + (Number.isFinite(row.annualDays) ? row.annualDays : 0), 0);
 
   const holidayCandidates = candidates.map((candidate) => {
@@ -406,6 +659,7 @@ function buildDaysView(input: DaysInputs): DaysStepView {
   });
 
   return {
+    level,
     rows,
     total,
     ...(problemText ? { problem: problemText } : {}),
@@ -425,8 +679,8 @@ function buildDaysView(input: DaysInputs): DaysStepView {
 }
 
 /**
- * Mounts the dialog into a container. The import dialog is opened from the menus in sub-plan I9; until then the browser tests mount it
- * this way. Returns a function that unmounts it.
+ * Mounts the dialog into a container. The browser tests that do not go through the menus mount it this way. Returns a function that
+ * unmounts it.
  */
 export function mountGtfsImportDialog(container: HTMLElement, props: GtfsImportDialogProps): () => void {
   const root = createRoot(container);

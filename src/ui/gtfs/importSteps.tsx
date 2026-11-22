@@ -5,8 +5,9 @@ import type { ReactNode } from 'react';
 import { InlineNote } from '../shared/surfaces';
 import { displayDate, type FeedRouteRow, gtfsDateOfInput, type HolidayClassChoice, holidayClassLabel, inputDateOf, type OrdinaryDay, type RouteFilter, routeTypeName } from './gtfsImportModel';
 import type { GtfsDate } from '../../domain/gtfs/time';
+import type { ImportLevel } from './gtfsImportReviewModel';
 
-export type ImportLevel = 'A' | 'B' | 'C';
+export type { ImportLevel };
 
 /** Step 1: the file, the feed's facts, the reading progress and any refusal. */
 export interface FeedStepView {
@@ -135,6 +136,8 @@ export interface DayRowView {
   trips: number;
   datesInFeed: number;
   annualDays: number;
+  /** Level C: the Scenario's own count for this day, or undefined when the Scenario has no day to match it. */
+  scenarioDays?: number | undefined;
   basis: string;
 }
 
@@ -168,6 +171,8 @@ export interface PartYearRowView {
 
 /** Step 3: everything the Days step shows. */
 export interface DaysStepView {
+  /** Level C shows the proposed counts beside the Scenario's and does not let the planner edit them: the Scenario's counts are not changed. */
+  level: ImportLevel;
   rows: DayRowView[];
   total: number;
   problem?: string;
@@ -202,25 +207,28 @@ export function DaysStep({ view, handlers }: { view: DaysStepView; handlers: Day
     <h3 id="gtfs-step-days" className="visually-hidden">Days</h3>
     <div className="gtfs-panel">
       <table className="gtfs-table">
-        <thead><tr><th scope="col">Service day</th><th scope="col">Date used</th><th scope="col" className="gtfs-num">Trips</th><th scope="col" className="gtfs-num">Dates in feed</th><th scope="col" className="gtfs-num">Annual days</th><th scope="col">Basis</th></tr></thead>
+        <thead><tr><th scope="col">Service day</th><th scope="col">Date used</th><th scope="col" className="gtfs-num">Trips</th><th scope="col" className="gtfs-num">Dates in feed</th><th scope="col" className="gtfs-num">{view.level === 'C' ? 'Proposed days' : 'Annual days'}</th>{view.level === 'C' && <th scope="col" className="gtfs-num">Scenario days</th>}<th scope="col">Basis</th></tr></thead>
         <tbody>
           {view.rows.map((row) => <tr key={row.key}>
             <th scope="row">{row.name}</th>
             <td>{row.ordinary ? <span className="gtfs-date-cell">
               <input type="date" aria-label={`${row.name} date used`} value={row.date ? inputDateOf(row.date) : ''} min={view.rangeStart && inputDateOf(view.rangeStart)} max={view.rangeEnd && inputDateOf(view.rangeEnd)} onChange={(event) => handlers.onDate(row.key, event.currentTarget.value ? gtfsDateOfInput(event.currentTarget.value) : undefined)} />
               {row.date && row.defaultDate && <span className="gtfs-chip">{row.date === row.defaultDate ? 'typical' : 'chosen'}</span>}
-              {row.date && <span className="gtfs-note">{displayDate(row.date)}</span>}
             </span> : row.date ? displayDate(row.date) : <span className="gtfs-note">No unique holiday service</span>}</td>
             <td className="gtfs-num">{row.trips.toLocaleString('en-US')}</td>
             <td className="gtfs-num">{row.datesInFeed}</td>
-            <td className="gtfs-num"><input type="number" min="0" step="1" aria-label={`${row.name} annual service days`} className="gtfs-number" value={Number.isNaN(row.annualDays) ? '' : row.annualDays} onChange={(event) => handlers.onAnnual(row.key, event.currentTarget.value === '' ? Number.NaN : Number(event.currentTarget.value))} /></td>
+            {view.level === 'C'
+              ? <td className="gtfs-num" aria-label={`${row.name} proposed annual service days`}>{row.annualDays}</td>
+              : <td className="gtfs-num"><input type="number" min="0" step="1" aria-label={`${row.name} annual service days`} className="gtfs-number" value={Number.isNaN(row.annualDays) ? '' : row.annualDays} onChange={(event) => handlers.onAnnual(row.key, event.currentTarget.value === '' ? Number.NaN : Number(event.currentTarget.value))} /></td>}
+            {view.level === 'C' && <td className="gtfs-num" aria-label={`${row.name} Scenario annual service days`}>{row.scenarioDays ?? '—'}</td>}
             <td className="gtfs-note">{row.basis}</td>
           </tr>)}
-          <tr><td colSpan={4} className="gtfs-note">Total</td><td className="gtfs-num"><b className={view.problem ? 'gtfs-invalid' : undefined}>{Number.isFinite(view.total) ? view.total : '—'}</b> of 365</td><td /></tr>
+          <tr><td colSpan={4} className="gtfs-note">Total</td><td className="gtfs-num"><b className={view.problem ? 'gtfs-invalid' : undefined}>{Number.isFinite(view.total) ? view.total : '—'}</b> of 365</td>{view.level === 'C' && <td />}<td /></tr>
         </tbody>
       </table>
     </div>
     {view.problem && <p className="gtfs-refusal" role="alert">{view.problem}</p>}
+    {view.level === 'C' && <p className="gtfs-note">The Scenario keeps its own annual days. The proposed days are for comparison only; any difference is listed after the import. A feed day the Scenario does not have is not imported.</p>}
 
     <Section title="Holidays" summary={view.holidaySummary} open={view.holidaysOpen}>
       {view.holidayCandidates.length === 0 ? <p className="gtfs-note">This feed has no holiday exceptions.</p> : <>

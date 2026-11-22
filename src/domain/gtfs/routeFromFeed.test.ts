@@ -383,6 +383,21 @@ describe('built feeds for the remaining rules', () => {
     expect(result.stopSet?.stops.map((stop) => stop.stopCode)).toEqual(['LD']);
   });
 
+  it('uses the suggested timepoints in suggested mode even when the feed flags some, and the flags in feed mode and by default', () => {
+    // Five stops, the middle one flagged. The trip runs 4 minutes, so the suggested rule asks for round(4 / 10) + 1 = 1 stop, raised to
+    // the 2-stop minimum: only the terminals. The flag adds the middle stop.
+    const names = ['A', 'B', 'C', 'D', 'E'];
+    const tables = builtTables({
+      stops: names.map((id, index) => stopRow(id, `Stop ${id}`, '39.74', String(-104.99 + index * 0.01))),
+      trips: [tripRow('T1')],
+      stopTimes: names.map((id, index) => stopTimeRow('T1', id, index + 1, hms(8 * 3600 + index * 60), hms(8 * 3600 + index * 60), id === 'C' ? '1' : '0')),
+    });
+    const keysOf = (result: RouteFromFeed) => result.patterns.map((pattern) => result.patternKeys[pattern.id]);
+    expect(keysOf(run(tables, '20260105', 'X1'))).toEqual(['outbound:A>C>E']);
+    expect(keysOf(run(tables, '20260105', 'X1', { timepointMode: 'feed' }))).toEqual(['outbound:A>C>E']);
+    expect(keysOf(run(tables, '20260105', 'X1', { timepointMode: 'suggested' }))).toEqual(['outbound:A>E']);
+  });
+
   it('gives a route with no trips a route and two directions, and no patterns or stop set', () => {
     const tables = loadFeedTables('edge-loop-variants');
     const result = routeFromFeed({ ...inputFor(tables, '20260105', 'L1'), trips: [] });

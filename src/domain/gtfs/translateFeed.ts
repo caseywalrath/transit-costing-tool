@@ -24,7 +24,7 @@ import {
   type ImportReportRow,
   type RouteSummary,
 } from './reportFromFeed';
-import { type FeedShapePoint, type GtfsFinding, type RouteFromFeed, routeFromFeed } from './routeFromFeed';
+import { type FeedShapePoint, type GtfsFinding, type RouteFromFeed, routeFromFeed, type TimepointMode } from './routeFromFeed';
 import { runtimeProfileFromFeed, timesAtPatternPoints } from './runtimesFromFeed';
 import type { GtfsDate } from './time';
 import { tripFromFeed } from './tripsFromFeed';
@@ -59,6 +59,8 @@ export interface TranslateFeedInput {
   };
   /** Feed route_id → pattern key → the stop IDs the planner chose as timepoints (Decision 0089 item 26). */
   timepointOverrides?: Record<string, Record<string, string[]>>;
+  /** Where every Route's timepoints come from (Decision 0089 item 26). Absent: the feed's flags where a Route has them. */
+  timepointMode?: TimepointMode;
   /** Names of the Routes already in the Scenario. A feed Route with one of these names (ignoring case) is named "{name} (feed)". */
   existingRouteNames?: string[];
   now: string;
@@ -112,6 +114,7 @@ interface BuildContext {
   stops: ReadonlyMap<string, Row>;
   shapes: ReadonlyMap<string, FeedShapePoint[]>;
   overrides: Record<string, Record<string, string[]>>;
+  timepointMode: TimepointMode | undefined;
   existingNames: ReadonlySet<string>;
   now: string;
 }
@@ -155,6 +158,7 @@ export function translateFeed(input: TranslateFeedInput): FeedTranslation {
     stops: firstRowsBy(tables.stops, 'stop_id'),
     shapes: shapePointsById(tables.shapes),
     overrides: input.timepointOverrides ?? {},
+    timepointMode: input.timepointMode,
     existingNames: new Set((input.existingRouteNames ?? []).map(nameKey)),
     now,
   };
@@ -403,6 +407,7 @@ function buildRoute(routeRow: Row, entries: readonly RouteEntry[], context: Buil
       stops: context.stops,
       shapes: context.shapes,
       timepointOverrides: context.overrides[feedRouteId],
+      ...(context.timepointMode ? { timepointMode: context.timepointMode } : {}),
       now: context.now,
     });
     if (result.placements.length !== entries.length) {

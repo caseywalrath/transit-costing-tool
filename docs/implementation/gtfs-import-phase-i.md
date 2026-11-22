@@ -502,3 +502,12 @@ Accepted: step 2 weekday trip counts come from calendars and trips without `stop
 9. **Spec:** extend `tests/ui/gtfs-import.spec.ts`: a full level A import of the mini feed through the menu (Project shows, B1 opens on the Route tab, trips carry "Feed"); level C into a Scenario with a clash, then Undo removes the routes; the report download.
 
 **Run:** the I8–I9 row of section 4 (`gtfs-import`, `draggable-dialogs`, `keyboard`, `project-context-menu`, `scenario-context-menu`, `context-line`), plus `trips*.spec.ts` touched by the tag and `costing-summary.spec.ts`; `pnpm typecheck`, `pnpm test`, `pnpm build`; screenshots of steps 4, 5 and the after-import views into the scratchpad `i9/` folder.
+
+## 22. I9 as built (2026-11-22)
+
+- Additive options carried end to end: `timepointMode` ('feed' | 'suggested') and `timepointOverrides` through `routeFromFeed`, `translateFeed`, `scenarioFromFeed`, `FeedPlanOptions` and `addRoutes`. New `timepointReview.ts`.
+- Level C step 3 shows "Proposed days" (read-only) beside "Scenario days". Undo only for level C; levels A and B open the new Project or Scenario.
+- The "Feed" chip sits in the Pattern cell beside "Run times changed". The import note is the menu item's note line and the Cost summary footnote.
+- Planned frequencies stay disabled ("Not available yet"): no seeding service exists. Backlog.
+- After a level A or B import with blocks, the "From feed" Blocking scenario is remembered for the new Scenario, so Costing opens on it.
+

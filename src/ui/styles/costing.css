@@ -121,6 +121,7 @@
 .cost-summary-table:has(tfoot) tbody tr:last-child > * { border-bottom: 1.5px solid #17212b; }
 .cost-summary-table tfoot tr > * { font-weight: var(--font-weight-bold); border-bottom: 0; }
 .cost-summary-footer { margin-top: auto; border-top: 1px solid #d2dbe0; padding-top: 10px; font-size: 11px; color: #536574; }
+.cost-summary-import-note { display: block; margin-top: 2px; }
 
 @media print {
   @page { size: letter; margin: 0.5in; }

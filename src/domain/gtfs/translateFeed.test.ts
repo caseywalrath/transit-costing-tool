@@ -340,6 +340,24 @@ describe('Routes and options that cannot be used as asked', () => {
   });
 });
 
+describe('timepoint mode and overrides (Decision 0089 item 26)', () => {
+  // B1 has all three stops flagged; unflagging S2 leaves two flagged stops, while the suggested rule asks for three.
+  const mini = loadFeedTables('mini');
+  const b1Trips = new Set(mini.trips.filter((trip) => trip.route_id === 'B1').map((trip) => trip.trip_id));
+  const tables = { ...mini, stopTimes: mini.stopTimes.map((row) => (b1Trips.has(row.trip_id) && row.stop_id === 'S2' ? { ...row, timepoint: '0' } : row)) };
+  const nodesOf = (extra: Partial<TranslateFeedInput>) => translate(tables, ['B1'], { serviceDays: [MINI_WEEKDAY], ...extra }).routes[0].nodes.length;
+
+  it('uses the feed flags by default and in feed mode, and the suggested rule in suggested mode', () => {
+    expect(nodesOf({})).toBe(2);
+    expect(nodesOf({ timepointMode: 'feed' })).toBe(2);
+    expect(nodesOf({ timepointMode: 'suggested' })).toBe(3);
+  });
+
+  it('applies an override keyed by the pattern key before the override', () => {
+    expect(nodesOf({ timepointOverrides: { B1: { 'outbound:S1>S3': ['S1', 'S2', 'S3'] } } })).toBe(3);
+  });
+});
+
 describe('the CSV of the report (Decision 0089 item 37)', () => {
   it('has the column header, one line per finding, and CRLF line ends', () => {
     const result = translate(loadFeedTables('mini'), ['B1'], { serviceDays: [MINI_WEEKDAY] });

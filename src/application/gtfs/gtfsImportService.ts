@@ -242,6 +242,8 @@ function addFeedRoutes(
       pullOutMinutes: options.blocks?.pullOutMinutes,
       pullInMinutes: options.blocks?.pullInMinutes,
     },
+    ...(options.timepointMode ? { timepointMode: options.timepointMode } : {}),
+    ...(options.timepointOverrides ? { timepointOverrides: options.timepointOverrides } : {}),
     existingRouteNames: current.routes.map((route) => route.name),
     now: options.now,
   });

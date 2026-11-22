@@ -61,8 +61,15 @@ export interface RouteFromFeedInput {
   shapes: ReadonlyMap<string, FeedShapePoint[]>;
   /** Pattern key before the override → the stop IDs the planner chose as its timepoints (Decision 0089 item 26). */
   timepointOverrides?: Record<string, string[]>;
+  /**
+   * Where a direction's timepoints come from (Decision 0089 item 26). 'feed' (the default) uses the feed's flags when any trip of the
+   * direction has one, and the suggested rule otherwise. 'suggested' always uses the suggested rule, flags or not.
+   */
+  timepointMode?: TimepointMode;
   now: string;
 }
+
+export type TimepointMode = 'feed' | 'suggested';
 
 /** The time of one trip at one pattern point. `filled` is true when the feed left the time blank and it was filled in. */
 export interface TripPlacement {
@@ -139,7 +146,7 @@ export function routeFromFeed(input: RouteFromFeedInput): RouteFromFeed {
 
   // Timepoints and pattern keys, per direction. A stop flagged on any trip of a direction is a timepoint on every trip that serves it.
   // An override is keyed by the key from before the override, and its stops replace the set for the trips on that pattern.
-  const hasFlags = hasTimepointFlags(trips);
+  const hasFlags = input.timepointMode !== 'suggested' && hasTimepointFlags(trips);
   const drafts: PatternDraft[] = [];
   const indexesOfTrip = new Map<FeedTrip, number[]>();
   for (const group of DIRECTIONS) {

@@ -21,6 +21,7 @@ import { countAssumptionChanges, countEstimateFactorChanges } from '../../applic
 import { MenuButton, type MenuGroup } from '../MenuButton';
 import { buildCostSummary, costSummaryPartialReasons, type CostSummary } from '../../domain/costSummary';
 import { CostSummaryView } from './CostSummaryView';
+import { latestImportNoteText } from '../gtfs/importNote';
 import { estimateFactorsForTripProfile, routeEstimateFactorsForTripProfile } from '../../domain/estimatedCosting';
 import { CycleCalculator } from './CycleCalculator';
 import { setEstimateFactor } from './EstimateFactorsGrid';
@@ -481,7 +482,7 @@ export function CostingWorkspace({ tripProfileId: workingTripProfileId, blocking
       </SupportPanel>
     </div>
     {partialSummary && <ModalDialog role="alertdialog" labelledBy="cost-summary-partial-title" className="confirm-dialog" onClose={() => setPartialSummary(undefined)}><h2 id="cost-summary-partial-title">This estimate is partial</h2><p>The cost summary will not show that some service is left out:</p><ul>{partialSummary.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul><div className="dialog-actions"><button autoFocus onClick={() => setPartialSummary(undefined)}>Cancel</button><button className="primary" onClick={() => { setSummary(partialSummary.summary); setPartialSummary(undefined); }}>Open summary</button></div></ModalDialog>}
-    {summary && <CostSummaryView summary={summary} onClose={() => setSummary(undefined)} />}
+    {summary && <CostSummaryView summary={summary} importNote={latestImportNoteText(scenario)} onClose={() => setSummary(undefined)} />}
     {navigationDialog && <CostingNavigationDraftDialog factorsOnly={navigationDialog.factorsOnly} saving={saving} saveDisabled={(!navigationDialog.factorsOnly && validation.some((finding) => finding.severity === 'error')) || factorCellInvalid} onCancel={() => setNavigationDialog(undefined)} onDiscard={() => { const action = navigationDialog.action; if (!navigationDialog.factorsOnly) setAssumptions(loadedAssumptions ?? assumptions); setFactors(savedFactors); setNavigationDialog(undefined); action(); }} onSave={() => void saveAndNavigate()} />}
     {contextMenu.menu}
   </div>;

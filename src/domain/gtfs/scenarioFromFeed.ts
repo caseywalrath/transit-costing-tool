@@ -20,6 +20,7 @@ import { feedServiceRange } from './calendar';
 import { type ChosenDates, defaultDates, partYearRoutes, serviceDayOfWeek, type ServiceDayKey } from './dayGroups';
 import type { GtfsTables } from './feedTables';
 import { type HolidayCandidate, holidayCandidates, proposeHolidayDays } from './holidays';
+import type { TimepointMode } from './routeFromFeed';
 import { checkGtfsDate, type GtfsDate } from './time';
 import { type FeedTranslation, translateFeed, type TranslateServiceDay } from './translateFeed';
 
@@ -50,6 +51,10 @@ export interface ScenarioFromFeedOptions {
    * Route on that day; a Route that is not part-year is not affected.
    */
   routeDates?: Record<string, Partial<Record<'weekday' | 'saturday' | 'sunday', GtfsDate>>>;
+  /** Where every Route's timepoints come from (Decision 0089 item 26). Absent: the feed's flags where a Route has them. */
+  timepointMode?: TimepointMode;
+  /** Feed route_id → pattern key before the override → the stop IDs the planner chose as that pattern's timepoints. */
+  timepointOverrides?: Record<string, Record<string, string[]>>;
 }
 
 export interface ScenarioFromFeed {
@@ -318,6 +323,8 @@ export function scenarioFromFeed(projectId: EntityId, scenarioName: string, opti
       pullOutMinutes: options.blocks?.pullOutMinutes,
       pullInMinutes: options.blocks?.pullInMinutes,
     },
+    ...(options.timepointMode ? { timepointMode: options.timepointMode } : {}),
+    ...(options.timepointOverrides ? { timepointOverrides: options.timepointOverrides } : {}),
     now,
   });
   if (translation.routes.length === 0) {
