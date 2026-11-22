@@ -1,6 +1,6 @@
 # Scenario comparison (phase V) — plan
 
-> **Status:** Draft 2026-11-22, awaiting gate answers (G-V1 to G-V9) and approval of the mock-up `docs/implementation/scenario-compare/mockup.html`.
+> **Status:** Approved 2026-11-22: gates G-V1 to G-V9 and mock-up questions A to C answered as recommended. Next: sitting 1 (V0). V-V is a later checkpoint.
 >
 > **Parent plan:** `docs/implementation/gtfs-interoperability.md`, Part 6 "V". This file expands that section. The parent's fixed decisions (Part 8) and run rules (Part 7) apply unless this file says otherwise.
 >
@@ -255,16 +255,16 @@ If you say "your call": Option A.
 
 | Gate | Topic | Recommendation | Answer | Date |
 |---|---|---|---|---|
-| G-V1 | Sides | A: Scenario + profile + blocks | | |
-| G-V2 | Matching | A: automatic only | | |
-| G-V3 | Day counts | A: baseline's, with menu | | |
-| G-V4 | Rates | A: baseline's, with menu | | |
-| G-V5 | Bases | A: own basis, warned | | |
-| G-V6 | Peak vehicles | A: blocks at once | | |
-| G-V7 | Periods | A: fixed six | | |
-| G-V8 | Remembering | A: on the device | | |
-| G-V9 | Placement | A: fifth tab | | |
-| Mock-up A–C | Bars, folding, sort | As recommended | | |
+| G-V1 | Sides | A: Scenario + profile + blocks | Approved as recommended | 2026-11-22 |
+| G-V2 | Matching | A: automatic only | Approved as recommended | 2026-11-22 |
+| G-V3 | Day counts | A: baseline's, with menu | Approved as recommended | 2026-11-22 |
+| G-V4 | Rates | A: baseline's, with menu | Approved as recommended | 2026-11-22 |
+| G-V5 | Bases | A: own basis, warned | Approved as recommended | 2026-11-22 |
+| G-V6 | Peak vehicles | A: blocks at once | Approved as recommended | 2026-11-22 |
+| G-V7 | Periods | A: fixed six | Approved as recommended | 2026-11-22 |
+| G-V8 | Remembering | A: on the device | Approved as recommended | 2026-11-22 |
+| G-V9 | Placement | A: fifth tab | Approved as recommended | 2026-11-22 |
+| Mock-up A–C | Bars, folding, sort | As recommended | Approved as recommended | 2026-11-22 |
 | V-V | User check: compare the RTD import with an edited copy | Before closeout | | |
 
 ---
@@ -284,3 +284,7 @@ If you say "your call": Option A.
 ### 2026-11-22 — Draft (Opus)
 
 Plan and mock-up written. Waiting for gate answers G-V1 to G-V9 and mock-up answers A to C.
+
+### 2026-11-22 — Gates answered (user)
+
+G-V1 to G-V9 and mock-up questions A to C: approved as recommended.
