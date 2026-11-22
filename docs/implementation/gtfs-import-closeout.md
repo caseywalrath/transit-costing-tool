@@ -29,3 +29,10 @@ Translation about 1 s after the I10 fixes (was 4 s); browser import of the 82 MB
 ## Verification
 
 See the commit messages and the final results section below.
+
+## Final results (2026-11-22)
+
+- Fixed in closeout: the Trips table stayed empty for up to a minute on a whole-feed Scenario, because it waited for the changed-runtime check of every trip of the day. The check now reads run-time assignments once, and the table draws after at most 0.4 s while a slow check finishes behind it (`TripsWorkspace.tsx`; new `tests/ui/trips-large-scenario.spec.ts`). One Shift test was made to wait for the stored write instead of the screen.
+- Unit tests: 2,238 passed. Typecheck clean. Build succeeds.
+- Full browser suite: 421 passed, 3 skipped, 1 failed on the run before the Shift test fix; that test then passed 6 of 6 alone. The earlier noted flakes did not recur.
+- Remaining cost on a whole feed: the changed-runtime check still scans all trips of the day on every Route switch (backlog: scope it to the Route).

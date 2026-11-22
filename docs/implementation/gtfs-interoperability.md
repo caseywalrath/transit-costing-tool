@@ -585,3 +585,4 @@ V-I test routes: **31 Federal Blvd, 0 Broadway, 0L South Broadway Limited** (RTD
 - **Tests at the end:** typecheck clean; `pnpm test` 135 files, 2,225 passed; `pnpm build` ok; `gtfs-import.spec.ts` 13 tests, 65/65 over 5 repeats; keyboard (axe), context menus, context line, draggable dialogs and costing summary 35 passed; trips specs passed in the package run.
 - **Hand-off:** sitting 7 done. Next is sitting 8: I9b (Sonnet: per-route counts on the Route tab, Costing markers and messages from I5b, Add service day with `removeServiceDayFromFeedFields`) and I10 (Haiku: whole-feed scale).
 
+- **Sitting 8–9 (2026-11-22):** I9b built except custom-day Delete and the Day menu (backlog, user choice). I10: translation 4 s → 1 s on RTD, output identical. Closeout fixed the empty Trips table on large Scenarios; docs, backlog and Decision 0089 status updated (`gtfs-import-closeout.md`). No pull request (user choice). Open for the user: gate V-I, the RTD backup check.

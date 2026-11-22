@@ -266,20 +266,38 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
     } catch (error) { onError(error); } finally { setLoading(false); }
   }
   const tripsLoadId = useRef(0);
+  const tripsLoadLatest = useRef<Promise<void>>(Promise.resolve());
+  /** How long a fast changed-runtime check may delay the table so the Trips and their notices appear in one render. */
+  const STALE_CHECK_GRACE_MS = 400;
+  // A load that is replaced by a newer one (the effect on runtimeVersion running beside a caller's own load) still resolves only when the
+  // newest load is complete, so callers that await loadTrips (scroll restore, focus, the Regenerate menu) see the final Trips and notices.
   async function loadTrips() {
-    if (!serviceDayId || !directionId) { tripsLoadId.current += 1; setTrips([]); setRouteDayTrips([]); setTripsWithChangedRuntimes([]); setStaleReasons(undefined); setLastTripChange(undefined); return; }
+    const loadId = ++tripsLoadId.current;
+    let mine = readTrips(loadId);
+    tripsLoadLatest.current = mine;
+    await mine;
+    while (tripsLoadLatest.current !== mine) { mine = tripsLoadLatest.current; await mine; }
+  }
+  async function readTrips(loadId: number) {
+    if (!serviceDayId || !directionId) { setTrips([]); setRouteDayTrips([]); setTripsWithChangedRuntimes([]); setStaleReasons(undefined); setLastTripChange(undefined); return; }
     try {
-      // The table is drawn as soon as the Trips are read. Checking every Trip of the day for a changed runtime is the slow part on a large
-      // Scenario (whole-feed import), and the table used to wait for it and showed "Use Build trips" in the meantime.
-      const loadId = ++tripsLoadId.current;
+      // Checking every Trip of the day for a changed runtime is the slow part on a large Scenario (whole-feed import). A check that finishes
+      // within the grace period is applied with the Trips in one render; a slower one lets the table draw first and its notices follow.
+      const staleRead = tripService.inspectStaleTrips(serviceDayId, tripProfileId);
+      staleRead.catch(() => undefined);
       const [nextTrips, undo, nextRouteDayTrips] = await Promise.all([tripService.listScheduleTrips(serviceDayId, directionId, tripProfileId), tripChangeUndo?.latest({ scenarioId: records.scenario.id, routeId: aggregate.route.id, serviceDayId, tripProfileId }), tripService.listRouteDayTrips(aggregate.route.id, serviceDayId, tripProfileId)]);
       if (loadId !== tripsLoadId.current) return;
       const shownTripIds = new Set(nextTrips.map((item) => item.id));
-      setTrips(nextTrips); setRouteDayTrips(nextRouteDayTrips); setLastTripChange(undo);
-      const nextStale = await tripService.inspectStaleTrips(serviceDayId, tripProfileId);
+      const applyStale = (read: Awaited<typeof staleRead>) => { setTripsWithChangedRuntimes(read.trips.filter((trip) => shownTripIds.has(trip.id))); setStaleReasons(staleTripNotice(read.findings, shownTripIds, userMessage)); };
+      const pending = Symbol('pending');
+      const early = await Promise.race([staleRead, new Promise<typeof pending>((resolve) => window.setTimeout(() => resolve(pending), STALE_CHECK_GRACE_MS))]);
       if (loadId !== tripsLoadId.current) return;
-      setTripsWithChangedRuntimes(nextStale.trips.filter((trip) => shownTripIds.has(trip.id))); setStaleReasons(staleTripNotice(nextStale.findings, shownTripIds, userMessage));
-    } catch (error) { onError(error); }
+      setTrips(nextTrips); setRouteDayTrips(nextRouteDayTrips); setLastTripChange(undo);
+      if (early !== pending) { applyStale(early); return; }
+      const nextStale = await staleRead;
+      if (loadId !== tripsLoadId.current) return;
+      applyStale(nextStale);
+    } catch (error) { if (loadId === tripsLoadId.current) onError(error); }
   }
   useEffect(() => { void loadRuntime(); }, [aggregate.route.id, selectedPattern?.id, serviceDayId, records.scenario.id, runtimeVersion]);
   function clearTripShiftHistory() { setShiftDrawerOpen(false); setShiftOperations([]); setRedoShiftOperations([]); setShiftPreview(undefined); setShiftError(''); }

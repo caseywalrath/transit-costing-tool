@@ -14,7 +14,7 @@ Each entry lists the problem, the proposed approach, open choices, and the edge 
 | [Year-varying service](#year-varying-service) | Scenario, Costing | Idea 2026-11-12; beyond current scope |
 | GTFS import | Project, Scenario, Route, Costing | Implemented 2026-11-22: Decision 0089, `docs/implementation/gtfs-import-closeout.md` |
 | GTFS export (phase E) | Scenario | Planned: `docs/implementation/gtfs-interoperability.md` |
-| GTFS import follow-ups | Route, Trips, Costing | Proposed 2026-11-22: custom service-day Delete and Day menu at 5+ days (card I9c); seed planned frequencies from `frequencies.txt`; holiday trips-and-hours difference (item 19); Costing speed on 100+ Routes (9 s on RTD); Route switcher search (M1) |
+| GTFS import follow-ups | Route, Trips, Costing | Proposed 2026-11-22: custom service-day Delete and Day menu at 5+ days (card I9c); seed planned frequencies from `frequencies.txt`; holiday trips-and-hours difference (item 19); Costing speed on 100+ Routes (9 s on RTD); Route switcher search (M1); scope the Trips changed-runtime check to the Route |
 | Refresh a Route from a newer GTFS feed (import level D) | Route, Trips | Idea 2026-11-21; Decision 0089 item 1 |
 
 ---
