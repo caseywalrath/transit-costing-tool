@@ -48,7 +48,7 @@ An imported feed gives a baseline; a copy of it, edited, is a proposal. Planners
 12. **Peak vehicles** (G-V6) follows Blocking's peak pull-out rule:
     - A block's interval runs from its pull-out start to its pull-in end. A block without them uses its first revenue trip's departure to its last revenue trip's arrival.
     - Intervals are [start, end): a block ending as another starts does not overlap it.
-    - Each Route counts the blocks attributed to it under Decision 0077 (all revenue trips on that Route). The Unattributed row counts the rest. The system figure counts all blocks, and the table notes it is less than the sum.
+    - Each Route counts the blocks attributed to it under Decision 0077 (all revenue trips on that Route). The Unattributed row counts the rest. Only valid blocks count, as in Blocking's peak pull-out (amended in V1). The system figure counts all of them, and the table notes it is less than the sum.
     - A side with no Blocking scenario shows "Not blocked".
 13. **Annual view.**
     - Trips, miles, hours and cost are each day's figure × that day's count (rule 7), added up over the days.
@@ -57,7 +57,7 @@ An imported feed gives a baseline; a copy of it, edited, is a proposal. Planners
 
 ### E. Changes and status
 
-14. Change = Proposed − Baseline; % = change ÷ Baseline, one decimal, "—" when the Baseline is 0 or missing. Peak vehicles and trips are whole numbers; miles and hours have one decimal on screen; cost is shown in dollars (millions in tiles).
+14. Change = Proposed − Baseline; % = change ÷ Baseline, one decimal; "—" when the Baseline is 0 or missing, and on New and Discontinued rows (amended in V1). Peak vehicles and trips are whole numbers; miles and hours have one decimal on screen; cost is shown in dollars (millions in tiles).
 15. **Status** of a matched Route for the chosen day (or for any day, in the Annual view):
     - Changed when trips, miles (to 0.01), span or any headway differ, or revenue hours differ by 1 minute or more.
     - Unchanged otherwise.

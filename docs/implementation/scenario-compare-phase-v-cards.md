@@ -106,3 +106,20 @@ As in the plan, Part 5. The worked-example test (V1) and the equality with Costi
 **Files:** the new folder and tests. Do not change Costing domain files. If an export is missing, add it with no behaviour change.
 
 **Run:** the new tests, `pnpm typecheck`, `pnpm test`.
+
+## 8. V1 as built (2026-11-22)
+
+- Code: `src/domain/compare/` (matching, counts, measures, peaks, `buildComparison`, `comparisonCsvText`, `comparisonFileName`, `compareFixture.ts`), with 97 tests. Every worked answer matches.
+- The CSV formula protection moved to `src/domain/csvFormula.ts`; `src/persistence/csv.ts` re-exports it.
+- Decision 0091 amended in two places:
+  - item 14: no % on New or Discontinued rows;
+  - item 12: valid blocks only.
+- Choices accepted:
+  - the display name is the short name plus the name;
+  - `route_id` in the CSV is the GTFS id, else the short name;
+  - the Annual status is Changed if any day is;
+  - the CSV uses LF line endings;
+  - custom day keys are `custom:<name>`.
+- **For V2:**
+  - Build a `SideDay` for each side and day pair: `annualServiceDays` from `ownOrScenarioCount` after `applyCountChoice`, the Costing Route row figures, and the measures from `routeDayMeasures`.
+  - Pass only valid blocks (`summary.valid`) to `peakByRoute`.

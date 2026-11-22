@@ -5,16 +5,11 @@ import type { EstimatedCostingCalculationResult } from '../domain/estimatedCosti
 import { formatServiceTime } from '../domain/time';
 import { UNATTRIBUTED_ROUTE_NAME } from '../domain/costSummary';
 import type { CostingRouteResult } from '../domain/routeCosting';
+import { neutralizeFormulaText } from '../domain/csvFormula';
 /** Quotes a field that contains a comma, a double quote, or a line break (LF, CR, or CRLF). Every CSV writer in the application uses this rule. */
 export function csvEscape(value: unknown): string { const s = String(value ?? ''); return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s; }
-
-/**
- * Spreadsheets run a cell that begins with `=`, `+`, `-`, or `@` as a formula. A free-text value that begins that way, or that
- * already begins with apostrophes before one of those characters, gets one more apostrophe in front (decision 5). `restoreFormulaText`
- * removes it again on import, so a value round-trips exactly. Identifiers, times, and numbers are never passed through this.
- */
-export function neutralizeFormulaText(text: string): string { return /^'*[=+\-@]/.test(text) ? `'${text}` : text; }
-export function restoreFormulaText(text: string): string { return /^'+[=+\-@]/.test(text) ? text.slice(1) : text; }
+// The formula protection lives in the domain (`src/domain/csvFormula.ts`) so the comparison rules can use it; it is re-exported here from its old place.
+export { neutralizeFormulaText, restoreFormulaText } from '../domain/csvFormula';
 
 /** `freeText` names the columns that hold user-entered text (names, labels, notes); only those are protected against formulas. Header cells are escaped like any other cell. */
 export function toCsv(headers: string[], rows: Array<object>, freeText: readonly string[] = []): string {
