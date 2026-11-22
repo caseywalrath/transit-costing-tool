@@ -229,7 +229,8 @@ export function translateFeed(input: TranslateFeedInput): FeedTranslation {
         }
         for (const item of feed.invalidByRoute.get(routeId) ?? []) {
           const blockId = blockIdOfTrip.get(item.tripId);
-          if (blockId !== undefined) pushTo(membersByBlock, blockId, { routeId, tripId: item.tripId, invalidReason: item.reason });
+          // A caller may read stop times only for the selected Routes, so another Route's trip can look invalid here; it is reported as "also serves".
+          if (blockId !== undefined) pushTo(membersByBlock, blockId, { routeId, tripId: item.tripId, invalidReason: routeIds.includes(routeId) ? item.reason : undefined });
         }
       }
 
