@@ -9,7 +9,11 @@ export interface EntityMetadata { createdAt: IsoTimestamp; updatedAt: IsoTimesta
 export interface Project extends EntityMetadata { id: EntityId; name: string; description?: string; distanceUnit: 'miles'; currencyCode: string; }
 /** One import of a GTFS feed into a Scenario (Decision 0089 item 39). Kept so the planner can see where the Scenario's service came from. */
 export interface ScenarioImportNote { publisher: string; feedVersion?: string; fileName: string; datesByServiceDayId: Record<EntityId, string /* YYYY-MM-DD */>; routeCount: number; importedAt: string /* ISO */; }
-export interface Scenario extends EntityMetadata { id: EntityId; projectId: EntityId; name: string; description?: string; sourceScenarioId?: EntityId; importNotes?: ScenarioImportNote[]; }
+/** Decision 0090 item 16. A holiday names the service day that runs on its date (item 14). */
+export interface GtfsExportHoliday { date: string /* YYYY-MM-DD */; serviceDayId: EntityId; }
+/** Decision 0090 item 16. The GTFS export settings a Scenario remembers. Dates are YYYY-MM-DD; agency fields are optional until an export needs them. */
+export interface GtfsExportSettings { startDate: string; endDate: string; holidays: GtfsExportHoliday[]; agencyName?: string; agencyUrl?: string; agencyTimezone?: string; mapLines: 'straight' | 'none'; }
+export interface Scenario extends EntityMetadata { id: EntityId; projectId: EntityId; name: string; description?: string; sourceScenarioId?: EntityId; importNotes?: ScenarioImportNote[]; gtfsExportSettings?: GtfsExportSettings; }
 export interface TripProfile extends EntityMetadata { id: EntityId; scenarioId: EntityId; name: string; sourceTripProfileId?: EntityId; }
 export type NodeKind = 'timepoint' | 'terminal' | 'garage' | 'other';
 export interface ServiceDayDefinition extends EntityMetadata { id: EntityId; scenarioId: EntityId; kind: ServiceDayKind; name: string; annualServiceDays: number; sequence: number; /** Optional 1 to 3 character label for scope toggles (Decision 0059). When absent the label is derived, see `serviceDayAbbreviation`. */ abbreviation?: string; }

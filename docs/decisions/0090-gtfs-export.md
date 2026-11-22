@@ -23,22 +23,22 @@ Planners want to see this tool's schedules in the Analysis app and other GTFS to
 
 ### C. Stops (G-E1, G-E4)
 
-5. A stop record comes from each located Route stop and each timepoint of each pattern (its stop ID and location, Decisions 0080 and 0085). Records with the same stop ID within 30 m (great-circle) are one stop; the first in Route, pattern, sequence order gives name and location. Same ID farther apart: refused and listed.
-6. A Route stop without an ID gets `<route_id>-<n>`, n counting such stops in Route stop order from 1; a timepoint without an ID gets `<route_id>-<node short name or name>-<direction 0/1>`. Generated ids are never merged and are listed as a warning.
+5. A stop record comes from each Route stop placed on an exported pattern and each timepoint of each pattern (its stop ID and location, Decisions 0080 and 0085). Records with the same stop ID within 30 m (great-circle) are one stop; the first in Route, pattern, sequence order gives name and location. Same ID farther apart: refused and listed.
+6. A Route stop without an ID gets `<route_id>-<n>`, n counting such stops in Route stop order from 1; a timepoint without an ID gets `<route_id>-<node short name or name>-<direction 0/1>`. A generated timepoint id is shared by that Route's patterns of the same direction at the same Node, merged under the 30 m rule like any id; generated Route stop ids are never merged. Generated ids are listed as a warning.
 7. A stop or timepoint without a location refuses the export and is listed with Route and pattern.
 8. A timepoint stop's name is its Node's name; a Route stop's name is its own.
 
 ### D. Routes, trips, times
 
 9. `route_id` = `gtfsRouteId`, else the short name, else the name; made unique with `-2`, `-3`. `route_type` = `gtfsRouteType` or 3. `route_color` = `color` when set.
-10. `direction_id` 0 for Outbound, 1 for Inbound; `trip_headsign` = the direction's name. `service_id` = the day's abbreviation (Decision 0059). `trip_id` = `<route_id>-<service_id>-<direction>-<first departure HHMM>-<n>`, n counting equal prefixes in departure order (G-E8). `block_id` = the block's name in the chosen Blocking scenario, blank when unblocked or no Blocking scenario.
+10. `direction_id` 0 for Outbound, 1 for Inbound (a pattern whose direction has no Outbound or Inbound group refuses the export, `gtfsExport.directionUnassigned`); `trip_headsign` = the direction's name. `service_id` = the day's abbreviation (Decision 0059). `trip_id` = `<route_id>-<service_id>-<direction>-<first departure HHMM>-<n>`, n counting equal prefixes in departure order (G-E8). `block_id` = the block's name in the chosen Blocking scenario, blank when unblocked or no Blocking scenario.
 11. `stop_times`: every timepoint (`timepoint=1`, its stored time) and every Route stop with its derived time (`timepoint=0`, G-E7), in pattern order, `stop_sequence` from 1. Arrival equals departure except a stored dwell. Times `HH:MM:SS`, hours past 24 kept. `shape_dist_traveled` in miles, three decimals: timepoints from the pattern's cumulative miles, Route stops placed by the same spacing rule as their time.
 12. Row order: by `service_id`, then route, direction, first departure (`trips`); by trip then sequence (`stop_times`); by `stop_id` (`stops`); by `shape_id` then sequence (`shapes`).
 
 ### E. Dates (G-E2, G-E5, G-E6)
 
 13. `calendar.txt`: one row per used service day over the chosen range. Weekday kind Monday–Friday; Saturday; Sunday; Holiday and custom days no weekdays.
-14. Each holiday date names the service day it runs (default Holiday): that day is added (1), and a weekday-kind day that would run on that date is removed (2).
+14. Each holiday date names the service day it runs (default Holiday); a date appears at most once: that day is added (1), and a weekday-kind day that would run on that date is removed (2).
 15. Routes on their own counts use the Scenario calendar and are listed (G-E6).
 16. The range, holidays, agency details and map-line choice are remembered on the Scenario as optional `gtfsExportSettings` (backup schema 18). An imported Scenario defaults its range to its import note's dates.
 

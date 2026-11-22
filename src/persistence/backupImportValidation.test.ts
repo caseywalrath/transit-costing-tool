@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { RouteDefinitionService } from '../application/routeDefinitionService';
 import { duplicateScenario, projectSnapshotWithScenario, snapshotForScenario } from '../domain/project';
 import { goldenJson, goldenRaw, goldenWithAltBlocking, goldenWithFeedFields } from '../testSupport/goldenBackup';
-import { exportProjectJson, importProjectJson, parseProjectBackupWithReport } from './backup';
+import { cloneProjectSnapshot, exportProjectJson, importProjectJson, parseProjectBackupWithReport } from './backup';
 import { ProjectBackupService } from './backupRepository';
 import { InMemoryRouteDefinitionRepository } from './inMemoryRepository';
 
@@ -53,7 +53,7 @@ describe('3-001: Block ownership survives export and import', () => {
       // The golden file is a version 6 file; exporting writes the current version, 8, and nothing else changes (Decision 0051).
       if (key !== 'exportedAt' && key !== 'exportSchemaVersion') expect(again[key], key).toEqual(original[key]);
     }
-    expect(again.exportSchemaVersion).toBe(17);
+    expect(again.exportSchemaVersion).toBe(18);
   });
 
   it('removes a Trip Profile that an older export stamped on a normalized Block when it matches the Blocking Scenario', () => {
@@ -438,5 +438,73 @@ describe('feed fields of Route and Scenario (Decision 0089 items 38 to 42)', () 
     const file = goldenWithFeedFields();
     change(file);
     expect(() => importProjectJson(JSON.stringify(file))).toThrow(pattern);
+  });
+});
+
+describe('GTFS export settings of a Scenario (Decision 0090 item 16)', () => {
+  const scenarioOf = (file: any) => file.scenarios.find((candidate: any) => candidate.id === file.routes[0].scenarioId);
+  // A version 18 file: the golden Federal BRT backup with the feed fields, and export settings on its Scenario.
+  const settingsFile = (): any => {
+    const file = goldenWithFeedFields();
+    file.exportSchemaVersion = 18;
+    const scenario = scenarioOf(file);
+    const [day] = file.serviceDays.filter((candidate: any) => candidate.scenarioId === scenario.id);
+    scenario.gtfsExportSettings = { startDate: '2026-01-01', endDate: '2026-12-31', holidays: [{ date: '2026-01-12', serviceDayId: day.id }], agencyName: 'Example Transit', agencyUrl: 'https://transit.example.org', agencyTimezone: 'America/Denver', mapLines: 'straight' };
+    return file;
+  };
+
+  it('round trips the settings: export and import give equal Scenario records', () => {
+    const imported = parseProjectBackupWithReport(JSON.stringify(settingsFile())).snapshot;
+    const exported = JSON.parse(exportProjectJson(imported));
+    expect(exported.exportSchemaVersion).toBe(18);
+    expect(exported.scenarios).toEqual(settingsFile().scenarios);
+    const again = parseProjectBackupWithReport(JSON.stringify(exported)).snapshot;
+    expect(again.scenarios).toEqual(imported.scenarios);
+  });
+
+  it('writes no export settings when absent, and imports a version 17 backup with none', () => {
+    const exported = JSON.parse(exportProjectJson(importProjectJson(goldenJson())));
+    expect(exported.scenarios.filter((scenario: any) => 'gtfsExportSettings' in scenario)).toEqual([]);
+    const version17 = goldenWithFeedFields();
+    const { snapshot } = parseProjectBackupWithReport(JSON.stringify(version17));
+    expect(snapshot.scenarios.filter((scenario) => scenario.gtfsExportSettings !== undefined)).toEqual([]);
+  });
+
+  it('accepts 29 February in a leap year and refuses it in a year without one', () => {
+    const leap = settingsFile();
+    const [leapDay] = leap.serviceDays.filter((candidate: any) => candidate.scenarioId === scenarioOf(leap).id);
+    Object.assign(scenarioOf(leap).gtfsExportSettings, { startDate: '2028-02-29', endDate: '2028-12-31', holidays: [{ date: '2028-02-29', serviceDayId: leapDay.id }] });
+    expect(() => importProjectJson(JSON.stringify(leap))).not.toThrow();
+    const common = settingsFile();
+    scenarioOf(common).gtfsExportSettings.startDate = '2026-02-29';
+    expect(() => importProjectJson(JSON.stringify(common))).toThrow(/gtfsExportSettings\.startDate must be a date as YYYY-MM-DD/);
+  });
+
+  const refusedSettings: Array<[string, (file: any) => void, RegExp]> = [
+    ['a start date that is not in the calendar', (file) => { scenarioOf(file).gtfsExportSettings.startDate = '2026-02-30'; }, /gtfsExportSettings\.startDate must be a date as YYYY-MM-DD/],
+    ['an end date that is not YYYY-MM-DD', (file) => { scenarioOf(file).gtfsExportSettings.endDate = '31/12/2026'; }, /gtfsExportSettings\.endDate must be a date as YYYY-MM-DD/],
+    ['an end date before the start date', (file) => { scenarioOf(file).gtfsExportSettings.endDate = '2025-12-31'; }, /gtfsExportSettings\.endDate must not be before/],
+    ['a holiday outside the export range', (file) => { scenarioOf(file).gtfsExportSettings.holidays[0].date = '2027-01-01'; }, /gtfsExportSettings\.holidays\[0\]\.date must fall inside the export range/],
+    ['a holiday date that is not YYYY-MM-DD', (file) => { scenarioOf(file).gtfsExportSettings.holidays[0].date = '12/01/2026'; }, /gtfsExportSettings\.holidays\[0\]\.date must be a date as YYYY-MM-DD/],
+    ['a holiday naming a service day of another Scenario', (file) => { scenarioOf(file).gtfsExportSettings.holidays[0].serviceDayId = 'other-day'; }, /holidays\[0\]\.serviceDayId must name a service day of the Scenario/],
+    ['holidays that are not a list', (file) => { scenarioOf(file).gtfsExportSettings.holidays = {}; }, /gtfsExportSettings\.holidays must be an array/],
+    ['settings that are not an object', (file) => { scenarioOf(file).gtfsExportSettings = 'weekly'; }, /gtfsExportSettings must be an object/],
+    ['a map-lines value other than straight or none', (file) => { scenarioOf(file).gtfsExportSettings.mapLines = 'curved'; }, /gtfsExportSettings\.mapLines must be straight or none/],
+    ['an agency name that is not text', (file) => { scenarioOf(file).gtfsExportSettings.agencyName = 12; }, /gtfsExportSettings\.agencyName must be a string/],
+  ];
+  it.each(refusedSettings)('refuses %s and names the field', (_label, change, pattern) => {
+    const file = settingsFile();
+    change(file);
+    expect(() => importProjectJson(JSON.stringify(file))).toThrow(pattern);
+  });
+
+  it('a copy as a new Project points the holiday at the copy\'s service day, keeps the settings, and imports again', () => {
+    const source = importProjectJson(JSON.stringify(settingsFile()));
+    const clone = cloneProjectSnapshot(source, '2026-11-22T12:00:00.000Z');
+    const scenarioIndex = source.scenarios.findIndex((scenario) => scenario.gtfsExportSettings !== undefined);
+    const sourceSettings = source.scenarios[scenarioIndex].gtfsExportSettings!;
+    const dayIndex = source.serviceDays.findIndex((day) => day.id === sourceSettings.holidays[0].serviceDayId);
+    expect(clone.scenarios[scenarioIndex].gtfsExportSettings).toEqual({ ...sourceSettings, holidays: [{ date: '2026-01-12', serviceDayId: clone.serviceDays[dayIndex].id }] });
+    expect(() => importProjectJson(exportProjectJson(clone))).not.toThrow();
   });
 });

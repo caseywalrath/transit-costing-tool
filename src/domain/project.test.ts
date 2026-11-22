@@ -3,7 +3,7 @@ import { asSnapshot, goldenRaw, goldenWithAltBlocking, goldenWithDeadhead, golde
 import { summarizeBlock } from './blocking';
 import { evaluateBlockEligibility } from './costing';
 import { metadata } from './ids';
-import { createScenarioRecords, duplicateRouteRecords, duplicateScenario, projectLastChangedAt, projectSnapshotWithScenario, removeServiceDayFromFeedFields, snapshotForScenario } from './project';
+import { createScenarioRecords, duplicateRouteRecords, duplicateScenario, projectLastChangedAt, projectSnapshotWithScenario, remapGtfsExportSettings, removeServiceDayFromFeedFields, snapshotForScenario } from './project';
 import { assertTripProfileReferences } from './trips';
 import type { Block, BlockingBlock, CostingAssumptions, ProjectSnapshot, RouteStopSet, Trip } from './types';
 
@@ -373,5 +373,30 @@ describe('feed fields in Scenario and Route duplication (Decision 0089 items 39 
     const result = removeServiceDayFromFeedFields(scenario, [route], 'no-such-day', stamp);
     expect(result.routes[0]).toBe(route);
     expect(result.scenario).toBe(scenario);
+  });
+
+  it('a Scenario duplicate points the export holidays at the copy\'s service days, and keeps the dates and agency details', () => {
+    const { records, dayIndex } = feedSource();
+    const settings = { startDate: '2026-01-01', endDate: '2026-12-31', holidays: [{ date: '2026-01-12', serviceDayId: records.serviceDays[dayIndex].id }], agencyName: 'Example Transit', mapLines: 'straight' as const };
+    const copy = duplicateScenario({ ...records, scenario: { ...records.scenario, gtfsExportSettings: settings } }, 'Copy', stamp);
+    expect(copy.scenario.gtfsExportSettings).toEqual({ ...settings, holidays: [{ date: '2026-01-12', serviceDayId: copy.serviceDays[dayIndex].id }] });
+  });
+
+  it('remaps a holiday to its copied service day and drops a holiday whose day has no copy', () => {
+    const settings = { startDate: '2026-01-01', endDate: '2026-12-31', holidays: [{ date: '2026-01-12', serviceDayId: 'day-a' }, { date: '2026-01-17', serviceDayId: 'day-gone' }], mapLines: 'none' as const };
+    expect(remapGtfsExportSettings(settings, new Map([['day-a', 'copy-a']])).holidays).toEqual([{ date: '2026-01-12', serviceDayId: 'copy-a' }]);
+  });
+
+  it('deleting a service day removes its holidays from the export settings and keeps the other holidays', () => {
+    const snapshot = asSnapshot(goldenWithFeedFields());
+    const route = snapshot.routes.find((candidate) => candidate.gtfsRouteId === 'B1')!;
+    const scenario = snapshot.scenarios.find((candidate) => candidate.id === route.scenarioId)!;
+    const [first, second] = snapshot.serviceDays.filter((day) => day.scenarioId === scenario.id);
+    const settings = { startDate: '2026-01-01', endDate: '2026-12-31', holidays: [{ date: '2026-01-12', serviceDayId: first.id }, { date: '2026-01-17', serviceDayId: second.id }], mapLines: 'none' as const };
+
+    const result = removeServiceDayFromFeedFields({ ...scenario, gtfsExportSettings: settings }, [route], first.id, stamp);
+
+    expect(result.scenario.gtfsExportSettings).toEqual({ ...settings, holidays: [{ date: '2026-01-17', serviceDayId: second.id }] });
+    expect(result.scenario.updatedAt).toBe(stamp);
   });
 });

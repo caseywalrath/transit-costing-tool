@@ -21,6 +21,7 @@ import type {
   RouteStopSet,
   RouteOwnAnnualServiceDays,
   ScenarioImportNote,
+  GtfsExportSettings,
 } from './types';
 import { remapMeasureNodes } from './plannedFrequencies';
 import { remapRouteStopSet } from './stops';
@@ -84,6 +85,15 @@ export function remapImportNotes(notes: ScenarioImportNote[], serviceDayIds: Rea
   return notes.map((note) => ({ ...note, datesByServiceDayId: remapServiceDayKeys(note.datesByServiceDayId, serviceDayIds) }));
 }
 
+/** Decision 0090 item 16. Each holiday follows its service day into the copy. A holiday whose day has no mapping is dropped, for the same reason as `remapServiceDayKeys`. */
+export function remapGtfsExportSettings(settings: GtfsExportSettings, serviceDayIds: ReadonlyMap<string, string>): GtfsExportSettings {
+  const holidays = settings.holidays.flatMap((holiday) => {
+    const copiedId = serviceDayIds.get(holiday.serviceDayId);
+    return copiedId === undefined ? [] : [{ ...holiday, serviceDayId: copiedId }];
+  });
+  return { ...settings, holidays };
+}
+
 /** A key that names no service day of the source is dropped. Keeping it would leave a copy that the backup check refuses on the next import. */
 function remapServiceDayKeys<T>(byDay: Record<string, T>, serviceDayIds: ReadonlyMap<string, string>): Record<string, T> {
   const entries: Array<[string, T]> = [];
@@ -94,11 +104,17 @@ function remapServiceDayKeys<T>(byDay: Record<string, T>, serviceDayIds: Readonl
   return Object.fromEntries(entries);
 }
 
-/** Decision 0089 items 39 and 41. Deleting a service day removes its count from every Route of the Scenario and its date from every import note. */
+/** Decision 0089 items 39 and 41 and Decision 0090 item 14. Deleting a service day removes its count from every Route of the Scenario, its date from every import note and its holidays from the remembered export settings. */
 export function removeServiceDayFromFeedFields(scenario: Scenario, routes: Route[], serviceDayId: string, now = new Date().toISOString()): { scenario: Scenario; routes: Route[] } {
   const withoutDay = <T>(byDay: Record<string, T>): Record<string, T> => Object.fromEntries(Object.entries(byDay).filter(([id]) => id !== serviceDayId));
-  const scenarioOut = scenario.importNotes?.some((note) => serviceDayId in note.datesByServiceDayId)
-    ? withUpdatedAt({ ...scenario, importNotes: scenario.importNotes.map((note) => ({ ...note, datesByServiceDayId: withoutDay(note.datesByServiceDayId) })) }, now)
+  const importNotesNameDay = scenario.importNotes?.some((note) => serviceDayId in note.datesByServiceDayId) ?? false;
+  const holidaysNameDay = scenario.gtfsExportSettings?.holidays.some((holiday) => holiday.serviceDayId === serviceDayId) ?? false;
+  const scenarioOut = importNotesNameDay || holidaysNameDay
+    ? withUpdatedAt({
+      ...scenario,
+      ...(scenario.importNotes ? { importNotes: scenario.importNotes.map((note) => ({ ...note, datesByServiceDayId: withoutDay(note.datesByServiceDayId) })) } : {}),
+      ...(scenario.gtfsExportSettings ? { gtfsExportSettings: { ...scenario.gtfsExportSettings, holidays: scenario.gtfsExportSettings.holidays.filter((holiday) => holiday.serviceDayId !== serviceDayId) } } : {}),
+    }, now)
     : scenario;
   const routesOut = routes.map((route) => route.scenarioId === scenario.id && route.ownAnnualServiceDays && serviceDayId in route.ownAnnualServiceDays.countsByServiceDayId
     ? withUpdatedAt({ ...route, ownAnnualServiceDays: { ...route.ownAnnualServiceDays, countsByServiceDayId: withoutDay(route.ownAnnualServiceDays.countsByServiceDayId) } }, now)
@@ -338,7 +354,7 @@ export function duplicateScenario(source: ScenarioRecords, targetName: string, n
   }));
   const routeStopSets: RouteStopSet[] = (source.routeStopSets ?? []).map((set) => remapRouteStopSet(set, { id: newId(), scenarioId: scenario.id, routeId: routeIds.get(set.routeId) ?? set.routeId, patternIds, pointIds }, now));
 
-  return { scenario: { ...scenario, ...(source.scenario.importNotes ? { importNotes: remapImportNotes(source.scenario.importNotes, serviceDayIds) } : {}) }, serviceDays, routes, nodes, patterns: copiedPatterns, ...(source.directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions ? { costingAssumptions } : {}), ...(plannedFrequencies.length ? { plannedFrequencies } : {}), ...(routeStopSets.length ? { routeStopSets } : {}), generationSets, trips, blocks: normalizedBlocks };
+  return { scenario: { ...scenario, ...(source.scenario.importNotes ? { importNotes: remapImportNotes(source.scenario.importNotes, serviceDayIds) } : {}), ...(source.scenario.gtfsExportSettings ? { gtfsExportSettings: remapGtfsExportSettings(source.scenario.gtfsExportSettings, serviceDayIds) } : {}) }, serviceDays, routes, nodes, patterns: copiedPatterns, ...(source.directions ? { directions } : {}), runtimeProfiles, runtimeAssignments, tripProfiles, ...(blockingScenarios.length ? { blockingScenarios } : {}), ...(costingAssumptions ? { costingAssumptions } : {}), ...(plannedFrequencies.length ? { plannedFrequencies } : {}), ...(routeStopSets.length ? { routeStopSets } : {}), generationSets, trips, blocks: normalizedBlocks };
 }
 
 export function snapshotForScenario(snapshot: ProjectSnapshot, scenarioId: string): ScenarioRecords | undefined {

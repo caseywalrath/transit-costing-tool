@@ -130,7 +130,7 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       await repository.saveProjectSnapshot(snapshot);
       const backup = new ProjectBackupService((id) => repository.getProjectSnapshot(id), (value) => repository.saveProjectSnapshot(value));
       const payload = await backup.exportProject(snapshot.project.id);
-      expect(JSON.parse(payload).exportSchemaVersion).toBe(17);
+      expect(JSON.parse(payload).exportSchemaVersion).toBe(18);
       const before = JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value);
       await backup.importProject(payload, 'replace');
       expect(JSON.stringify((await repository.getProjectSnapshot(snapshot.project.id))!, (_key, value) => Array.isArray(value) && value.every((row) => row && typeof row === 'object' && 'id' in row) ? [...value].sort(byId) : value)).toBe(before);
@@ -672,6 +672,18 @@ describe.each(implementations)('repository contract: $name', ({ create }) => {
       const loaded = (await repository.getProjectSnapshot(snapshot.project.id))!;
       expect(loaded.routes.find((candidate) => candidate.id === route.id)).toEqual(feedRoute);
       expect(loaded.scenarios.find((scenario) => scenario.id === scenarioId)!.importNotes).toEqual([note]);
+    });
+
+    it('a Scenario with GTFS export settings saves and loads (Decision 0090 item 16)', async () => {
+      const { snapshot, scenarioId, weekday } = fixture();
+      const settings = { startDate: '2026-01-01', endDate: '2026-12-31', holidays: [{ date: '2026-01-12', serviceDayId: weekday }], agencyName: 'Example Transit', mapLines: 'straight' as const };
+      await repository.saveProjectSnapshot({
+        ...snapshot,
+        scenarios: snapshot.scenarios.map((scenario) => scenario.id === scenarioId ? { ...scenario, gtfsExportSettings: settings } : scenario),
+      });
+
+      const loaded = (await repository.getProjectSnapshot(snapshot.project.id))!;
+      expect(loaded.scenarios.find((scenario) => scenario.id === scenarioId)!.gtfsExportSettings).toEqual(settings);
     });
   });
 });
