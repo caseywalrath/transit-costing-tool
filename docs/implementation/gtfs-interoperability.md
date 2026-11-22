@@ -302,6 +302,8 @@ Export, comparison, interlining and round-trip screens are decided in their own 
 
 ### E — GTFS export (old C1 + C2)
 
+**Plan:** `docs/implementation/gtfs-export-phase-e.md` (draft 2026-11-22, gates G-E1 to G-E8).
+
 Kept as written in the deferred plan (dialog, file list, mapping table, pre-export checks, stable ids, gates G-C1, G-C2a, G-C2b, G-C2c), with these changes:
 
 - **Stop identity:** imported Routes share GTFS `stop_id`s, so the G-C1 merge (same Stop ID within about 30 m) joins them without work from the planner.
