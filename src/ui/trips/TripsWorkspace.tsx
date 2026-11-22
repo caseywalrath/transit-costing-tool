@@ -265,12 +265,20 @@ export function TripsWorkspace({ service, tripService, plannedFrequencyService, 
       setRouteRuntime(read ? { profiles: read.routeProfiles, assignments: read.dayAssignments } : undefined);
     } catch (error) { onError(error); } finally { setLoading(false); }
   }
+  const tripsLoadId = useRef(0);
   async function loadTrips() {
-    if (!serviceDayId || !directionId) { setTrips([]); setRouteDayTrips([]); setTripsWithChangedRuntimes([]); setStaleReasons(undefined); setLastTripChange(undefined); return; }
+    if (!serviceDayId || !directionId) { tripsLoadId.current += 1; setTrips([]); setRouteDayTrips([]); setTripsWithChangedRuntimes([]); setStaleReasons(undefined); setLastTripChange(undefined); return; }
     try {
-      const [nextTrips, nextStale, undo, nextRouteDayTrips] = await Promise.all([tripService.listScheduleTrips(serviceDayId, directionId, tripProfileId), tripService.inspectStaleTrips(serviceDayId, tripProfileId), tripChangeUndo?.latest({ scenarioId: records.scenario.id, routeId: aggregate.route.id, serviceDayId, tripProfileId }), tripService.listRouteDayTrips(aggregate.route.id, serviceDayId, tripProfileId)]);
+      // The table is drawn as soon as the Trips are read. Checking every Trip of the day for a changed runtime is the slow part on a large
+      // Scenario (whole-feed import), and the table used to wait for it and showed "Use Build trips" in the meantime.
+      const loadId = ++tripsLoadId.current;
+      const [nextTrips, undo, nextRouteDayTrips] = await Promise.all([tripService.listScheduleTrips(serviceDayId, directionId, tripProfileId), tripChangeUndo?.latest({ scenarioId: records.scenario.id, routeId: aggregate.route.id, serviceDayId, tripProfileId }), tripService.listRouteDayTrips(aggregate.route.id, serviceDayId, tripProfileId)]);
+      if (loadId !== tripsLoadId.current) return;
       const shownTripIds = new Set(nextTrips.map((item) => item.id));
-      setTrips(nextTrips); setRouteDayTrips(nextRouteDayTrips); setTripsWithChangedRuntimes(nextStale.trips.filter((trip) => shownTripIds.has(trip.id))); setStaleReasons(staleTripNotice(nextStale.findings, shownTripIds, userMessage)); setLastTripChange(undo);
+      setTrips(nextTrips); setRouteDayTrips(nextRouteDayTrips); setLastTripChange(undo);
+      const nextStale = await tripService.inspectStaleTrips(serviceDayId, tripProfileId);
+      if (loadId !== tripsLoadId.current) return;
+      setTripsWithChangedRuntimes(nextStale.trips.filter((trip) => shownTripIds.has(trip.id))); setStaleReasons(staleTripNotice(nextStale.findings, shownTripIds, userMessage));
     } catch (error) { onError(error); }
   }
   useEffect(() => { void loadRuntime(); }, [aggregate.route.id, selectedPattern?.id, serviceDayId, records.scenario.id, runtimeVersion]);

@@ -726,6 +726,7 @@ export class TripGenerationService {
     const stale: Trip[] = [];
     const findings: ValidationFinding[] = [];
     const assignmentsByKey = new Map<string, RuntimeAssignment | undefined>();
+    const assignmentsByScenario = new Map<string, RuntimeAssignment[]>();
     const profilesById = new Map<string, RuntimeProfile | undefined>();
     const patternsById = new Map<string, RoutePattern | undefined>();
     for (const trip of trips) {
@@ -733,8 +734,10 @@ export class TripGenerationService {
       const sourceRevision = trip.provenance.calculationSource?.runtimeCalculationRevision ?? trip.provenance.runtimeCalculationRevision;
       const assignmentKey = `${trip.scenarioId}:${trip.serviceDayId}:${trip.patternId}`;
       if (!assignmentsByKey.has(assignmentKey)) {
-        const assignments = await this.repository.listRuntimeAssignments(trip.scenarioId, trip.serviceDayId, trip.patternId);
-        assignmentsByKey.set(assignmentKey, assignments[0]);
+        // The repository reads every assignment of the Scenario on each call. A whole-feed Scenario has hundreds of Patterns and about a
+        // thousand assignments, so one read per Pattern took seconds. Read once per Scenario and filter here.
+        if (!assignmentsByScenario.has(trip.scenarioId)) assignmentsByScenario.set(trip.scenarioId, await this.repository.listRuntimeAssignments(trip.scenarioId));
+        assignmentsByKey.set(assignmentKey, assignmentsByScenario.get(trip.scenarioId)!.find((assignment) => assignment.serviceDayId === trip.serviceDayId && assignment.patternId === trip.patternId));
       }
       const assignment = assignmentsByKey.get(assignmentKey);
       if (!assignment) continue;
