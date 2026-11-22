@@ -190,6 +190,16 @@ describe('mini feed, route B1 on 20260112: flagged timepoints, a blank timepoint
     expect(codesOf(result, 'filledTime')).toMatchObject([{ tripId: 'B1_W_2', stopId: 'S2', detail: 'distance' }]);
   });
 
+  it('lists a filled time once when the same trip reaches the route on two dates, as B1_W_2 does on the weekday and the holiday', () => {
+    const tables = loadFeedTables('mini');
+    const weekday = inputFor(tables, '20260112', 'B1');
+    const holiday = inputFor(tables, '20260130', 'B1');
+    expect(holiday.trips.some((trip) => trip.tripId === 'B1_W_2')).toBe(true);
+    const twice = routeFromFeed({ ...weekday, trips: [...weekday.trips, ...holiday.trips] });
+    expect(codesOf(twice, 'filledTime').filter((finding) => finding.tripId === 'B1_W_2')).toHaveLength(1);
+    expect(codesOf(twice, 'filledTime')).toHaveLength(codesOf(result, 'filledTime').length);
+  });
+
   it('makes the three stops Nodes, with the ends as terminals and the middle one a timepoint, and no Route stops', () => {
     expect(result.nodes.map((node) => [node.name, node.kind]).sort()).toEqual([
       ['Main St & 1st Ave, Shared', 'terminal'],

@@ -317,7 +317,9 @@ export function routeFromFeed(input: RouteFromFeedInput): RouteFromFeed {
         ...metadata(now),
       };
 
-  // Trip times at every pattern point. Each trip keeps its own position in the feed's order.
+  // Trip times at every pattern point. Each trip keeps its own position in the feed's order. A trip that runs on two chosen
+  // dates reaches this loop twice, so a filled time is reported once per trip and stop.
+  const reportedFilledTimes = new Set<string>();
   const placements: TripPlacement[] = trips.map((trip) => {
     const pattern = must(patternOfTrip.get(trip), 'trip without a pattern');
     const indexes = must(indexesOfTrip.get(trip), 'trip without timepoints');
@@ -326,7 +328,11 @@ export function routeFromFeed(input: RouteFromFeedInput): RouteFromFeed {
     resolved.forEach((time, position) => {
       const stop = trip.stopTimes[indexes[position]];
       if (time.filled !== undefined) {
-        findings.push({ code: 'filledTime', routeId: feedRouteId, patternKey: key, tripId: trip.tripId, stopId: stop.stopId, detail: time.filled });
+        const reportKey = `${trip.tripId}\u0001${stop.stopId}`;
+        if (!reportedFilledTimes.has(reportKey)) {
+          reportedFilledTimes.add(reportKey);
+          findings.push({ code: 'filledTime', routeId: feedRouteId, patternKey: key, tripId: trip.tripId, stopId: stop.stopId, detail: time.filled });
+        }
       }
       if (stop.departure !== undefined && stop.arrival !== undefined && stop.departure !== stop.arrival) {
         findings.push({ code: 'dwellAtTimepoint', routeId: feedRouteId, patternKey: key, tripId: trip.tripId, stopId: stop.stopId });
