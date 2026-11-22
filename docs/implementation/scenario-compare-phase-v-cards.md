@@ -123,3 +123,22 @@ As in the plan, Part 5. The worked-example test (V1) and the equality with Costi
 - **For V2:**
   - Build a `SideDay` for each side and day pair: `annualServiceDays` from `ownOrScenarioCount` after `applyCountChoice`, the Costing Route row figures, and the measures from `routeDayMeasures`.
   - Pass only valid blocks (`summary.valid`) to `peakByRoute`.
+
+## 9. V2 as built (2026-11-22)
+
+- Code: `src/application/compare/`:
+  - `CompareService.compare(request, onProgress)`;
+  - a per-side cache, scoped by the save stamp, keeping 12 sides;
+  - the worker and its client, which falls back to the main thread;
+  - `differences` for the warning line;
+  - 27 tests.
+- Federal BRT against itself: every Route equals Costing exactly, and every row is Unchanged. A whole cold compare takes about 50 ms in Node.
+- Choices accepted:
+  - A side whose Costing is invalid or has no estimate (for example, no rate entered) returns an error, not zeros. **V4 must say how to fix it.** For example: "Enter a rate on the Costing tab for <Scenario>, or set Rates to the other side's."
+  - `differences` reports each side's own values, with `applied` naming the side in use.
+  - Costing reports progress per side, not per Route; measuring reports per Route.
+- **For V4, wiring in `src/main.tsx`:**
+  - Build `CompareService` from the repository queries used by `createCostingContextQueries`, plus `listDirections` and `getCostingAssumptions`.
+  - Pass the save stamp from `createSaveStamp(saveStatus)`.
+  - Call `dispose()` on teardown.
+- Hand-off: next is sitting 3, V4 (the tab), with its card written at the start.
