@@ -30,12 +30,16 @@ import { userMessage } from './shared/messages';
 import { RouteWorkspace } from './route/RouteWorkspace';
 import { GtfsImportDialog, type GtfsImportCommands, type GtfsImportOutcome, type ImportLevel } from './gtfs/GtfsImportDialog';
 import { importedNoticeText } from './gtfs/gtfsImportReviewModel';
-import { latestImportNoteText } from './gtfs/importNote';import { AppHeader, RouteSwitcher, Switcher, type HeaderTab } from './shell/AppHeader';
+import { latestImportNoteText } from './gtfs/importNote';
+import { GtfsExportDialog, type GtfsExportDraft } from './gtfsExport/GtfsExportDialog';
+import { exportedNoticeText } from './gtfsExport/gtfsExportModel';
+import type { GtfsExportCommands, GtfsExportDone } from '../application/gtfsExport/gtfsExportService';
+import { AppHeader, RouteSwitcher, Switcher, type HeaderTab } from './shell/AppHeader';
 import { headerStatus, routeOptionLabel } from './shell/headerStatus';
 import { ContextField } from './shared/ContextField';
 import { SegmentedControl } from './shared/SegmentedControl';import { TripsOrSideBySide, useSideBySideWidth, type SideBySideControl } from './trips/SideBySideTrips';
 
-export type Props = { service: RouteDefinitionApplication; tripService: TripGenerationApplication; blockingService: BlockingCommands & BlockingQueries; costingService: CostingCommands & CostingQueries; plannedFrequencyService: PlannedFrequencyService; /** The GTFS import service (Decision 0089). Without it the three "from GTFS feed" menu entries are off. */ gtfsImportService?: GtfsImportCommands; session?: SessionStatusQueries; restorePoints?: import('../application/restorePointService').RestorePointCommands & import('../application/restorePointService').RestorePointQueries };
+export type Props = { service: RouteDefinitionApplication; tripService: TripGenerationApplication; blockingService: BlockingCommands & BlockingQueries; costingService: CostingCommands & CostingQueries; plannedFrequencyService: PlannedFrequencyService; /** The GTFS import service (Decision 0089). Without it the three "from GTFS feed" menu entries are off. */ gtfsImportService?: GtfsImportCommands; /** The GTFS export service (Decision 0090). Without it the two "Export as GTFS feed" menu entries are off. */ gtfsExportService?: GtfsExportCommands; session?: SessionStatusQueries; restorePoints?: import('../application/restorePointService').RestorePointCommands & import('../application/restorePointService').RestorePointQueries };
 /** `undoId` (Decision 0081): the restore point the notice's Undo button restores. `detail` is one more line under the text; `action` is one more button, after Undo. */
 export type Notice = { kind: 'error' | 'success' | 'info'; text: string; undoId?: string; detail?: string; action?: { label: string; onSelect: () => void } } | undefined;
 export type ActiveTab = 'route' | 'trips' | 'blocking' | 'costing';
@@ -55,7 +59,7 @@ export function saveSelectionPreference(preference: SelectionPreference) {
 
 export function formatBackupTime(iso: string) { return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); }
 
-export function App({ service, tripService, blockingService, costingService, plannedFrequencyService, gtfsImportService, session, restorePoints }: Props) {
+export function App({ service, tripService, blockingService, costingService, plannedFrequencyService, gtfsImportService, gtfsExportService, session, restorePoints }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState('');
   const [scenarioId, setScenarioId] = useState('');
@@ -80,6 +84,10 @@ export function App({ service, tripService, blockingService, costingService, pla
   const [tripProfileBusy, setTripProfileBusy] = useState(false);
   /** The open GTFS import dialog and the level it was opened for (Decision 0089 item 1). */
   const [gtfsImportLevel, setGtfsImportLevel] = useState<ImportLevel>();
+  /** Whether the GTFS export dialog is open (Decision 0090). */
+  const [gtfsExportOpen, setGtfsExportOpen] = useState(false);
+  /** Unsaved export choices kept while the planner opens a Route from the Problems table; they belong to one Scenario and this session. */
+  const gtfsExportDraft = useRef<{ scenarioId: string; draft: GtfsExportDraft } | undefined>(undefined);
   /** The newest restore point of an "add routes" import, for the notice's Undo. */
   const lastGtfsImportPoint = useRef<string | undefined>(undefined);
   const [scopeSlot, setScopeSlot] = useState<HTMLElement | null>(null);
@@ -313,6 +321,30 @@ export function App({ service, tripService, blockingService, costingService, pla
       });
     } catch (error) { showError(error, 'The import is saved, but it could not be opened. Reload this page.'); }
   }
+  /**
+   * After a GTFS export (Decision 0090, card E4): the ZIP and the report download, the Scenario's copy takes the remembered settings (a
+   * later rename saves this copy, so it must hold them), and the notice says what was written.
+   */
+  function finishGtfsExport(done: GtfsExportDone) {
+    setGtfsExportOpen(false);
+    gtfsExportDraft.current = undefined;
+    setRecords((current) => (current && current.scenario.id === done.scenario.id ? { ...current, scenario: done.scenario } : current));
+    setScenarioOptions((current) => current.map((item) => (item.id === done.scenario.id ? done.scenario : item)));
+    downloadBlob(done.zipName, done.zip);
+    download(done.reportName, done.reportCsv, 'text/csv;charset=utf-8');
+    setNotice({ kind: 'success', text: exportedNoticeText(done.tripCount, done.routeCount) });
+  }
+  /** "Open on Route tab" in the export Problems table: the dialog closes with its unsaved choices kept, and the Route and pattern open. */
+  function openRouteFromExport(openRouteId: string, patternId: string | undefined, draft: GtfsExportDraft) {
+    requestRouteNavigation(() => {
+      gtfsExportDraft.current = { scenarioId, draft };
+      setGtfsExportOpen(false);
+      void reload(projectId, scenarioId, openRouteId).then(() => {
+        setActiveTab('route');
+        if (patternId) setSelectedPatternId(patternId);
+      }).catch(selectionFailed);
+    });
+  }
   async function addScenario(name: string) { if (!selectedProject) return; try { const next = await service.createScenario(selectedProject.id, name); await reload(selectedProject.id, next.scenario.id); } catch (error) { showError(error, 'Unable to create scenario.'); } }
   async function renameCurrentScenario(name: string) { if (!records) return; try { const next = await service.renameScenario(records, name); setRecords(next); setScenarioOptions((current) => current.map((scenario) => scenario.id === next.scenario.id ? next.scenario : scenario)); } catch (error) { showError(error, 'Unable to save scenario.'); } }
   async function duplicateCurrentScenario(name: string) { if (!records || !selectedProject) return; try { const next = await service.duplicateScenario(records, name); await reload(selectedProject.id, next.scenario.id); } catch (error) { showError(error, 'Unable to duplicate scenario.'); } }
@@ -433,6 +465,7 @@ export function App({ service, tripService, blockingService, costingService, pla
     { items: [{ id: 'rename-project', label: 'Rename project…', disabled: !selectedProject, onSelect: () => setNameDialog({ title: 'Rename project', label: 'Project name', initialValue: selectedProject?.name, submitLabel: 'Rename', action: renameCurrentProject }) }] },
     { label: 'Project data', items: [
       { id: 'backup-project', label: 'Back up project (JSON)', disabled: !projectId, note: [protection.lastBackupExportedAt ? `Last backup: ${formatBackupTime(protection.lastBackupExportedAt)}` : 'No backup exported yet', ...(protection.persistentStorage === 'denied' || protection.persistentStorage === 'unavailable' ? ['This browser may clear local data. Export backups regularly.'] : [])], onSelect: () => { void exportJson(); } },
+      { id: 'export-project-gtfs', label: 'Export open scenario as GTFS feed…', disabled: !records || !gtfsExportService, onSelect: () => requestRouteNavigation(() => setGtfsExportOpen(true)) },
       { id: 'restore-project', label: 'Restore project from backup…', onSelect: () => importRef.current?.click() },
       ...(restorePoints ? [
         ...(latestUndo ? [{ id: 'undo-latest', label: restorePointCommandLabel(latestUndo), wrapLabel: true, onSelect: () => requestUndo(latestUndo.id) }] : []),
@@ -463,6 +496,7 @@ export function App({ service, tripService, blockingService, costingService, pla
       { id: 'rename-scenario', label: 'Rename scenario…', disabled: !records, onSelect: () => setNameDialog({ title: 'Rename scenario', label: 'Scenario name', initialValue: records?.scenario.name, submitLabel: 'Rename', action: renameCurrentScenario }) },
       { id: 'duplicate-scenario', label: 'Duplicate scenario…', disabled: !records, onSelect: () => setNameDialog({ title: 'Duplicate scenario', initialValue: `${records?.scenario.name ?? ''} Copy`, submitLabel: 'Duplicate', action: duplicateCurrentScenario }) },
     ] },
+    { label: 'Data', items: [{ id: 'export-scenario-gtfs', label: 'Export as GTFS feed…', disabled: !records || !gtfsExportService, onSelect: () => requestRouteNavigation(() => setGtfsExportOpen(true)) }] },
     { items: [{ id: 'delete-scenario', label: 'Delete scenario…', disabled: !records, destructive: true, onSelect: () => requestRouteNavigation(deleteCurrentScenario) }] },
   ];
   const routeActions: MenuGroup[] = [
@@ -561,6 +595,15 @@ export function App({ service, tripService, blockingService, costingService, pla
         workingTripProfileId: workspaceTripProfileId,
         blockingScenarios: blockingScenarioList,
       } : {})} />}
+    {gtfsExportOpen && gtfsExportService && records && <GtfsExportDialog
+      scenarioId={scenarioId}
+      service={gtfsExportService}
+      workingTripProfileId={workspaceTripProfileId}
+      workingBlockingScenarioId={workspaceBlockingScenarioId}
+      {...(gtfsExportDraft.current?.scenarioId === scenarioId ? { draft: gtfsExportDraft.current.draft } : {})}
+      onClose={() => setGtfsExportOpen(false)}
+      onExported={finishGtfsExport}
+      onOpenRoute={openRouteFromExport} />}
     {confirm && <ConfirmDialog dialog={confirm} onClose={() => setConfirm(undefined)} />}
   </main>;
 }

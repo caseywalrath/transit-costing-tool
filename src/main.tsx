@@ -20,6 +20,7 @@ import { DexieRestorePoints } from './persistence/restorePointPersistence';
 import { RestorePointService } from './application/restorePointService';
 import { BLOCKING_COVERAGE, GTFS_IMPORT_COVERAGE, PLANNED_FREQUENCY_COVERAGE, ROUTE_DEFINITION_COVERAGE, TRIP_GENERATION_COVERAGE, withRestorePoints, type RestorePointLookup } from './application/restorePointCoverage';
 import { GtfsImportService } from './application/gtfs/gtfsImportService';
+import { GtfsExportService } from './application/gtfsExport/gtfsExportService';
 
 async function start() {
   // Only one tab at a time may write (Decision 0037). Decide whether this is that tab before the application starts,
@@ -85,6 +86,8 @@ async function start() {
   const plannedFrequencies = withRestorePoints(new PlannedFrequencyService(repository, undefined, saveStatus), PLANNED_FREQUENCY_COVERAGE, restorePoints, restorePoints, saveStatus, restoreLookup);
   // The GTFS import service. Its covered command is wired here, as the Route commands are, so that adding Routes takes a restore point.
   const gtfsImport = withRestorePoints(new GtfsImportService(repository, routeDefinitionCore, saveStatus), GTFS_IMPORT_COVERAGE, restorePoints, restorePoints, saveStatus, restoreLookup);
+  // The GTFS export service (Decision 0090). It writes only the Scenario's remembered export settings, so it takes no restore point.
+  const gtfsExport = new GtfsExportService(repository, saveStatus);
   const restoreService = new RestorePointService(restorePoints, restorePoints, {
     getScenarioRecords: (id) => repository.getScenarioRecords(id),
     saveScenarioRecords: (records) => repository.saveScenarioRecords(records),
@@ -93,7 +96,7 @@ async function start() {
     projectExists: async (id) => Boolean(await repository.db.projects.get(id)),
   }, saveStatus, () => routeDefinitionCore.forgetCopyUndos());
 
-  createRoot(document.getElementById('root')!).render(<React.StrictMode><App service={routeDefinition} tripService={tripGeneration} blockingService={blocking} costingService={costing} plannedFrequencyService={plannedFrequencies} gtfsImportService={gtfsImport} session={tabGuard} restorePoints={restoreService} /></React.StrictMode>);
+  createRoot(document.getElementById('root')!).render(<React.StrictMode><App service={routeDefinition} tripService={tripGeneration} blockingService={blocking} costingService={costing} plannedFrequencyService={plannedFrequencies} gtfsImportService={gtfsImport} gtfsExportService={gtfsExport} session={tabGuard} restorePoints={restoreService} /></React.StrictMode>);
 }
 
 void start();

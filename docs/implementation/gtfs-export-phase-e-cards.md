@@ -107,3 +107,11 @@ Mock-up approved; A both menus (Scenario menu and Project menu beside "Export ba
 5. **Tests:** `tests/ui/gtfs-export.spec.ts`: build the fixture-like Scenario through the UI or a seeded backup, export, unzip the download in the test and compare `stops.txt` and `trips.txt` to `tests/fixtures/gtfs-export/mini-export/`; a refusal case shows the problems table and disables Export; settings remembered after reopening. Unit tests for the service.
 
 **Run:** section 4 E4 row of the plan (`keyboard.spec.ts`, `draggable-dialogs.spec.ts`, `scenario-context-menu.spec.ts`, `project-context-menu.spec.ts`, the new spec), `pnpm typecheck`, `pnpm test`, `pnpm build`; inspect screenshots.
+
+## 12. E4 as built (2026-11-22)
+
+- Service, worker (whole RTD feed checks in 3–4 s, so the build runs in a worker), dialog, problems table, "Open on Route tab", "Download list", both menus. File names lower-case and dash-joined.
+- "Open on Route tab" opens the Route and pattern, not the Stops drawer (no prop exists).
+- Import-note defaults: the note keeps only each day's representative date, so the default range spans those dates (narrow). Storing the feed's service range in the import note is backlog. Website and time zone start blank for an imported Scenario.
+- `problemsCsv` repeats the formula-protection rule of `report.ts`; the distance-share duplication (section 9) remains. Both are small clean-ups for E6.
+- Hand-off: next is sitting 5, E5 read-back and round trip, then E6 closeout.
