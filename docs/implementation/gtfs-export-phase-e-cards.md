@@ -115,3 +115,13 @@ Mock-up approved; A both menus (Scenario menu and Project menu beside "Export ba
 - Import-note defaults: the note keeps only each day's representative date, so the default range spans those dates (narrow). Storing the feed's service range in the import note is backlog. Website and time zone start blank for an imported Scenario.
 - `problemsCsv` repeats the formula-protection rule of `report.ts`; the distance-share duplication (section 9) remains. Both are small clean-ups for E6.
 - Hand-off: next is sitting 5, E5 read-back and round trip, then E6 closeout.
+
+## 13. Card E5 — Read-back and round trip
+
+**Model:** Haiku `high`; Opus judges. **Rules:** plan E-D2; 0090.
+
+1. **Read-back test (never cut)** `src/application/gtfsExport/roundTrip.test.ts`: for the mini Scenario and the Federal BRT golden Scenario (locations placed in the test), export with `buildFeed`, zip, read the ZIP with the phase I reader, import it as a new Project (`projectFromFeed`, all Routes, blocks on with minutes 10/10). Assert per Route, service day and direction: the same trip count; the same timepoint departure times (as a sorted list); the same running hours to the second; the same number of blocks and the same trips in each block. Patterns may differ in name; compare by timepoint sequence.
+2. **Whole-feed round trip** (scratchpad only, never committed): RTD backup `/tmp/claude-0/-home-user/3bdc75fd-55d7-5724-ad85-d8deb92c9cc0/scratchpad/i10/after3-all-blocks.json` → export (choose the profile and the "From feed" Blocking scenario) → import → compare as in 1. Record times, ZIP size, and every difference with its cause.
+3. Fix only real export bugs, in `src/domain/gtfsExport/**` or `src/application/gtfsExport/**`; report import-side differences without changing phase I code.
+
+**Files:** the new test, fixes in the two folders. **Run:** the new test, `pnpm typecheck`, `pnpm test`.
