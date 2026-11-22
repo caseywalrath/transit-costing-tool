@@ -110,7 +110,7 @@ Items 24–29 are amended by `docs/implementation/gtfs-import-phase-i.md` sectio
 
 33. "Import the feed's blocks" is on when any selected trip has a `block_id`.
 34. A block is imported for a service day when **every** trip with that `block_id` on that service day's date is being imported. Others are listed ("also serves {routes}"); their imported trips stay unassigned, for Auto-blocking or manual blocking.
-35. An imported block: label = `block_id` (a repeated label on the same service day gets " (2)"); its trips in time order as revenue-trip activities; a pull-out and a pull-in with the planner's default minutes, or without minutes when the planner leaves the default blank (platform hours then show as incomplete, the existing marking). Between trips that end and start at different Nodes, a deadhead activity with 0 minutes and no miles is added. If the existing block validation refuses any such block, the work stops and the question returns to the user.
+35. An imported block: label = `block_id` (a repeated label on the same service day gets " (2)"); its trips in time order as revenue-trip activities; a pull-out and a pull-in with the planner's minutes. **Minutes are required** when blocks are imported (whole minutes, 0 allowed; the screen pre-fills 10): blank minutes would fail the existing block checks (user decision 2026-11-22, replacing "or without minutes"). Between trips that end and start at different Nodes, including two Routes' Nodes at a shared stop, a deadhead activity with 0 minutes and no miles is added. A block the existing validation still refuses is left out and listed.
 
 ### I. Report and fidelity check
 

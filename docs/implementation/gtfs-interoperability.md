@@ -553,3 +553,11 @@ V-I test routes: **31 Federal Blvd, 0 Broadway, 0L South Broadway Limited** (RTD
 - **Tests at the end:** typecheck clean; `pnpm test` 122 files, 2,026 passed.
 - **Hand-off:** sitting 3 done. Next is sitting 4: I4 and I5b (Haiku `xhigh`); write both cards first, I4 including section 12b.
 
+### 2026-11-22 — Sitting 4: I4, I5b (Haiku `xhigh`); Opus review
+
+- **I4**: run-time profiles, "From feed" trips, blocks, the import report with fidelity check and CSV, and `translateFeed`; 258 GTFS tests. Answers given in review: a Route with no trips on the chosen dates is skipped and listed; fidelity covers imported Routes only; a route that fails to build is skipped (tested). **User decision:** pull-out and pull-in minutes are required to import blocks (0 allowed), Decision 0089 item 35 amended. Left for a later card: the trips-and-hours difference when a second unique holiday is folded into Holiday (item 19).
+- **I5b**: per-route counts on both cost bases (the card first named only one; corrected), validation of own counts, `countSource` CSV column. The Federal BRT totals are unchanged with no Route switched on. One unreproduced failure of `costing-workspace.spec.ts:53` was seen once; it is to be watched.
+- **For I9b (screens):** messages for `costing.routeCountsInUse`, `costing.unattributedUsesLargestCount`, `costing.routeAnnualServiceDaysInvalid`; the Cost summary names; day rows in `costBreakdownText.ts`.
+- **Tests at the end:** typecheck clean; `pnpm test` 128 files, 2,097 passed; `tests/ui/costing*` 34 passed.
+- **Hand-off:** sitting 4 done. Next is sitting 5: I6 (application service, restore point, worker, converter; Haiku), then the conversions of the mini feed and RTD routes 31, 0, 0L (Opus), ending at Gate V-I.
+
