@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GTFS Export Dialog</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap">
+<style>
+/* Review sheet for package E3 (export). Styles copied from the I7 sheet. Each frame draws one app screen with the app's tokens (src/ui/styles/tokens.css); numbered markers tie elements to the notes under the frame. Figures are from the RTD feed Sep26-37381 (valid 27 Sep 2026 to 2 Jan 2027). */
+:root {
+  --bg: #e7ecef; --ink: #17212b; --muted: #536574; --line: #cfd8de;
+  --mark: #c2561a; --mark-ink: #fff; --mark-soft: #fbeee6;
+  /* app tokens */
+  --canvas: #eef2f4; --surface: #fff; --surface-2: #f6f8f9; --sunken: #edf1f3; --border: #d2dbe0; --border-soft: #e4e9ec;
+  --text: #17212b; --text-muted: #536574; --text-subtle: #62707b; --accent: #1b668d; --accent-soft: #e4eff5; --selection: #e9f2f8;
+  --warn: #7f520f; --warn-soft: #fdf3df; --warn-border: #e2c07a; --danger: #a3342b; --ok: #2c6a3a; --ok-soft: #e6f2e8; --scrim: rgb(17 35 45 / 50%);
+  --font: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.45; }
+.page { max-width: 1400px; margin: 0 auto; padding: 28px 16px 64px; display: grid; gap: 44px; }
+.intro { display: grid; gap: 10px; max-width: 82ch; }
+.intro h1 { margin: 0; font-size: 28px; }
+.intro p { margin: 0; color: var(--muted); }
+.legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
+.dot { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--mark); color: var(--mark-ink); font-size: 12px; font-weight: 700; font-style: normal; flex: none; vertical-align: middle; }
+.screen { display: grid; gap: 14px; }
+.screen-head .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+.screen-head h2 { margin: 2px 0 4px; font-size: 21px; }
+.screen-head p { margin: 0; color: var(--muted); max-width: 90ch; }
+.frame-scroll { overflow-x: auto; border-radius: 10px; border: 1px solid var(--line); box-shadow: 0 10px 30px rgb(10 20 30 / 12%); }
+.frame { min-width: 1180px; background: var(--scrim); padding: 28px; display: grid; place-items: center; }
+.frame.plain { background: var(--canvas); place-items: start; }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px 28px; margin: 0; padding: 0; list-style: none; }
+.notes li { display: grid; grid-template-columns: 20px 1fr; gap: 10px; }
+.notes p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+.ask { background: var(--mark-soft); border: 1px solid var(--mark); border-radius: 8px; padding: 10px 14px; font-size: 14px; }
+.ask b { color: var(--mark); }
+
+/* app-like pieces */
+.dlg { width: 1080px; background: var(--surface); border: 1px solid var(--text-subtle); box-shadow: 0 12px 32px rgb(10 20 30 / 25%); color: var(--text); font-size: 14px; }
+.dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px 0; cursor: move; }
+.dlg-head h3 { margin: 0; font-size: 16px; }
+.dlg-head .target { color: var(--text-muted); font-size: 13px; }
+.steps { display: flex; gap: 4px; padding: 12px 18px; border-bottom: 1px solid var(--border-soft); }
+.steps span { padding: 4px 10px; border-radius: 3px; font-size: 13px; color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--border-soft); }
+.steps span.on { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+.steps span.done { color: var(--ok); }
+.body { padding: 16px 18px; display: grid; gap: 14px; max-height: 620px; overflow: hidden; }
+.foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border-soft); background: var(--surface-2); }
+.foot .status { color: var(--text-muted); font-size: 13px; }
+.btns { display: flex; gap: 8px; }
+.btn { font: inherit; font-size: 14px; padding: 6px 14px; border: 1px solid var(--border); background: var(--surface); border-radius: 3px; color: var(--text); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.btn.sm { font-size: 13px; padding: 3px 9px; }
+.btn.link { border: none; background: none; color: var(--accent); padding: 0; }
+.field { display: grid; gap: 5px; color: var(--text-muted); font-size: 12px; font-weight: 700; }
+.field input, .field select, input.inp, select.inp { font: inherit; font-size: 14px; font-weight: 400; color: var(--text); padding: 5px 8px; border: 1px solid var(--border); border-radius: 3px; background: var(--surface); }
+.row { display: flex; gap: 14px; align-items: end; flex-wrap: wrap; }
+.panel { border: 1px solid var(--border); background: var(--surface); }
+.panel-h { padding: 8px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border-soft); font-weight: 700; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.panel-h small { font-weight: 400; color: var(--text-muted); font-size: 13px; }
+.kv { display: grid; grid-template-columns: 170px 1fr; gap: 6px 14px; padding: 12px; }
+.kv dt { color: var(--text-muted); font-size: 13px; }
+.kv dd { margin: 0; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th { text-align: left; font-size: 12px; color: var(--text-muted); background: var(--surface-2); padding: 6px 10px; border-bottom: 1px solid var(--border); font-weight: 700; }
+td { padding: 5px 10px; border-bottom: 1px solid var(--border-soft); }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+tr.sel td { background: var(--selection); }
+.chip { display: inline-block; padding: 0 7px; border-radius: 9px; font-size: 12px; border: 1px solid var(--border); background: var(--sunken); color: var(--text-muted); }
+.chip.warn { background: var(--warn-soft); border-color: var(--warn-border); color: var(--warn); }
+.chip.ok { background: var(--ok-soft); border-color: #b9d8bf; color: var(--ok); }
+.chip.feed { background: #edf5f8; border-color: #c4d7df; color: #315865; }
+.idot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; margin-right: 6px; }
+.note { color: var(--text-muted); font-size: 13px; }
+.warnline { background: var(--warn-soft); border: 1px solid var(--warn-border); color: var(--warn); padding: 7px 10px; font-size: 13px; }
+details.sec { border: 1px solid var(--border); background: var(--surface); }
+details.sec > summary { padding: 8px 12px; background: var(--surface-2); cursor: pointer; font-weight: 700; display: flex; gap: 10px; align-items: center; }
+details.sec > summary .note { font-weight: 400; }
+details.sec .in { padding: 10px 12px; display: grid; gap: 8px; }
+.cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.cols3 { display: grid; grid-template-columns: 300px 1fr; gap: 14px; }
+.mk { position: relative; }
+.mk > .dot { position: absolute; top: -9px; left: -9px; z-index: 2; }
+.newbox { outline: 2px dashed var(--mark); outline-offset: 3px; }
+.tp-list { display: grid; gap: 2px; padding: 8px 12px; }
+.tp { display: grid; grid-template-columns: 22px 1fr 70px 70px; gap: 8px; align-items: center; padding: 2px 0; font-size: 13px; }
+.tp.on { font-weight: 600; }
+.tp .t { color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; }
+.menu { width: 300px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 8px 20px rgb(10 20 30 / 18%); padding: 4px 0; font-size: 14px; }
+.menu .grp { font-size: 11.5px; color: var(--text-muted); padding: 6px 12px 2px; text-transform: uppercase; letter-spacing: .05em; }
+.menu .it { padding: 5px 12px; }
+.menu .it.new { background: var(--mark-soft); }
+.menu hr { border: none; border-top: 1px solid var(--border-soft); margin: 4px 0; }
+.toast { display: flex; gap: 14px; align-items: center; background: var(--text); color: #fff; padding: 10px 14px; border-radius: 4px; font-size: 14px; width: max-content; }
+.toast .btn { background: transparent; color: #cfe6f2; border-color: #5d7383; }
+.switch { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
+.switch i { width: 30px; height: 16px; border-radius: 8px; background: var(--accent); position: relative; display: inline-block; }
+.switch i::after { content: ''; position: absolute; right: 2px; top: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; }
+.inherit { color: var(--text-subtle); font-style: italic; }
+.body { max-height: none; }
+</style></head><body>
+<div class="page">
+<div class="intro">
+<h1>GTFS export: dialog mock-up</h1>
+<p>Package E3 of the phase E plan (<code>docs/implementation/gtfs-export-phase-e.md</code>), rules in Decision 0090. One page with five sections, not steps. Numbered markers tie the frame to the notes below it. Frame 1 shows an RTD import (routes 31, 0, 0L); its counts are illustrative; frame 2 is the Federal BRT example, whose timepoints have no locations.</p>
+</div>
+
+<section class="screen">
+<div class="screen-head"><div class="eyebrow">Frame 1</div><h2>Ready to export</h2><p>Opened from the Scenario menu, "Export as GTFS feed…". Values are remembered per Scenario; an imported Scenario starts from its import note.</p></div>
+<div class="frame-scroll"><div class="frame">
+<div class="dlg">
+<div class="dlg-head"><h3>Export as GTFS feed</h3><span class="target">Scenario: RTD Sep 2026 · 3 Routes</span></div>
+<div class="body">
+<div class="row">
+<label class="field">Routes <i class="dot">1</i><select class="inp"><option>All 3 Routes</option></select></label>
+<label class="field">Trip profile<select class="inp"><option>Base</option></select></label>
+<label class="field">Blocking scenario <i class="dot">2</i><select class="inp"><option>From feed</option><option>None — no block ids</option></select></label>
+</div>
+<div class="panel"><div class="panel-h">When <small>GTFS lists real dates. <i class="dot">3</i></small></div>
+<div class="kv"><dt>Start date</dt><dd><input class="inp" value="2026-09-21"></dd><dt>End date</dt><dd><input class="inp" value="2027-01-10"> <span class="note">from the import note</span></dd>
+<dt>Holidays <i class="dot">4</i></dt><dd><table><thead><tr><th>Date</th><th>Runs</th><th></th></tr></thead><tbody>
+<tr><td>2026-11-26 Thu</td><td><select class="inp"><option>Holiday</option></select></td><td><button class="btn link">Remove</button></td></tr>
+<tr><td>2026-12-25 Fri</td><td><select class="inp"><option>Holiday</option></select></td><td><button class="btn link">Remove</button></td></tr>
+<tr><td>2027-01-01 Fri</td><td><select class="inp"><option>Holiday</option></select></td><td><button class="btn link">Remove</button></td></tr>
+</tbody></table><button class="btn link">+ Add holiday</button></dd></div></div>
+<div class="panel"><div class="panel-h">Agency</div>
+<div class="kv"><dt>Name</dt><dd><input class="inp" value="Regional Transportation District"></dd><dt>Website</dt><dd><input class="inp" value="https://www.rtd-denver.com"></dd><dt>Time zone</dt><dd><select class="inp"><option>America/Denver</option></select></dd></div></div>
+<div class="panel"><div class="panel-h">Map lines <i class="dot">5</i></div>
+<div class="kv"><dt></dt><dd><label><input type="radio" checked> Straight lines between stops</label><br><label><input type="radio"> No map lines</label></dd></div></div>
+<div class="panel"><div class="panel-h">Checks <small><span class="chip ok">Ready</span> <i class="dot">6</i></small></div>
+<div class="kv"><dt>Will write</dt><dd>3 Routes · 1,104 stops · 1,330 trips · 3 service days · 60 blocks</dd><dt>Warnings</dt><dd><span class="chip warn">2</span> 2 stops without an ID get generated IDs. <button class="btn link">Show</button></dd></div></div>
+</div>
+<div class="foot"><span class="status">Downloads <b>rtd-sep-2026-gtfs.zip</b> and a report CSV. <i class="dot">7</i></span><div class="btns"><button class="btn">Cancel</button><button class="btn primary">Export</button></div></div>
+</div></div></div>
+<ol class="notes">
+<li><i class="dot">1</i><div><b>Routes</b><p>"All N Routes" or a checklist (the same chooser as the import's Routes step, with search). Only Routes with Trips in the profile are counted.</p></div></li>
+<li><i class="dot">2</i><div><b>Blocks</b><p>Defaults to the Scenario's last-used Blocking scenario; "None" writes no <code>block_id</code>.</p></div></li>
+<li><i class="dot">3</i><div><b>Dates</b><p>Remembered on the Scenario (G-E2). New Scenarios start blank; Export stays disabled until both dates are set.</p></div></li>
+<li><i class="dot">4</i><div><b>Holidays</b><p>Each date runs one service day, default Holiday; custom days such as "Holiday 2" appear in the list (G-E5). Dates outside the range or repeated cannot be added.</p></div></li>
+<li><i class="dot">5</i><div><b>Map lines</b><p>Straight lines (G-E3 A) or none.</p></div></li>
+<li><i class="dot">6</i><div><b>Checks</b><p>Run as you edit. A refusal disables Export and shows frame 2's list.</p></div></li>
+<li><i class="dot">7</i><div><b>After export</b><p>A notice: "Exported 1,330 trips on 3 Routes. Report downloaded." No change to the Scenario except the remembered values.</p></div></li>
+</ol>
+</section>
+
+<section class="screen">
+<div class="screen-head"><div class="eyebrow">Frame 2</div><h2>Problems to fix first</h2><p>Federal BRT: no timepoint has a location (G-E4 refuse and list).</p></div>
+<div class="frame-scroll"><div class="frame">
+<div class="dlg">
+<div class="dlg-head"><h3>Export as GTFS feed</h3><span class="target">Scenario: Workbook Service Plan · 1 Route</span></div>
+<div class="body">
+<div class="panel"><div class="panel-h">Checks <small><span class="chip warn">56 problems</span></small></div>
+<div style="padding:10px 12px" class="note">GTFS needs a location for every stop. Fix these, then the export can run. <i class="dot">8</i></div>
+<table><thead><tr><th>Problem</th><th>Route</th><th>Pattern</th><th>Stop or timepoint</th><th></th></tr></thead><tbody>
+<tr><td>No location</td><td>Federal BRT</td><td>Northbound: Evans to Wagon Road</td><td>Evans</td><td><button class="btn link">Open on Route tab</button></td></tr>
+<tr><td>No location</td><td>Federal BRT</td><td>Northbound: Evans to Wagon Road</td><td>Alameda</td><td><button class="btn link">Open on Route tab</button></td></tr>
+<tr><td>No location</td><td>Federal BRT</td><td>Northbound: Evans to Wagon Road</td><td>Decatur - Federal</td><td><button class="btn link">Open on Route tab</button></td></tr>
+<tr><td colspan="5" class="note">… 53 more · <button class="btn link">Download list</button> <i class="dot">9</i></td></tr>
+</tbody></table></div>
+</div>
+<div class="foot"><span class="status">Export is unavailable until the problems are fixed.</span><div class="btns"><button class="btn">Close</button><button class="btn primary" disabled style="opacity:.5">Export</button></div></div>
+</div></div></div>
+<ol class="notes">
+<li><i class="dot">8</i><div><b>Other refusals</b><p>Same table for conflicting stop IDs (with distance), missing trip times, a pattern without Outbound/Inbound, blank agency fields.</p></div></li>
+<li><i class="dot">9</i><div><b>Open on Route tab</b><p>Closes the dialog (values kept) and opens the pattern's Stops drawer. Download list gives a CSV of all problems.</p></div></li>
+</ol>
+</section>
+
+<div class="ask"><b>Questions for you:</b> A. Entry points: Scenario menu only, or also the Project menu beside "Export backup"? (Recommend both.) B. Should "Open on Route tab" exist in this phase, or is the downloadable list enough? (Recommend both.) C. File name: Scenario name + "-gtfs.zip" — fine?</div>
+</div>
+</body></html>

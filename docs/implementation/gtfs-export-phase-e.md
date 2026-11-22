@@ -251,3 +251,7 @@ The user approved all eight recommendations (G-E1 to G-E8: Option A each). Next:
 - Decision 0090 (21 rules), sub-plan with cards E1, E1b, E2, and a hand-worked expected export (`tests/fixtures/gtfs-export/`: one Route, three timepoints, one stop without ID, three service days, a holiday, one block).
 - One addition beyond the gates: package E1b stores the remembered settings (backup schema 18), as G-E2 A requires.
 - Hand-off: next is sitting 2, E1 and E1b in parallel, then E2 (Haiku), after the user reviews E0.
+
+### 2026-11-22 — Sitting 3: E3 mock-up (Opus)
+
+`docs/implementation/gtfs-export/mockup.html`: frame 1 ready to export, frame 2 problems list. Stops for user approval and questions A–C on the sheet. Next: sitting 4, E4 (Sonnet).
