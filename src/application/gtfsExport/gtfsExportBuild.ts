@@ -154,13 +154,17 @@ function rowsOf(result: GtfsExportResult, fileName: string): string[][] {
 function countsOf(result: GtfsExportResult): NonNullable<GtfsExportCheck['counts']> {
   const header = cellsOf((result.files.find((file) => file.name === 'trips.txt')?.text ?? '').split('\n')[0] ?? '');
   const blockColumn = header.indexOf('block_id');
+  const serviceColumn = header.indexOf('service_id');
   const trips = rowsOf(result, 'trips.txt');
+  // A block is one block of one service day. block_id repeats across service days (a Monday block 11 and a Saturday block 11 are two blocks),
+  // so the blocks are counted by service_id with block_id, not by block_id alone.
+  const blocks = new Set(trips.filter((row) => row[blockColumn]).map((row) => `${row[serviceColumn]}\u0001${row[blockColumn]}`));
   return {
     routes: rowsOf(result, 'routes.txt').length,
     stops: rowsOf(result, 'stops.txt').length,
     trips: trips.length,
     serviceDays: rowsOf(result, 'calendar.txt').length,
-    blocks: blockColumn < 0 ? 0 : new Set(trips.map((row) => row[blockColumn]).filter((value) => value)).size,
+    blocks: blockColumn < 0 ? 0 : blocks.size,
   };
 }
 

@@ -63,4 +63,4 @@ Planners want to see this tool's schedules in the Analysis app and other GTFS to
 ## Consequences
 
 - New pure modules in `src/domain/gtfsExport/`, a dialog in `src/ui/gtfsExport/`, backup schema 18.
-- Every export must import back through Decision 0089 with the same trips, running hours and blocks.
+- Every export must import back through Decision 0089 with the same trips, running hours and blocks, with one stated exception: a holiday whose trips equal another day's (for example Sunday's) is read back as that day, because Decision 0089 item 19 classifies holiday dates by their trips. No trips or hours are lost on the remaining days; the separate Holiday day is. Found in E5 on Federal BRT; the RTD whole feed round-trips exactly.
