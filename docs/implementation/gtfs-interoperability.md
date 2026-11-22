@@ -570,3 +570,10 @@ V-I test routes: **31 Federal Blvd, 0 Broadway, 0L South Broadway Limited** (RTD
 - **Tests at the end:** typecheck clean; `pnpm test` 131 files, 2,164 passed; `pnpm build` ok; full browser suite 404 passed, 2 failed under 8 workers (`segment-runtime-fill.spec.ts:82`, a `pattern-change-undo` spec), both passing when rerun alone; they touch no GTFS code and are recorded as load flakes to watch.
 - **Hand-off:** sitting 5 ends at **Gate V-I**: the user opens the RTD backup with Import project JSON and checks it against RTD's published numbers. On approval, sitting 6: I7 mock-ups (Opus).
 
+### 2026-11-22 — Gate V-I deferred; sitting 6: I7 mock-ups (Opus)
+
+- **User decision:** Gate V-I is deferred; work proceeds as if it passes. The RTD backup stays in the scratchpad for the later check.
+- **I7:** `docs/implementation/gtfs-import/mockups.html`: entry points, the five steps, and the after-import changes (notice, import note, "Feed" trip tag, per-route counts panel, Costing marker), with RTD routes 31, 0, 0L figures.
+- **Found while drawing:** (1) `dayGroups` groups by service set across days of the week, so ordinary Sundays and Sunday-service holidays form one group whose "added SU / removed WK" applies only to the holidays; the Days step groups within each service day's days of the week instead (I8 card). (2) Pattern names repeat when headsigns repeat ("Evans", "Evans 2", "Evans 3"); a naming proposal is asked of the user.
+- **Hand-off:** sitting 6 ends at the user's approval of the mock-ups (questions A–D on the sheet). Next is sitting 7: I8 and I9 (Haiku; Sonnet).
+

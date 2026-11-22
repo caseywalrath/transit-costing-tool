@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GTFS Import Screens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap">
+<style>
+/* Review sheet for package I7. Each frame draws one app screen with the app's tokens (src/ui/styles/tokens.css); numbered markers tie elements to the notes under the frame. Figures are from the RTD feed Sep26-37381 (valid 27 Sep 2026 to 2 Jan 2027). */
+:root {
+  --bg: #e7ecef; --ink: #17212b; --muted: #536574; --line: #cfd8de;
+  --mark: #c2561a; --mark-ink: #fff; --mark-soft: #fbeee6;
+  /* app tokens */
+  --canvas: #eef2f4; --surface: #fff; --surface-2: #f6f8f9; --sunken: #edf1f3; --border: #d2dbe0; --border-soft: #e4e9ec;
+  --text: #17212b; --text-muted: #536574; --text-subtle: #62707b; --accent: #1b668d; --accent-soft: #e4eff5; --selection: #e9f2f8;
+  --warn: #7f520f; --warn-soft: #fdf3df; --warn-border: #e2c07a; --danger: #a3342b; --ok: #2c6a3a; --ok-soft: #e6f2e8; --scrim: rgb(17 35 45 / 50%);
+  --font: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.45; }
+.page { max-width: 1400px; margin: 0 auto; padding: 28px 16px 64px; display: grid; gap: 44px; }
+.intro { display: grid; gap: 10px; max-width: 82ch; }
+.intro h1 { margin: 0; font-size: 28px; }
+.intro p { margin: 0; color: var(--muted); }
+.legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
+.dot { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--mark); color: var(--mark-ink); font-size: 12px; font-weight: 700; font-style: normal; flex: none; vertical-align: middle; }
+.screen { display: grid; gap: 14px; }
+.screen-head .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+.screen-head h2 { margin: 2px 0 4px; font-size: 21px; }
+.screen-head p { margin: 0; color: var(--muted); max-width: 90ch; }
+.frame-scroll { overflow-x: auto; border-radius: 10px; border: 1px solid var(--line); box-shadow: 0 10px 30px rgb(10 20 30 / 12%); }
+.frame { min-width: 1180px; background: var(--scrim); padding: 28px; display: grid; place-items: center; }
+.frame.plain { background: var(--canvas); place-items: start; }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px 28px; margin: 0; padding: 0; list-style: none; }
+.notes li { display: grid; grid-template-columns: 20px 1fr; gap: 10px; }
+.notes p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+.ask { background: var(--mark-soft); border: 1px solid var(--mark); border-radius: 8px; padding: 10px 14px; font-size: 14px; }
+.ask b { color: var(--mark); }
+
+/* app-like pieces */
+.dlg { width: 1080px; background: var(--surface); border: 1px solid var(--text-subtle); box-shadow: 0 12px 32px rgb(10 20 30 / 25%); color: var(--text); font-size: 14px; }
+.dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px 0; cursor: move; }
+.dlg-head h3 { margin: 0; font-size: 16px; }
+.dlg-head .target { color: var(--text-muted); font-size: 13px; }
+.steps { display: flex; gap: 4px; padding: 12px 18px; border-bottom: 1px solid var(--border-soft); }
+.steps span { padding: 4px 10px; border-radius: 3px; font-size: 13px; color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--border-soft); }
+.steps span.on { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+.steps span.done { color: var(--ok); }
+.body { padding: 16px 18px; display: grid; gap: 14px; max-height: 620px; overflow: hidden; }
+.foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border-soft); background: var(--surface-2); }
+.foot .status { color: var(--text-muted); font-size: 13px; }
+.btns { display: flex; gap: 8px; }
+.btn { font: inherit; font-size: 14px; padding: 6px 14px; border: 1px solid var(--border); background: var(--surface); border-radius: 3px; color: var(--text); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.btn.sm { font-size: 13px; padding: 3px 9px; }
+.btn.link { border: none; background: none; color: var(--accent); padding: 0; }
+.field { display: grid; gap: 5px; color: var(--text-muted); font-size: 12px; font-weight: 700; }
+.field input, .field select, input.inp, select.inp { font: inherit; font-size: 14px; font-weight: 400; color: var(--text); padding: 5px 8px; border: 1px solid var(--border); border-radius: 3px; background: var(--surface); }
+.row { display: flex; gap: 14px; align-items: end; flex-wrap: wrap; }
+.panel { border: 1px solid var(--border); background: var(--surface); }
+.panel-h { padding: 8px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border-soft); font-weight: 700; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.panel-h small { font-weight: 400; color: var(--text-muted); font-size: 13px; }
+.kv { display: grid; grid-template-columns: 170px 1fr; gap: 6px 14px; padding: 12px; }
+.kv dt { color: var(--text-muted); font-size: 13px; }
+.kv dd { margin: 0; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th { text-align: left; font-size: 12px; color: var(--text-muted); background: var(--surface-2); padding: 6px 10px; border-bottom: 1px solid var(--border); font-weight: 700; }
+td { padding: 5px 10px; border-bottom: 1px solid var(--border-soft); }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+tr.sel td { background: var(--selection); }
+.chip { display: inline-block; padding: 0 7px; border-radius: 9px; font-size: 12px; border: 1px solid var(--border); background: var(--sunken); color: var(--text-muted); }
+.chip.warn { background: var(--warn-soft); border-color: var(--warn-border); color: var(--warn); }
+.chip.ok { background: var(--ok-soft); border-color: #b9d8bf; color: var(--ok); }
+.chip.feed { background: #edf5f8; border-color: #c4d7df; color: #315865; }
+.idot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; margin-right: 6px; }
+.note { color: var(--text-muted); font-size: 13px; }
+.warnline { background: var(--warn-soft); border: 1px solid var(--warn-border); color: var(--warn); padding: 7px 10px; font-size: 13px; }
+details.sec { border: 1px solid var(--border); background: var(--surface); }
+details.sec > summary { padding: 8px 12px; background: var(--surface-2); cursor: pointer; font-weight: 700; display: flex; gap: 10px; align-items: center; }
+details.sec > summary .note { font-weight: 400; }
+details.sec .in { padding: 10px 12px; display: grid; gap: 8px; }
+.cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.cols3 { display: grid; grid-template-columns: 300px 1fr; gap: 14px; }
+.mk { position: relative; }
+.mk > .dot { position: absolute; top: -9px; left: -9px; z-index: 2; }
+.newbox { outline: 2px dashed var(--mark); outline-offset: 3px; }
+.tp-list { display: grid; gap: 2px; padding: 8px 12px; }
+.tp { display: grid; grid-template-columns: 22px 1fr 70px 70px; gap: 8px; align-items: center; padding: 2px 0; font-size: 13px; }
+.tp.on { font-weight: 600; }
+.tp .t { color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; }
+.menu { width: 300px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 8px 20px rgb(10 20 30 / 18%); padding: 4px 0; font-size: 14px; }
+.menu .grp { font-size: 11.5px; color: var(--text-muted); padding: 6px 12px 2px; text-transform: uppercase; letter-spacing: .05em; }
+.menu .it { padding: 5px 12px; }
+.menu .it.new { background: var(--mark-soft); }
+.menu hr { border: none; border-top: 1px solid var(--border-soft); margin: 4px 0; }
+.toast { display: flex; gap: 14px; align-items: center; background: var(--text); color: #fff; padding: 10px 14px; border-radius: 4px; font-size: 14px; width: max-content; }
+.toast .btn { background: transparent; color: #cfe6f2; border-color: #5d7383; }
+.switch { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
+.switch i { width: 30px; height: 16px; border-radius: 8px; background: var(--accent); position: relative; display: inline-block; }
+.switch i::after { content: ''; position: absolute; right: 2px; top: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; }
+.inherit { color: var(--text-subtle); font-style: italic; }
+</style>
+</head>
+<body>
+<main class="page">
+
+<section class="intro">
+  <h1>GTFS import: screen mock-ups (package I7)</h1>
+  <p>For approval before the screens are built (I8, I9, I9b). Rules: Decision 0089. Figures are from the RTD feed version Sep26-37381 (valid 27 Sep 2026 to 2 Jan 2027), routes 31, 0 and 0L, as the converter produced them.</p>
+  <div class="legend"><span><i class="dot">1</i> numbered note under the frame</span><span>Dashed orange outline: new on an existing screen</span></div>
+</section>
+
+<!-- 0 Entry points -->
+<section class="screen">
+  <div class="screen-head"><div class="eyebrow">Entry points</div><h2>Three menu entries open one import dialog</h2>
+    <p>Each entry sets the target, and the dialog's title says it. Nothing else differs at the start.</p></div>
+  <div class="frame-scroll"><div class="frame plain"><div class="row" style="align-items:start; gap:40px">
+    <div class="mk"><i class="dot">1</i><div class="menu"><div class="grp">Project</div><div class="it">New project…</div><div class="it new">New project from GTFS feed…</div><div class="it">Import project JSON…</div><div class="it">Export project JSON</div><hr><div class="it">Rename project…</div><div class="it">Delete project…</div></div></div>
+    <div class="mk"><i class="dot">2</i><div class="menu"><div class="grp">Scenario</div><div class="it">New scenario…</div><div class="it new">New scenario from GTFS feed…</div><div class="it">Copy scenario…</div><hr><div class="it">Rename…</div><div class="it">Delete…</div></div></div>
+    <div class="mk"><i class="dot">3</i><div class="menu"><div class="grp">Route</div><div class="it">New route…</div><div class="it new">Add routes from GTFS feed…</div><div class="it">Copy route…</div><hr><div class="it">Delete route…</div></div></div>
+  </div></div></div>
+  <ul class="notes">
+    <li><i class="dot">1</i><div><b>Project menu</b><p>Level A: a new Project "Regional Transportation District (Sep26-37381…)" with one Scenario "Existing service".</p></div></li>
+    <li><i class="dot">2</i><div><b>Scenario switcher commands</b><p>Level B: a new Scenario "Existing service (Sep26-37381…)" in the current Project.</p></div></li>
+    <li><i class="dot">3</i><div><b>Route switcher commands (Route tab)</b><p>Level C: new Routes in the current Scenario. Days and counts are not changed; Undo is offered.</p></div></li>
+  </ul>
+</section>
+
+<!-- 1 Feed -->
+<section class="screen">
+  <div class="screen-head"><div class="eyebrow">Step 1 of 5</div><h2>Feed: choose the ZIP, see what is in it</h2>
+    <p>The file is read in the background. Nothing is written until Import on step 5 (5b W6).</p></div>
+  <div class="frame-scroll"><div class="frame"><div class="dlg">
+    <div class="dlg-head"><h3>New project from GTFS feed</h3><span class="target">Target: new Project</span></div>
+    <div class="steps"><span class="on">1 Feed</span><span>2 Routes</span><span>3 Days</span><span>4 Options</span><span>5 Review</span></div>
+    <div class="body">
+      <div class="row mk"><i class="dot">1</i><button class="btn">Choose ZIP file…</button><span>google_transit.zip · 10.8 MB</span><span class="note">Download the feed from the agency's website or the Mobility Database. Web addresses cannot be opened directly.</span></div>
+      <div class="cols2">
+        <div class="panel mk"><i class="dot">2</i><div class="panel-h">Feed</div>
+          <dl class="kv"><dt>Agency</dt><dd>Regional Transportation District</dd><dt>Feed version</dt><dd>Sep26-37381-22-23-20261113-122950</dd><dt>Service dates</dt><dd>27 Sep 2026 to 2 Jan 2027 (98 days) <span class="chip ok">current</span></dd><dt>Routes</dt><dd>130 (120 bus, 6 light rail, 4 commuter rail)</dd><dt>Stops</dt><dd>8,011</dd></dl></div>
+        <div class="panel mk"><i class="dot">3</i><div class="panel-h">Reading <small>Cancel stops reading; nothing is kept</small></div>
+          <table><tr><td>routes.txt, trips.txt, calendars</td><td class="n">done</td></tr><tr><td>stops.txt</td><td class="n">done</td></tr><tr><td>shapes.txt</td><td class="n">done</td></tr><tr><td>stop_times.txt</td><td class="n">read after step 2, for the chosen routes only</td></tr></table>
+          <p class="note" style="padding:0 12px">Not imported: none. Fares, transfers and accessibility are never imported.</p></div>
+      </div>
+      <div class="warnline mk"><i class="dot">4</i>Example warning: "This feed ends on 2 Jan 2027, in 30 days or less. Dates after that cannot be chosen."</div>
+    </div>
+    <div class="foot"><span class="status">Feed read in 1.2 s</span><div class="btns"><button class="btn">Cancel</button><button class="btn primary">Next</button></div></div>
+  </div></div></div>
+  <ul class="notes">
+    <li><i class="dot">1</i><div><b>File only</b><p>No address field (CORS). A refused file (not a ZIP, missing stops.txt, missing column) shows the reason here and Next stays off (0089 item 11).</p></div></li>
+    <li><i class="dot">2</i><div><b>Feed facts</b><p>From agency.txt and feed_info.txt; with no agency name, the file name is shown.</p></div></li>
+    <li><i class="dot">3</i><div><b>Progress per file (W6)</b><p>stop_times.txt is the large file; it is read once, after the routes are chosen.</p></div></li>
+    <li><i class="dot">4</i><div><b>Expiry</b><p>Shown only when the feed has expired or ends within 30 days. It never blocks.</p></div></li>
+  </ul>
+</section>
+
+<!-- 2 Routes -->
+<section class="screen">
+  <div class="screen-head"><div class="eyebrow">Step 2 of 5</div><h2>Routes: pick some or all</h2>
+    <p>A 130-row table scrolls inside the dialog (W1, W2).</p></div>
+  <div class="frame-scroll"><div class="frame"><div class="dlg">
+    <div class="dlg-head"><h3>New project from GTFS feed</h3><span class="target">Target: new Project</span></div>
+    <div class="steps"><span class="done">1 Feed ✓</span><span class="on">2 Routes</span><span>3 Days</span><span>4 Options</span><span>5 Review</span></div>
+    <div class="body">
+      <div class="row mk"><i class="dot">1</i><label class="field">Search<input class="inp" value="" placeholder="Name or number" style="width:240px"></label><label class="field">Type<select class="inp"><option>All types</option></select></label><button class="btn sm">Select all shown</button><button class="btn sm">Clear</button><span class="note" style="margin-left:auto">3 routes selected · 439 weekday trips</span></div>
+      <div class="panel mk"><i class="dot">2</i><table>
+        <tr><th style="width:36px"></th><th>Short name</th><th>Long name</th><th>Type</th><th class="n">Weekday trips</th><th class="n">Patterns</th></tr>
+        <tr class="sel"><td><input type="checkbox" checked></td><td><span class="idot" style="background:#0055AA"></span>0</td><td>Broadway</td><td>Bus</td><td class="n">149</td><td class="n">2</td></tr>
+        <tr class="sel"><td><input type="checkbox" checked></td><td><span class="idot" style="background:#0055AA"></span>0L</td><td>South Broadway Limited</td><td>Bus</td><td class="n">99</td><td class="n">2</td></tr>
+        <tr><td><input type="checkbox"></td><td><span class="idot" style="background:#0055AA"></span>1</td><td>West 1st Avenue</td><td>Bus</td><td class="n">36</td><td class="n">—</td></tr>
+        <tr><td><input type="checkbox"></td><td><span class="idot" style="background:#0055AA"></span>3</td><td>Alameda Avenue</td><td>Bus</td><td class="n">72</td><td class="n">—</td></tr>
+        <tr><td><input type="checkbox"></td><td><span class="idot" style="background:#0055AA"></span>6</td><td>East 6th Avenue</td><td>Bus</td><td class="n">69</td><td class="n">—</td></tr>
+        <tr><td><input type="checkbox"></td><td><span class="idot" style="background:#0055AA"></span>15</td><td>East Colfax Avenue</td><td>Bus</td><td class="n">212</td><td class="n">—</td></tr>
+        <tr><td><input type="checkbox"></td><td><span class="idot" style="background:#0055AA"></span>30</td><td>South Federal Blvd</td><td>Bus</td><td class="n">128</td><td class="n">—</td></tr>
+        <tr class="sel"><td><input type="checkbox" checked></td><td><span class="idot" style="background:#0055AA"></span>31</td><td>Federal Blvd</td><td>Bus</td><td class="n">191</td><td class="n">6</td></tr>
+        <tr><td><input type="checkbox"></td><td><span class="idot" style="background:#6C3483"></span>A</td><td>Union Station to Denver Airport Station</td><td>Commuter rail</td><td class="n">144</td><td class="n">—</td></tr>
+        <tr><td colspan="6" class="note">… 121 more rows</td></tr>
+      </table></div>
+      <div class="note mk"><i class="dot">3</i>Level C only: "Route 31 (Federal Blvd) is already in this Scenario. It will be added as "Federal Blvd (feed)"."</div>
+    </div>
+    <div class="foot"><span class="status">Weekday trips counted on Fri 13 Nov 2026</span><div class="btns"><button class="btn">Back</button><button class="btn primary">Next</button></div></div>
+  </div></div></div>
+  <ul class="notes">
+    <li><i class="dot">1</i><div><b>Search, type filter, running total</b><p>The agency filter appears only for a feed with several agencies. Above 40 routes or 5,000 weekday trips, the total shows "May be slow" (G-I6).</p></div></li>
+    <li><i class="dot">2</i><div><b>Sorted in route order</b><p>Numbers first, by value (0, 0L, 1, 3 … 31), then letters. The dot is the feed's route colour. Patterns show "—" until stop_times is read for the selected routes; they fill in after a short read.</p></div></li>
+    <li><i class="dot">3</i><div><b>Name clash (level C)</b><p>Listed under the table; nothing is overwritten.</p></div></li>
+  </ul>
+</section>
+
+<!-- 3 Days -->
+<section class="screen">
+  <div class="screen-head"><div class="eyebrow">Step 3 of 5</div><h2>Days: one date per service day, holidays, counts</h2>
+    <p>The hardest step (W3). The top table is all most planners need; the three sections below open only when they have something to say.</p></div>
+  <div class="frame-scroll"><div class="frame"><div class="dlg">
+    <div class="dlg-head"><h3>New project from GTFS feed</h3><span class="target">Target: new Project</span></div>
+    <div class="steps"><span class="done">1 Feed ✓</span><span class="done">2 Routes ✓</span><span class="on">3 Days</span><span>4 Options</span><span>5 Review</span></div>
+    <div class="body">
+      <div class="panel mk"><i class="dot">1</i><table>
+        <tr><th>Service day</th><th>Date used</th><th class="n">Trips (3 routes)</th><th class="n">Dates in feed</th><th class="n">Annual days</th><th>Basis</th></tr>
+        <tr><td>Weekday</td><td><input class="inp" value="Fri 13 Nov 2026" style="width:150px"> <span class="chip">typical</span></td><td class="n">439</td><td class="n">67</td><td class="n"><input class="inp" value="250" style="width:60px;text-align:right"></td><td class="note">67 of 98 days, scaled to 365</td></tr>
+        <tr><td>Saturday</td><td><input class="inp" value="Sat 14 Nov 2026" style="width:150px"> <span class="chip">typical</span></td><td class="n">285</td><td class="n">14</td><td class="n"><input class="inp" value="52" style="width:60px;text-align:right"></td><td class="note">14 of 98</td></tr>
+        <tr><td>Sunday</td><td><input class="inp" value="Sun 15 Nov 2026" style="width:150px"> <span class="chip">typical</span></td><td class="n">207</td><td class="n">17</td><td class="n"><input class="inp" value="63" style="width:60px;text-align:right"></td><td class="note">14 Sundays + 3 Sunday-service holidays</td></tr>
+        <tr><td>Holiday</td><td class="note">No unique holiday service</td><td class="n">0</td><td class="n">0</td><td class="n"><input class="inp" value="0" style="width:60px;text-align:right"></td><td class="note">Set it yourself if needed</td></tr>
+        <tr><td colspan="4" class="note">Total</td><td class="n"><b>365</b></td><td></td></tr>
+      </table></div>
+      <details class="sec mk" open><i class="dot">2</i><summary>Holidays <span class="note">3 dates · all Sunday service</span></summary><div class="in">
+        <table><tr><th>Date</th><th>What the feed does</th><th>Route 31</th><th>Route 0</th><th>Route 0L</th><th>Counts as</th></tr>
+          <tr><td>Thu 26 Nov 2026 <span class="note">Thanksgiving?</span></td><td>Weekday service removed, Sunday added</td><td>Sunday trips</td><td>Sunday trips</td><td class="note">does not run</td><td><select class="inp"><option>Sunday</option></select></td></tr>
+          <tr><td>Fri 25 Dec 2026 <span class="note">Christmas?</span></td><td>Weekday service removed, Sunday added</td><td>Sunday trips</td><td>Sunday trips</td><td class="note">does not run</td><td><select class="inp"><option>Sunday</option></select></td></tr>
+          <tr><td>Fri 1 Jan 2027 <span class="note">New Year's Day?</span></td><td>Weekday service removed, Sunday added</td><td>Sunday trips</td><td>Sunday trips</td><td class="note">does not run</td><td><select class="inp"><option>Sunday</option></select></td></tr></table>
+        <span class="note">Choices: Saturday, Sunday, Weekday (reduced), Holiday, Holiday 2, Not a holiday. Holiday names are only labels; the feed's own trips decide the proposal.</span></div></details>
+      <details class="sec mk"><i class="dot">3</i><summary>Day groups <span class="note">no school, event or Friday-only service found</span></summary></details>
+      <details class="sec mk"><i class="dot">4</i><summary>Part-year routes <span class="note">none: every selected route runs on the dates used</span></summary></details>
+    </div>
+    <div class="foot"><span class="status">Counts total 365</span><div class="btns"><button class="btn">Back</button><button class="btn primary">Next</button></div></div>
+  </div></div></div>
+  <div class="frame-scroll"><div class="frame plain" style="display:block">
+    <p class="note" style="margin:0 0 8px">The same sections when a feed has something to show (made-up example, not RTD):</p>
+    <div class="cols2">
+      <details class="sec" open><summary>Day groups <span class="note">Weekday: 2 groups</span></summary><div class="in">
+        <table><tr><th>Group</th><th class="n">Dates</th><th class="n">Trips</th><th>Differs from typical</th><th></th></tr>
+          <tr class="sel"><td>Typical weekday</td><td class="n">48</td><td class="n">1,210</td><td class="note">—</td><td><span class="chip">in use</span></td></tr>
+          <tr><td>School days</td><td class="n">32</td><td class="n">1,252</td><td class="note">+42 trips on routes 3, 11</td><td><button class="btn sm">Use this</button></td></tr></table></div></details>
+      <details class="sec" open><summary>Part-year routes <span class="note">1 route</span></summary><div class="in">
+        <table><tr><th>Route</th><th>Weekday</th><th>Own date</th><th>Own counts</th></tr>
+          <tr><td>Summer Shuttle</td><td class="note">no trips on Tue 10 Mar</td><td><input class="inp" value="Tue 14 Jul" style="width:110px"></td><td><label class="switch"><i></i>Use own counts: Weekday 62</label></td></tr></table>
+        <span class="note">Off by default: the route uses the Scenario's counts until switched on (G-I2c).</span></div></details>
+    </div>
+  </div></div>
+  <ul class="notes">
+    <li><i class="dot">1</i><div><b>One row per service day</b><p>Default date: the typical service nearest the middle of the feed, never a date with an exception. "typical" changes to "chosen" when the planner picks another. Counts are editable; level C shows the Scenario's counts beside the proposal and changes nothing.</p></div></li>
+    <li><i class="dot">2</i><div><b>Holidays, route by route</b><p>The summary line says the result in a few words. Each row's menu changes the class. A unique-service holiday puts its trips on Holiday; a second different one on "Holiday 2".</p></div></li>
+    <li><i class="dot">3</i><div><b>Day groups, per service day</b><p>Grouped within each service day's days of the week, so ordinary Sundays and Sunday-service holidays are not one confusing group. "Use this" changes that day's date.</p></div></li>
+    <li><i class="dot">4</i><div><b>Part-year routes</b><p>Closed when there are none. Each flagged route may get its own date, and optionally its own counts.</p></div></li>
+  </ul>
+</section>
+
+<!-- 4 Options -->
+<section class="screen">
+  <div class="screen-head"><div class="eyebrow">Step 4 of 5</div><h2>Options: timepoints, blocks, where trips go</h2></div>
+  <div class="frame-scroll"><div class="frame"><div class="dlg">
+    <div class="dlg-head"><h3>Add routes from GTFS feed</h3><span class="target">Target: Scenario "Proposed BRT"</span></div>
+    <div class="steps"><span class="done">1 Feed ✓</span><span class="done">2 Routes ✓</span><span class="done">3 Days ✓</span><span class="on">4 Options</span><span>5 Review</span></div>
+    <div class="body">
+      <div class="cols2">
+        <div class="panel mk"><i class="dot">1</i><div class="panel-h">Timepoints</div><div style="padding:12px; display:grid; gap:8px">
+          <label><input type="radio" checked> Use the feed's timepoints <span class="note">(this feed marks them)</span></label>
+          <label><input type="radio"> Suggest timepoints, about one per 10 minutes</label>
+          <span class="note">At most 30 per pattern. You can change them per pattern on the next step.</span></div></div>
+        <div class="panel mk"><i class="dot">2</i><div class="panel-h">Patterns</div><div style="padding:12px; display:grid; gap:8px">
+          <span>One pattern per sequence of timepoints in each direction.</span>
+          <span class="note">Trips that differ only in stops between timepoints share a pattern; the report lists them.</span></div></div>
+        <div class="panel mk"><i class="dot">3</i><div class="panel-h">Blocks</div><div style="padding:12px; display:grid; gap:10px">
+          <label><input type="checkbox" checked> Import the feed's blocks <span class="note">(1,647 in this feed)</span></label>
+          <div class="row"><label class="field">Pull-out minutes<input class="inp" value="10" style="width:70px"></label><label class="field">Pull-in minutes<input class="inp" value="10" style="width:70px"></label><span class="note">Required; 0 is allowed.</span></div>
+          <span class="note">A block is imported only when all its trips are being imported. Others are listed, and their trips are left for Auto-blocking.</span></div></div>
+        <div class="panel mk newbox"><i class="dot">4</i><div class="panel-h">Where the trips go <small>level C only</small></div><div style="padding:12px; display:grid; gap:10px">
+          <label class="field">Trip profile<select class="inp"><option>Default (working)</option></select></label>
+          <label class="field">Blocking scenario<select class="inp"><option>Default</option><option>Don't import blocks</option></select></label>
+          <span class="note">Other Trip profiles get no trips for these routes.</span></div></div>
+      </div>
+      <label class="mk"><i class="dot">5</i><input type="checkbox"> Also create planned frequencies from frequencies.txt <span class="note">(off: this feed has no frequencies.txt)</span></label>
+    </div>
+    <div class="foot"><span class="status"></span><div class="btns"><button class="btn">Back</button><button class="btn primary">Next</button></div></div>
+  </div></div></div>
+  <ul class="notes">
+    <li><i class="dot">1</i><div><b>Timepoints</b><p>The feed's flags when it has them, otherwise the suggestion. One choice for all routes; per-pattern edits are on step 5.</p></div></li>
+    <li><i class="dot">2</i><div><b>Patterns (G-I3)</b><p>Information only; no choice is offered.</p></div></li>
+    <li><i class="dot">3</i><div><b>Blocks (G-I4)</b><p>Minutes required (your decision of 22 Nov). Hidden when the feed has no block_id.</p></div></li>
+    <li><i class="dot">4</i><div><b>Level C targets</b><p>Shown only when adding routes to an existing Scenario.</p></div></li>
+    <li><i class="dot">5</i><div><b>Planned frequencies</b><p>Disabled unless the feed has frequencies.txt.</p></div></li>
+  </ul>
+</section>
+
+<!-- 5 Review -->
+<section class="screen">
+  <div class="screen-head"><div class="eyebrow">Step 5 of 5</div><h2>Review: what will be imported, with the fidelity check and timepoint review</h2></div>
+  <div class="frame-scroll"><div class="frame"><div class="dlg">
+    <div class="dlg-head"><h3>New project from GTFS feed</h3><span class="target">Target: new Project</span></div>
+    <div class="steps"><span class="done">1 Feed ✓</span><span class="done">2 Routes ✓</span><span class="done">3 Days ✓</span><span class="done">4 Options ✓</span><span class="on">5 Review</span></div>
+    <div class="body">
+      <div class="panel mk"><i class="dot">1</i><div class="panel-h">3 routes <small><span class="chip ok">Matches the feed</span> trips and running hours on every day used</small></div><table>
+        <tr><th>Route</th><th class="n">Patterns</th><th class="n">Timepoints</th><th class="n">Stops</th><th class="n">Trips Wkdy / Sat / Sun</th><th class="n">Running h Wkdy</th><th class="n">Blocks</th><th>Notes</th></tr>
+        <tr class="sel"><td>31 Federal Blvd</td><td class="n">6</td><td class="n">22</td><td class="n">131</td><td class="n">191 / 136 / 81</td><td class="n">164.0</td><td class="n">28</td><td><span class="chip warn">1 block left out</span></td></tr>
+        <tr><td>0 Broadway</td><td class="n">2</td><td class="n">14</td><td class="n">57</td><td class="n">149 / 149 / 126</td><td class="n">116.5</td><td class="n">29</td><td></td></tr>
+        <tr><td>0L South Broadway Limited</td><td class="n">2</td><td class="n">6</td><td class="n">10</td><td class="n">99 / – / –</td><td class="n">19.9</td><td class="n">3</td><td></td></tr>
+      </table></div>
+      <div class="cols3">
+        <div class="panel mk"><i class="dot">2</i><div class="panel-h">Patterns of 31 <small>trips on all days</small></div><table>
+          <tr><td>Outbound · Westminster Stn / 71st Ave</td><td class="n">142</td></tr><tr><td>Outbound · 106th&amp;Melody</td><td class="n">28</td></tr><tr><td>Outbound · Front Range Community College</td><td class="n">32</td></tr><tr class="sel"><td>Inbound · Evans</td><td class="n">148</td></tr><tr><td>Inbound · Evans 2</td><td class="n">24</td></tr><tr><td>Inbound · Evans 3</td><td class="n">34</td></tr></table></div>
+        <div class="panel mk"><i class="dot">3</i><div class="panel-h">Timepoints of "Evans" <small>8 timepoints, 38 other stops · Restore the feed's choice</small></div>
+          <div class="tp-list">
+            <div class="tp on"><input type="checkbox" checked disabled><span>Westminster Station Gate B (terminal)</span><span class="t"></span><span class="t"></span></div>
+            <div class="tp"><input type="checkbox"><span>(other stops of this segment)</span><span class="t"></span><span class="t"></span></div>
+            <div class="tp on"><input type="checkbox" checked><span>Clear Creek-Federal Station Gate A</span><span class="t"></span><span class="t"></span></div>
+            <div class="tp on"><input type="checkbox" checked><span>Federal Blvd &amp; W 50th Ave</span><span class="t"></span><span class="t"></span></div>
+            <div class="tp on"><input type="checkbox" checked><span>Federal Blvd &amp; W Highland Park Pl</span><span class="t"></span><span class="t"></span></div>
+            <div class="tp on"><input type="checkbox" checked><span>Decatur / Federal Station Gate F</span><span class="t"></span><span class="t"></span></div>
+            <div class="tp on"><input type="checkbox" checked><span>S Federal Blvd &amp; W Alameda Ave</span><span class="t"></span><span class="t"></span></div>
+            <div class="tp on"><input type="checkbox" checked><span>S Federal Blvd &amp; W Mississippi Ave</span><span class="t"></span><span class="t"></span></div>
+            <div class="tp on"><input type="checkbox" checked disabled><span>S Federal Blvd &amp; W Evans Ave Gate B (terminal)</span><span class="t"></span><span class="t"></span></div>
+          </div>
+          <p class="note" style="padding:0 12px 10px;margin:0">Built screen: every stop listed in order with its median time and the minutes between ticked timepoints. Changing timepoints re-checks the route at once.</p></div>
+      </div>
+      <div class="row mk"><i class="dot">4</i><button class="btn sm">Download import report (CSV)</button><span class="note">833 notes: 832 timepoints with dwell (departure kept), 1 block left out (31 13: also serves route 4).</span></div>
+    </div>
+    <div class="foot"><span class="status">Creates 1 Project, 1 Scenario, 3 Routes, 931 trips, 60 blocks</span><div class="btns"><button class="btn">Back</button><button class="btn primary">Import</button></div></div>
+  </div></div></div>
+  <ul class="notes">
+    <li><i class="dot">1</i><div><b>Per-route result and fidelity</b><p>"Matches the feed" when trips and running hours equal the feed on every day used; otherwise "Differs" with the trips listed. A skipped route shows its reason as a row in warning colour.</p></div></li>
+    <li><i class="dot">2</i><div><b>Patterns of the selected route</b><p>Click a route above, then a pattern here.</p></div></li>
+    <li><i class="dot">3</i><div><b>Timepoint review (W4)</b><p>Every stop of the pattern, in order, with its median time. Ticking a stop makes it a timepoint; terminals cannot be unticked. Limit 30.</p></div></li>
+    <li><i class="dot">4</i><div><b>Report (W8)</b><p>The same CSV is offered in the notice after import; the Scenario keeps a summary in its import note.</p></div></li>
+  </ul>
+</section>
+
+<!-- 6 After import -->
+<section class="screen">
+  <div class="screen-head"><div class="eyebrow">After import</div><h2>Notice, import note, "Feed" trips, per-route counts</h2>
+    <p>Changes to existing screens, each outlined.</p></div>
+  <div class="frame-scroll"><div class="frame plain" style="display:grid; gap:26px">
+    <div class="mk newbox"><i class="dot">1</i><div class="toast">3 routes imported from google_transit.zip <button class="btn sm">Undo</button><button class="btn sm">Download report</button></div></div>
+    <div class="row" style="align-items:start; gap:30px">
+      <div class="mk newbox"><i class="dot">2</i><div class="menu" style="width:340px"><div class="grp">Scenarios</div><div class="it" style="background:var(--accent-soft)"><b>Existing service</b><div class="note">From RTD feed Sep26-37381 · imported 22 Nov 2026 · 3 routes</div></div><div class="it">Proposed BRT</div></div></div>
+      <div class="mk newbox"><i class="dot">3</i><div class="panel" style="width:430px"><table><tr><th>Trip</th><th>Departs</th><th>Pattern</th><th>Status</th></tr>
+        <tr><td>—</td><td>04:10</td><td>Outbound</td><td><span class="chip feed">Feed</span></td></tr>
+        <tr><td>—</td><td>04:11</td><td>Outbound</td><td><span class="chip feed">Feed</span></td></tr>
+        <tr><td>—</td><td>04:14</td><td>Outbound</td><td><span class="chip warn">Run times changed</span></td></tr></table></div></div>
+      <div class="mk newbox"><i class="dot">4</i><div class="panel" style="width:380px"><div class="panel-h">Annual service days <label class="switch" style="font-weight:400"><i></i>This route uses its own counts</label></div><table>
+        <tr><th>Service day</th><th class="n">Scenario</th><th class="n">This route</th></tr>
+        <tr><td>Weekday</td><td class="n">250</td><td class="n"><input class="inp" value="62" style="width:60px;text-align:right"></td></tr>
+        <tr><td>Saturday</td><td class="n">52</td><td class="n"><input class="inp" placeholder="52" style="width:60px;text-align:right"></td></tr>
+        <tr><td>Sunday</td><td class="n">63</td><td class="n"><input class="inp" placeholder="63" style="width:60px;text-align:right"></td></tr>
+        <tr><td>Holiday</td><td class="n">0</td><td class="n"><input class="inp" placeholder="0" style="width:60px;text-align:right"></td></tr>
+        <tr><td colspan="3"><button class="btn sm">Add service day…</button></td></tr></table></div></div>
+    </div>
+    <div class="mk newbox" style="width:520px"><i class="dot">5</i><div class="panel"><table><tr><th>Route</th><th class="n">Annual revenue hours</th><th class="n">Annual cost</th></tr>
+      <tr><td><span class="idot" style="background:#0055AA"></span>31 Federal Blvd</td><td class="n">52,810</td><td class="n">$7.9M</td></tr>
+      <tr><td><span class="idot" style="background:#0055AA"></span>Summer Shuttle <span class="chip" title="Weekday 62 (own counts)">own counts</span></td><td class="n">1,240</td><td class="n">$0.19M</td></tr></table></div></div>
+  </div></div>
+  <ul class="notes">
+    <li><i class="dot">1</i><div><b>Notice (W7)</b><p>Undo appears for level C (restore point "Import routes from GTFS feed"); for A and B, "Open". The first imported Route opens on the Route tab.</p></div></li>
+    <li><i class="dot">2</i><div><b>Import note (S1)</b><p>A line under the Scenario's name in the switcher; the Cost summary footnote repeats it.</p></div></li>
+    <li><i class="dot">3</i><div><b>"Feed" trips (S2)</b><p>A quiet tag. It becomes the existing "Run times changed" mark once a band of that trip's profile is edited (G-I5).</p></div></li>
+    <li><i class="dot">4</i><div><b>Per-route counts (U1, U3)</b><p>Off: one column, as today. On: a "This route" column; blank cells show the Scenario's value faintly and use it. "Add service day…" and a row Delete come with I9b.</p></div></li>
+    <li><i class="dot">5</i><div><b>Costing marker (U2)</b><p>"own counts" chip on the route row, the counts in its tooltip. The colour dot is the feed's route colour (S3). Costing example figures are made up.</p></div></li>
+  </ul>
+</section>
+
+<section class="intro">
+  <h1 style="font-size:21px">Decisions asked of you</h1>
+  <div class="ask"><b>A.</b> Approve the five steps and the after-import changes as drawn, or name changes.</div>
+  <div class="ask"><b>B.</b> Days step: holidays open by default when there are any; day groups and part-year routes closed unless they find something. Agree?</div>
+  <div class="ask"><b>C.</b> Pattern names come from headsigns, so route 31 gets "Evans", "Evans 2" and "Evans 3". Proposal: when patterns of one direction share a headsign, name them by their last timepoint instead of a number, for example "Evans (to S Federal &amp; Mississippi)". Agree?</div>
+  <div class="ask"><b>D.</b> Timepoint review lives on step 5, per pattern. The alternative is a separate step 5 "Timepoints" before Review (six steps). Keep it on Review?</div>
+</section>
+
+</main>
+</body>
+</html>
