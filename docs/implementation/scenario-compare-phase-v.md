@@ -1,6 +1,6 @@
 # Scenario comparison (phase V) — plan
 
-> **Status:** Approved 2026-11-22: gates G-V1 to G-V9 and mock-up questions A to C answered as recommended. Next: sitting 1 (V0). V-V is a later checkpoint.
+> **Status:** Approved 2026-11-22: gates G-V1 to G-V9 and mock-up questions A to C answered as recommended. Sitting 1 (V0) done: Decision 0091, cards `scenario-compare-phase-v-cards.md`, worked example `tests/fixtures/scenario-compare/`. Next: sitting 2 (V1, V2). V-V is a later checkpoint.
 >
 > **Parent plan:** `docs/implementation/gtfs-interoperability.md`, Part 6 "V". This file expands that section. The parent's fixed decisions (Part 8) and run rules (Part 7) apply unless this file says otherwise.
 >
@@ -288,3 +288,11 @@ Plan and mock-up written. Waiting for gate answers G-V1 to G-V9 and mock-up answ
 ### 2026-11-22 — Gates answered (user)
 
 G-V1 to G-V9 and mock-up questions A to C: approved as recommended.
+
+### 2026-11-22 — Sitting 1: V0 (Opus)
+
+Decision 0091, cards V1 and V2, and the worked example written. Two refinements from the code, recorded in 0091:
+- The basis follows the side's Blocking choice (item 2), since Costing's basis is a device preference, not stored per Scenario.
+- Peak vehicles use Blocking's existing peak pull-out rule (item 12).
+
+Also fixed: status ignores peak and cost (item 15), and a matched Route shows the Proposed name.
