@@ -89,3 +89,21 @@ As in the plan, Part 5. The expected-file test (E2) and the read-back test (E5) 
 - Choices accepted: map lines "none" writes no `shapes.txt` and no `shape_id`; holiday errors the dialog must prevent (outside range, repeated date) throw; only Trips with a Trip profile are exported; arrival = departure (no dwell stored).
 - For E4: `src/domain/gtfsExport/stopTimes.ts` repeats the distance-share rule of `src/domain/stopTimes.ts` for `shape_dist_traveled`; export that function there instead when E4 touches it.
 - Hand-off: next is sitting 3, E3 mock-up (Opus), stopping for user approval.
+
+## 10. Sitting 3 answers (user, 2026-11-22)
+
+Mock-up approved; A both menus (Scenario menu and Project menu beside "Export backup"); B both "Open on Route tab" and "Download list"; C file name `<Scenario name>-gtfs.zip` (made safe for file names), report `<Scenario name>-gtfs-report.csv`.
+
+## 11. Card E4 — Export dialog, service, menus
+
+**Model:** Sonnet. **Rules:** 0090 all; mock-up `docs/implementation/gtfs-export/mockup.html`.
+
+**Files:** new `src/application/gtfsExport/**` (service that reads the Scenario through the repository, normalises inputs, calls `buildGtfsExport`, zips with `createCsvArchive`, saves `gtfsExportSettings`); new `src/ui/gtfsExport/**` (dialog, styles); `src/ui/App.tsx` and `src/main.tsx` only to wire menus, dialog and service; `src/ui/modalDialogs.test.ts` count; `tests/ui/gtfs-export.spec.ts`. Optional: export the distance-share function from `src/domain/stopTimes.ts` and use it in `src/domain/gtfsExport/stopTimes.ts` (section 9), with tests unchanged. **Do not touch** other domain or persistence files.
+
+1. **Dialog** as frame 1: Routes ("All N Routes" or a checklist with search), Trip profile, Blocking scenario (default the Scenario's remembered blocking scenario; "None"), When (start, end, holidays with "Runs" menu listing Holiday and custom days; no repeat or out-of-range date can be added), Agency (name, website, time zone select of IANA zones from `Intl.supportedValuesOf('timeZone')`), Map lines, Checks (live, debounced; ready summary; warnings with Show), Export. Defaults: remembered settings, else the import note's dates and agency name, else blank.
+2. **Problems** as frame 2: a table of refusals in plain words (one message per code), "Open on Route tab" (closes the dialog keeping unsaved values in memory for this session, opens the Route and pattern; the Stops drawer if reachable through existing props), "Download list" CSV.
+3. **Export:** saves the settings on the Scenario (one write; no restore point needed, but undo is not required either), downloads the ZIP and the report, shows a notice "Exported N trips on M Routes. Report downloaded." Large Scenarios: if building takes over about 2 s in the RTD whole-feed check, run it in a worker like the import (judge from a quick timing, report it).
+4. **Menus:** Scenario menu "Export as GTFS feed…"; Project menu entry beside "Export backup" (exports the open Scenario).
+5. **Tests:** `tests/ui/gtfs-export.spec.ts`: build the fixture-like Scenario through the UI or a seeded backup, export, unzip the download in the test and compare `stops.txt` and `trips.txt` to `tests/fixtures/gtfs-export/mini-export/`; a refusal case shows the problems table and disables Export; settings remembered after reopening. Unit tests for the service.
+
+**Run:** section 4 E4 row of the plan (`keyboard.spec.ts`, `draggable-dialogs.spec.ts`, `scenario-context-menu.spec.ts`, `project-context-menu.spec.ts`, the new spec), `pnpm typecheck`, `pnpm test`, `pnpm build`; inspect screenshots.
