@@ -80,3 +80,12 @@ As in the plan, Part 5. The expected-file test (E2) and the read-back test (E5) 
 **Read-back preview:** also parse the output with the phase I readers (`src/persistence/gtfs/`) and `translateFeed`, and assert the same trip count per day and direction. The full read-back is E5.
 
 **Run:** the new tests, `pnpm typecheck`, `pnpm test`.
+
+## 9. Sitting 2 as built (2026-11-22)
+
+- **E1b:** `Scenario.gtfsExportSettings`, backup schema 18; a repeated holiday date is refused.
+- **E1:** `exportStops`. Decision 0090 amended: only placed Route stops; a generated timepoint id is shared within a Route, direction and Node; a pattern with no Outbound/Inbound group refuses (`directionUnassigned`). Two different Nodes with the same name and no stop IDs refuse.
+- **E2:** `buildGtfsExport` and `reportCsvText`. The mini fixture matches byte for byte; read-back through phase I gives the same trips per day and direction. Federal BRT refuses with 56 unlocated timepoints (it has no locations), and exports 984 trips once located.
+- Choices accepted: map lines "none" writes no `shapes.txt` and no `shape_id`; holiday errors the dialog must prevent (outside range, repeated date) throw; only Trips with a Trip profile are exported; arrival = departure (no dwell stored).
+- For E4: `src/domain/gtfsExport/stopTimes.ts` repeats the distance-share rule of `src/domain/stopTimes.ts` for `shape_dist_traveled`; export that function there instead when E4 touches it.
+- Hand-off: next is sitting 3, E3 mock-up (Opus), stopping for user approval.

@@ -1,6 +1,8 @@
 // Plain shapes for the GTFS export's rules (Decision 0090). The export reads the Scenario through these shapes, so the rules do not
 // depend on the stored entity types; the export service fills them from the stored records.
 
+import type { EntityId } from '../types';
+
 /** A GTFS stop as it is written to stops.txt. Coordinates are decimal degrees (WGS 84). */
 export interface ExportStop {
   stopId: string;
@@ -93,4 +95,77 @@ export interface ExportStopsResult {
   byTimepoint: Map<string, Map<string, string>>;
   refusals: GtfsExportStopIssue[];
   warnings: GtfsExportStopIssue[];
+}
+
+/**
+ * Every refusal and warning of the feed builder (Decision 0090 items 19 and 20) carries one of these codes. The stop codes come from E1;
+ * the rest are named here. A refusal stops the export; a warning is listed in the report.
+ */
+export type GtfsExportIssueCode =
+  | GtfsExportStopIssueCode
+  | 'gtfsExport.directionUnassigned'
+  | 'gtfsExport.tripTimeMissing'
+  | 'gtfsExport.rangeEmpty'
+  | 'gtfsExport.agencyNameBlank'
+  | 'gtfsExport.agencyUrlBlank'
+  | 'gtfsExport.agencyTimezoneBlank'
+  | 'gtfsExport.routeSkipped'
+  | 'gtfsExport.daySkipped'
+  | 'gtfsExport.ownCountsNotExpressed'
+  | 'gtfsExport.blockServesUnselectedRoute';
+
+/**
+ * A refusal or warning of the feed builder. Each field names what the issue concerns; a field that does not apply is left out. The
+ * stop issues of E1 (`GtfsExportStopIssue`) are assignable to this type.
+ */
+export interface GtfsExportIssue {
+  code: GtfsExportIssueCode;
+  routeId?: EntityId;
+  routeName?: string;
+  patternId?: EntityId;
+  patternName?: string;
+  tripId?: EntityId;
+  stopId?: string;
+  stopName?: string;
+  serviceDayId?: EntityId;
+  serviceDayName?: string;
+  blockLabel?: string;
+  /** Only for `gtfsExport.stopIdConflict`: metres between this record and the first record of the same stop ID. */
+  distanceMeters?: number;
+}
+
+/** One file of the feed as text: LF line endings, no byte order mark (Decision 0090 item 4). */
+export interface GtfsExportFile {
+  name: string;
+  text: string;
+}
+
+/**
+ * One row of the report CSV (Decision 0090 item 21, and the plan's report: directions and map lines stated). A `serviceDay` row counts the
+ * trips of one Route on one service day; `pattern` gives a pattern's direction_id and shape_id; `note` states a rule or an id that was made
+ * unique.
+ */
+export type ExportReportRow =
+  | {
+      kind: 'serviceDay';
+      routeId: string;
+      routeName: string;
+      serviceId: string;
+      serviceDayName: string;
+      trips: number;
+      runningHours: number;
+      /** Dates of the export range on which the service day runs in the feed (calendar and calendar_dates together). */
+      datesInRange: number;
+      /** The Scenario's annual count for the service day, as this tool counts it (not used by the feed). */
+      scenarioAnnualServiceDays: number;
+    }
+  | { kind: 'pattern'; routeId: string; routeName: string; patternName: string; directionId: 0 | 1; shapeId?: string }
+  | { kind: 'note'; text: string };
+
+/** The feed builder's output. `files` is empty and `report` is empty when any refusal stands: nothing is written (Decision 0090 item 19). */
+export interface GtfsExportResult {
+  files: GtfsExportFile[];
+  report: ExportReportRow[];
+  refusals: GtfsExportIssue[];
+  warnings: GtfsExportIssue[];
 }
