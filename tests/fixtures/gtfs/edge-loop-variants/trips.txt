@@ -1,0 +1,6 @@
+route_id,service_id,trip_id,direction_id,shape_id
+L1,WK,L1_full_1,0,
+L1,WK,L1_full_2,0,
+L1,WK,L1_skip,0,
+L1,WK,L1_short,0,
+L1,WK,L1_freq,0,

@@ -12,6 +12,13 @@ Each entry lists the problem, the proposed approach, open choices, and the edge 
 | [Costing by service day across routes](#costing-by-service-day-across-routes) | Costing | Implemented 2026-11-12: Decision 0078 |
 | [Multi-route interlining](#multi-route-interlining) | Blocking, Costing | Proposed 2026-11-12; not needed for the current scenario |
 | [Year-varying service](#year-varying-service) | Scenario, Costing | Idea 2026-11-12; beyond current scope |
+| GTFS import | Project, Scenario, Route, Costing | Implemented 2026-11-22: Decision 0089, `docs/implementation/gtfs-import-closeout.md` |
+| GTFS export (phase E) | Scenario | Implemented 2026-11-22: Decision 0090, `docs/implementation/gtfs-export-closeout.md` |
+| GTFS export follow-ups | Scenario, Route | Proposed 2026-11-22: store the feed's full date range, website and time zone at import (better export defaults); "Open on Route tab" opens the Stops drawer; share the distance-share and formula-protection helpers instead of repeating them; compressed ZIP (needs a library, D12); per-Route calendars for own counts (G-E6 B); keep feed `trip_id`s (G-E8 C) |
+| GTFS import follow-ups | Route, Trips, Costing | Proposed 2026-11-22: custom service-day Delete and Day menu at 5+ days (card I9c); seed planned frequencies from `frequencies.txt`; holiday trips-and-hours difference (item 19); Costing speed on 100+ Routes (9 s on RTD); Route switcher search (M1); scope the Trips changed-runtime check to the Route |
+| Scenario comparison (phase V) | Costing, Scenario | Implemented 2026-11-23: Decision 0091, `docs/implementation/scenario-compare-closeout.md` |
+| Scenario comparison follow-ups | Costing, Scenario | Proposed 2026-11-23: match Routes by hand ("Match with…", G-V2 B); "Open on Trips/Costing tab" links in a route's detail; the "day count used" line; a phone picker sheet; a dark theme; refresh the cache on writes from other tabs without reopening the tab; check why the RTD import's feed blocks give "no blocks can be costed" |
+| Refresh a Route from a newer GTFS feed (import level D) | Route, Trips | Idea 2026-11-21; Decision 0089 item 1 |
 
 ---
 

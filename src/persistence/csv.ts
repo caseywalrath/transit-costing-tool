@@ -5,16 +5,11 @@ import type { EstimatedCostingCalculationResult } from '../domain/estimatedCosti
 import { formatServiceTime } from '../domain/time';
 import { UNATTRIBUTED_ROUTE_NAME } from '../domain/costSummary';
 import type { CostingRouteResult } from '../domain/routeCosting';
+import { neutralizeFormulaText } from '../domain/csvFormula';
 /** Quotes a field that contains a comma, a double quote, or a line break (LF, CR, or CRLF). Every CSV writer in the application uses this rule. */
 export function csvEscape(value: unknown): string { const s = String(value ?? ''); return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s; }
-
-/**
- * Spreadsheets run a cell that begins with `=`, `+`, `-`, or `@` as a formula. A free-text value that begins that way, or that
- * already begins with apostrophes before one of those characters, gets one more apostrophe in front (decision 5). `restoreFormulaText`
- * removes it again on import, so a value round-trips exactly. Identifiers, times, and numbers are never passed through this.
- */
-export function neutralizeFormulaText(text: string): string { return /^'*[=+\-@]/.test(text) ? `'${text}` : text; }
-export function restoreFormulaText(text: string): string { return /^'+[=+\-@]/.test(text) ? text.slice(1) : text; }
+// The formula protection lives in the domain (`src/domain/csvFormula.ts`) so the comparison rules can use it; it is re-exported here from its old place.
+export { neutralizeFormulaText, restoreFormulaText } from '../domain/csvFormula';
 
 /** `freeText` names the columns that hold user-entered text (names, labels, notes); only those are protected against formulas. Header cells are escaped like any other cell. */
 export function toCsv(headers: string[], rows: Array<object>, freeText: readonly string[] = []): string {
@@ -220,7 +215,8 @@ export function costingCsvFiles(
   const exclusionsContents = toCsv(exclusionHeaders, exclusionRows, ['scenarioName', 'blockingScenarioName', 'tripProfileName', 'serviceDayName', 'blockLabel']);
 
   // Decision 0077 item 4: one row per Route service day and one total row per Route, in the result's Route order (Unattributed last).
-  const routeHeaders = ['projectId', 'scenarioId', 'scenarioName', 'blockingScenarioId', 'blockingScenarioName', 'tripProfileId', 'tripProfileName', 'routeId', 'routeName', 'rowType', 'serviceDayId', 'serviceDayName', 'annualServiceDays', 'tripCount', 'blockCount', 'unassignedTripCount', 'runningHoursPerDay', 'revenueHoursPerDay', 'platformHoursPerDay', 'annualRevenueHours', 'annualPlatformHours', 'firstYear', 'firstYearAnnualCostUsd'];
+  // Decision 0089 item 41: `countSource` says whether a route-day's annual service days are the Scenario's count or the Route's own.
+  const routeHeaders = ['projectId', 'scenarioId', 'scenarioName', 'blockingScenarioId', 'blockingScenarioName', 'tripProfileId', 'tripProfileName', 'routeId', 'routeName', 'rowType', 'serviceDayId', 'serviceDayName', 'annualServiceDays', 'tripCount', 'blockCount', 'unassignedTripCount', 'runningHoursPerDay', 'revenueHoursPerDay', 'platformHoursPerDay', 'annualRevenueHours', 'annualPlatformHours', 'firstYear', 'firstYearAnnualCostUsd', 'countSource'];
   const firstYear = result.yearRows[0]?.serviceYear;
   const firstYearCostOf = (day: CostingRouteResult['days'][number]) => firstYear === undefined ? undefined : day.yearCosts.find((item) => item.serviceYear === firstYear)?.annualCostUsd;
   const routeResultRows: ResultRow[] = result.routeRows.flatMap((route) => {
@@ -230,7 +226,7 @@ export function costingCsvFiles(
       tripCount: day.tripCount, blockCount: day.blockCount, unassignedTripCount: day.unassignedTripCount,
       runningHoursPerDay: hours(day.runningHoursPerDay), revenueHoursPerDay: hours(day.revenueHoursPerDay), platformHoursPerDay: hours(day.platformHoursPerDay),
       annualRevenueHours: hours(day.annualRevenueHours), annualPlatformHours: hours(day.annualPlatformHours),
-      firstYear, firstYearAnnualCostUsd: usd(firstYearCostOf(day)),
+      firstYear, firstYearAnnualCostUsd: usd(firstYearCostOf(day)), countSource: day.countSource ?? 'scenario',
     }));
     // The total row sums its service-day rows; a column any day leaves blank is blank in the total (sumWhenKnown).
     const totalRow: ResultRow = {
@@ -245,6 +241,12 @@ export function costingCsvFiles(
     };
     return [...dayRows, totalRow];
   });
+
+  // Decision 0089 item 41: one note row names the Routes on their own annual service days (none on a Scenario-count result).
+  const routesOnOwnCounts = result.routeRows.filter((route) => route.routeId !== null && route.days.some((day) => day.countSource === 'route'));
+  if (routesOnOwnCounts.length > 0) {
+    routeResultRows.push({ rowType: 'note', ...context, routeName: `Routes on their own annual service days: ${routesOnOwnCounts.map((route) => route.routeName || 'Untitled route').join('; ')}` });
+  }
 
   return [
     { suffix: 'costing-assumptions', contents: assumptionsContents },

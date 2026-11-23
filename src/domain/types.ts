@@ -7,11 +7,19 @@ export type Miles = number;
 export type ServiceDayKind = 'weekday' | 'saturday' | 'sunday' | 'holiday' | 'custom';
 export interface EntityMetadata { createdAt: IsoTimestamp; updatedAt: IsoTimestamp; }
 export interface Project extends EntityMetadata { id: EntityId; name: string; description?: string; distanceUnit: 'miles'; currencyCode: string; }
-export interface Scenario extends EntityMetadata { id: EntityId; projectId: EntityId; name: string; description?: string; sourceScenarioId?: EntityId; }
+/** One import of a GTFS feed into a Scenario (Decision 0089 item 39). Kept so the planner can see where the Scenario's service came from. */
+export interface ScenarioImportNote { publisher: string; feedVersion?: string; fileName: string; datesByServiceDayId: Record<EntityId, string /* YYYY-MM-DD */>; routeCount: number; importedAt: string /* ISO */; }
+/** Decision 0090 item 16. A holiday names the service day that runs on its date (item 14). */
+export interface GtfsExportHoliday { date: string /* YYYY-MM-DD */; serviceDayId: EntityId; }
+/** Decision 0090 item 16. The GTFS export settings a Scenario remembers. Dates are YYYY-MM-DD; agency fields are optional until an export needs them. */
+export interface GtfsExportSettings { startDate: string; endDate: string; holidays: GtfsExportHoliday[]; agencyName?: string; agencyUrl?: string; agencyTimezone?: string; mapLines: 'straight' | 'none'; }
+export interface Scenario extends EntityMetadata { id: EntityId; projectId: EntityId; name: string; description?: string; sourceScenarioId?: EntityId; importNotes?: ScenarioImportNote[]; gtfsExportSettings?: GtfsExportSettings; }
 export interface TripProfile extends EntityMetadata { id: EntityId; scenarioId: EntityId; name: string; sourceTripProfileId?: EntityId; }
 export type NodeKind = 'timepoint' | 'terminal' | 'garage' | 'other';
 export interface ServiceDayDefinition extends EntityMetadata { id: EntityId; scenarioId: EntityId; kind: ServiceDayKind; name: string; annualServiceDays: number; sequence: number; /** Optional 1 to 3 character label for scope toggles (Decision 0059). When absent the label is derived, see `serviceDayAbbreviation`. */ abbreviation?: string; }
-export interface Route extends EntityMetadata { id: EntityId; scenarioId: EntityId; name: string; shortName?: string; description?: string; }
+/** A Route's own annual service-day counts, used in place of the Scenario's for that Route (Decision 0089 item 41). A day missing from the map uses the Scenario's count. */
+export interface RouteOwnAnnualServiceDays { enabled: boolean; countsByServiceDayId: Record<EntityId, number>; }
+export interface Route extends EntityMetadata { id: EntityId; scenarioId: EntityId; name: string; shortName?: string; description?: string; /** Decision 0089 item 38: the feed's route_id, the colour (six upper-case hex digits, no "#") and the GTFS route_type. Set only by a feed import. */ gtfsRouteId?: string; gtfsRouteType?: number; color?: string; ownAnnualServiceDays?: RouteOwnAnnualServiceDays; }
 export interface Node extends EntityMetadata { id: EntityId; scenarioId: EntityId; routeId: EntityId; name: string; shortName?: string; kind: NodeKind; notes?: string; }
 export interface PatternPoint { id: EntityId; nodeId: EntityId; sequence: number; cumulativeMiles: Miles; directionColumnId?: EntityId; }
 export interface RouteDirection extends EntityMetadata {
@@ -116,7 +124,7 @@ export interface ScheduledPoint { patternPointId: EntityId; sequence: number; ti
 export interface TripCalculationSource { runtimeProfileId: EntityId; runtimeCalculationRevision: number;
   /** Decision 0081 item 11 (FX7). `runtimeInputsSignature` of the profile when the Trip's times were calculated. Absent on older Trips, which keep the revision rule. */
   runtimeInputsSignature?: string; }
-export type TripCreationMethod = 'generated' | 'manual';
+export type TripCreationMethod = 'generated' | 'manual' | 'feed';
 export interface TripProvenance {
   kind: 'generated' | 'manual';
   /** Authoritative creation method for current and future trip records. */
@@ -218,7 +226,7 @@ export type RestorePointKind =
   | 'deleteProject' | 'deleteScenario' | 'deleteRoute' | 'deletePattern' | 'resetPatternService' | 'rebalancePattern' | 'deleteNodes'
   | 'deleteRuntimeProfile' | 'deleteTrips' | 'copyTripsFromDay' | 'deleteTripProfile' | 'unassignTrips' | 'moveTripsToBlock'
   | 'deleteBlockingScenario' | 'deleteBlocks' | 'copyBlocksFromDay' | 'rebuildAutoBlocks' | 'autoBlockUnassigned' | 'replaceBoundaryActivities'
-  | 'removeBlockActivity' | 'deleteDeadheads' | 'clearPlan' | 'copyPlanFromDay' | 'copyPlansFromScenario' | 'regenerateTrips' | 'changeTripStartTime' | 'changeTripPattern' | 'shiftTrips' | 'splitRouteStops' | 'deleteRouteStops' | 'mergeRouteStops' | 'restore';
+  | 'removeBlockActivity' | 'deleteDeadheads' | 'clearPlan' | 'copyPlanFromDay' | 'copyPlansFromScenario' | 'regenerateTrips' | 'changeTripStartTime' | 'changeTripPattern' | 'shiftTrips' | 'splitRouteStops' | 'deleteRouteStops' | 'mergeRouteStops' | 'importGtfsRoutes' | 'restore';
 /** Decision 0081. One collection of `ScenarioRecords`. `scenario` and `costingAssumptions` are single records, read as lists of 0 or 1. */
 export type RecordCollection = 'scenario' | 'serviceDays' | 'routes' | 'nodes' | 'patterns' | 'directions' | 'runtimeProfiles' | 'runtimeAssignments'
   | 'tripProfiles' | 'blockingScenarios' | 'costingAssumptions' | 'generationSets' | 'trips' | 'blocks' | 'plannedFrequencies' | 'routeStopSets';

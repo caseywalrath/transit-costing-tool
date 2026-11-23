@@ -6,11 +6,17 @@ import type { ResolvedRouteDayFactors } from './estimatedCosting';
  * `costing.ts` and `estimatedCosting.ts` can import it without a runtime cycle.
  */
 
+/** Decision 0089 item 41. Where a Route day's annual count came from: the Scenario's count, or the Route's own count for that day. */
+export type AnnualCountSource = 'scenario' | 'route';
+
 /** One service day of one Route. Fields are present on the basis that derives them. */
 export interface CostingRouteDayResult {
   serviceDayId: string;
   serviceDayName: string;
+  /** The count the annual figures of this row use (Decision 0089 item 41): the Route's own count when it applies, else the Scenario's. */
   annualServiceDays: number;
+  /** Blocked basis only (Decision 0089 item 41). The estimated basis always uses the Scenario's count and leaves this out. */
+  countSource?: AnnualCountSource;
   /** Estimated basis. */
   tripCount?: number;
   /** Estimated basis. */

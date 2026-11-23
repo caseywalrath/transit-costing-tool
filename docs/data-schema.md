@@ -57,6 +57,18 @@ interface Scenario extends EntityMetadata {
   name: string;
   description?: string;
   sourceScenarioId?: EntityId;
+  importNotes?: ScenarioImportNote[]; // Decision 0089 item 39
+  gtfsExportSettings?: GtfsExportSettings; // Decision 0090 item 16; dates YYYY-MM-DD, holidays name service days of this Scenario
+}
+
+// One import of a GTFS feed into the Scenario. Dates are YYYY-MM-DD, keyed by service day.
+interface ScenarioImportNote {
+  publisher: string;
+  feedVersion?: string;
+  fileName: string;
+  datesByServiceDayId: Record<EntityId, string>;
+  routeCount: number;
+  importedAt: string; // ISO timestamp
 }
 
 ```
@@ -91,6 +103,16 @@ interface Route extends EntityMetadata {
   name: string;
   shortName?: string;
   description?: string;
+  gtfsRouteId?: string; // Decision 0089 item 38: the feed's route_id
+  gtfsRouteType?: number; // the feed's route_type
+  color?: string; // six upper-case hexadecimal digits, no "#"; shown as the Route's identity dot only
+  ownAnnualServiceDays?: RouteOwnAnnualServiceDays; // Decision 0089 item 41
+}
+
+// The Route's own counts replace the Scenario's for that Route while enabled. A service day missing from the map uses the Scenario's count.
+interface RouteOwnAnnualServiceDays {
+  enabled: boolean;
+  countsByServiceDayId: Record<EntityId, number>; // whole numbers of 0 or more; the Route's counts total at most 365
 }
 
 type NodeKind = "timepoint" | "terminal" | "garage" | "other";
@@ -286,7 +308,7 @@ interface ScheduledPoint {
 
 interface TripProvenance {
   kind: "generated" | "manual";
-  creationMethod?: "generated" | "manual";
+  creationMethod?: "generated" | "manual" | "feed";
   generationSetId?: EntityId;
   generationRevision?: number;
   generationSequence?: number;
@@ -632,7 +654,11 @@ Import must validate the complete payload before opening a write transaction. ID
 
 Version 10 adds the optional top-level `plannedFrequencies` array (Decision 0058); the key is omitted when a project has no plans, so such a file differs from version 9 only by its version number. Versions 1 to 9 stay readable and import with no plans.
 
-Version 16 (current, Decisions 0085 and 0086) adds the optional stop `latitude`, `longitude` and `speedLimitMph`, the optional `timepointLocationsByPatternId` and `interpolation` on each stop set, and accepts `roundingSeconds` 1. Import refuses a malformed location (an incomplete pair, a value out of range, or a location on a point not of its pattern). Versions 1 to 15 stay readable and import with no locations and equal spacing. The Dexie schema stays at version 15.
+Version 18 (current, Decision 0090 item 16) adds the optional `gtfsExportSettings` on a Scenario: `startDate` and `endDate` (`YYYY-MM-DD`; the end is not before the start), `holidays` (each a `date` inside that range and a `serviceDayId` of the Scenario), `mapLines` (`straight` or `none`), and the optional text fields `agencyName`, `agencyUrl` and `agencyTimezone`. Import checks each field that is present and names it in its message (for example `Invalid project backup: scenarios[0].gtfsExportSettings.holidays[0].date must fall inside the export range`). Dates are checked against the calendar, so `2026-02-30` is refused. Import as copy and Scenario duplication carry each holiday to the copy's service day and drop a holiday whose day has no copy. Deleting a service day removes its holidays (`removeServiceDayFromFeedFields`). A blank agency name, URL or time zone is accepted by the backup; the GTFS export refuses it (Decision 0090 item 19). Versions 1 to 17 stay readable and import with none of the settings. The Dexie schema stays at version 15: no store or index changes.
+
+Version 17 (Decision 0089 items 38 to 42) adds the optional `importNotes` array on a Scenario, the optional `gtfsRouteId`, `gtfsRouteType`, `color` and `ownAnnualServiceDays` on a Route, and accepts `provenance.creationMethod` `"feed"` on a Trip. Import checks each field that is present and names the field in its message (for example `Invalid project backup: routes[3].color must be six upper-case hexadecimal digits`). A Route's own counts must name only service days of its Scenario, be whole numbers of 0 or more, and total at most 365. An import note's dates must name only service days of its Scenario and read `YYYY-MM-DD`. Import as copy and Scenario duplication remap the service-day keys of both; Route duplication copies them unchanged. Deleting a service day removes its key from the Routes and import notes of its Scenario (`removeServiceDayFromFeedFields` in `src/domain/project.ts`); no screen deletes a service day yet (backlog: custom service day delete). Versions 1 to 16 stay readable and import with none of the new fields. The Dexie schema stays at version 15: no store or index changes.
+
+Version 16 (Decisions 0085 and 0086) adds the optional stop `latitude`, `longitude` and `speedLimitMph`, the optional `timepointLocationsByPatternId` and `interpolation` on each stop set, and accepts `roundingSeconds` 1. Import refuses a malformed location (an incomplete pair, a value out of range, or a location on a point not of its pattern). Versions 1 to 15 stay readable and import with no locations and equal spacing. The Dexie schema stays at version 15.
 
 Version 14 (Decision 0080) adds the optional `timepointStopCodesByPatternId` to each stop set and no longer writes `Node.stopCode`. Import checks that each value is a non-blank string of a point of its pattern. A version 13 file's `Node.stopCode` is moved onto every point of its Route's patterns that stands on that Node (a point that already has a stop ID keeps it), and a Route without a stop set gets one.
 

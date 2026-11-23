@@ -143,13 +143,67 @@ describe('CSV serializers', () => {
       const file = costingCsvFiles(scenario, { kind: 'estimated', tripProfile: profile }, assumptions, routed)[3];
       expect(file.suffix).toBe('costing-routes');
       const rows = file.contents.trim().split('\r\n');
-      expect(rows[0]).toBe('projectId,scenarioId,scenarioName,blockingScenarioId,blockingScenarioName,tripProfileId,tripProfileName,routeId,routeName,rowType,serviceDayId,serviceDayName,annualServiceDays,tripCount,blockCount,unassignedTripCount,runningHoursPerDay,revenueHoursPerDay,platformHoursPerDay,annualRevenueHours,annualPlatformHours,firstYear,firstYearAnnualCostUsd');
+      expect(rows[0]).toBe('projectId,scenarioId,scenarioName,blockingScenarioId,blockingScenarioName,tripProfileId,tripProfileName,routeId,routeName,rowType,serviceDayId,serviceDayName,annualServiceDays,tripCount,blockCount,unassignedTripCount,runningHoursPerDay,revenueHoursPerDay,platformHoursPerDay,annualRevenueHours,annualPlatformHours,firstYear,firstYearAnnualCostUsd,countSource');
       expect(rows).toHaveLength(7);
       expect(rows.filter((row) => row.includes(',routeTotal,'))).toHaveLength(2);
       expect(rows[1]).toContain(',a,"Alpha, East",routeDay,weekday,Weekday,255,4,,,8.0000,10.0000,12.5000,2550.0000,3187.5000,2026,255000.00');
       expect(rows[3]).toContain(',a,"Alpha, East",routeTotal,,,307,5,,,,,,2680.0000,3317.5000,2026,268000.00');
       // The Unattributed row has an empty routeId and the label as its name.
       expect(rows[6]).toContain('Alt B,,Unattributed (multi-route blocks),routeTotal,,,307,1,');
+    });
+
+    it('writes the count source of each Route day, and one note naming the Routes on their own annual service days (Decision 0089 item 41)', () => {
+      const scenario = { id: 'scenario', projectId: 'project', name: 'Proposed', ...metadata() };
+      const profile = { id: 'profile', scenarioId: scenario.id, name: 'Weekday', ...metadata() };
+      const blockingScenario = { id: 'blocking', scenarioId: scenario.id, tripProfileId: profile.id, name: 'Plan', ...metadata() };
+      const assumptions: CostingAssumptionsInput = { enteredRate: 100, rateYear: 2026, sourceType: 'user', baseServiceYear: 2026, futureYearCount: 0, annualEscalation: 0.03 };
+      const routeDay = (annualServiceDays: number, countSource: 'route' | 'scenario'): CostingCalculationResult['routeRows'][number]['days'][number] => ({
+        serviceDayId: 'weekday', serviceDayName: 'Weekday', annualServiceDays, countSource, blockCount: 1, tripCount: 1, runningHoursPerDay: 1,
+        unassignedTripCount: 0, revenueHoursPerDay: 1, platformHoursPerDay: 2, annualRevenueHours: annualServiceDays, annualPlatformHours: 2 * annualServiceDays,
+        yearCosts: [{ serviceYear: 2026, costPerDayUsd: 100, annualCostUsd: 100 * annualServiceDays }],
+      });
+      const result: CostingCalculationResult = {
+        basis: 'blocked', state: 'complete', sourceRate: 100, sourceRateYear: 2026, annualEscalation: 0.03, eligibleBlockCount: 2, excludedBlockCount: 0, unassignedTripCount: 0,
+        findings: [], exclusions: [], dailyRows: [],
+        yearRows: [{ serviceYear: 2026, appliedRateUsdPerRevenueHour: 100, annualRevenueHours: 317, annualPlatformHours: 634, annualCostUsd: 31_700 }],
+        routeRows: [
+          { routeId: 'alpha', routeName: 'Alpha', days: [routeDay(62, 'route')] },
+          { routeId: 'beta', routeName: 'Beta', days: [routeDay(255, 'scenario')] },
+        ],
+      };
+      const rows = costingCsvFiles(scenario, { kind: 'blocked', blockingScenario, tripProfile: profile }, assumptions, result)[3].contents.trim().split('\r\n');
+      expect(rows[0]).toMatch(/,firstYearAnnualCostUsd,countSource$/);
+      expect(rows[1]).toContain(',Alpha,routeDay,');
+      expect(rows[1].endsWith(',route')).toBe(true);
+      expect(rows[2].endsWith(',')).toBe(true);
+      expect(rows[3].endsWith(',scenario')).toBe(true);
+      expect(rows).toHaveLength(6);
+      expect(rows[5]).toContain('note');
+      expect(rows[5]).toContain('Routes on their own annual service days: Alpha');
+    });
+
+    it('writes the real count source of each estimated Route day (Decision 0089 item 41)', () => {
+      const scenario = { id: 'scenario', projectId: 'project', name: 'Alt', ...metadata() };
+      const profile = { id: 'profile', scenarioId: scenario.id, name: 'Alt B', ...metadata() };
+      const assumptions: CostingAssumptionsInput = { enteredRate: 100, rateYear: 2026, sourceType: 'user', baseServiceYear: 2026, futureYearCount: 0, annualEscalation: 0.03 };
+      const day = (annualServiceDays: number, countSource: 'route' | 'scenario') => ({
+        serviceDayId: 'weekday', serviceDayName: 'Weekday', annualServiceDays, countSource, tripCount: 1, runningHoursPerDay: 8, revenueHoursPerDay: 10, platformHoursPerDay: 12.5,
+        annualRevenueHours: 10 * annualServiceDays, annualPlatformHours: 12.5 * annualServiceDays, yearCosts: [{ serviceYear: 2026, costPerDayUsd: 1000, annualCostUsd: 1000 * annualServiceDays }],
+      });
+      const result: EstimatedCostingCalculationResult = {
+        basis: 'estimated', tripProfileId: profile.id, state: 'complete', sourceRate: 100, sourceRateYear: 2026, annualEscalation: 0.03, tripCount: 1, tripsWithoutRunTimeCount: 0,
+        findings: [], dailyRows: [],
+        yearRows: [{ serviceYear: 2026, appliedRateUsdPerRevenueHour: 100, annualRunningHours: 2040, annualRevenueHours: 3000, annualPlatformHours: 3750, annualCostUsd: 300_000 }],
+        routeRows: [
+          { routeId: 'a', routeName: 'Alpha', days: [day(62, 'route')] },
+          { routeId: 'b', routeName: 'Beta', days: [day(255, 'scenario')] },
+        ],
+      };
+      const rows = costingCsvFiles(scenario, { kind: 'estimated', tripProfile: profile }, assumptions, result)[3].contents.trim().split('\r\n');
+      expect(rows[0].endsWith(',countSource')).toBe(true);
+      expect(rows[1].endsWith(',route')).toBe(true);
+      expect(rows[3].endsWith(',scenario')).toBe(true);
+      expect(rows[5]).toContain('Routes on their own annual service days: Alpha');
     });
   });
 

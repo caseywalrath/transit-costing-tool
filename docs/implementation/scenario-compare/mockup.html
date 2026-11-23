@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Scenario Compare Tab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap">
+<style>
+/* Review sheet for package V3 (Compare tab). Styles copied from the E3 sheet; app tokens from src/ui/styles/tokens.css. Figures are illustrative, shaped like the RTD import (130 Routes). */
+:root {
+  --bg: #e7ecef; --ink: #17212b; --muted: #536574; --line: #cfd8de;
+  --mark: #c2561a; --mark-ink: #fff; --mark-soft: #fbeee6;
+  /* app tokens */
+  --canvas: #eef2f4; --surface: #fff; --surface-2: #f6f8f9; --sunken: #edf1f3; --border: #d2dbe0; --border-soft: #e4e9ec;
+  --text: #17212b; --text-muted: #536574; --text-subtle: #62707b; --accent: #1b668d; --accent-soft: #e4eff5; --selection: #e9f2f8;
+  --warn: #7f520f; --warn-soft: #fdf3df; --warn-border: #e2c07a; --danger: #a3342b; --ok: #2c6a3a; --ok-soft: #e6f2e8; --scrim: rgb(17 35 45 / 50%);
+  --font: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.45; }
+.page { max-width: 1400px; margin: 0 auto; padding: 28px 16px 64px; display: grid; gap: 44px; }
+.intro { display: grid; gap: 10px; max-width: 82ch; }
+.intro h1 { margin: 0; font-size: 28px; }
+.intro p { margin: 0; color: var(--muted); }
+.legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; color: var(--muted); }
+.dot { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--mark); color: var(--mark-ink); font-size: 12px; font-weight: 700; font-style: normal; flex: none; vertical-align: middle; }
+.screen { display: grid; gap: 14px; }
+.screen-head .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+.screen-head h2 { margin: 2px 0 4px; font-size: 21px; }
+.screen-head p { margin: 0; color: var(--muted); max-width: 90ch; }
+.frame-scroll { overflow-x: auto; border-radius: 10px; border: 1px solid var(--line); box-shadow: 0 10px 30px rgb(10 20 30 / 12%); }
+.frame { min-width: 1180px; background: var(--scrim); padding: 28px; display: grid; place-items: center; }
+.frame.plain { background: var(--canvas); place-items: start; }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px 28px; margin: 0; padding: 0; list-style: none; }
+.notes li { display: grid; grid-template-columns: 20px 1fr; gap: 10px; }
+.notes p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+.ask { background: var(--mark-soft); border: 1px solid var(--mark); border-radius: 8px; padding: 10px 14px; font-size: 14px; }
+.ask b { color: var(--mark); }
+
+/* app-like pieces */
+.dlg { width: 1080px; background: var(--surface); border: 1px solid var(--text-subtle); box-shadow: 0 12px 32px rgb(10 20 30 / 25%); color: var(--text); font-size: 14px; }
+.dlg-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px 0; cursor: move; }
+.dlg-head h3 { margin: 0; font-size: 16px; }
+.dlg-head .target { color: var(--text-muted); font-size: 13px; }
+.steps { display: flex; gap: 4px; padding: 12px 18px; border-bottom: 1px solid var(--border-soft); }
+.steps span { padding: 4px 10px; border-radius: 3px; font-size: 13px; color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--border-soft); }
+.steps span.on { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+.steps span.done { color: var(--ok); }
+.body { padding: 16px 18px; display: grid; gap: 14px; max-height: 620px; overflow: hidden; }
+.foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border-soft); background: var(--surface-2); }
+.foot .status { color: var(--text-muted); font-size: 13px; }
+.btns { display: flex; gap: 8px; }
+.btn { font: inherit; font-size: 14px; padding: 6px 14px; border: 1px solid var(--border); background: var(--surface); border-radius: 3px; color: var(--text); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.btn.sm { font-size: 13px; padding: 3px 9px; }
+.btn.link { border: none; background: none; color: var(--accent); padding: 0; }
+.field { display: grid; gap: 5px; color: var(--text-muted); font-size: 12px; font-weight: 700; }
+.field input, .field select, input.inp, select.inp { font: inherit; font-size: 14px; font-weight: 400; color: var(--text); padding: 5px 8px; border: 1px solid var(--border); border-radius: 3px; background: var(--surface); }
+.row { display: flex; gap: 14px; align-items: end; flex-wrap: wrap; }
+.panel { border: 1px solid var(--border); background: var(--surface); }
+.panel-h { padding: 8px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border-soft); font-weight: 700; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.panel-h small { font-weight: 400; color: var(--text-muted); font-size: 13px; }
+.kv { display: grid; grid-template-columns: 170px 1fr; gap: 6px 14px; padding: 12px; }
+.kv dt { color: var(--text-muted); font-size: 13px; }
+.kv dd { margin: 0; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th { text-align: left; font-size: 12px; color: var(--text-muted); background: var(--surface-2); padding: 6px 10px; border-bottom: 1px solid var(--border); font-weight: 700; }
+td { padding: 5px 10px; border-bottom: 1px solid var(--border-soft); }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+tr.sel td { background: var(--selection); }
+.chip { display: inline-block; padding: 0 7px; border-radius: 9px; font-size: 12px; border: 1px solid var(--border); background: var(--sunken); color: var(--text-muted); }
+.chip.warn { background: var(--warn-soft); border-color: var(--warn-border); color: var(--warn); }
+.chip.ok { background: var(--ok-soft); border-color: #b9d8bf; color: var(--ok); }
+.chip.feed { background: #edf5f8; border-color: #c4d7df; color: #315865; }
+.idot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; margin-right: 6px; }
+.note { color: var(--text-muted); font-size: 13px; }
+.warnline { background: var(--warn-soft); border: 1px solid var(--warn-border); color: var(--warn); padding: 7px 10px; font-size: 13px; }
+details.sec { border: 1px solid var(--border); background: var(--surface); }
+details.sec > summary { padding: 8px 12px; background: var(--surface-2); cursor: pointer; font-weight: 700; display: flex; gap: 10px; align-items: center; }
+details.sec > summary .note { font-weight: 400; }
+details.sec .in { padding: 10px 12px; display: grid; gap: 8px; }
+.cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.cols3 { display: grid; grid-template-columns: 300px 1fr; gap: 14px; }
+.mk { position: relative; }
+.mk > .dot { position: absolute; top: -9px; left: -9px; z-index: 2; }
+.newbox { outline: 2px dashed var(--mark); outline-offset: 3px; }
+/* Compare tab pieces */
+.app { width: 1180px; background: var(--canvas); color: var(--text); font-size: 14px; border: 1px solid var(--border); }
+.tabs { display: flex; gap: 2px; padding: 8px 14px 0; background: var(--surface); border-bottom: 1px solid var(--border); }
+.tabs span { padding: 7px 16px; color: var(--text-muted); border: 1px solid transparent; border-bottom: none; }
+.tabs span.on { background: var(--canvas); border-color: var(--border); color: var(--text); font-weight: 700; margin-bottom: -1px; }
+.ws { padding: 14px; display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+.sides { display: grid; grid-template-columns: 1fr 34px 1fr; gap: 10px; align-items: stretch; }
+.side { background: var(--surface); border: 1px solid var(--border); padding: 10px 12px; display: grid; gap: 8px; }
+.side h4 { margin: 0; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+.side.b h4::before { content: ''; display: inline-block; width: 9px; height: 9px; background: #8a99a4; margin-right: 6px; }
+.side.p h4::before { content: ''; display: inline-block; width: 9px; height: 9px; background: var(--accent); margin-right: 6px; }
+.swap { display: grid; place-items: center; }
+.swap .btn { padding: 4px 7px; }
+.bar-row { display: flex; justify-content: space-between; align-items: end; gap: 14px; flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+.seg span { padding: 5px 12px; background: var(--surface); border-right: 1px solid var(--border); }
+.seg span:last-child { border-right: none; }
+.seg span.on { background: var(--accent); color: #fff; font-weight: 600; }
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.tile { background: var(--surface); border: 1px solid var(--border); padding: 10px 12px; display: grid; gap: 2px; }
+.tile .k { font-size: 12px; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.tile .v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tile .v .arr { color: var(--text-subtle); font-weight: 400; padding: 0 4px; }
+.tile .d { font-variant-numeric: tabular-nums; font-size: 14px; }
+.up { color: var(--accent); font-weight: 600; }
+.down { color: #8a4b1f; font-weight: 600; }
+.same { color: var(--text-subtle); }
+.tablebox { background: var(--surface); border: 1px solid var(--border); }
+.tools { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--border-soft); flex-wrap: wrap; }
+.tools .sp { flex: 1; }
+td .from { color: var(--text-subtle); }
+.cbar { display: inline-block; height: 9px; vertical-align: middle; margin: 0 6px; }
+.cbar.up { background: var(--accent); }
+.cbar.down { background: #c98a5c; }
+.cbar-cell { display: flex; align-items: center; justify-content: flex-end; gap: 0; }
+.cbar-track { width: 90px; display: flex; }
+.cbar-track.neg { justify-content: flex-end; }
+.st { font-size: 12px; padding: 0 7px; border-radius: 9px; border: 1px solid var(--border); }
+.st.chg { background: var(--accent-soft); border-color: #b8d3e2; color: var(--accent); }
+.st.new { background: var(--ok-soft); border-color: #b9d8bf; color: var(--ok); }
+.st.gone { background: #f8ece4; border-color: #e3c2ab; color: #8a4b1f; }
+.st.un { background: var(--sunken); color: var(--text-muted); }
+tr.fold td { color: var(--text-muted); background: var(--surface-2); }
+tr.open td { background: var(--selection); font-weight: 600; }
+.detail td { background: var(--surface-2); padding: 12px 16px; }
+.dgrid { display: grid; grid-template-columns: 1fr 1.6fr; gap: 18px; }
+.hw th, .hw td { text-align: center; }
+.hw td.c { font-weight: 700; color: var(--accent); }
+.foot-note { padding: 7px 10px; color: var(--text-muted); font-size: 13px; }
+.prog { display: grid; gap: 4px; }
+.prog .track { height: 6px; background: var(--sunken); border-radius: 3px; overflow: hidden; }
+.prog .track i { display: block; height: 100%; background: var(--accent); }
+.skel { display: inline-block; width: 70px; height: 12px; border-radius: 3px; background: var(--sunken); vertical-align: middle; }
+pre.csv { margin: 0; background: var(--surface); border: 1px solid var(--border); padding: 12px; font-size: 12.5px; overflow-x: auto; line-height: 1.5; }
+.phone { width: 390px; background: var(--canvas); border: 1px solid var(--border); font-size: 14px; }
+.phone .ws { padding: 12px 16px; }
+.phone .sides { grid-template-columns: 1fr; }
+.phone .tiles { grid-template-columns: 1fr 1fr; }
+.phone .tile .v { font-size: 16px; }
+.phone .seg span { padding: 5px 8px; }
+.frame.plain.center { place-items: center; }
+</style></head><body>
+<div class="page">
+<div class="intro">
+<h1>Scenario comparison: Compare tab mock-up</h1>
+<p>Package V3 of the phase V plan (<code>docs/implementation/scenario-compare-phase-v.md</code>). Rules are in Part 3 of the plan and will become Decision 0091. The numbered markers on each frame match the notes below it. The figures are made up, but shaped like the RTD import compared with an edited copy that adds Federal BRT and 99X, cuts 3L, and adds frequency on 15, 52 and 0.</p>
+<div class="legend"><span><i class="dot">1</i> numbered note</span><span><span class="st chg">Changed</span> <span class="st new">New</span> <span class="st gone">Discontinued</span> <span class="st un">Unchanged</span></span><span><span class="up">blue</span> = more service, <span class="down">brown</span> = less (not good or bad)</span></div>
+</div>
+
+<!-- FRAME 1 -->
+<section class="screen">
+<div class="screen-head"><div class="eyebrow">Frame 1</div><h2>Weekday comparison</h2><p>The tab as it opens, with the sides remembered from last time. Both sides use the baseline's rates and counts, so no warning line shows.</p></div>
+<div class="frame-scroll"><div class="frame plain">
+<div class="app">
+<div class="tabs"><span>Route</span><span>Trips</span><span>Blocking</span><span>Costing</span><span class="on mk"><i class="dot">1</i>Compare</span></div>
+<div class="ws">
+<div class="sides mk"><i class="dot">2</i>
+ <div class="side b"><h4>Baseline</h4><div class="row">
+  <label class="field">Scenario<select class="inp"><option>RTD Nov 2026 (imported)</option></select></label>
+  <label class="field">Trip profile<select class="inp"><option>Base</option></select></label>
+  <label class="field">Blocking scenario<select class="inp"><option>From feed</option></select></label></div></div>
+ <div class="swap"><button class="btn" title="Swap sides">⇄</button></div>
+ <div class="side p"><h4>Proposed</h4><div class="row">
+  <label class="field">Scenario<select class="inp"><option>Network Redesign v2</option></select></label>
+  <label class="field">Trip profile<select class="inp"><option>Base</option></select></label>
+  <label class="field">Blocking scenario<select class="inp"><option>Draft blocks</option></select></label></div></div>
+</div>
+<div class="bar-row">
+ <div class="mk"><i class="dot">3</i><span class="seg"><span class="on">Weekday</span><span>Saturday</span><span>Sunday</span><span>Annual</span></span></div>
+ <div class="row mk"><i class="dot">4</i>
+  <label class="field">Rates<select class="inp"><option>Baseline's ($165.20/hr)</option></select></label>
+  <label class="field">Day counts<select class="inp"><option>Baseline's</option></select></label></div>
+</div>
+<div class="tiles mk"><i class="dot">5</i>
+ <div class="tile"><span class="k">Trips</span><span class="v">9,412<span class="arr">→</span>9,705</span><span class="d up">+293 · +3.1%</span></div>
+ <div class="tile"><span class="k">Revenue hours</span><span class="v">6,118.4<span class="arr">→</span>6,301.9</span><span class="d up">+183.5 · +3.0%</span></div>
+ <div class="tile"><span class="k">Peak vehicles</span><span class="v">812<span class="arr">→</span>826</span><span class="d up">+14 · +1.7%</span></div>
+ <div class="tile"><span class="k">Weekday cost, per year</span><span class="v">$253.7M<span class="arr">→</span>$261.3M</span><span class="d up">+$7.6M · +3.0%</span></div>
+</div>
+<div class="tablebox">
+ <div class="tools mk"><i class="dot">6</i>
+  <label class="field">Show<select class="inp"><option>All routes</option><option>Changed</option><option>New</option><option>Discontinued</option><option>Unchanged</option></select></label>
+  <label class="field">Sort<select class="inp"><option>Largest hours change</option><option>Route order</option></select></label>
+  <label class="field">Find<input class="inp" placeholder="Route name or number"></label>
+  <span class="sp"></span><button class="btn">Download CSV</button>
+ </div>
+ <table>
+ <thead><tr><th>Route</th><th>Status</th><th class="n">Trips</th><th class="n">Δ</th><th class="n">Revenue hours</th><th class="n mk"><i class="dot">7</i>Δ hours</th><th class="n">Peak vehicles</th><th class="n">Δ cost / yr</th></tr></thead>
+ <tbody>
+ <tr><td>▸ FBRT Federal BRT</td><td><span class="st new">New</span></td><td class="n"><span class="from">—</span> → 220</td><td class="n up">+220</td><td class="n"><span class="from">—</span> → 132.0</td><td class="n"><span class="cbar-cell"><span class="cbar-track"><i class="cbar up" style="width:90px"></i></span><span class="up">+132.0</span></span></td><td class="n"><span class="from">—</span> → 10</td><td class="n up">+$5.47M</td></tr>
+ <tr><td>▸ 99X Airport Express</td><td><span class="st new">New</span></td><td class="n"><span class="from">—</span> → 40</td><td class="n up">+40</td><td class="n"><span class="from">—</span> → 48.0</td><td class="n"><span class="cbar-cell"><span class="cbar-track"><i class="cbar up" style="width:33px"></i></span><span class="up">+48.0</span></span></td><td class="n"><span class="from">—</span> → 6</td><td class="n up">+$1.99M</td></tr>
+ <tr><td>▸ 3L Alameda Limited</td><td><span class="st gone">Discontinued</span></td><td class="n">56 → <span class="from">—</span></td><td class="n down">−56</td><td class="n">41.2 → <span class="from">—</span></td><td class="n"><span class="cbar-cell"><span class="cbar-track neg"><i class="cbar down" style="width:28px"></i></span><span class="down">−41.2</span></span></td><td class="n">4 → <span class="from">—</span></td><td class="n down">−$1.71M</td></tr>
+ <tr><td>▸ 15 East Colfax</td><td><span class="st chg">Changed</span></td><td class="n">236 → 272</td><td class="n up">+36</td><td class="n">182.6 → 205.1</td><td class="n"><span class="cbar-cell"><span class="cbar-track"><i class="cbar up" style="width:15px"></i></span><span class="up">+22.5</span></span></td><td class="n">19 → 22</td><td class="n up">+$0.93M</td></tr>
+ <tr><td>▸ 52 52nd Avenue</td><td><span class="st chg">Changed</span></td><td class="n">104 → 145</td><td class="n up">+41</td><td class="n">71.8 → 86.7</td><td class="n"><span class="cbar-cell"><span class="cbar-track"><i class="cbar up" style="width:10px"></i></span><span class="up">+14.9</span></span></td><td class="n">7 → 8</td><td class="n up">+$0.62M</td></tr>
+ <tr><td>▸ 0 South Broadway</td><td><span class="st chg">Changed</span></td><td class="n">168 → 180</td><td class="n up">+12</td><td class="n">121.3 → 128.6</td><td class="n"><span class="cbar-cell"><span class="cbar-track"><i class="cbar up" style="width:5px"></i></span><span class="up">+7.3</span></span></td><td class="n">13 → 14</td><td class="n up">+$0.30M</td></tr>
+ <tr class="mk"><td>▸ Unattributed (multi-route blocks) <i class="dot">8</i></td><td><span class="st un">Unchanged</span></td><td class="n">88 → 88</td><td class="n same">0</td><td class="n">64.2 → 64.2</td><td class="n same">0.0</td><td class="n">5 → 5</td><td class="n same">$0</td></tr>
+ <tr class="fold mk"><td colspan="8">▸ 125 unchanged routes <i class="dot">9</i> <span class="note">· 8,760 trips · 5,644.5 revenue hours</span></td></tr>
+ </tbody></table>
+ <div class="foot-note">Peak vehicles: the system peak (826) is lower than the sum of the routes, because routes peak at different times.</div>
+</div>
+</div></div>
+</div></div>
+<ol class="notes">
+<li><i class="dot">1</i><div><b>Fifth tab</b><p>It covers the whole Project, so it ignores the selected Route (G-V9). The page title reads "Compare — RTD Nov 2026 vs Network Redesign v2".</p></div></li>
+<li><i class="dot">2</i><div><b>Two sides</b><p>Each side is a Scenario, a Trip profile and a Blocking scenario (G-V1). The Blocking scenario defaults to the one Costing uses. ⇄ swaps the sides, and the signs flip.</p></div></li>
+<li><i class="dot">3</i><div><b>Day</b><p>One switch for both sides. Custom days (for example "Holiday 2") appear here when either side has them. A day only one side has shows "—" on the other.</p></div></li>
+<li><i class="dot">4</i><div><b>Rates and counts</b><p>Both default to the baseline's (G-V3, G-V4). The options are "Baseline's", "Proposed's" and "Each side's own". The rate shown is the first service year's.</p></div></li>
+<li><i class="dot">5</i><div><b>Totals</b><p>Each tile shows baseline → proposed, with the change and percent underneath. Cost is for the chosen day over a year (daily hours × that day's annual count × rate).</p></div></li>
+<li><i class="dot">6</i><div><b>Table tools</b><p>Filter by status, sort, and find. Download CSV writes every route for the chosen day, including unchanged ones (Frame 4).</p></div></li>
+<li><i class="dot">7</i><div><b>Change bar</b><p>The bar's length is the size of the hours change, scaled to the largest row (mock-up question A).</p></div></li>
+<li><i class="dot">8</i><div><b>Unattributed</b><p>Blocks that serve several routes, as in Costing. The row is always listed so the totals add up.</p></div></li>
+<li><i class="dot">9</i><div><b>Unchanged routes folded</b><p>Clicking the row opens the list (mock-up question B). Its totals are shown, so you can check them.</p></div></li>
+</ol>
+<div class="ask"><b>Questions A–C:</b> A. Keep the change bar? B. Fold unchanged routes? C. Sort by the largest hours change by default? Each is recommended yes.</div>
+</section>
+
+<!-- FRAME 2 -->
+<section class="screen">
+<div class="screen-head"><div class="eyebrow">Frame 2</div><h2>A route opened</h2><p>Clicking a row opens its detail in place; one route is open at a time. Cells that differ are bold blue.</p></div>
+<div class="frame-scroll"><div class="frame plain">
+<div class="app"><div class="ws">
+<div class="tablebox"><table>
+<thead><tr><th>Route</th><th>Status</th><th class="n">Trips</th><th class="n">Δ</th><th class="n">Revenue hours</th><th class="n">Δ hours</th><th class="n">Peak vehicles</th><th class="n">Δ cost / yr</th></tr></thead>
+<tbody>
+<tr class="open"><td>▾ 15 East Colfax</td><td><span class="st chg">Changed</span></td><td class="n">236 → 272</td><td class="n up">+36</td><td class="n">182.6 → 205.1</td><td class="n up">+22.5</td><td class="n">19 → 22</td><td class="n up">+$0.93M</td></tr>
+<tr class="detail"><td colspan="8"><div class="dgrid">
+ <div class="mk"><i class="dot">1</i><table>
+  <thead><tr><th></th><th class="n">Baseline</th><th class="n">Proposed</th><th class="n">Change</th></tr></thead>
+  <tbody>
+  <tr><td>Span, East (Outbound)</td><td class="n">4:52a–1:10a</td><td class="n"><b class="up">4:40a</b>–<b class="up">1:40a</b></td><td class="n up">+0:42</td></tr>
+  <tr><td>Span, West (Inbound)</td><td class="n">5:05a–12:55a</td><td class="n">5:05a–12:55a</td><td class="n same">0:00</td></tr>
+  <tr><td>Revenue miles</td><td class="n">2,940.6</td><td class="n">3,310.2</td><td class="n up">+369.6</td></tr>
+  <tr><td>Platform hours</td><td class="n">201.4</td><td class="n">226.0</td><td class="n up">+24.6</td></tr>
+  <tr><td>Day count used</td><td class="n" colspan="3">Weekday 251 (baseline's)</td></tr>
+  </tbody></table></div>
+ <div class="mk"><i class="dot">2</i><table class="hw">
+  <thead><tr><th style="text-align:left">Headway (min)</th><th>Early<br><small>&lt; 6:00</small></th><th>AM peak<br><small>6–9</small></th><th>Midday<br><small>9–15</small></th><th>PM peak<br><small>15–18</small></th><th>Evening<br><small>18–21</small></th><th>Night<br><small>21 +</small></th></tr></thead>
+  <tbody>
+  <tr><td style="text-align:left">East</td><td>20</td><td class="c">10 → 7½</td><td class="c">15 → 10</td><td class="c">10 → 7½</td><td class="c">20 → 15</td><td>30</td></tr>
+  <tr><td style="text-align:left">West</td><td>20</td><td class="c">10 → 7½</td><td class="c">15 → 10</td><td>10</td><td class="c">20 → 15</td><td>30</td></tr>
+  </tbody></table>
+  <p class="note" style="margin:8px 0 0">Average gap between departures at the first timepoint, rounded to the half minute; "—" means fewer than two trips in the period.</p>
+  <div class="row mk" style="margin-top:8px"><i class="dot">3</i><button class="btn sm">Open on Trips tab ▾</button><button class="btn sm">Open on Costing tab ▾</button></div>
+ </div>
+</div></td></tr>
+<tr><td>▸ 52 52nd Avenue</td><td><span class="st chg">Changed</span></td><td class="n">104 → 145</td><td class="n up">+41</td><td class="n">71.8 → 86.7</td><td class="n up">+14.9</td><td class="n">7 → 8</td><td class="n up">+$0.62M</td></tr>
+</tbody></table></div>
+</div></div>
+</div></div>
+<ol class="notes">
+<li><i class="dot">1</i><div><b>Span and other figures</b><p>Span per direction runs from first departure to last arrival. Times after midnight show as "1:40a". The day count used is stated here.</p></div></li>
+<li><i class="dot">2</i><div><b>Headways by time of day</b><p>Six fixed periods (G-V7). Unchanged cells show one value; changed cells show "before → after".</p></div></li>
+<li><i class="dot">3</i><div><b>Links</b><p>Each opens a small menu: "Baseline" or "Proposed". It switches the working Scenario and goes to that tab with the route selected.</p></div></li>
+</ol>
+</section>
+
+<!-- FRAME 3 -->
+<section class="screen">
+<div class="screen-head"><div class="eyebrow">Frame 3</div><h2>Warnings and calculating</h2><p>Each side has its own rates and counts, the proposed side has no blocks yet, and the baseline is still calculating.</p></div>
+<div class="frame-scroll"><div class="frame plain">
+<div class="app"><div class="ws">
+<div class="bar-row">
+ <span class="seg"><span class="on">Weekday</span><span>Saturday</span><span>Sunday</span><span>Annual</span></span>
+ <div class="row"><label class="field">Rates<select class="inp"><option>Each side's own</option></select></label><label class="field">Day counts<select class="inp"><option>Each side's own</option></select></label></div>
+</div>
+<div class="warnline mk"><i class="dot">1</i>The sides use different rates (baseline $165.20/hr, proposed $171.00/hr) and different day counts (Weekday 251 vs 255). Cost and annual figures include these differences, not only service changes. <button class="btn link">Use the baseline's for both</button></div>
+<div class="warnline mk"><i class="dot">2</i>Proposed: Costing is estimated from factors, and peak vehicles are not shown, because "Network Redesign v2 / Base" has no Blocking scenario.</div>
+<div class="tiles">
+ <div class="tile mk"><i class="dot">3</i><span class="k">Trips</span><span class="v"><span class="skel"></span><span class="arr">→</span>9,705</span><div class="prog"><span class="note">Costing baseline… 62 of 130 routes</span><span class="track"><i style="width:48%"></i></span></div></div>
+ <div class="tile"><span class="k">Revenue hours</span><span class="v"><span class="skel"></span><span class="arr">→</span>6,288.0</span></div>
+ <div class="tile mk"><i class="dot">4</i><span class="k">Peak vehicles</span><span class="v"><span class="skel"></span><span class="arr">→</span><span class="note" style="font-size:15px">Not blocked</span></span></div>
+ <div class="tile"><span class="k">Weekday cost, per year</span><span class="v"><span class="skel"></span><span class="arr">→</span>$273.7M</span></div>
+</div>
+</div></div>
+</div></div>
+<ol class="notes">
+<li><i class="dot">1</i><div><b>Different rates or counts</b><p>This shows only when they differ and "Each side's own" is chosen. The link sets both menus back to the baseline's.</p></div></li>
+<li><i class="dot">2</i><div><b>Different bases, no blocks</b><p>Each side uses its own Costing basis (G-V5). Without a Blocking scenario, peak vehicles show "Not blocked" and never 0 (G-V6).</p></div></li>
+<li><i class="dot">3</i><div><b>Progress</b><p>Each side calculates in the background and fills in when done. The page stays usable, and changing a menu recalculates only the side it affects.</p></div></li>
+<li><i class="dot">4</i><div><b>No change shown</b><p>Until both sides have a value, no change or percent is shown.</p></div></li>
+</ol>
+</section>
+
+<!-- FRAME 4 -->
+<section class="screen">
+<div class="screen-head"><div class="eyebrow">Frame 4</div><h2>Annual view and the CSV</h2><p>"Annual" adds every day, each multiplied by its annual count. Peak vehicles become the highest of the days.</p></div>
+<div class="frame-scroll"><div class="frame plain">
+<div class="app"><div class="ws">
+<div class="tiles">
+ <div class="tile"><span class="k">Trips per year</span><span class="v">2.84M<span class="arr">→</span>2.92M</span><span class="d up">+80,410 · +2.8%</span></div>
+ <div class="tile"><span class="k">Revenue hours per year</span><span class="v">1,842,600<span class="arr">→</span>1,894,300</span><span class="d up">+51,700 · +2.8%</span></div>
+ <div class="tile mk"><i class="dot">1</i><span class="k">Peak vehicles (highest day)</span><span class="v">812<span class="arr">→</span>826</span><span class="d up">+14 · Weekday</span></div>
+ <div class="tile"><span class="k">First-year cost</span><span class="v">$304.4M<span class="arr">→</span>$312.9M</span><span class="d up">+$8.5M · +2.8%</span></div>
+</div>
+<div class="mk"><i class="dot">2</i><pre class="csv">Comparison,RTD Nov 2026 (imported) / Base / From feed,vs,Network Redesign v2 / Base / Draft blocks
+Day,Annual
+Rates,Baseline's ($165.20 per revenue hour; 2027)
+Day counts,Baseline's
+Prepared,2026-11-22
+
+route_id,route,status,trips_base,trips_proposed,trips_change,revenue_hours_base,revenue_hours_proposed,revenue_hours_change,revenue_hours_pct,revenue_miles_base,revenue_miles_proposed,peak_vehicles_base,peak_vehicles_proposed,cost_base,cost_proposed,cost_change
+FBRT,Federal BRT,New,,55220,55220,,33132.0,33132.0,,,412500.0,,10,,5473400,5473400
+15,East Colfax,Changed,59236,68272,9036,45832.6,51480.1,5647.5,12.3,738090.6,830860.2,19,22,7571500,8504500,933000
+0,South Broadway,Changed,42168,45180,3012,30446.3,32278.6,1832.3,6.0,…
+…</pre></div>
+</div></div>
+</div></div>
+<ol class="notes">
+<li><i class="dot">1</i><div><b>Peak in the annual view</b><p>Vehicles don't add up across days, so the tile shows the highest day and names it.</p></div></li>
+<li><i class="dot">2</i><div><b>CSV</b><p>A heading block names the sides and the rate and count choices, then one row per route (unchanged and Unattributed included), with system totals last. The file is <code>&lt;baseline&gt;-vs-&lt;proposed&gt;-&lt;day&gt;.csv</code>.</p></div></li>
+</ol>
+</section>
+
+<!-- FRAME 5 -->
+<section class="screen">
+<div class="screen-head"><div class="eyebrow">Frame 5</div><h2>Narrow window</h2><p>On a phone or a narrow window, the sides stack and the table keeps four columns. The rest is in the route detail.</p></div>
+<div class="frame-scroll"><div class="frame plain center" style="min-width:0">
+<div class="phone"><div class="ws">
+ <div class="side b"><h4>Baseline</h4><select class="inp"><option>RTD Nov 2026 · Base · From feed</option></select></div>
+ <div class="side p"><h4>Proposed</h4><select class="inp"><option>Redesign v2 · Base · Draft blocks</option></select></div>
+ <span class="seg"><span class="on">Wkd</span><span>Sat</span><span>Sun</span><span>Annual</span></span>
+ <div class="tiles">
+  <div class="tile"><span class="k">Rev hours</span><span class="v">+183.5</span><span class="d note">6,118 → 6,302</span></div>
+  <div class="tile"><span class="k">Cost / yr</span><span class="v">+$7.6M</span><span class="d note">+3.0%</span></div>
+ </div>
+ <div class="tablebox"><table>
+  <thead><tr><th>Route</th><th>Status</th><th class="n">Δ hrs</th><th class="n">Δ $</th></tr></thead>
+  <tbody>
+  <tr><td>FBRT</td><td><span class="st new">New</span></td><td class="n up">+132.0</td><td class="n up">+5.47M</td></tr>
+  <tr><td>99X</td><td><span class="st new">New</span></td><td class="n up">+48.0</td><td class="n up">+1.99M</td></tr>
+  <tr><td>3L</td><td><span class="st gone">Disc.</span></td><td class="n down">−41.2</td><td class="n down">−1.71M</td></tr>
+  <tr><td>15</td><td><span class="st chg">Changed</span></td><td class="n up">+22.5</td><td class="n up">+0.93M</td></tr>
+  </tbody></table></div>
+</div></div>
+</div></div>
+<ol class="notes">
+<li><i class="dot">1</i><div><b>Phone width</b><p>16 px side margins and no sideways scrolling. Each side's picker opens a sheet with the three choices. Tapping a row opens the detail as in Frame 2, stacked.</p></div></li>
+</ol>
+</section>
+
+</div></body></html>

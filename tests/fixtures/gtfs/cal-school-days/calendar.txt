@@ -1,0 +1,3 @@
+service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date
+BASE,1,1,1,1,1,0,0,20260105,20260206
+SCHOOL,1,1,1,1,1,0,0,20260112,20260123

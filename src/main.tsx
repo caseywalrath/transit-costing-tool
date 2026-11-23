@@ -18,7 +18,11 @@ import { LocalDataProtectionService, SaveStatusPublisher } from './application/s
 import { LocalStorageDataProtectionStore } from './persistence/localDataProtectionStore';
 import { DexieRestorePoints } from './persistence/restorePointPersistence';
 import { RestorePointService } from './application/restorePointService';
-import { BLOCKING_COVERAGE, PLANNED_FREQUENCY_COVERAGE, ROUTE_DEFINITION_COVERAGE, TRIP_GENERATION_COVERAGE, withRestorePoints, type RestorePointLookup } from './application/restorePointCoverage';
+import { BLOCKING_COVERAGE, GTFS_IMPORT_COVERAGE, PLANNED_FREQUENCY_COVERAGE, ROUTE_DEFINITION_COVERAGE, TRIP_GENERATION_COVERAGE, withRestorePoints, type RestorePointLookup } from './application/restorePointCoverage';
+import { GtfsImportService } from './application/gtfs/gtfsImportService';
+import { GtfsExportService } from './application/gtfsExport/gtfsExportService';
+import { CompareService } from './application/compare/compareService';
+import { createSaveStamp } from './application/compare/saveStamp';
 
 async function start() {
   // Only one tab at a time may write (Decision 0037). Decide whether this is that tab before the application starts,
@@ -81,7 +85,49 @@ async function start() {
     listRoutes: (id) => repository.db.routes.where('scenarioId').equals(id).toArray(),
   }), repository, undefined, saveStatus);
 
+  // The Compare tab (Decision 0091). It only reads: the sources are Costing's own, plus the Routes' directions and the saved assumptions.
+  // Cached sides are valid for one save stamp, so a saved change anywhere in the Project makes the next comparison read again.
+  const compareStamp = createSaveStamp(saveStatus);
+  const compareSources = {
+    getScenario: (id: string) => repository.db.scenarios.get(id),
+    listServiceDays: (id: string) => repository.db.serviceDays.where('scenarioId').equals(id).toArray(),
+    listBlockingScenarios: (id: string) => blocking.listBlockingScenarios(id),
+    listTripProfiles: (id: string) => repository.listTripProfiles(id),
+    getTripProfile: (id: string) => repository.getTripProfile(id),
+    listTrips: listProfileTrips,
+    listPatterns: listScenarioPatterns,
+    listBlockingBlocks: (id: string) => blocking.listBlockingBlocks(id),
+    listRoutes: (id: string) => repository.db.routes.where('scenarioId').equals(id).toArray(),
+    listDirections: (id: string) => repository.db.directions.where('scenarioId').equals(id).toArray(),
+    getCostingAssumptions: (id: string) => repository.getCostingAssumptions(id),
+  };
+  const compareCore = new CompareService(compareSources, compareStamp.stamp);
+  const compare = {
+    compare: (request: Parameters<CompareService['compare']>[0], onProgress?: Parameters<CompareService['compare']>[1]) => compareCore.compare(request, onProgress),
+    clearCache: () => compareCore.clearCache(),
+    dispose: () => { compareCore.dispose(); compareStamp.stop(); },
+    // The Scenarios of a Project with what each side picker offers: Trip profiles, Blocking scenarios and service days.
+    listChoices: async (projectId: string) => {
+      const scenarios = await repository.db.scenarios.where('projectId').equals(projectId).toArray();
+      return Promise.all(scenarios.map(async (scenario) => ({
+        id: scenario.id,
+        name: scenario.name,
+        serviceDays: await compareSources.listServiceDays(scenario.id),
+        routes: (await compareSources.listRoutes(scenario.id)).map((route) => ({ id: route.id, name: [route.shortName, route.name].filter(Boolean).join(' ') })),
+        tripProfiles: (await compareSources.listTripProfiles(scenario.id)).map((profile) => ({ id: profile.id, name: profile.name })),
+        blockingScenarios: (await compareSources.listBlockingScenarios(scenario.id)).map((item) => ({ id: item.id, name: item.name, tripProfileId: item.tripProfileId })),
+      })));
+    },
+  };
+  // The page owns the service for its whole life; the worker is stopped and the save stamp released when the page goes away. A page that
+  // the browser keeps for Back (`persisted`) comes back as it was, so it keeps its service too.
+  window.addEventListener('pagehide', (event) => { if (!event.persisted) compare.dispose(); });
+
   const plannedFrequencies = withRestorePoints(new PlannedFrequencyService(repository, undefined, saveStatus), PLANNED_FREQUENCY_COVERAGE, restorePoints, restorePoints, saveStatus, restoreLookup);
+  // The GTFS import service. Its covered command is wired here, as the Route commands are, so that adding Routes takes a restore point.
+  const gtfsImport = withRestorePoints(new GtfsImportService(repository, routeDefinitionCore, saveStatus), GTFS_IMPORT_COVERAGE, restorePoints, restorePoints, saveStatus, restoreLookup);
+  // The GTFS export service (Decision 0090). It writes only the Scenario's remembered export settings, so it takes no restore point.
+  const gtfsExport = new GtfsExportService(repository, saveStatus);
   const restoreService = new RestorePointService(restorePoints, restorePoints, {
     getScenarioRecords: (id) => repository.getScenarioRecords(id),
     saveScenarioRecords: (records) => repository.saveScenarioRecords(records),
@@ -90,7 +136,7 @@ async function start() {
     projectExists: async (id) => Boolean(await repository.db.projects.get(id)),
   }, saveStatus, () => routeDefinitionCore.forgetCopyUndos());
 
-  createRoot(document.getElementById('root')!).render(<React.StrictMode><App service={routeDefinition} tripService={tripGeneration} blockingService={blocking} costingService={costing} plannedFrequencyService={plannedFrequencies} session={tabGuard} restorePoints={restoreService} /></React.StrictMode>);
+  createRoot(document.getElementById('root')!).render(<React.StrictMode><App service={routeDefinition} tripService={tripGeneration} blockingService={blocking} costingService={costing} compareService={compare} plannedFrequencyService={plannedFrequencies} gtfsImportService={gtfsImport} gtfsExportService={gtfsExport} session={tabGuard} restorePoints={restoreService} /></React.StrictMode>);
 }
 
 void start();

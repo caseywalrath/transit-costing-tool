@@ -1,0 +1,96 @@
+/* The GTFS import dialog (Decision 0089; sub-plan I8). Colours, sizes and radii come from tokens.css only. */
+
+/* The shared `.confirm-dialog > div` rule makes direct child divs right-aligned flex rows, so the dialog's own blocks repeat the selector with a class to win it. */
+.confirm-dialog.gtfs-import-dialog { width: min(1080px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.confirm-dialog.gtfs-import-dialog > .gtfs-import-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); padding: var(--inset-tight) var(--inset-panel) 0; }
+.gtfs-import-head h2 { margin: 0; font-size: var(--font-size-title); }
+.gtfs-target { color: var(--color-text-muted); font-size: var(--font-size-note); }
+
+.gtfs-steps { display: flex; gap: var(--space-1); margin: 0; padding: var(--inset-tight) var(--inset-panel); list-style: none; border-bottom: 1px solid var(--color-border-soft); }
+.gtfs-steps li { padding: 3px 10px; border: 1px solid var(--color-border-soft); border-radius: var(--radius-control); background: var(--color-surface-2); color: var(--color-text-muted); font-size: var(--font-size-note); }
+.gtfs-steps li.gtfs-step-done { color: var(--color-ok); }
+.gtfs-steps li.gtfs-step-on { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-surface); font-weight: var(--font-weight-semibold); }
+
+.confirm-dialog.gtfs-import-dialog > .gtfs-import-body { display: grid; gap: var(--space-3); padding: var(--inset-panel); overflow-y: auto; min-height: 0; justify-content: stretch; }
+.gtfs-step { display: grid; gap: var(--space-3); min-width: 0; }
+.confirm-dialog.gtfs-import-dialog > .gtfs-import-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--inset-tight) var(--inset-panel); border-top: 1px solid var(--color-border); background: var(--color-surface-2); }
+.gtfs-buttons { display: flex; gap: var(--space-2); }
+.gtfs-status { color: var(--color-text-muted); font-size: var(--font-size-note); }
+
+.gtfs-note { color: var(--color-text-muted); font-size: var(--font-size-note); margin: 0; }
+/* The shared `.confirm-dialog p` rule adds 10px above and 18px below every paragraph, which opens up the dialog's notes. */
+.confirm-dialog.gtfs-import-dialog p { margin: 0; }
+.gtfs-refusal { margin: 0; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-danger); border-radius: var(--radius-control); background: var(--color-danger-soft); color: var(--color-danger); }
+.gtfs-invalid { color: var(--color-danger); }
+.gtfs-list { margin: 0; padding-left: 18px; font-size: var(--font-size-note); }
+
+.gtfs-file-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.gtfs-file-button { position: relative; display: inline-flex; align-items: center; min-height: var(--control-height); padding: var(--space-1) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); cursor: pointer; }
+.gtfs-file-button:hover { background: var(--color-surface-2); }
+.gtfs-file-button input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.gtfs-file-button:focus-within { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+.gtfs-two-panels { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.gtfs-panel { border: 1px solid var(--color-border); border-radius: var(--radius-panel); background: var(--color-surface); min-width: 0; }
+.gtfs-panel-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--inset-tight); background: var(--color-surface-2); border-bottom: 1px solid var(--color-border-soft); font-weight: var(--font-weight-bold); }
+.gtfs-facts { display: grid; grid-template-columns: 150px 1fr; gap: 6px var(--space-3); margin: 0; padding: var(--inset-tight); font-size: var(--font-size-body); }
+.gtfs-facts dt { color: var(--color-text-muted); }
+.gtfs-facts dd { margin: 0; }
+.gtfs-file-list { margin: 0; padding: var(--inset-tight); list-style: none; display: grid; gap: 4px; font-size: var(--font-size-note); }
+.gtfs-file-list li { display: flex; justify-content: space-between; }
+.gtfs-panel > .gtfs-note { padding: 0 var(--inset-tight) var(--inset-tight); }
+
+.gtfs-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2); }
+.gtfs-field { display: grid; gap: var(--space-1); color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
+.gtfs-field input, .gtfs-field select { min-width: 200px; }
+.gtfs-total { margin-left: auto; color: var(--color-text-muted); font-size: var(--font-size-note); }
+
+.gtfs-table-scroll { max-height: 340px; overflow: auto; border: 1px solid var(--color-border); border-radius: var(--radius-panel); }
+.gtfs-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-body); }
+.gtfs-table th, .gtfs-table td { padding: 5px 10px; border-bottom: 1px solid var(--color-border-soft); text-align: left; vertical-align: middle; }
+.gtfs-table thead th { position: sticky; top: 0; z-index: 1; background: var(--color-surface-2); color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
+.gtfs-table tbody th { font-size: var(--font-size-body); font-weight: var(--font-weight-regular); color: var(--color-text); }
+.gtfs-num { text-align: right !important; font-variant-numeric: tabular-nums; }
+.gtfs-selected td { background: var(--color-selection); }
+.gtfs-table input[type="checkbox"] { width: auto; min-height: 0; margin: 0; }
+.gtfs-dot { display: inline-block; width: 10px; height: 10px; margin-right: var(--space-inline); border-radius: 50%; background: var(--color-border); vertical-align: middle; }
+.gtfs-clash { display: grid; gap: var(--space-1); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-warn-border); border-radius: var(--radius-control); background: var(--color-warn-soft); color: var(--color-warn); font-size: var(--font-size-note); }
+.gtfs-clash p { margin: 0; }
+
+.gtfs-date-cell { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.gtfs-date-cell input[type="date"] { width: auto; }
+.gtfs-chip { display: inline-block; padding: 0 7px; border-radius: var(--radius-pill); border: 1px solid var(--color-border); background: var(--color-sunken); color: var(--color-text-muted); font-size: var(--font-size-chip); }
+.gtfs-number { width: 72px; text-align: right; }
+.gtfs-switch { display: inline-flex; align-items: center; gap: var(--space-inline); font-size: var(--font-size-note); }
+.gtfs-switch input { width: auto; min-height: 0; }
+
+.gtfs-section { border: 1px solid var(--color-border); border-radius: var(--radius-panel); background: var(--color-surface); }
+.gtfs-section > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); padding: var(--space-2) var(--inset-tight); background: var(--color-surface-2); cursor: pointer; font-weight: var(--font-weight-bold); }
+.gtfs-section-body { display: grid; gap: var(--space-2); padding: var(--inset-tight); }
+.gtfs-group-block h4 { margin: 0 0 var(--space-1); font-size: var(--font-size-body); }
+
+/* Steps 4 and 5 (sub-plan I9). */
+.gtfs-option-body { display: grid; gap: var(--space-2); padding: var(--inset-tight); }
+.gtfs-radio-group { display: grid; gap: var(--space-2); margin: 0; padding: 0; border: 0; min-width: 0; }
+.gtfs-radio { display: inline-flex; align-items: center; gap: var(--space-inline); font-size: var(--font-size-body); }
+.gtfs-radio input { width: auto; min-height: 0; margin: 0; }
+.gtfs-radio input:disabled + span { color: var(--color-text-muted); }
+.gtfs-minutes { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
+.gtfs-minutes .gtfs-note { align-self: center; }
+.gtfs-minutes .gtfs-field input { min-width: 0; width: 96px; }
+.gtfs-field input[aria-invalid="true"] { border-color: var(--color-danger); }
+
+.gtfs-review-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-3); }
+.gtfs-chip--ok { border-color: var(--color-ok); background: var(--color-ok-soft); color: var(--color-ok); }
+.gtfs-chip--warn { border-color: var(--color-warn-border); background: var(--color-warn-soft); color: var(--color-warn); }
+.gtfs-skipped th, .gtfs-skipped td { background: var(--color-warn-soft); color: var(--color-warn); }
+.gtfs-link { min-height: 0; padding: 0; border: 0; background: none; color: var(--color-accent); font: inherit; text-align: left; cursor: pointer; }
+.gtfs-link:hover { text-decoration: underline; }
+.gtfs-link[aria-pressed="true"], .gtfs-link[aria-current="true"] { color: var(--color-text); font-weight: var(--font-weight-bold); }
+.gtfs-pattern-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.gtfs-pattern-list li { display: flex; justify-content: space-between; gap: var(--space-3); padding: 5px var(--inset-tight); border-bottom: 1px solid var(--color-border-soft); }
+.gtfs-review-scroll { max-height: 280px; }
+.gtfs-timepoint-row th, .gtfs-timepoint-row td { background: var(--color-selection); }
+
+.gtfs-import-dialog :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+@media (max-width: 760px) { .gtfs-two-panels { grid-template-columns: 1fr; } .gtfs-facts { grid-template-columns: 1fr; } }

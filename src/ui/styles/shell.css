@@ -74,6 +74,7 @@ nav { display: flex; gap: 2px; }
 .notice button { border: 0; background: transparent; font-size: var(--font-size-title); }
 /* Decision 0081: the Undo action sits after the text, before the dismiss button. */
 .notice__text { flex: 1 1 auto; min-width: 0; }
+.notice__detail { display: block; margin-top: 2px; color: var(--color-text-muted); font-size: var(--font-size-note); }
 .notice .notice__action { font-size: inherit; font-weight: 600; color: var(--color-accent); text-decoration: underline; padding: 2px var(--space-2); min-height: 24px; }
 .undo-history { width: min(560px, calc(100vw - 32px)); }
 .undo-history__list { list-style: none; margin: 0 0 var(--space-3); padding: 0; max-height: 60vh; overflow-y: auto; }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { metadata } from '../domain/ids';
 import type { Block, RoutePattern, RuntimeAssignment, RuntimeBand, RuntimeProfile, Trip, TripGenerationSet } from '../domain/types';
 import { TripGenerationService } from './tripGenerationService';
@@ -240,6 +240,13 @@ describe('stale-source checks on Pattern changes and Trips CSV imports, and the 
       const report = await service.inspectStaleTrips('weekday');
       expect(report.trips.map((item) => item.id).sort()).toEqual(['fits', 'outside']);
       expect(report.findings.map((finding) => [finding.ruleId, finding.entityType, finding.entityId])).toEqual([['trip.anchorNoRuntime', 'trip', 'outside']]);
+    });
+
+    it('reads the runtime assignments once for the whole check, not once per Pattern (Trips tab empty on a whole-feed Scenario)', async () => {
+      const { repository, service } = await setup({ profiles, trips: [trip('a', outbound, 1000), trip('b', outbound2, 1000), trip('c', outbound, 2000)] });
+      const read = vi.spyOn(repository, 'listRuntimeAssignments');
+      await service.inspectStaleTrips('weekday');
+      expect(read).toHaveBeenCalledTimes(1);
     });
 
     it('does not hide a programming error as a stale Trip', async () => {

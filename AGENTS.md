@@ -35,6 +35,8 @@ Classify each package by capability class. The model names in parentheses are th
 
 Do not automatically begin the next work package. At each verification gate, report the completed result and recommend the next package and model to the user.
 
+Exception (user approval 2026-11-21): under the GTFS import plan, `docs/implementation/gtfs-interoperability.md`, an Opus orchestrator may run the packages of a phase one after another and delegate them to Haiku or Sonnet sub-agents. It still stops at every user gate, at each sitting's end, and at anything the plan does not decide. The rules are in that plan's Part 7, "Run rules".
+
 ### Structural class (Luna)
 
 Recommend the structural class (Luna) for bounded, mechanical, or structural work after the architecture is settled, including:
@@ -48,6 +50,10 @@ Recommend the structural class (Luna) for bounded, mechanical, or structural wor
 - mechanical refactors with explicit acceptance criteria.
 
 The structural class must not make visual design, layout, interaction, accessibility, or other UX decisions.
+
+### Broad structural class (Sonnet)
+
+Recommend the broad structural class (Sonnet) for structural work that Opus judges too broad for the structural class: several interacting rules in one package, or UI wiring from approved mock-ups that needs judgment within those mock-ups. The plan names each such package for user approval (GTFS plan, gate G-I7). The same limits apply as to the structural class: it does not invent a visual or interaction system.
 
 ### UI/UX model recommendations
 

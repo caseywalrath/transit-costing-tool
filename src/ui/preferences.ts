@@ -86,7 +86,54 @@ export function rememberCostBasisKind(scenarioId: string, kind: CostBasisKind) {
   try { localStorage.setItem(COST_BASIS_KIND_KEY, JSON.stringify({ ...readStoredRecord(COST_BASIS_KIND_KEY), [scenarioId]: kind })); } catch { /* UI preference only. */ }
 }
 
-export const WORKING_CONTEXT_KEY = 'transit-costing-tool.working-context.v1';
+// The Compare tab's choices (Decision 0091 item 3): per-device convenience state kept for each Project, never Scenario data and never in
+// backups. A stored side may name a Scenario, Trip profile or Blocking scenario that no longer exists; the Compare tab checks every id.
+export const COMPARE_PREFERENCE_KEY = 'transit-costing-tool.compare.v1';
+/** `blockingScenarioId` is `null` for "None (estimate)" and undefined when nothing is remembered. */
+export type CompareSidePreference = { scenarioId?: string; tripProfileId?: string; blockingScenarioId?: string | null };
+export type CompareChoicePreference = 'baseline' | 'proposed' | 'own';
+export type CompareShowPreference = 'all' | 'changed' | 'new' | 'discontinued' | 'unchanged';
+export type CompareSortPreference = 'hours' | 'route';
+export type ComparePreference = {
+  baseline?: CompareSidePreference;
+  proposed?: CompareSidePreference;
+  day?: string;
+  rates?: CompareChoicePreference;
+  counts?: CompareChoicePreference;
+  show?: CompareShowPreference;
+  sort?: CompareSortPreference;
+};
+
+const oneOf = <T extends string>(value: unknown, allowed: readonly T[]): T | undefined => allowed.find((item) => item === value);
+
+function readSidePreference(value: unknown): CompareSidePreference | undefined {
+  const entry = storedObject(value);
+  if (!entry) return undefined;
+  const scenarioId = storedText(entry.scenarioId);
+  const tripProfileId = storedText(entry.tripProfileId);
+  const blockingScenarioId = entry.blockingScenarioId === null ? null : storedText(entry.blockingScenarioId);
+  return { ...(scenarioId ? { scenarioId } : {}), ...(tripProfileId ? { tripProfileId } : {}), ...(blockingScenarioId !== undefined ? { blockingScenarioId } : {}) };
+}
+
+/** The Compare choices remembered for a Project. A wrong-shaped entry or field reads as not stored. */
+export function readComparePreference(projectId: string, storage?: StorageReader): ComparePreference {
+  const entry = storedObject(storedObject(readStoredRecord(COMPARE_PREFERENCE_KEY, storage))?.[projectId] ?? undefined);
+  if (!entry) return {};
+  const baseline = readSidePreference(entry.baseline);
+  const proposed = readSidePreference(entry.proposed);
+  const day = storedText(entry.day);
+  const rates = oneOf(entry.rates, ['baseline', 'proposed', 'own'] as const);
+  const counts = oneOf(entry.counts, ['baseline', 'proposed', 'own'] as const);
+  const show = oneOf(entry.show, ['all', 'changed', 'new', 'discontinued', 'unchanged'] as const);
+  const sort = oneOf(entry.sort, ['hours', 'route'] as const);
+  return { ...(baseline ? { baseline } : {}), ...(proposed ? { proposed } : {}), ...(day ? { day } : {}), ...(rates ? { rates } : {}), ...(counts ? { counts } : {}), ...(show ? { show } : {}), ...(sort ? { sort } : {}) };
+}
+
+export function writeComparePreference(projectId: string, preference: ComparePreference) {
+  try { localStorage.setItem(COMPARE_PREFERENCE_KEY, JSON.stringify({ ...readStoredRecord(COMPARE_PREFERENCE_KEY), [projectId]: preference })); } catch { /* Storage is a convenience only. */ }
+}
+
+export const WORKING_CONTEXT_KEY ='transit-costing-tool.working-context.v1';
 export type WorkingContext = { scenarios: Record<string, { tripProfileId?: string; serviceDayId?: string }>; routes: Record<string, { directionId?: string }> };
 
 const storedObject = (value: unknown): Record<string, unknown> | undefined => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;

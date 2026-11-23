@@ -1,0 +1,18 @@
+/* The GTFS export dialog (card E4). It reuses the import dialog's frame and primitives (gtfs-import.css); only what the export adds is here. */
+.gtfs-export-dialog .ge-facts { grid-template-columns: 130px 1fr; align-items: start; }
+.gtfs-export-dialog .ge-facts dd { display: grid; gap: var(--space-2); justify-items: start; }
+.gtfs-export-dialog .ge-wide { width: min(420px, 100%); }
+.gtfs-export-dialog .ge-pad { padding: 0 var(--inset-tight) var(--inset-tight); }
+.gtfs-export-dialog .ge-add-holiday { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.gtfs-export-dialog .ge-add-holiday input[type="date"], .gtfs-export-dialog .ge-facts input[type="date"] { width: auto; }
+.gtfs-export-dialog .ge-holidays { width: auto; min-width: 360px; }
+.gtfs-export-dialog .ge-map-lines { padding: var(--inset-tight); }
+.gtfs-export-dialog .ge-routes-tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); padding: var(--inset-tight); }
+.gtfs-export-dialog .ge-route-list { margin: 0; padding: 0 var(--inset-tight) var(--inset-tight); list-style: none; display: grid; gap: 2px; max-height: 220px; overflow-y: auto; }
+.gtfs-export-dialog .ge-route-list li { display: flex; justify-content: space-between; gap: var(--space-3); font-size: var(--font-size-body); }
+.gtfs-export-dialog .ge-route-list input { width: auto; min-height: 0; }
+.gtfs-export-dialog .ge-problem-scroll { margin: 0 var(--inset-tight); max-height: 260px; }
+.gtfs-export-dialog .ge-warning { padding: 0 var(--inset-tight) var(--space-2); }
+.gtfs-export-dialog .ge-warning p { margin: 0; font-size: var(--font-size-body); }
+.gtfs-export-dialog .ge-warning .gtfs-list { margin-top: var(--space-1); max-height: 160px; overflow-y: auto; }
+@media (max-width: 760px) { .gtfs-export-dialog .ge-facts { grid-template-columns: 1fr; } }

@@ -4,8 +4,8 @@ import { calculateCosting, type CostingAssumptionsInput, type CostingCalculation
 import { calculateEstimatedCosting } from '../../domain/estimatedCosting';
 import { metadata } from '../../domain/ids';
 import { createStandardServiceDays } from '../../domain/serviceDays';
-import type { BlockingBlock, BlockingScenario, CostingEstimateFactors, Scenario, ServiceDayDefinition, Trip, TripProfile } from '../../domain/types';
-import { BREAKDOWN_COLUMNS, costBreakdownText } from './costBreakdownText';
+import type { BlockingBlock, BlockingScenario, CostingEstimateFactors, Route, Scenario, ServiceDayDefinition, Trip, TripProfile } from '../../domain/types';
+import { BREAKDOWN_COLUMNS, costBreakdownText, dayBreakdownRows, ownCountsText, routeBreakdownRows } from './costBreakdownText';
 
 // Fixtures follow src/domain/costing.test.ts (blocked basis) and src/domain/estimatedCosting.test.ts (estimated basis).
 const stamp = '2026-01-01T00:00:00.000Z';
@@ -42,10 +42,10 @@ function summary(blockId: string): BlockSummary {
   };
 }
 
-function blockedResult() {
+function blockedResult(routes?: Route[]) {
   const assigned = trip('trip-1');
   const assignedBlock = block('block-1', assigned.id);
-  const input: CostingCalculationInput = { scenario, serviceDays: serviceDays(), assumptions, blockingScenario, tripProfile, trips: [assigned], blocks: [assignedBlock], blockSummaries: [summary(assignedBlock.id)] };
+  const input: CostingCalculationInput = { scenario, serviceDays: serviceDays(), assumptions, blockingScenario, tripProfile, trips: [assigned], blocks: [assignedBlock], blockSummaries: [summary(assignedBlock.id)], ...(routes ? { routes } : {}) };
   return calculateCosting(input);
 }
 
@@ -56,6 +56,41 @@ function estimatedResult() {
     assumptions: { ...assumptions, estimateFactors: factors },
   });
 }
+
+describe('a Route on its own annual counts (Decision 0089 item 41)', () => {
+  const route = (own?: Route['ownAnnualServiceDays']): Route => ({ id: 'route', scenarioId: scenario.id, name: 'Federal', ...(own ? { ownAnnualServiceDays: own } : {}), ...metadata(stamp) });
+
+  it('marks the Route and its own-count day rows, and lists the counts the figures use', () => {
+    const result = blockedResult([route({ enabled: true, countsByServiceDayId: { weekday: 62 } })]);
+    const { routes } = routeBreakdownRows(result, 2026);
+    expect(routes[0]!.ownCountsText).toBe('Weekday 62');
+    const weekday = routes[0]!.dayRows.find((row) => row.name === 'Weekday')!;
+    expect(weekday.days).toBe(62);
+    expect(weekday.ownCount).toBe(true);
+    expect(routes[0]!.dayRows.find((row) => row.name === 'Saturday')!.ownCount).toBeUndefined();
+    // The copied text shows the count actually used for that Route, not the Scenario's 260.
+    expect(costBreakdownText(result, 2026, 364).find((row) => row[1] === 'Weekday')![2]).toBe('62');
+    // Grouped by service day, the Scenario's day row keeps its count and the Route's row carries the marker.
+    const day = dayBreakdownRows(result, 2026).days.find((item) => item.name === 'Weekday')!;
+    expect(day.days).toBe(260);
+    expect(day.ownCount).toBeUndefined();
+    expect(day.routeRows[0]).toMatchObject({ days: 62, ownCount: true });
+  });
+
+  it('shows no marker for a Route that is absent, switched off, or has no count', () => {
+    const cases: Array<Route['ownAnnualServiceDays']> = [undefined, { enabled: false, countsByServiceDayId: { weekday: 62 } }, { enabled: true, countsByServiceDayId: {} }];
+    for (const own of cases) {
+      const { routes } = routeBreakdownRows(blockedResult([route(own)]), 2026);
+      expect(routes[0]!.ownCountsText).toBeUndefined();
+      expect(routes[0]!.dayRows.some((row) => row.ownCount)).toBe(false);
+    }
+  });
+
+  it('lists only the days that use the Route\'s count', () => {
+    expect(ownCountsText([{ serviceDayName: 'Weekday', annualServiceDays: 62, countSource: 'route' }, { serviceDayName: 'Saturday', annualServiceDays: 52, countSource: 'scenario' }, { serviceDayName: 'Sunday', annualServiceDays: 0, countSource: 'route' }])).toBe('Weekday 62, Sunday 0');
+    expect(ownCountsText([{ serviceDayName: 'Weekday', annualServiceDays: 260, countSource: 'scenario' }])).toBeUndefined();
+  });
+});
 
 describe('costBreakdownText', () => {
   it('builds the header, a Route row with its service-day rows, and the total row for a blocked result', () => {

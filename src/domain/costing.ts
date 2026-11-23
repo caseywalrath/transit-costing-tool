@@ -1,6 +1,6 @@
 import type { BlockSummary } from './blocking';
 import { sortServiceDays } from './serviceDays';
-import { sortRouteResults, type CostingRouteDayResult, type CostingRouteResult } from './routeCosting';
+import { sortRouteResults, type AnnualCountSource, type CostingRouteDayResult, type CostingRouteResult } from './routeCosting';
 import type { BlockingBlock, BlockingScenario, CostingAssumptions, CostingEstimateFactors, Route, Scenario, ServiceDayDefinition, Trip, TripProfile, TripProfileEstimateFactors, ValidationFinding } from './types';
 
 export const MAX_ANNUAL_SERVICE_DAYS = 365;
@@ -35,7 +35,10 @@ export interface CostingCalculationContext {
   blocks: BlockingBlock[];
   /** Derived summaries for these Blocks; summaries are never persisted by costing. */
   blockSummaries: BlockSummary[];
-  /** Decision 0077. Names for the Route rows. Absent names are left out of the rows. */
+  /**
+   * Decision 0077. Names for the Route rows; absent names are left out of the rows. Decision 0089 item 41: each Route's own annual service
+   * days, which its rows use when the Route is switched on.
+   */
   routes?: Route[];
 }
 
@@ -116,6 +119,11 @@ export interface CostingDailyResult {
   platformHoursPerDay: number;
   annualRevenueHours: number;
   annualPlatformHours: number;
+  /**
+   * Decision 0089 item 41: present and true when a Route of the Scenario is switched on. The hours and costs of the day are then the sum
+   * of its Route rows (Unattributed included); `annualServiceDays` stays the Scenario's count.
+   */
+  usesRouteCounts?: true;
   /** Empty when the rate is not entered. Values retain full calculation precision. */
   yearCosts: CostingDailyYearResult[];
 }
@@ -360,6 +368,7 @@ export function calculateCosting(input: CostingCalculationInput): CostingCalcula
   const findings = [
     ...validateCostingAssumptions(assumptions, scenario.id),
     ...validateAnnualServiceDays(serviceDays, scenario.id),
+    ...validateRouteAnnualServiceDays(input.routes),
   ];
   if (blockingScenario.scenarioId !== scenario.id) findings.push(costingFinding('costing.blockingScenarioMismatch', 'error', 'blockingScenario', blockingScenario.id, 'scenarioId'));
   if (tripProfile.scenarioId !== scenario.id || tripProfile.id !== blockingScenario.tripProfileId) {
@@ -397,10 +406,32 @@ export function calculateCosting(input: CostingCalculationInput): CostingCalcula
     return makeResult(input, 'noEstimate', findings, coverage, [], [], [], 'noEligibleBlocks');
   }
 
+  // Decision 0089 item 41. The count each Route bucket uses on each day. With a Route switched on, the day's annual figures are the sum of its
+  // Route rows; with none switched on, they are the Scenario's count times the day's hours, as before.
+  const counts = annualCounts(input.routes, coverage);
+  const usesRouteCounts = routeCountsSwitchedOn(input.routes);
+  for (const day of serviceDays) {
+    const candidates = counts.unattributedCandidates(day);
+    if (new Set(candidates.map((candidate) => candidate.count)).size > 1) {
+      findings.push(costingFinding('costing.unattributedUsesLargestCount', 'warning', 'serviceDay', day.id, undefined, { serviceDayId: day.id, annualServiceDays: counts.choose(null, day).count }));
+    }
+  }
+  const routeCountNames = [...coverage.routeDays.keys()]
+    .filter((routeId): routeId is string => routeId !== null && serviceDays.some((day) => counts.choose(routeId, day).source === 'route'))
+    .map((routeId) => input.routes?.find((route) => route.id === routeId)?.name ?? routeId);
+  const routeCountsFinding = routeCountsInUseFinding(scenario.id, routeCountNames);
+  if (routeCountsFinding) findings.push(routeCountsFinding);
+  const bucketsByDay = new Map<string, RouteDayBucket[]>(serviceDays.map((day) => [day.id, routeDayBuckets(coverage, day, counts.choose)]));
+
   const dailyQuantities = sortServiceDays(serviceDays).map((day) => {
     const row = coverage.days.get(day.id)!;
-    const annualRevenueHours = row.revenueHoursPerDay * day.annualServiceDays;
-    const annualPlatformHours = row.platformHoursPerDay * day.annualServiceDays;
+    const buckets = bucketsByDay.get(day.id)!;
+    const annualRevenueHours = usesRouteCounts
+      ? buckets.reduce((sum, bucket) => sum + bucket.revenueHoursPerDay * bucket.count, 0)
+      : row.revenueHoursPerDay * day.annualServiceDays;
+    const annualPlatformHours = usesRouteCounts
+      ? buckets.reduce((sum, bucket) => sum + bucket.platformHoursPerDay * bucket.count, 0)
+      : row.platformHoursPerDay * day.annualServiceDays;
     return {
       serviceDayId: day.id,
       serviceDayName: day.name,
@@ -415,13 +446,14 @@ export function calculateCosting(input: CostingCalculationInput): CostingCalcula
       platformHoursPerDay: row.platformHoursPerDay,
       annualRevenueHours,
       annualPlatformHours,
+      ...(usesRouteCounts ? { usesRouteCounts: true as const } : {}),
       yearCosts: [] as CostingDailyYearResult[],
     };
   });
 
   if (assumptions.enteredRate === undefined) {
     findings.push(costingFinding('costing.rateMissing', 'warning', 'costingAssumptions', scenario.id, 'enteredRate'));
-    return makeResult(input, 'noEstimate', findings, coverage, dailyQuantities, [], blockedRouteRows(input, coverage, []), 'rateMissing');
+    return makeResult(input, 'noEstimate', findings, coverage, dailyQuantities, [], blockedRouteRows(input, coverage, [], counts.choose), 'rateMissing');
   }
 
   const appliedRates = costingAppliedRates(assumptions);
@@ -435,7 +467,9 @@ export function calculateCosting(input: CostingCalculationInput): CostingCalcula
     yearCosts: appliedRates.map(({ serviceYear, rate }) => ({
       serviceYear,
       costPerDayUsd: row.revenueHoursPerDay * rate,
-      annualCostUsd: row.revenueHoursPerDay * rate * row.annualServiceDays,
+      annualCostUsd: usesRouteCounts
+        ? bucketsByDay.get(row.serviceDayId)!.reduce((sum, bucket) => sum + bucket.revenueHoursPerDay * rate * bucket.count, 0)
+        : row.revenueHoursPerDay * rate * row.annualServiceDays,
     })),
   }));
   const yearRows = appliedRates.map(({ serviceYear, rate }) => {
@@ -444,7 +478,7 @@ export function calculateCosting(input: CostingCalculationInput): CostingCalcula
     const annualCostUsd = dayCosts.reduce((sum, row) => sum + row.yearCosts.find((cost) => cost.serviceYear === serviceYear)!.annualCostUsd, 0);
     return { serviceYear, appliedRateUsdPerRevenueHour: rate, annualRevenueHours, annualPlatformHours, annualCostUsd };
   });
-  const routeRows = blockedRouteRows(input, coverage, appliedRates);
+  const routeRows = blockedRouteRows(input, coverage, appliedRates, counts.choose);
   const routeDays = routeRows.flatMap((route) => route.days);
   if (dayCosts.some((row) => ![row.revenueHoursPerDay, row.platformHoursPerDay, row.annualRevenueHours, row.annualPlatformHours, ...row.yearCosts.flatMap((cost) => [cost.costPerDayUsd, cost.annualCostUsd])].every(Number.isFinite))
     || yearRows.some((row) => ![row.annualRevenueHours, row.annualPlatformHours, row.annualCostUsd].every(Number.isFinite))
@@ -533,6 +567,8 @@ interface Coverage {
   routeDays: Map<string | null, Map<string, RouteDayCoverage>>;
   /** `costing.multiRouteBlock` warnings, one per multi-route eligible Block. */
   multiRouteFindings: CostingFinding[];
+  /** Decision 0089 item 41. The Routes of the eligible multi-Route Blocks on each service day: the candidates of its Unattributed row. */
+  unattributedRouteIds: Map<string, Set<string>>;
 }
 
 function buildCoverage(input: CostingCalculationInput, serviceDayIds: ReadonlySet<string>): Coverage {
@@ -563,6 +599,7 @@ function buildCoverage(input: CostingCalculationInput, serviceDayIds: ReadonlySe
     return row;
   };
   const multiRouteFindings: CostingFinding[] = [];
+  const unattributedRouteIds = new Map<string, Set<string>>();
 
   for (const block of input.blocks) {
     const day = days.get(block.serviceDayId);
@@ -594,6 +631,7 @@ function buildCoverage(input: CostingCalculationInput, serviceDayIds: ReadonlySe
     }
     if (revenueRouteIds.size > 1) {
       multiRouteFindings.push(costingFinding('costing.multiRouteBlock', 'warning', 'block', block.id, undefined, { serviceDayId: block.serviceDayId }));
+      unattributedRouteIds.set(block.serviceDayId, new Set([...(unattributedRouteIds.get(block.serviceDayId) ?? []), ...revenueRouteIds]));
     }
     const [onlyRouteId] = revenueRouteIds;
     const attributed = routeDay(revenueRouteIds.size === 1 ? onlyRouteId : null, block.serviceDayId);
@@ -633,6 +671,7 @@ function buildCoverage(input: CostingCalculationInput, serviceDayIds: ReadonlySe
     unassignedTripCount: [...days.values()].reduce((sum, day) => sum + day.unassignedTripCount, 0),
     routeDays,
     multiRouteFindings,
+    unattributedRouteIds,
   };
 }
 
@@ -641,7 +680,7 @@ function buildCoverage(input: CostingCalculationInput, serviceDayIds: ReadonlySe
  * Trip of the Blocking Scenario belongs to it; the Unattributed row (`null`) appears only when it holds an eligible Block. `appliedRates` empty
  * leaves every `yearCosts` empty (a rate is not entered).
  */
-function blockedRouteRows(input: CostingCalculationInput, coverage: Coverage, appliedRates: { serviceYear: number; rate: number }[]): CostingRouteResult[] {
+function blockedRouteRows(input: CostingCalculationInput, coverage: Coverage, appliedRates: { serviceYear: number; rate: number }[], choose: AnnualCounts['choose']): CostingRouteResult[] {
   const routeNames = new Map((input.routes ?? []).map((route) => [route.id, route.name]));
   const days = sortServiceDays(input.serviceDays);
   return sortRouteResults([...coverage.routeDays.entries()].map(([routeId, byDay]) => ({
@@ -651,22 +690,110 @@ function blockedRouteRows(input: CostingCalculationInput, coverage: Coverage, ap
       const row = byDay.get(day.id) ?? { blockCount: 0, tripCount: 0, runningSeconds: 0, revenueSeconds: 0, platformSeconds: 0, unassignedTripCount: 0 };
       const revenueHoursPerDay = row.revenueSeconds / 3600;
       const platformHoursPerDay = row.platformSeconds / 3600;
+      const { count, source } = choose(routeId, day);
       return {
         serviceDayId: day.id,
         serviceDayName: day.name,
-        annualServiceDays: day.annualServiceDays,
+        annualServiceDays: count,
+        countSource: source,
         blockCount: row.blockCount,
         tripCount: row.tripCount,
         runningHoursPerDay: row.runningSeconds / 3600,
         unassignedTripCount: row.unassignedTripCount,
         revenueHoursPerDay,
         platformHoursPerDay,
-        annualRevenueHours: revenueHoursPerDay * day.annualServiceDays,
-        annualPlatformHours: platformHoursPerDay * day.annualServiceDays,
-        yearCosts: costingYearCostsForDay(revenueHoursPerDay, day.annualServiceDays, appliedRates),
+        annualRevenueHours: revenueHoursPerDay * count,
+        annualPlatformHours: platformHoursPerDay * count,
+        yearCosts: costingYearCostsForDay(revenueHoursPerDay, count, appliedRates),
       };
     }),
   })));
+}
+
+/** Decision 0089 item 41. The count a bucket uses on one service day, and where it came from. */
+export interface AnnualCountChoice { count: number; source: AnnualCountSource }
+
+/** One Route bucket's hours on one service day, with the annual count it uses (Decision 0089 item 41). */
+interface RouteDayBucket { revenueHoursPerDay: number; platformHoursPerDay: number; count: number }
+
+interface AnnualCounts {
+  /** The count of a Route bucket on a day; `routeId` null is the Unattributed row. */
+  choose(routeId: string | null, day: ServiceDayDefinition): AnnualCountChoice;
+  /** The counts of the Routes of an Unattributed day's Blocks, from which the row takes the largest. Empty when the day has none. */
+  unattributedCandidates(day: ServiceDayDefinition): AnnualCountChoice[];
+}
+
+/** A Route's own count for the day when the Route is switched on and has one for that day; otherwise the Scenario's count. */
+export function ownOrScenarioCount(route: Route | undefined, day: ServiceDayDefinition): AnnualCountChoice {
+  const own = route?.ownAnnualServiceDays;
+  if (own?.enabled === true && Object.prototype.hasOwnProperty.call(own.countsByServiceDayId, day.id)) {
+    return { count: own.countsByServiceDayId[day.id], source: 'route' };
+  }
+  return { count: day.annualServiceDays, source: 'scenario' };
+}
+
+/** Decision 0089 item 41. True when any Route is switched on; then the annual figures are the sum of the Route rows. */
+export function routeCountsSwitchedOn(routes: Route[] | undefined): boolean {
+  return (routes ?? []).some((route) => route.ownAnnualServiceDays?.enabled === true);
+}
+
+/**
+ * Decision 0089 item 41. A switched-on Route's own annual service days: each count a whole number from 0 up, and the counts of the Route
+ * total at most 365, as the Scenario's service days are checked. A Route switched off keeps its counts unchecked, because they are not used.
+ */
+export function validateRouteAnnualServiceDays(routes: Route[] | undefined): CostingFinding[] {
+  const findings: CostingFinding[] = [];
+  const invalid = (routeId: string, parameters: Record<string, string | number>) => costingFinding('costing.routeAnnualServiceDaysInvalid', 'error', 'route', routeId, 'ownAnnualServiceDays', { routeId, ...parameters });
+  for (const route of routes ?? []) {
+    const own = route.ownAnnualServiceDays;
+    if (own?.enabled !== true) continue;
+    let total = 0;
+    for (const [serviceDayId, count] of Object.entries(own.countsByServiceDayId)) {
+      if (!Number.isInteger(count) || count < 0) findings.push(invalid(route.id, { serviceDayId }));
+      total += Number.isFinite(count) ? count : 0;
+    }
+    if (total > MAX_ANNUAL_SERVICE_DAYS) findings.push(invalid(route.id, { total }));
+  }
+  return findings;
+}
+
+/**
+ * Decision 0089 item 41. The warning that names the Routes whose own annual service days a result uses, in name order; undefined when none does.
+ */
+export function routeCountsInUseFinding(scenarioId: string, routeNames: readonly string[]): CostingFinding | undefined {
+  if (routeNames.length === 0) return undefined;
+  const names = [...routeNames].sort((left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' }));
+  return costingFinding('costing.routeCountsInUse', 'warning', 'scenario', scenarioId, undefined, { routes: names.join('; ') });
+}
+
+/**
+ * Decision 0089 item 41. The Unattributed row uses the largest count among the Routes of its Blocks. A tie goes to a Route's own count, so the
+ * row names the source it took. A day with no multi-Route Block uses the Scenario's count.
+ */
+function annualCounts(routes: Route[] | undefined, coverage: Coverage): AnnualCounts {
+  const routeById = new Map((routes ?? []).map((route) => [route.id, route]));
+  const unattributedCandidates = (day: ServiceDayDefinition) => [...(coverage.unattributedRouteIds.get(day.id) ?? [])]
+    .map((routeId) => ownOrScenarioCount(routeById.get(routeId), day));
+  return {
+    unattributedCandidates,
+    choose: (routeId, day) => {
+      if (routeId !== null) return ownOrScenarioCount(routeById.get(routeId), day);
+      const candidates = unattributedCandidates(day);
+      if (candidates.length === 0) return { count: day.annualServiceDays, source: 'scenario' };
+      return candidates.reduce((best, candidate) => (candidate.count > best.count || (candidate.count === best.count && candidate.source === 'route') ? candidate : best));
+    },
+  };
+}
+
+/** The hours and counts of every Route bucket that has rows on one service day (Decision 0089 item 41). */
+function routeDayBuckets(coverage: Coverage, day: ServiceDayDefinition, choose: AnnualCounts['choose']): RouteDayBucket[] {
+  const buckets: RouteDayBucket[] = [];
+  for (const [routeId, byDay] of coverage.routeDays) {
+    const row = byDay.get(day.id);
+    if (!row) continue;
+    buckets.push({ revenueHoursPerDay: row.revenueSeconds / 3600, platformHoursPerDay: row.platformSeconds / 3600, count: choose(routeId, day).count });
+  }
+  return buckets;
 }
 
 function makeResult(

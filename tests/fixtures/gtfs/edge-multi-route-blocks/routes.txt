@@ -1,0 +1,3 @@
+route_id,agency_id,route_short_name,route_long_name,route_type
+M1,MB,M1,Market Street,3
+M2,MB,M2,Mill Avenue,3

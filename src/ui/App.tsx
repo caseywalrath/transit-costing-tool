@@ -7,6 +7,7 @@ import type { TripChangeUndo } from './trips/TripsWorkspace';
 import { UndoHistoryDialog } from './shell/UndoHistoryDialog';
 import { BlockingWorkspace } from './blocking/BlockingWorkspace';
 import { CostingWorkspace } from './costing/CostingWorkspace';
+import { CompareWorkspace, type CompareApplication } from './compare/CompareWorkspace';
 import { MenuButton, type MenuGroup } from './MenuButton';
 import { userFacingError } from './errorMessages';
 import { rememberCostBasisKind, rememberedCostBasisKind, type CostBasisKind } from './preferences';
@@ -28,15 +29,21 @@ import { type RouteNavigationGuard } from './shared/types';
 import { download, downloadBlob } from './shared/download';
 import { userMessage } from './shared/messages';
 import { RouteWorkspace } from './route/RouteWorkspace';
+import { GtfsImportDialog, type GtfsImportCommands, type GtfsImportOutcome, type ImportLevel } from './gtfs/GtfsImportDialog';
+import { importedNoticeText } from './gtfs/gtfsImportReviewModel';
+import { latestImportNoteText } from './gtfs/importNote';
+import { GtfsExportDialog, type GtfsExportDraft } from './gtfsExport/GtfsExportDialog';
+import { exportedNoticeText } from './gtfsExport/gtfsExportModel';
+import type { GtfsExportCommands, GtfsExportDone } from '../application/gtfsExport/gtfsExportService';
 import { AppHeader, RouteSwitcher, Switcher, type HeaderTab } from './shell/AppHeader';
 import { headerStatus, routeOptionLabel } from './shell/headerStatus';
 import { ContextField } from './shared/ContextField';
 import { SegmentedControl } from './shared/SegmentedControl';import { TripsOrSideBySide, useSideBySideWidth, type SideBySideControl } from './trips/SideBySideTrips';
 
-export type Props = { service: RouteDefinitionApplication; tripService: TripGenerationApplication; blockingService: BlockingCommands & BlockingQueries; costingService: CostingCommands & CostingQueries; plannedFrequencyService: PlannedFrequencyService; session?: SessionStatusQueries; restorePoints?: import('../application/restorePointService').RestorePointCommands & import('../application/restorePointService').RestorePointQueries };
-/** `undoId` (Decision 0081): the restore point the notice's Undo button restores. */
-export type Notice = { kind: 'error' | 'success' | 'info'; text: string; undoId?: string } | undefined;
-export type ActiveTab = 'route' | 'trips' | 'blocking' | 'costing';
+export type Props = { service: RouteDefinitionApplication; tripService: TripGenerationApplication; blockingService: BlockingCommands & BlockingQueries; costingService: CostingCommands & CostingQueries; /** The comparison service (Decision 0091). Without it the Compare tab is off. */ compareService?: CompareApplication; plannedFrequencyService: PlannedFrequencyService; /** The GTFS import service (Decision 0089). Without it the three "from GTFS feed" menu entries are off. */ gtfsImportService?: GtfsImportCommands; /** The GTFS export service (Decision 0090). Without it the two "Export as GTFS feed" menu entries are off. */ gtfsExportService?: GtfsExportCommands; session?: SessionStatusQueries; restorePoints?: import('../application/restorePointService').RestorePointCommands & import('../application/restorePointService').RestorePointQueries };
+/** `undoId` (Decision 0081): the restore point the notice's Undo button restores. `detail` is one more line under the text; `action` is one more button, after Undo. */
+export type Notice = { kind: 'error' | 'success' | 'info'; text: string; undoId?: string; detail?: string; action?: { label: string; onSelect: () => void } } | undefined;
+export type ActiveTab = 'route' | 'trips' | 'blocking' | 'costing' | 'compare';
 export type SelectionPreference = { projectId?: string; scenarioId?: string; routeId?: string };
 export const SELECTION_PREFERENCE_KEY = 'transit-costing-tool.route-selection.v1';
 export function loadSelectionPreference(): SelectionPreference {
@@ -53,7 +60,7 @@ export function saveSelectionPreference(preference: SelectionPreference) {
 
 export function formatBackupTime(iso: string) { return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); }
 
-export function App({ service, tripService, blockingService, costingService, plannedFrequencyService, session, restorePoints }: Props) {
+export function App({ service, tripService, blockingService, costingService, compareService, plannedFrequencyService, gtfsImportService, gtfsExportService, session, restorePoints }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState('');
   const [scenarioId, setScenarioId] = useState('');
@@ -76,6 +83,14 @@ export function App({ service, tripService, blockingService, costingService, pla
   const [confirm, setConfirm] = useState<Confirmation>();
   const [nameDialog, setNameDialog] = useState<NameDialog>();
   const [tripProfileBusy, setTripProfileBusy] = useState(false);
+  /** The open GTFS import dialog and the level it was opened for (Decision 0089 item 1). */
+  const [gtfsImportLevel, setGtfsImportLevel] = useState<ImportLevel>();
+  /** Whether the GTFS export dialog is open (Decision 0090). */
+  const [gtfsExportOpen, setGtfsExportOpen] = useState(false);
+  /** Unsaved export choices kept while the planner opens a Route from the Problems table; they belong to one Scenario and this session. */
+  const gtfsExportDraft = useRef<{ scenarioId: string; draft: GtfsExportDraft } | undefined>(undefined);
+  /** The newest restore point of an "add routes" import, for the notice's Undo. */
+  const lastGtfsImportPoint = useRef<string | undefined>(undefined);
   const [scopeSlot, setScopeSlot] = useState<HTMLElement | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
   const routeNavigationGuard = useRef<RouteNavigationGuard | undefined>(undefined);
@@ -156,6 +171,7 @@ export function App({ service, tripService, blockingService, costingService, pla
   useEffect(() => { refreshUndo(); }, [restorePoints, projectId, records]);
   // Every covered command, whichever workspace ran it, announces itself here once its write has committed (rule N2: non-modal, no focus).
   useEffect(() => restorePoints?.subscribeToRestorePoints((point) => {
+    if (point.kind === 'importGtfsRoutes') lastGtfsImportPoint.current = point.id;
     const context = point.scope === 'project' ? '' : restorePointContext(point);
     setNotice({ kind: 'success', text: [restorePointLabel(point), context].filter(Boolean).join(' · '), undoId: point.id });
     refreshUndo();
@@ -274,6 +290,62 @@ export function App({ service, tripService, blockingService, costingService, pla
     }).catch((error) => showError(error, 'Unable to review project deletion.'));
   }
   function deleteCurrentProject() { if (selectedProject) deleteProject(selectedProject); }
+  /**
+   * After a GTFS import (Decision 0089, sub-plan I9 item 5): the new Project or Scenario opens, or the open Scenario reloads, with the first
+   * imported Route on the Route tab; the notice names the file, offers Undo for added Routes, and offers the report.
+   */
+  async function finishGtfsImport(outcome: GtfsImportOutcome) {
+    setGtfsImportLevel(undefined);
+    try {
+      // A new Scenario with imported blocks opens on its "From feed" Blocking scenario. The new Scenario also has an empty Default one, and
+      // an empty one is never a cost basis. The choice is stored in the memory the scope bar writes, before the Scenario opens, so the shell
+      // reads it when it picks the working Blocking scenario.
+      if (outcome.level !== 'C') {
+        const newScenarioId = outcome.level === 'B' ? outcome.scenarioId : (await service.loadWorkspace(outcome.projectId)).records?.scenario.id;
+        const fromFeed = newScenarioId ? (await blockingService.listBlockingScenarios(newScenarioId)).find((item) => item.name === 'From feed') : undefined;
+        if (newScenarioId && fromFeed) rememberTripBlockingScenario(newScenarioId, fromFeed.tripProfileId, fromFeed.id);
+      }
+      if (outcome.level === 'A') await reload(outcome.projectId);
+      else if (outcome.level === 'B') await reload(outcome.projectId, outcome.scenarioId);
+      else await reload(projectId, outcome.scenarioId ?? scenarioId, outcome.firstRouteId);
+      setActiveTab('route');
+      setRuntimeVersion((current) => current + 1);
+      setRestoreVersion((current) => current + 1);
+      const undoId = outcome.level === 'C' ? lastGtfsImportPoint.current : undefined;
+      const base = outcome.fileName.replace(/\.zip$/i, '') || 'gtfs-feed';
+      setNotice({
+        kind: 'success',
+        text: importedNoticeText(outcome.routeCount, outcome.fileName),
+        ...(undoId ? { undoId } : {}),
+        ...(outcome.detail ? { detail: outcome.detail } : {}),
+        action: { label: 'Download report', onSelect: () => download(`${base}-import-report.csv`, outcome.reportCsv, 'text/csv;charset=utf-8') },
+      });
+    } catch (error) { showError(error, 'The import is saved, but it could not be opened. Reload this page.'); }
+  }
+  /**
+   * After a GTFS export (Decision 0090, card E4): the ZIP and the report download, the Scenario's copy takes the remembered settings (a
+   * later rename saves this copy, so it must hold them), and the notice says what was written.
+   */
+  function finishGtfsExport(done: GtfsExportDone) {
+    setGtfsExportOpen(false);
+    gtfsExportDraft.current = undefined;
+    setRecords((current) => (current && current.scenario.id === done.scenario.id ? { ...current, scenario: done.scenario } : current));
+    setScenarioOptions((current) => current.map((item) => (item.id === done.scenario.id ? done.scenario : item)));
+    downloadBlob(done.zipName, done.zip);
+    download(done.reportName, done.reportCsv, 'text/csv;charset=utf-8');
+    setNotice({ kind: 'success', text: exportedNoticeText(done.tripCount, done.routeCount) });
+  }
+  /** "Open on Route tab" in the export Problems table: the dialog closes with its unsaved choices kept, and the Route and pattern open. */
+  function openRouteFromExport(openRouteId: string, patternId: string | undefined, draft: GtfsExportDraft) {
+    requestRouteNavigation(() => {
+      gtfsExportDraft.current = { scenarioId, draft };
+      setGtfsExportOpen(false);
+      void reload(projectId, scenarioId, openRouteId).then(() => {
+        setActiveTab('route');
+        if (patternId) setSelectedPatternId(patternId);
+      }).catch(selectionFailed);
+    });
+  }
   async function addScenario(name: string) { if (!selectedProject) return; try { const next = await service.createScenario(selectedProject.id, name); await reload(selectedProject.id, next.scenario.id); } catch (error) { showError(error, 'Unable to create scenario.'); } }
   async function renameCurrentScenario(name: string) { if (!records) return; try { const next = await service.renameScenario(records, name); setRecords(next); setScenarioOptions((current) => current.map((scenario) => scenario.id === next.scenario.id ? next.scenario : scenario)); } catch (error) { showError(error, 'Unable to save scenario.'); } }
   async function duplicateCurrentScenario(name: string) { if (!records || !selectedProject) return; try { const next = await service.duplicateScenario(records, name); await reload(selectedProject.id, next.scenario.id); } catch (error) { showError(error, 'Unable to duplicate scenario.'); } }
@@ -389,10 +461,12 @@ export function App({ service, tripService, blockingService, costingService, pla
     { label: 'Projects', items: [
       ...projects.map((project) => ({ id: `project-${project.id}`, label: project.name, checked: project.id === projectId, wrapLabel: true, onSelect: () => openProject(project), contextGroups: () => projectContextGroups(project), contextHeading: project.name })),
       { id: 'new-project', label: 'New project…', onSelect: () => setNameDialog({ title: 'New project', submitLabel: 'New project',action: createNewProject }) },
+      { id: 'new-project-gtfs', label: 'New project from GTFS feed…', disabled: !gtfsImportService, onSelect: () => requestRouteNavigation(() => setGtfsImportLevel('A')) },
     ] },
     { items: [{ id: 'rename-project', label: 'Rename project…', disabled: !selectedProject, onSelect: () => setNameDialog({ title: 'Rename project', label: 'Project name', initialValue: selectedProject?.name, submitLabel: 'Rename', action: renameCurrentProject }) }] },
     { label: 'Project data', items: [
       { id: 'backup-project', label: 'Back up project (JSON)', disabled: !projectId, note: [protection.lastBackupExportedAt ? `Last backup: ${formatBackupTime(protection.lastBackupExportedAt)}` : 'No backup exported yet', ...(protection.persistentStorage === 'denied' || protection.persistentStorage === 'unavailable' ? ['This browser may clear local data. Export backups regularly.'] : [])], onSelect: () => { void exportJson(); } },
+      { id: 'export-project-gtfs', label: 'Export open scenario as GTFS feed…', disabled: !records || !gtfsExportService, onSelect: () => requestRouteNavigation(() => setGtfsExportOpen(true)) },
       { id: 'restore-project', label: 'Restore project from backup…', onSelect: () => importRef.current?.click() },
       ...(restorePoints ? [
         ...(latestUndo ? [{ id: 'undo-latest', label: restorePointCommandLabel(latestUndo), wrapLabel: true, onSelect: () => requestUndo(latestUndo.id) }] : []),
@@ -415,18 +489,21 @@ export function App({ service, tripService, blockingService, costingService, pla
   ];
   const scenarioActions: MenuGroup[] = [
     { label: 'Scenarios', items: [
-      ...scenarios.map((scenario) => ({ id: `scenario-${scenario.id}`, label: scenario.name, checked: scenario.id === scenarioId, wrapLabel: true, onSelect: () => openScenario(scenario), contextGroups: () => scenarioContextGroups(scenario), contextHeading: scenario.name })),
+      ...scenarios.map((scenario) => ({ id: `scenario-${scenario.id}`, label: scenario.name, checked: scenario.id === scenarioId, wrapLabel: true, ...(latestImportNoteText(scenario) ? { note: latestImportNoteText(scenario) } : {}), onSelect: () => openScenario(scenario), contextGroups: () => scenarioContextGroups(scenario), contextHeading: scenario.name })),
       { id: 'new-scenario', label: 'New scenario…', disabled: !records, onSelect: () => setNameDialog({ title: 'New scenario', label: 'Scenario name', submitLabel: 'Create scenario', action: addScenario }) },
+      { id: 'new-scenario-gtfs', label: 'New scenario from GTFS feed…', disabled: !records || !gtfsImportService, onSelect: () => requestRouteNavigation(() => setGtfsImportLevel('B')) },
     ] },
     { items: [
       { id: 'rename-scenario', label: 'Rename scenario…', disabled: !records, onSelect: () => setNameDialog({ title: 'Rename scenario', label: 'Scenario name', initialValue: records?.scenario.name, submitLabel: 'Rename', action: renameCurrentScenario }) },
       { id: 'duplicate-scenario', label: 'Duplicate scenario…', disabled: !records, onSelect: () => setNameDialog({ title: 'Duplicate scenario', initialValue: `${records?.scenario.name ?? ''} Copy`, submitLabel: 'Duplicate', action: duplicateCurrentScenario }) },
     ] },
+    { label: 'Data', items: [{ id: 'export-scenario-gtfs', label: 'Export as GTFS feed…', disabled: !records || !gtfsExportService, onSelect: () => requestRouteNavigation(() => setGtfsExportOpen(true)) }] },
     { items: [{ id: 'delete-scenario', label: 'Delete scenario…', disabled: !records, destructive: true, onSelect: () => requestRouteNavigation(deleteCurrentScenario) }] },
   ];
   const routeActions: MenuGroup[] = [
     { items: [
       { id: 'new-route', label: 'New route', onSelect: () => requestRouteNavigation(() => { void addRoute(); }) },
+      { id: 'add-routes-gtfs', label: 'Add routes from GTFS feed…', disabled: !records || !gtfsImportService, onSelect: () => requestRouteNavigation(() => setGtfsImportLevel('C')) },
       { id: 'rename-route', label: 'Rename route', disabled: !aggregate, onSelect: () => setNameDialog({ title: 'Rename route', label: 'Route name', initialValue: aggregate?.route.name, submitLabel: 'Rename', action: renameCurrentRoute }) },
       { id: 'duplicate-route', label: 'Duplicate route', disabled: !aggregate, onSelect: () => setNameDialog({ title: 'Duplicate route', label: 'Route name', initialValue: `${aggregate?.route.name || 'Untitled route'} Copy`, submitLabel: 'Duplicate', action: duplicateCurrentRoute }) },
     ] },
@@ -440,6 +517,7 @@ export function App({ service, tripService, blockingService, costingService, pla
     { id: 'trips', label: 'Trips', disabled: !usableRoute, title: !usableRoute ? 'Add a pattern with at least two points to define runtimes.' : undefined },
     { id: 'blocking', label: 'Blocking', disabled: !aggregate || !hasTripProfiles, title: !aggregate ? 'Select a route before blocking service.' : !hasTripProfiles ? 'Create a trip profile before blocking service.' : undefined },
     { id: 'costing', label: 'Costing', disabled: !records, title: !records ? 'Select a scenario before costing service.' : undefined },
+    { id: 'compare', label: 'Compare', disabled: !records || !compareService, title: !records ? 'Select a scenario before comparing service.' : undefined },
   ];
   const selectedRoute = records?.routes.find((route) => route.id === routeId);
   // Decision 0082 item 4: Routes are created, edited, and deleted only on the Route tab, so only there does the switcher hold their commands.
@@ -495,15 +573,40 @@ export function App({ service, tripService, blockingService, costingService, pla
   return <main className={sideBySideIds ? 'app-shell app-shell--full-width' : 'app-shell'}>
     <AppHeader tabs={tabs} activeTab={activeTab} onTab={(id) => requestRouteNavigation(() => setActiveTab(id as ActiveTab))} status={headerStatus({ readOnly: sessionStatus.mode === 'readOnly', saveState: saveStatus.state, lastBackupExportedAt: protection.lastBackupExportedAt, now: Date.now() })} scopeFields={scopeFields} scopeSlotRef={setScopeSlot} contextCrumbs={contextCrumbs} crumbSlotRef={setCrumbSlot}
       projectSwitcher={<Switcher kind="Project" name={selectedProject?.name ?? ''} groups={projectActions} />}
-      scenarioSwitcher={<Switcher kind="Scenario" name={records?.scenario.name ?? ''} groups={scenarioActions} disabled={!projectId} identity={scenarios.length > 1} />} />
+      // The Compare tab picks its own sides (Decision 0091 item 1), so the header's Scenario level is left out there.
+      scenarioSwitcher={activeTab === 'compare' ? undefined : <Switcher kind="Scenario" name={records?.scenario.name ?? ''} groups={scenarioActions} disabled={!projectId} identity={scenarios.length > 1} />} />
     <input ref={importRef} className="visually-hidden" tabIndex={-1} type="file" accept="application/json,.json" aria-label="Restore project JSON file" onChange={importJson} />
     {sessionStatus.mode === 'readOnly' && <div className="notice info" role="status">{sessionStatus.reason === 'databaseUpgraded' ? 'The saved data was upgraded in another tab. This tab is read-only. Reload this page to edit.' : 'This project is open in another tab. This tab is read-only.'}</div>}
-    {notice && <div className={`notice ${notice.kind}`} role="status"><span className="notice__text">{notice.text}</span>{notice.undoId && <button type="button" className="notice__action" onClick={() => requestUndo(notice.undoId!)}>Undo</button>}<button onClick={() => setNotice(undefined)} aria-label="Dismiss message">×</button></div>}
+    {notice && <div className={`notice ${notice.kind}`} role="status"><span className="notice__text">{notice.text}{notice.detail && <span className="notice__detail">{notice.detail}</span>}</span>{notice.undoId && <button type="button" className="notice__action" onClick={() => requestUndo(notice.undoId!)}>Undo</button>}{notice.action && <button type="button" className="notice__action" onClick={notice.action.onSelect}>{notice.action.label}</button>}<button onClick={() => setNotice(undefined)} aria-label="Dismiss message">×</button></div>}
     {undoHistoryOpen && restorePoints && <UndoHistoryDialog projectId={projectId} list={listRestorePoints} onRestore={async (point) => requestUndo(point.id)} onClose={() => setUndoHistoryOpen(false)} />}
-    {!records ? loadFailed ? null : <section className="empty-state empty-project"><h1>No project</h1><p>Data is stored in this browser. A new project includes one scenario and four service days.</p><div className="empty-state__actions"><button type="button" className="primary" onClick={() => setNameDialog({ title: 'New project', submitLabel: 'New project', action: createNewProject })}>New project…</button><button type="button" onClick={() => importRef.current?.click()}>Restore from backup…</button>{deletedProjectRestorable && <button type="button" onClick={() => setUndoHistoryOpen(true)}>Restore deleted project…</button>}</div></section> : <WorkspaceErrorBoundary resetKey={`${activeTab}:${scenarioId}:${routeId}`} screen={activeTab === 'route' ? 'Route' : activeTab === 'trips' ? 'Trips' : activeTab === 'blocking' ? 'Blocking' : 'Costing'}>
-      {activeTab === 'costing' && records ? <CostingWorkspace key={`costing-${restoreVersion}`} tripProfileId={workspaceTripProfileId} blockingScenarioId={workspaceBlockingScenarioId} basisKind={costBasisKind} onBasisKindChange={chooseCostBasisKind} scopeSlot={scopeSlot} costingService={costingService} scenario={records.scenario} projectName={selectedProject?.name ?? ''} serviceDays={records.serviceDays} tripProfiles={records.tripProfiles ?? []} routes={records.routes} onRegisterNavigationGuard={(guard) => { costingNavigationGuard.current = guard; }} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update Costing.')} /> : aggregate ? <><div hidden={activeTab !== 'route'}><RouteWorkspace key={aggregate.route.id} service={service} aggregate={aggregate} findings={findings} selectedPatternId={selectedPatternId} segmentMiles={(pattern, index) => service.getSegmentMiles(pattern, index)} onRoute={saveRouteField} onRenameDirection={renameDirection} onServiceDay={updateServiceDay} serviceDays={records.serviceDays} onCommitted={acceptRouteEdit} onDeletePattern={deleteSelectedPattern} onSelectPattern={setSelectedPatternId} onRegisterNavigationGuard={(guard) => { routeNavigationGuard.current = guard; }} onError={(error) => showError(error, 'Unable to save route changes.')} plannedFrequencyService={plannedFrequencyService} tripProfileId={workspaceTripProfileId} active={activeTab === 'route'} /></div>{activeTab === 'trips' && <TripsOrSideBySide sideBySide={sideBySideControl} tripChangeUndo={tripChangeUndo} tripPatternSelections={tripPatternSelections} onTripPatternChange={(key, id) => setTripPatternSelections((current) => ({ ...current, [key]: id }))} service={service} tripService={tripService} plannedFrequencyService={plannedFrequencyService} blockingService={blockingService} aggregate={aggregate} records={records} serviceDayId={workspaceServiceDayId} directionId={workspaceDirectionId} tripProfileId={workspaceTripProfileId} tripProfileBusy={tripProfileBusy} onTripProfileChange={setWorkspaceTripProfileId} crumbSlot={crumbSlot} blockingScenarioId={workspaceBlockingScenarioId} onBlockingScenarioChange={setWorkspaceBlockingScenarioId} blockingScenarioListVersion={blockingScenarioListVersion} onBlockingScenarioListChanged={blockingScenariosChanged} onTripProfileRename={() => setNameDialog({ title: 'Rename trip profile', label: 'Name', initialValue: records.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name, submitLabel: 'Rename', action: renameTripProfile })} onTripProfileCopy={() => setNameDialog({ title: 'Copy trip profile', label: 'Name', initialValue: `${records.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name ?? ''} Copy`, submitLabel: 'Copy', action: copyTripProfile })} onTripProfileDelete={deleteTripProfile} onRegisterNavigationGuard={(guard) => { tripNavigationGuard.current = guard; }} runtimeVersion={runtimeVersion} onRuntimeChanged={() => setRuntimeVersion((current) => current + 1)} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update trips.')} />}{activeTab === 'blocking' && <BlockingWorkspace dataVersion={runtimeVersion} crumbSlot={crumbSlot} tripProfileId={workspaceTripProfileId} blockingScenarioId={workspaceBlockingScenarioId} onBlockingScenarioChange={setWorkspaceBlockingScenarioId} onBlockingScenariosChanged={blockingScenariosChanged} scopeSlot={scopeSlot} blockingService={blockingService} tripService={tripService} aggregate={aggregate} records={records} routes={records.routes} routeId={routeId} onRouteChange={(nextRouteId) => requestRouteNavigation(() => { void reload(projectId, scenarioId, nextRouteId).catch(selectionFailed); })} onReload={() => reload(projectId, scenarioId, routeId)} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update Blocking.')} />}</> : records.routes.length ? <section className="empty-state"><h2>No route selected</h2><p>Select a route in the Route field, or add one.</p><div className="empty-state__actions"><button type="button" onClick={() => requestRouteNavigation(() => { void addRoute(); })}>New route</button></div></section> : <section className="empty-state"><h2>No routes</h2><p>Scenario “{records.scenario.name}” has no routes.</p><div className="empty-state__actions"><button type="button" className="primary" onClick={() => requestRouteNavigation(() => { void addRoute(); })}>New route</button></div></section>}
+    {!records ? loadFailed ? null : <section className="empty-state empty-project"><h1>No project</h1><p>Data is stored in this browser. A new project includes one scenario and four service days.</p><div className="empty-state__actions"><button type="button" className="primary" onClick={() => setNameDialog({ title: 'New project', submitLabel: 'New project', action: createNewProject })}>New project…</button><button type="button" onClick={() => importRef.current?.click()}>Restore from backup…</button>{deletedProjectRestorable && <button type="button" onClick={() => setUndoHistoryOpen(true)}>Restore deleted project…</button>}</div></section> : <WorkspaceErrorBoundary resetKey={`${activeTab}:${scenarioId}:${routeId}`} screen={activeTab === 'route' ? 'Route' : activeTab === 'trips' ? 'Trips' : activeTab === 'blocking' ? 'Blocking' : activeTab === 'compare' ? 'Compare' : 'Costing'}>
+      {activeTab === 'compare' && compareService ? <CompareWorkspace key={`compare-${projectId}-${restoreVersion}`} compareService={compareService} projectId={projectId} appScenarioId={scenarioId} appTripProfileId={workspaceTripProfileId} onError={(error, fallback) => showError(error, fallback ?? 'Unable to compare scenarios.')} /> : activeTab === 'costing' && records ? <CostingWorkspace key={`costing-${restoreVersion}`} tripProfileId={workspaceTripProfileId} blockingScenarioId={workspaceBlockingScenarioId} basisKind={costBasisKind} onBasisKindChange={chooseCostBasisKind} scopeSlot={scopeSlot} costingService={costingService} scenario={records.scenario} projectName={selectedProject?.name ?? ''} serviceDays={records.serviceDays} tripProfiles={records.tripProfiles ?? []} routes={records.routes} onRegisterNavigationGuard={(guard) => { costingNavigationGuard.current = guard; }} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update Costing.')} /> : aggregate ? <><div hidden={activeTab !== 'route'}><RouteWorkspace key={aggregate.route.id} service={service} aggregate={aggregate} findings={findings} selectedPatternId={selectedPatternId} segmentMiles={(pattern, index) => service.getSegmentMiles(pattern, index)} onRoute={saveRouteField} onRenameDirection={renameDirection} onServiceDay={updateServiceDay} serviceDays={records.serviceDays} onCommitted={acceptRouteEdit} onDeletePattern={deleteSelectedPattern} onSelectPattern={setSelectedPatternId} onRegisterNavigationGuard={(guard) => { routeNavigationGuard.current = guard; }} onError={(error) => showError(error, 'Unable to save route changes.')} plannedFrequencyService={plannedFrequencyService} tripProfileId={workspaceTripProfileId} active={activeTab === 'route'} /></div>{activeTab === 'trips' && <TripsOrSideBySide sideBySide={sideBySideControl} tripChangeUndo={tripChangeUndo} tripPatternSelections={tripPatternSelections} onTripPatternChange={(key, id) => setTripPatternSelections((current) => ({ ...current, [key]: id }))} service={service} tripService={tripService} plannedFrequencyService={plannedFrequencyService} blockingService={blockingService} aggregate={aggregate} records={records} serviceDayId={workspaceServiceDayId} directionId={workspaceDirectionId} tripProfileId={workspaceTripProfileId} tripProfileBusy={tripProfileBusy} onTripProfileChange={setWorkspaceTripProfileId} crumbSlot={crumbSlot} blockingScenarioId={workspaceBlockingScenarioId} onBlockingScenarioChange={setWorkspaceBlockingScenarioId} blockingScenarioListVersion={blockingScenarioListVersion} onBlockingScenarioListChanged={blockingScenariosChanged} onTripProfileRename={() => setNameDialog({ title: 'Rename trip profile', label: 'Name', initialValue: records.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name, submitLabel: 'Rename', action: renameTripProfile })} onTripProfileCopy={() => setNameDialog({ title: 'Copy trip profile', label: 'Name', initialValue: `${records.tripProfiles?.find((profile) => profile.id === workspaceTripProfileId)?.name ?? ''} Copy`, submitLabel: 'Copy', action: copyTripProfile })} onTripProfileDelete={deleteTripProfile} onRegisterNavigationGuard={(guard) => { tripNavigationGuard.current = guard; }} runtimeVersion={runtimeVersion} onRuntimeChanged={() => setRuntimeVersion((current) => current + 1)} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update trips.')} />}{activeTab === 'blocking' && <BlockingWorkspace dataVersion={runtimeVersion} crumbSlot={crumbSlot} tripProfileId={workspaceTripProfileId} blockingScenarioId={workspaceBlockingScenarioId} onBlockingScenarioChange={setWorkspaceBlockingScenarioId} onBlockingScenariosChanged={blockingScenariosChanged} scopeSlot={scopeSlot} blockingService={blockingService} tripService={tripService} aggregate={aggregate} records={records} routes={records.routes} routeId={routeId} onRouteChange={(nextRouteId) => requestRouteNavigation(() => { void reload(projectId, scenarioId, nextRouteId).catch(selectionFailed); })} onReload={() => reload(projectId, scenarioId, routeId)} onError={(error, fallback) => showError(error, fallback ?? 'Unable to update Blocking.')} />}</> : records.routes.length ? <section className="empty-state"><h2>No route selected</h2><p>Select a route in the Route field, or add one.</p><div className="empty-state__actions"><button type="button" onClick={() => requestRouteNavigation(() => { void addRoute(); })}>New route</button></div></section> : <section className="empty-state"><h2>No routes</h2><p>Scenario “{records.scenario.name}” has no routes.</p><div className="empty-state__actions"><button type="button" className="primary" onClick={() => requestRouteNavigation(() => { void addRoute(); })}>New route</button></div></section>}
     </WorkspaceErrorBoundary>}
     {nameDialog && <NameDialogForm dialog={nameDialog} onClose={() => setNameDialog(undefined)} />}
+    {gtfsImportLevel && gtfsImportService && <GtfsImportDialog
+      level={gtfsImportLevel}
+      service={gtfsImportService}
+      onClose={() => setGtfsImportLevel(undefined)}
+      onImported={(outcome) => { void finishGtfsImport(outcome); }}
+      {...(gtfsImportLevel === 'B' ? { projectId, projectName: selectedProject?.name ?? '' } : {})}
+      {...(gtfsImportLevel === 'C' && records ? {
+        scenarioId,
+        scenarioName: records.scenario.name,
+        existingRouteNames: records.routes.map((route) => route.name),
+        scenarioServiceDays: records.serviceDays,
+        tripProfiles: records.tripProfiles ?? [],
+        workingTripProfileId: workspaceTripProfileId,
+        blockingScenarios: blockingScenarioList,
+      } : {})} />}
+    {gtfsExportOpen && gtfsExportService && records && <GtfsExportDialog
+      scenarioId={scenarioId}
+      service={gtfsExportService}
+      workingTripProfileId={workspaceTripProfileId}
+      workingBlockingScenarioId={workspaceBlockingScenarioId}
+      {...(gtfsExportDraft.current?.scenarioId === scenarioId ? { draft: gtfsExportDraft.current.draft } : {})}
+      onClose={() => setGtfsExportOpen(false)}
+      onExported={finishGtfsExport}
+      onOpenRoute={openRouteFromExport} />}
     {confirm && <ConfirmDialog dialog={confirm} onClose={() => setConfirm(undefined)} />}
   </main>;
 }

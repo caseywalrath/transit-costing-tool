@@ -1,0 +1,3 @@
+stop_id,stop_name,stop_lat,stop_lon
+A,Alpha,39.7400,-104.9900
+B,Beta,39.7500,-104.9800

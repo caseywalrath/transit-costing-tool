@@ -1,6 +1,6 @@
 import type { Project, ProjectSnapshot } from '../domain/types';
 import { cloneProjectSnapshot, exportProjectJson, importProjectJson, parseProjectBackupWithReport, type BackupImportReport } from './backup';
-import type { BackupImportMode, BackupPort } from '../application/ports';
+import type { BackupImportMode, BackupPort, ProjectImportOptions } from '../application/ports';
 
 export class ProjectBackupService implements BackupPort {
   constructor(
@@ -14,12 +14,15 @@ export class ProjectBackupService implements BackupPort {
     return exportProjectJson(snapshot);
   }
 
-  async importProject(payload: string, mode: BackupImportMode = 'reject'): Promise<Project> {
-    return (await this.importProjectWithReport(payload, mode)).project;
+  async importProject(payload: string, mode: BackupImportMode = 'reject', options: ProjectImportOptions = {}): Promise<Project> {
+    return (await this.importProjectWithReport(payload, mode, options)).project;
   }
 
-  /** Imports a backup and says what parsing repaired, could not repair, or left out. Presenting the report is the data-safety package (U02). */
-  async importProjectWithReport(payload: string, mode: BackupImportMode = 'reject'): Promise<{ project: Project; report: BackupImportReport }> {
+  /**
+   * Imports a backup and says what parsing repaired, could not repair, or left out. Presenting the report is the data-safety package (U02).
+   * `options.name` names the copy; it applies only to mode 'copy', and other modes keep the payload's own name.
+   */
+  async importProjectWithReport(payload: string, mode: BackupImportMode = 'reject', options: ProjectImportOptions = {}): Promise<{ project: Project; report: BackupImportReport }> {
     // Parsing and validation complete before any repository write is attempted.
     const { snapshot: source, report } = parseProjectBackupWithReport(payload);
     const existing = await this.getSnapshot(source.project.id);
@@ -27,7 +30,7 @@ export class ProjectBackupService implements BackupPort {
     // Re-parse copied snapshots before writing so cloned references receive the same
     // graph validation as an uploaded backup.
     const snapshot = mode === 'copy'
-      ? importProjectJson(exportProjectJson(cloneProjectSnapshot(source)))
+      ? importProjectJson(exportProjectJson(cloneProjectSnapshot(source, undefined, options.name)))
       : source;
     await this.saveSnapshot(snapshot);
     return { project: snapshot.project, report };

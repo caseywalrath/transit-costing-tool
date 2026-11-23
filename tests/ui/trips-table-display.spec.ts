@@ -155,7 +155,8 @@ test('discards a Shift whose net offset is zero without writing any Trip', async
   await second.getByRole('button', { name: /min later/ }).click();
   await second.getByRole('button', { name: 'Done', exact: true }).click();
   await expect.poll(() => columnTexts(page, 0)).toEqual(['6:01', '6:10', '6:20']);
-  expect(await stored()).not.toEqual(before);
+  // The staged time shows before the write finishes, so wait for the stored Trips.
+  await expect.poll(stored).not.toEqual(before);
 });
 
 

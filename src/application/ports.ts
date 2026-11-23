@@ -40,9 +40,14 @@ export interface RouteDefinitionRepository {
 
 export type BackupImportMode = 'replace' | 'copy' | 'reject';
 
+/** How a backup import names the Project it writes. `name` applies to the copy mode only. */
+export interface ProjectImportOptions {
+  name?: string;
+}
+
 export interface BackupPort {
   exportProject(projectId: string): Promise<string>;
-  importProject(payload: string, mode?: BackupImportMode): Promise<Project>;
+  importProject(payload: string, mode?: BackupImportMode, options?: ProjectImportOptions): Promise<Project>;
 }
 
 /** Why this tab may not write: another tab holds the write lock, or another tab upgraded the database under it. */

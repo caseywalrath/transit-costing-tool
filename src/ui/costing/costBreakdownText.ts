@@ -11,6 +11,8 @@ export type BreakdownRow = {
   key: string; name: string; days: number; trips?: number; blocks?: number;
   running?: number; revenue?: number; platform?: number; dailyCost?: number;
   annualRevenue?: number; annualPlatform?: number; annualCost?: number;
+  /** Decision 0089 item 41: set on a Route's day row whose count is the Route's own rather than the Scenario's. */
+  ownCount?: true;
 };
 
 /** The rows of either cost basis in one shape, so the blocked and estimated tables have the same eleven columns. */
@@ -39,7 +41,17 @@ export function breakdownRows(result: CostingResult, selectedYear: number): { ro
 }
 
 /** One Route row of the Cost breakdown (Decision 0077): the Route's totals, its service-day rows, and its unassigned-trip count. */
-export type RouteBreakdownRow = BreakdownRow & { routeId: string | null; unassignedTrips?: number; days: number; dayRows: BreakdownRow[] };
+export type RouteBreakdownRow = BreakdownRow & {
+  routeId: string | null; unassignedTrips?: number; days: number; dayRows: BreakdownRow[];
+  /** The tooltip of the "Own counts" marker: the days that use the Route's own count, each with that count. Absent when the Route uses the Scenario's. */
+  ownCountsText?: string;
+};
+
+/** "Weekday 62, Saturday 52": the service days of a Route that use its own count, in the result's order. */
+export function ownCountsText(days: ReadonlyArray<{ serviceDayName: string; annualServiceDays: number; countSource?: string }>): string | undefined {
+  const own = days.filter((day) => day.countSource === 'route');
+  return own.length ? own.map((day) => `${day.serviceDayName} ${day.annualServiceDays}`).join(', ') : undefined;
+}
 
 /**
  * The Route rows of the Cost breakdown, in the domain's order. A Route row follows the Total row's rules: annual days, trip and block
@@ -55,14 +67,17 @@ export function routeBreakdownRows(result: CostingResult, selectedYear: number):
       const cost = day.yearCosts.find((item) => item.serviceYear === selectedYear);
       return {
         key: `${route.routeId ?? 'unattributed'}:${day.serviceDayId}`, name: day.serviceDayName, days: day.annualServiceDays,
+        ...(route.routeId !== null && day.countSource === 'route' ? { ownCount: true as const } : {}),
         trips: day.tripCount, running: day.runningHoursPerDay, ...(estimated ? {} : { blocks: day.blockCount }),
         revenue: day.revenueHoursPerDay, platform: day.platformHoursPerDay, dailyCost: cost?.costPerDayUsd,
         annualRevenue: day.annualRevenueHours, annualPlatform: day.annualPlatformHours, annualCost: cost?.annualCostUsd,
       };
     });
     const unassigned = estimated ? undefined : route.days.reduce((acc, day) => acc + (day.unassignedTripCount ?? 0), 0);
+    const own = route.routeId === null ? undefined : ownCountsText(route.days);
     return {
       key: route.routeId ?? 'unattributed', routeId: route.routeId,
+      ...(own ? { ownCountsText: own } : {}),
       name: route.routeId === null ? UNATTRIBUTED_ROUTE_NAME : route.routeName || 'Untitled route',
       days: dayRows.reduce((acc, row) => acc + row.days, 0),
       trips: sum(dayRows.map((row) => row.trips)), ...(estimated ? {} : { blocks: sum(dayRows.map((row) => row.blocks)) }),

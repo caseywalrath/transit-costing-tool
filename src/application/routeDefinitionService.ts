@@ -10,13 +10,13 @@ import { normalizeServiceDayAbbreviation, sortServiceDays, validateServiceDayAbb
 import { applySegmentRuntimePlan, defaultBandPairs, planCopyToOthers, planFillFromOthers, planValueCopy, qualifyingProfiles, type BandPairs, type ValueCopyRequest, type SegmentRuntimePlan } from '../domain/segmentRuntimeMatching';
 import { formatServiceTime } from '../domain/time';
 import { copyRuntimeProfile, normalizeRuntimeProfile, reverseCopyRuntimeProfile, routeRuntimeCalculationMethod, unifyRouteRuntimeCalculationMethods, validateRuntimeProfile, withRuntimeCalculationRevision, RuntimeProfileDeletionError, type RuntimeCalculationMethod } from '../domain/runtime';
-import type { Block, BlockActivity, Node, PatternStopPlacement, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RoutePattern, RouteStop, RouteStopSet, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, StopInterpolation, StopTimeRoundingSeconds, TimepointLocations, TimepointStopCodes, ValidationFinding } from '../domain/types';
+import type { Block, BlockActivity, Node, PatternStopPlacement, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RouteOwnAnnualServiceDays, RoutePattern, RouteStop, RouteStopSet, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, StopInterpolation, StopTimeRoundingSeconds, TimepointLocations, TimepointStopCodes, ValidationFinding } from '../domain/types';
 import { validateNodeDeletion, validateRouteDefinition } from '../domain/validation';
 import { adjustBlockReferences } from '../domain/trips';
 import { normalizePlacements, normalizeStopLocation, normalizeTimepointLocations, normalizeTimepointStopCodes, pruneRouteStopSets, reconcilePlacements, reconcileTimepointLocations, reconcileTimepointStopCodes, validateRouteStopSet } from '../domain/stops';
 import { applyStopPlacementPlan, applyTimepointCodePlan, applyTimepointLocationPlan, planStopCopy, planStopFill, stopCopyCandidatePatternIds, type StopPlacementPlan } from '../domain/stopPlacementMatching';
 import { authoritativeTripsCsv, blockActivitiesCsv, blocksCsv, directionColumnsCsv, directionsCsv, generationSetsCsv, nodesCsv, patternPointsCsv, patternsCsv, routeCsv, runtimeBandsCsv, scheduledPointsCsv, tripsCsv } from '../persistence/csv';
-import type { BackupPort, LocalDataProtection, RouteDefinitionRepository, SaveStatus } from './ports';
+import type { BackupPort, LocalDataProtection, ProjectImportOptions, RouteDefinitionRepository, SaveStatus } from './ports';
 import { assertReviewCurrent, fingerprint } from './reviewToken';
 import { SaveStatusPublisher, type LocalDataProtectionService } from './saveStatus';
 
@@ -151,6 +151,8 @@ const SERVICE_DAY_MESSAGES: Record<string, (finding: ValidationFinding) => strin
   'serviceDay.abbreviationDuplicate': (finding) => `Another service day already uses the abbreviation ${finding.parameters?.abbreviation ?? ''}. Enter a different abbreviation.`,
   'serviceDay.annualServiceDaysInvalid': () => 'Annual service days must be a whole number of 0 or more.',
   'serviceDay.annualServiceDaysExceed365': (finding) => `Annual service days cannot total more than ${finding.parameters?.maximum ?? MAX_ANNUAL_SERVICE_DAYS}. This change would make the total ${finding.parameters?.total}.`,
+  'serviceDay.ownCountInvalid': () => 'A route\'s own count must be a whole number of 0 or more.',
+  'serviceDay.ownCountsExceed365': (finding) => `A route's annual service days cannot total more than ${finding.parameters?.maximum ?? MAX_ANNUAL_SERVICE_DAYS}. This change would make the total ${finding.parameters?.total}, counting the scenario's days for any blank cell.`,
 };
 
 /** The plain-language text for one Service day finding, so a screen can show it beside the field the finding names. */
@@ -689,7 +691,66 @@ export class RouteDefinitionService {
     });
   }
 
+  /**
+   * Adds a custom Service day to the Scenario with a count of 0, so the Scenario's total is unchanged (Decision 0089 item 43). The name
+   * and the optional abbreviation are checked as an edit of the new day would be.
+   */
+  async addServiceDay(scenarioId: string, input: { name: string; abbreviation?: string }): Promise<{ records: ScenarioRecords; serviceDay: ServiceDayDefinition }> {
+    const stored = await this.repository.getScenarioRecords(scenarioId);
+    if (!stored) throw new Error('Scenario not found.');
+    const name = input.name.trim();
+    const entered = input.abbreviation === undefined ? undefined : normalizeServiceDayAbbreviation(input.abbreviation);
+    const draft = withAbbreviation({
+      id: newId(), scenarioId, kind: 'custom', name, annualServiceDays: 0, sequence: 0, ...metadata(this.now()),
+    }, entered || undefined);
+    const check = (days: ServiceDayDefinition[]): ValidationFinding[] => serviceDayFindings([...days, draft], draft.id, { name, ...(input.abbreviation !== undefined ? { abbreviation: input.abbreviation } : {}) });
+    const first = check(stored.serviceDays);
+    if (first.length) throw new ServiceDayValidationError(first);
+    let created: ServiceDayDefinition | undefined;
+    const saved = await this.updateScenarioRecords(scenarioId, (current) => {
+      const recheck = check(current.serviceDays);
+      if (recheck.length) throw new ServiceDayValidationError(recheck);
+      created = { ...draft, sequence: current.serviceDays.reduce((highest, day) => Math.max(highest, day.sequence), 0) + 1 };
+      return { ...current, serviceDays: [...current.serviceDays, created] };
+    });
+    return { records: saved, serviceDay: created! };
+  }
+
+  /**
+   * Saves a Route's own annual service days (Decision 0089 item 41). Each count is a whole number of 0 or more, and the Route's column,
+   * with the Scenario's count standing in for a blank day, totals at most 365. A day that no longer exists is dropped. Switching off
+   * keeps the counts, so the same call stores `enabled: false` with them.
+   */
+  async updateRouteOwnCounts(aggregate: RouteDefinitionAggregate, own: RouteOwnAnnualServiceDays): Promise<RouteEditCommitResult> {
+    const saved = await this.saveOwnCounts(aggregate, own);
+    // Read after the write, so the screen's Scenario records hold the saved Route.
+    const records = await this.repository.getScenarioRecords(aggregate.route.scenarioId);
+    if (!records) throw new Error('Scenario not found.');
+    return { aggregate: saved, records };
+  }
+
+  private async saveOwnCounts(aggregate: RouteDefinitionAggregate, own: RouteOwnAnnualServiceDays): Promise<RouteDefinitionAggregate> {
+    const records = await this.repository.getScenarioRecords(aggregate.route.scenarioId);
+    if (!records) throw new Error('Scenario not found.');
+    const dayIds = new Set(records.serviceDays.map((day) => day.id));
+    const counts = Object.fromEntries(Object.entries(own.countsByServiceDayId).filter(([id]) => dayIds.has(id)));
+    const finding = (messageKey: string, serviceDayId: string | undefined, parameters?: Record<string, string | number>): ValidationFinding => ({ ruleId: messageKey, severity: 'error', entityType: 'route', entityId: aggregate.route.id, field: 'ownAnnualServiceDays', messageKey, ...(parameters || serviceDayId ? { parameters: { ...(serviceDayId ? { serviceDayId } : {}), ...parameters } } : {}) });
+    const findings = Object.entries(counts).filter(([, count]) => !Number.isInteger(count) || count < 0).map(([id]) => finding('serviceDay.ownCountInvalid', id));
+    if (!findings.length) {
+      const total = records.serviceDays.reduce((sum, day) => sum + (day.id in counts ? counts[day.id]! : day.annualServiceDays), 0);
+      if (total > MAX_ANNUAL_SERVICE_DAYS) findings.push(finding('serviceDay.ownCountsExceed365', undefined, { total, maximum: MAX_ANNUAL_SERVICE_DAYS }));
+    }
+    if (findings.length) throw new ServiceDayValidationError(findings);
+    return this.saveAggregate({ ...aggregate, route: withUpdatedAt({ ...aggregate.route, ownAnnualServiceDays: { enabled: own.enabled, countsByServiceDayId: counts } }, this.now()) });
+  }
+
   async updateRoute(aggregate: RouteDefinitionAggregate, patch: Partial<Route>): Promise<RouteDefinitionAggregate> {
+    // The counts are checked against the Scenario's days, so they never reach storage unchecked.
+    if (patch.ownAnnualServiceDays) {
+      const { ownAnnualServiceDays, ...rest } = patch;
+      const base = Object.keys(rest).length ? await this.updateRoute(aggregate, rest) : aggregate;
+      return this.saveOwnCounts(base, ownAnnualServiceDays);
+    }
     return this.saveAggregate({ ...aggregate, route: withUpdatedAt({ ...aggregate.route, ...patch }, this.now()) });
   }
 
@@ -1130,7 +1191,7 @@ export class RouteDefinitionService {
     this.protection?.recordBackupExported(projectId);
     return payload;
   }
-  async importProject(payload: string): Promise<Project> { return this.save(() => this.backup.importProject(payload, 'copy')); }
+  async importProject(payload: string, options: ProjectImportOptions = {}): Promise<Project> { return this.save(() => this.backup.importProject(payload, 'copy', options)); }
   /**
    * Exports route-level records for the route currently open in the workspace.
    * Blocks are included only when they reference one of the selected route's
@@ -1863,6 +1924,8 @@ export type RouteDefinitionApplication = Pick<RouteDefinitionService,
   | 'getRouteDeletionImpact'
   | 'deleteRoute'
   | 'updateServiceDay'
+  | 'addServiceDay'
+  | 'updateRouteOwnCounts'
   | 'updateRoute'
   | 'renameDirection'
   | 'previewNodeChanges'

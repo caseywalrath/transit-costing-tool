@@ -1,0 +1,9 @@
+route_id,service_id,trip_id,direction_id
+R1,WKDY,R1_W,0
+R1,SAT,R1_S,0
+R1,SUN,R1_U,0
+R1,HOL,R1_H,0
+R2,WKDY,R2_W,0
+R2,SAT,R2_S,0
+R2,SUN,R2_U,0
+R2,HOL,R2_H,0

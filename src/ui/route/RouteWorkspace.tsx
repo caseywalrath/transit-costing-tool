@@ -2,19 +2,19 @@ import { Fragment, useEffect, useRef, useState, type RefObject } from 'react';
 import { ModalDialog } from '../ModalDialog';
 import { MenuButton } from '../MenuButton';
 import { formatMiles } from '../format';
-import { MAX_ANNUAL_SERVICE_DAYS } from '../../domain/costing';
+import { userFacingError } from '../errorMessages';
 import { countNodeChanges, countPatternChanges } from '../../application/draftChangeCounts';
-import { serviceDayFindingMessage, type NodeChangePreview, type PatternChangePreview as SafePatternChangePreview, type RouteDefinitionApplication, type RouteEditCommitResult, type RouteEditMode } from '../../application/routeDefinitionService';
+import { serviceDayFindingMessage, ServiceDayValidationError,type NodeChangePreview, type PatternChangePreview as SafePatternChangePreview, type RouteDefinitionApplication, type RouteEditCommitResult, type RouteEditMode } from '../../application/routeDefinitionService';
 import { metadata, newId } from '../../domain/ids';
-import { isUsablePattern, patternTotalMiles, sortServiceDays } from '../../application/tripsWorkspaceView';
-import { type Node, type Route, type RouteDefinitionAggregate, type RouteDirection, type RoutePattern, type ServiceDayDefinition, type ValidationFinding } from '../../domain/types';
+import { isUsablePattern, patternTotalMiles } from '../../application/tripsWorkspaceView';
+import { type Node, type Route, type RouteDefinitionAggregate, type RouteDirection, type RouteOwnAnnualServiceDays, type RoutePattern, type ServiceDayDefinition, type ValidationFinding } from '../../domain/types';
 import { type RouteNavigationGuard } from '../shared/types';
 import { messages } from '../shared/messages';
 import { DiscardRouteDraftDialog, RouteNavigationDraftDialog } from '../shared/dialogs';
 import { TrashIcon } from '../shared/icons';
-import { defaultServiceDayAbbreviation } from '../../domain/serviceDays';
 import { directionDisplayName, directionGroupName, MANAGED_DIRECTION_GROUPS, type DirectionGroup } from '../../domain/directions';
-import { DirectionNameInput, Field, NumericCommit, ServiceDayAbbreviationInput, ServiceDayNameInput } from '../shared/fields';
+import { DirectionNameInput, Field } from '../shared/fields';
+import { AnnualServiceDaysPanel } from './AnnualServiceDaysPanel';
 import { InlineNote, SupportPanel, WorkSurface } from '../shared/surfaces';
 import { SaveBar } from '../shared/bars';
 import { NodesGrid, usePatternPointsGrid } from './RouteGrids';
@@ -251,6 +251,19 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
     const refused = (await onServiceDay(id, patch)).filter((finding) => finding.field === field).map(serviceDayFindingMessage);
     return refused.length ? refused.join(' ') : undefined;
   }
+  /** Saves this Route's own annual counts or its switch. Returns the reason the service refused them; undefined when saved. */
+  async function saveOwnCounts(own: RouteOwnAnnualServiceDays): Promise<string | undefined> {
+    try { onCommitted(await service.updateRouteOwnCounts(aggregate, own)); return undefined; }
+    catch (error) { return error instanceof ServiceDayValidationError ? error.message : userFacingError(error, 'Unable to save the route\'s annual service days.'); }
+  }
+  /** Adds a custom Service day with a count of 0. Returns the reason it was refused; undefined when added. */
+  async function addServiceDay(name: string, abbreviation: string): Promise<string | undefined> {
+    try {
+      const { records } = await service.addServiceDay(aggregate.route.scenarioId, { name, ...(abbreviation.trim() ? { abbreviation } : {}) });
+      onCommitted({ aggregate, records });
+      return undefined;
+    } catch (error) { return error instanceof ServiceDayValidationError ? error.message : userFacingError(error, 'Unable to add the service day.'); }
+  }
   /** Inventory gap G3: the saved timepoints a pattern save removes or moves to another node, or the nodes a node save deletes. */
   function impactTimepointNames(preview: NodeChangePreview | SafePatternChangePreview): string[] {
     const nodeName = (nodeId: string) => aggregate.nodes.find((node) => node.id === nodeId)?.name || 'Untitled node';
@@ -261,8 +274,6 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
   }
   function discardNodes() { setNodeDraft(aggregate.nodes); setPendingNodeDeletes(new Set()); setNodeFindings([]); window.setTimeout(() => newNodeButton.current?.focus()); }
   function addNode() { setNodeDraft((current) => [...current, { id: newId(), scenarioId: aggregate.route.scenarioId, routeId: aggregate.route.id, name: '', kind: 'timepoint', ...metadata() }]); }
-
-  const serviceDayTotal = serviceDays.reduce((sum, day) => sum + day.annualServiceDays, 0);
 
   // UR-16: the setup line shows until the Route has a usable Pattern; each step moves the focus to the control that does it.
   const hasUsablePattern = aggregate.patterns.some(isUsablePattern);
@@ -283,7 +294,7 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
     })}</ol></nav>}
     <div className="route-top-grid">
       <SupportPanel title="Route details"><div className="field-grid route-details-fields"><Field label="Route name" required errors={fieldError(aggregate.route.id, 'name')}><input ref={routeNameInput} defaultValue={aggregate.route.name} onBlur={(event) => void onRoute({ name: event.target.value })} /></Field><Field label="Short name"><input defaultValue={aggregate.route.shortName ?? ''} onBlur={(event) => void onRoute({ shortName: event.target.value || undefined })} /></Field><Field label="Description" wide><input defaultValue={aggregate.route.description ?? ''} placeholder="Optional" onBlur={(event) => void onRoute({ description: event.target.value || undefined })} /></Field><div className="route-direction-names">{MANAGED_DIRECTION_GROUPS.map((group) => { const label = `${directionGroupName(group)} name`; return <Field key={group} label={label}><DirectionNameInput label={label} listId={directionNameListId} saved={directionDisplayName(group, aggregate.directions?.find((direction) => direction.group === group)?.name)} placeholder={directionGroupName(group)} onCommit={(value) => onRenameDirection(group, value)} /></Field>; })}<datalist id={directionNameListId}>{DIRECTION_NAME_SUGGESTIONS.map((name) => <option key={name} value={name} />)}</datalist></div></div></SupportPanel>
-      <SupportPanel title="Annual service days"><div className="table-scroll service-days-table"><table><thead><tr><th scope="col">Service day</th><th scope="col" title="Abbreviation"><span aria-hidden="true">Abbr.</span><span className="visually-hidden">Abbreviation</span></th><th scope="col">Annual service days</th></tr></thead><tbody>{sortServiceDays(serviceDays).map((day) => <tr key={day.id}><td><ServiceDayNameInput name={day.name} onCommit={(value) => serviceDayRefusal(day.id, { name: value }, 'name')} /></td><td><ServiceDayAbbreviationInput dayName={day.name} saved={day.abbreviation} placeholder={defaultServiceDayAbbreviation(day)} onCommit={(value) => serviceDayRefusal(day.id, { abbreviation: value }, 'abbreviation')} /></td><td><NumericCommit label={`${day.name} annual service days`} value={day.annualServiceDays} integer blankAsZero onCommit={(value) => serviceDayRefusal(day.id, { annualServiceDays: value }, 'annualServiceDays')} /></td></tr>)}</tbody></table></div><p className={serviceDayTotal > MAX_ANNUAL_SERVICE_DAYS ? 'service-days-total value-invalid' : 'service-days-total'}>Total <b>{serviceDayTotal}</b> of {MAX_ANNUAL_SERVICE_DAYS}</p></SupportPanel>
+      <AnnualServiceDaysPanel route={aggregate.route} serviceDays={serviceDays} onEditServiceDay={serviceDayRefusal} onSaveOwnCounts={saveOwnCounts} onAddServiceDay={addServiceDay} />
       <PlannedFrequenciesPanel ref={plansRef} service={plannedFrequencyService} scenarioId={aggregate.route.scenarioId} routeId={aggregate.route.id} serviceDays={serviceDays} directions={aggregate.directions ?? []} patterns={aggregate.patterns} nodes={aggregate.nodes} tripProfileId={tripProfileId} active={active} onDirtyChange={setPlansDirty} onError={onError} />
     </div>
     <div className="route-bottom-grid"><WorkSurface title="Nodes" count={nodeDraft.length} className="route-nodes" footer={nodeDirty && <SaveBar message={`${plural(Math.max(1, countNodeChanges(aggregate.nodes, nodeDraft, pendingNodeDeletes)), 'unsaved change')} in Nodes`} saveLabel="Save nodes" busy={nodeSaving} onSave={() => void reviewNodeSave()} onDiscard={discardNodes} />}><NodesGrid nodes={nodeDraft} savedNodes={aggregate.nodes} pendingDeletes={pendingNodeDeletes} saving={nodeSaving} errorsFor={(id) => messages(nodeFindings, id)} newNodeButton={newNodeButton} onAdd={addNode} onChange={(id, patch) => { setNodeDraft((current) => current.map((candidate) => candidate.id === id ? { ...candidate, ...patch } : candidate)); if ('name' in patch) setNodeFindings([]); }} onSetPendingDelete={(id, pending) => setPendingNodeDeletes((current) => { const next = new Set(current); if (pending) next.add(id); else next.delete(id); return next; })} /></WorkSurface>

@@ -22,6 +22,8 @@ export interface CostSummary {
   /** Decision 0077 item 4: one entry per Route row of the result, in the result's order (the Unattributed row last). */
   routes: CostSummaryRoute[];
   years: CostSummaryYear[];
+  /** Decision 0089 item 41: the names of the Routes whose own annual service days the figures use. Absent when every Route uses the Scenario's count. */
+  routeCountsInUse?: string[];
 }
 
 export interface CostSummaryDay {
@@ -86,6 +88,9 @@ export function buildCostSummary(result: CostingCalculationResult | EstimatedCos
       ...(cost === undefined || !(first.annualCostUsd > 0) ? {} : { shareOfFirstYearCost: cost / first.annualCostUsd }),
     };
   });
+  const routeCountsInUse = result.routeRows
+    .filter((route) => route.routeId !== null && route.days.some((day) => day.countSource === 'route'))
+    .map((route) => route.routeName || 'Untitled route');
   return {
     ...heading,
     firstYear: first.serviceYear,
@@ -97,6 +102,7 @@ export function buildCostSummary(result: CostingCalculationResult | EstimatedCos
     days,
     routes,
     years,
+    ...(routeCountsInUse.length > 0 ? { routeCountsInUse } : {}),
   };
 }
 

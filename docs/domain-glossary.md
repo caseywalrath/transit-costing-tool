@@ -371,3 +371,15 @@ A validation finding that allows the user to proceed after reviewing the consequ
 ### Acknowledgment
 
 A record that a user reviewed a warning. It does not remove or alter the underlying validation condition.
+
+### Feed import
+
+Creating Routes, patterns, run times, trips and blocks from a GTFS feed (Decision 0089). The result is ordinary editable data; the feed is not kept or linked.
+
+### Own counts
+
+A Route's own annual service-day counts, used by Costing for that Route instead of the Scenario's counts when its switch is on (Decision 0089 item 41). A blank count means the Scenario's.
+
+### Feed export
+
+Writing a Scenario's Routes, trips, stops and blocks as a GTFS feed over a chosen date range (Decision 0090). The Scenario is unchanged except for the remembered export settings.

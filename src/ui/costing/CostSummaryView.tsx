@@ -20,7 +20,7 @@ function preparedText(isoDate: string): string {
  * Decision 0054. The Operating Cost Estimate: one printable page for readers outside the app. It is drawn over the whole window and
  * the print stylesheet prints only this sheet, so the browser's "Save as PDF" produces the page.
  */
-export function CostSummaryView({ summary, onClose }: { summary: CostSummary; onClose: () => void }) {
+export function CostSummaryView({ summary, importNote, onClose }: { summary: CostSummary; /** The Scenario's latest import note, for the footnote. */ importNote?: string; onClose: () => void }) {
   const totalDays = summary.days.reduce((sum, day) => sum + day.annualServiceDays, 0);
   return createPortal(<ModalDialog labelledBy="cost-summary-title" className="cost-summary-dialog" onClose={onClose} draggable={false}>
     <div className="cost-summary-toolbar">
@@ -60,7 +60,7 @@ export function CostSummaryView({ summary, onClose }: { summary: CostSummary; on
           <tbody>{summary.years.map((year) => <tr key={year.serviceYear}><th scope="row">{year.serviceYear}</th><td>{formatMoney(year.appliedRateUsdPerRevenueHour, { cents: true })}</td><td>{formatMoney(year.annualCostUsd)}</td><td>{formatMoney(year.cumulativeCostUsd)}</td></tr>)}</tbody>
         </table>
       </section>
-      <footer className="cost-summary-footer">Costs are based on annual revenue hours and {formatPercent(summary.annualEscalation * 100)} projected inflation.</footer>
+      <footer className="cost-summary-footer">Costs are based on annual revenue hours and {formatPercent(summary.annualEscalation * 100)} projected inflation.{summary.routeCountsInUse && <span className="cost-summary-import-note">Annual service days of {summary.routeCountsInUse.join(', ')} are the route's own counts; the Days / year column shows the scenario's counts.</span>}{importNote &&<span className="cost-summary-import-note">{importNote}</span>}</footer>
     </article>
   </ModalDialog>, document.body);
 }

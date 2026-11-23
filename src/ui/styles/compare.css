@@ -1,0 +1,100 @@
+/* The Compare tab (Decision 0091; card V4). Every rule is namespaced `.cmp-`. Colours are the tokens only: blue (accent) is more service,
+   brown (warn) is less, neither is good or bad. */
+.cmp { display: grid; gap: var(--space-3); min-width: 0; max-width: 100%; }
+.cmp-sides { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: var(--space-2); align-items: stretch; }
+.cmp-side { margin: 0; min-width: 0; border: 1px solid var(--color-border); border-radius: var(--radius-panel); background: var(--color-surface); padding: var(--space-2) var(--space-3) var(--space-3); }
+.cmp-side legend { padding: 0 var(--space-1); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); letter-spacing: .05em; text-transform: uppercase; }
+.cmp-side--baseline legend { color: var(--color-text-muted); }
+.cmp-side--proposed legend { color: var(--color-accent); }
+.cmp-side__fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
+.cmp-field { display: grid; gap: var(--space-1); min-width: 0; color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
+.cmp-field > label { cursor: default; }
+.cmp-field select, .cmp-field input { min-width: 0; font-weight: var(--font-weight-regular); color: var(--color-text); }
+.cmp-swap { align-self: center; min-width: var(--control-height); padding: 0 var(--space-2); font-size: var(--font-size-title); }
+.cmp-controls { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: end; }
+.cmp-controls__group { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: end; }
+.cmp-day { display: grid; gap: var(--space-1); }
+.cmp-day > span { color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); }
+.cmp-warnings { display: grid; gap: var(--space-2); }
+.cmp-warnline { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); border: 1px solid var(--color-warn-border); border-left-width: 4px; background: var(--color-warn-soft); color: var(--color-warn); padding: var(--space-2) var(--space-3); }
+.cmp-warnline .inline-note { color: inherit; flex: 1 1 24em; min-width: 0; }
+.cmp-warnline .inline-note__icon { border-color: var(--color-warn-border); }
+.cmp-warnline button { color: var(--color-accent-strong); font-weight: var(--font-weight-semibold); }
+.cmp-progress { display: grid; gap: var(--space-1); color: var(--color-text-muted); font-size: var(--font-size-note); }
+.cmp-progress__track { height: 6px; border-radius: 3px; background: var(--color-sunken); overflow: hidden; }
+.cmp-progress__track > i { display: block; height: 100%; background: var(--color-accent); transition: width .2s; }
+@media (prefers-reduced-motion: reduce) { .cmp-progress__track > i { transition: none; } }
+.cmp-result { display: grid; gap: var(--space-3); min-width: 0; }
+.cmp-result[aria-busy="true"] { opacity: .55; }
+.cmp-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-2); }
+.cmp-tile { display: grid; gap: 2px; align-content: start; min-width: 0; border: 1px solid var(--color-border); background: var(--color-surface); padding: var(--space-2) var(--space-3); }
+.cmp-tile__label { color: var(--color-text-muted); font-size: var(--font-size-label); font-weight: var(--font-weight-bold); letter-spacing: .05em; text-transform: uppercase; }
+.cmp-tile__value { font-size: var(--font-size-page); font-weight: var(--font-weight-bold); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cmp-tile__arrow, .cmp-from { color: var(--color-text-subtle); font-weight: var(--font-weight-regular); }
+.cmp-tile__delta { font-variant-numeric: tabular-nums; }
+.cmp-up { color: var(--color-accent); font-weight: var(--font-weight-semibold); }
+.cmp-down { color: var(--color-warn); font-weight: var(--font-weight-semibold); }
+.cmp-same { color: var(--color-text-subtle); }
+.cmp-tablebox { min-width: 0; border: 1px solid var(--color-border); background: var(--color-surface); }
+.cmp-tools { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: end; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--color-border-soft); }
+.cmp-tools .cmp-grow { flex: 1; }
+.cmp-scroll { overflow-x: auto; }
+.cmp-table { min-width: 0; table-layout: auto; }
+.cmp-table th, .cmp-table td { padding: var(--space-1) var(--space-2); vertical-align: middle; font-variant-numeric: tabular-nums; }
+.cmp-table thead th { white-space: normal; vertical-align: bottom; line-height: 1.2; }
+.cmp-table .cmp-n { text-align: right; white-space: nowrap; }
+.cmp-table td:first-child { max-width: 24em; }
+.cmp-row-button { display: inline-flex; gap: var(--space-1); align-items: center; max-width: 100%; border-color: transparent; background: transparent; padding: 0 var(--space-1); text-align: left; font-weight: var(--font-weight-semibold); }
+.cmp-row-button:hover:not(:disabled) { background: var(--color-selection); }
+/* `break-word`, not `anywhere`: only a word longer than the cell is broken, so a narrow table does not shrink the name column to nothing. */
+.cmp-row-button__name { overflow-wrap: break-word; min-width: 0; }
+.cmp-row--open > td { background: var(--color-selection); }
+.cmp-fold > td { background: var(--color-surface-2); color: var(--color-text-muted); }
+.cmp-fold .cmp-note { color: var(--color-text-muted); font-size: var(--font-size-note); }
+.cmp-chip { display: inline-block; border: 1px solid var(--color-border); border-radius: var(--radius-pill); padding: 0 7px; font-size: var(--font-size-label); white-space: nowrap; }
+.cmp-chip--changed { border-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-accent-strong); }
+.cmp-chip--new { border-color: var(--color-ok); background: var(--color-ok-soft); color: var(--color-ok); }
+.cmp-chip--discontinued { border-color: var(--color-warn-border); background: var(--color-warn-soft); color: var(--color-warn); }
+.cmp-chip--unchanged { background: var(--color-sunken); color: var(--color-text-muted); }
+.cmp-bar-cell { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--space-1); }
+.cmp-bar-track { display: flex; width: 80px; }
+.cmp-bar-track--down { justify-content: flex-end; }
+.cmp-bar { display: block; height: 9px; }
+.cmp-bar--up { background: var(--color-accent); }
+.cmp-bar--down { background: color-mix(in srgb, var(--color-warn) 55%, var(--color-surface)); }
+.cmp-foot { padding: var(--space-2) var(--space-3); color: var(--color-text-muted); font-size: var(--font-size-note); }
+.cmp-empty { padding: var(--space-3); color: var(--color-text-muted); }
+.cmp-detail > td { background: var(--color-surface-2); padding: var(--space-3) var(--space-4); white-space: normal; }
+.cmp-detail__grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: var(--space-4); align-items: start; }
+.cmp-detail table { min-width: 0; table-layout: auto; }
+.cmp-detail th, .cmp-detail td:first-child { position: static; background: transparent; }
+.cmp-detail th { white-space: normal; text-align: right; }
+.cmp-detail th[scope="row"], .cmp-detail thead th:first-child { text-align: left; }
+.cmp-detail td { text-align: right; }
+.cmp-detail td:first-child { text-align: left; }
+.cmp-detail .cmp-headways th, .cmp-detail .cmp-headways td { text-align: center; }
+.cmp-detail .cmp-headways td { white-space: nowrap; }
+.cmp-detail .cmp-headways th[scope="row"] { text-align: left; }
+.cmp-detail small { display: block; color: var(--color-text-subtle); font-weight: var(--font-weight-regular); }
+.cmp-differs { color: var(--color-accent); font-weight: var(--font-weight-bold); }
+.cmp-detail__note { margin: var(--space-2) 0 0; color: var(--color-text-muted); font-size: var(--font-size-note); }
+.cmp-narrow-only { display: none; }
+
+@media (max-width: 1100px) {
+  .cmp-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cmp-detail__grid { grid-template-columns: minmax(0, 1fr); }
+}
+/* The existing narrow layout (680 px, as the segmented control uses): sides stack and the table keeps Route, Status, hours change and cost
+   change; everything else is in the Route's detail. */
+@media (max-width: 680px) {
+  .cmp-sides { grid-template-columns: minmax(0, 1fr); }
+  .cmp-side__fields { grid-template-columns: minmax(0, 1fr); }
+  .cmp-swap { justify-self: start; }
+  .cmp-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cmp-tile__value { font-size: var(--font-size-title); }
+  .cmp-table .cmp-wide { display: none; }
+  .cmp-table td:first-child { max-width: none; min-width: 6.5em; }
+  .cmp-narrow-only { display: inline; }
+  .cmp-detail > td { padding: var(--space-2) var(--space-3); }
+  .cmp-tools .cmp-field, .cmp-tools .cmp-field input { width: 100%; }
+}
