@@ -219,3 +219,25 @@ As in the plan, Part 5. The worked-example test (V1) and the equality with Costi
   - Under the blocked basis, hours on multi-route blocks sit in Unattributed, as on the Costing tab. A New route whose trips are all interlined shows 0.0 hours.
   - The app has no dark theme yet. The tab uses tokens only.
   - V6 runs the full browser suite.
+
+## 12. Card V5 — Scale check on the RTD feed
+
+**Rules:** plan Part 5, row V5; V-D2. **Model:** Haiku `xhigh`; Opus judges. **No repo code changes.** This is a measurement. Everything you write goes in the scratchpad.
+
+**Steps** (a Playwright script driving the built app, the same way the phase I and E scale checks did):
+1. Build with `pnpm build`, serve `dist/`, and open it in Chromium.
+2. Import `<scratchpad>/rtd-feed/google_transit.zip` through the GTFS import, as `tests/ui/gtfs-import.spec.ts` does. Run automatic blocking if the import does not create blocks.
+3. Copy the Scenario (Scenario context menu → Copy). In the copy, make three edits through the UI:
+   - delete some Weekday trips on one Route (expect fewer hours);
+   - add a Weekday trip on a second Route (expect more hours);
+   - lengthen a runtime on a third Route (expect more hours). Do not change counts or rates.
+   Re-block the copy if blocks go stale, or use "None (estimate)" for both sides.
+4. On the Compare tab, set Baseline to the import and Proposed to the copy, with Day = Weekday. Then:
+   - time from the change of side to the tiles showing, cold and warm (repeat 3 times);
+   - check the page stays responsive: while calculating, a click on a header menu opens within 500 ms;
+   - repeat with Day = Annual.
+5. **Checks:**
+   - the three edited Routes are Changed, with the expected signs;
+   - every other Route is Unchanged (the plan expects 127; report the real count);
+   - for 5 Routes chosen across the table, and the totals, the Compare hours and cost for each side equal the Costing tab for that Scenario and settings (same profile, blocking and basis).
+6. **Report:** the timings (target: under 20 s), the counts, any mismatch with its figures, and screenshots at 1440 px saved to `<scratchpad>/v5/`.
