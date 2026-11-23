@@ -241,3 +241,22 @@ As in the plan, Part 5. The worked-example test (V1) and the equality with Costi
    - every other Route is Unchanged (the plan expects 127; report the real count);
    - for 5 Routes chosen across the table, and the totals, the Compare hours and cost for each side equal the Costing tab for that Scenario and settings (same profile, blocking and basis).
 6. **Report:** the timings (target: under 20 s), the counts, any mismatch with its figures, and screenshots at 1440 px saved to `<scratchpad>/v5/`.
+
+## 13. V5 result (2026-11-23, stopped early to save usage)
+
+- Import of the RTD feed: 12 s (130 Routes). Copying the Scenario: 9 s.
+- Edits in the copy, with the Weekday result in Compare:
+
+  | Route | Edit | Status | Hours | Cost per year |
+  |---|---|---|---|---|
+  | 20 | 2 Weekday trips deleted | Changed | −2.1 | −$79,462 |
+  | AB1 | 1 trip added | Changed | +1.7 | +$64,181 |
+  | 14 | one runtime +1 min | Changed | 0.0 (rounded) | +$764 |
+
+- The other 127 Routes are Unchanged.
+- Timing, both sides estimated: about 6 s cold for Weekday; under 0.1 s to switch to Annual. The target is 20 s.
+- Not done:
+  - the responsiveness probe;
+  - the equality check against the Costing tab on RTD (equality is covered by V2's tests);
+  - the blocked-basis run.
+- **Open item for V6:** with the feed's blocks, Compare said "no blocks can be costed" on both sides. Check whether the Costing tab agrees for the imported Scenario before closing phase V.
