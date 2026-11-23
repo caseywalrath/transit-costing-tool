@@ -3,6 +3,8 @@
 // default. Real IndexedDB.
 import { expect, test, type Page } from '@playwright/test';
 import { createRouteWithPattern } from './support/tripsWorkspace';
+import { goldenRaw } from './support/goldenFixture';
+import { seedSnapshot } from './support/dexieEnv';
 
 test.setTimeout(120_000);
 
@@ -61,4 +63,21 @@ test('Route details is no taller than Annual service days', async ({ page }) => 
     if (process.env.DN_SHOTS) await page.locator('.route-top-grid').screenshot({ path: `${process.env.DN_SHOTS}/route-top-${width}.png` });
     if (process.env.DN_SHOTS) console.log(`${width}px: Route details ${Math.round(details)} px, Annual service days ${Math.round(days)} px`);
   }
+});
+
+// The Patterns list groups by the direction's group, not its name, so renamed directions still sort apart. The pattern names carry no
+// direction word, so a sort by name alone would interleave the two directions.
+test('the Patterns list keeps renamed directions in separate groups', async ({ page }) => {
+  const backup = goldenRaw();
+  // The three Southbound patterns come first in the backup, then the three Northbound ones; these names alternate them by name.
+  const names = ['A route', 'C route', 'E route', 'B route', 'D route', 'F route'];
+  backup.patterns.forEach((pattern: { name: string }, index: number) => { pattern.name = names[index]; });
+  await seedSnapshot(page, { ...backup, generationSets: [] });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Route', exact: true }).click();
+  const list = page.locator('.pattern-list');
+  await expect(list.locator('.pattern-list__group')).toHaveText(['Northbound', 'Southbound']);
+  const order = await list.locator('.pattern-list__group, button[title]').evaluateAll((items) => items.map((item) => item.classList.contains('pattern-list__group') ? `# ${item.textContent}` : item.getAttribute('title') ?? ''));
+  expect(order.filter((entry) => entry.startsWith('#'))).toEqual(['# Northbound', '# Southbound']);
+  expect(order).toHaveLength(8);
 });

@@ -31,7 +31,6 @@ import { userMessage } from './shared/messages';
 import { RouteWorkspace } from './route/RouteWorkspace';
 import { GtfsImportDialog, type GtfsImportCommands, type GtfsImportOutcome, type ImportLevel } from './gtfs/GtfsImportDialog';
 import { importedNoticeText } from './gtfs/gtfsImportReviewModel';
-import { latestImportNoteText } from './gtfs/importNote';
 import { GtfsExportDialog, type GtfsExportDraft } from './gtfsExport/GtfsExportDialog';
 import { exportedNoticeText } from './gtfsExport/gtfsExportModel';
 import type { GtfsExportCommands, GtfsExportDone } from '../application/gtfsExport/gtfsExportService';
@@ -489,7 +488,7 @@ export function App({ service, tripService, blockingService, costingService, com
   ];
   const scenarioActions: MenuGroup[] = [
     { label: 'Scenarios', items: [
-      ...scenarios.map((scenario) => ({ id: `scenario-${scenario.id}`, label: scenario.name, checked: scenario.id === scenarioId, wrapLabel: true, ...(latestImportNoteText(scenario) ? { note: latestImportNoteText(scenario) } : {}), onSelect: () => openScenario(scenario), contextGroups: () => scenarioContextGroups(scenario), contextHeading: scenario.name })),
+      ...scenarios.map((scenario) => ({ id: `scenario-${scenario.id}`, label: scenario.name, checked: scenario.id === scenarioId, wrapLabel: true, onSelect: () => openScenario(scenario), contextGroups: () => scenarioContextGroups(scenario), contextHeading: scenario.name })),
       { id: 'new-scenario', label: 'New scenario…', disabled: !records, onSelect: () => setNameDialog({ title: 'New scenario', label: 'Scenario name', submitLabel: 'Create scenario', action: addScenario }) },
       { id: 'new-scenario-gtfs', label: 'New scenario from GTFS feed…', disabled: !records || !gtfsImportService, onSelect: () => requestRouteNavigation(() => setGtfsImportLevel('B')) },
     ] },

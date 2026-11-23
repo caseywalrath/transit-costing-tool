@@ -33,6 +33,7 @@ No screen edits `name`, and `ensureManagedDirections` (`src/domain/directions.ts
    - Every place that already shows `direction.name` shows the new name, with no further change.
    - Generated pattern short names use the direction abbreviation (`directionAbbreviation`, for example "Northbound" → "NB"), so generated chips change from the old abbreviation to the new one. A planner-entered short name does not change.
    - Pattern names are not rewritten. A pattern named "Outbound: Main" keeps that name. The "Outbound:" prefix is no longer removed from it in lists grouped by direction.
+   - The Route tab's Patterns list orders and groups by the direction's `group`, never by its name (fixed 2026-11-23: after a rename the list ordered by pattern name alone and interleaved the two directions).
 9. **Screens that span several Routes keep the group words.** The automatic blocking dialog and the minimum layover dialog apply to every Route of a blocking scenario, and Routes may name their directions differently. These screens keep "Outbound" and "Inbound". When every Route in scope uses the same name for a group, they add it in brackets, for example "Outbound (Southbound)".
 10. **Exports.** Exports that already write `direction.name` (stop times CSV, stop schedule export) write the new name. Exports that write the group, or a GTFS `direction_id`, are unchanged.
 
