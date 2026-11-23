@@ -1,6 +1,6 @@
 # Decision 0092: Timepoint Stop Names
 
-- Status: Accepted (user approval 2026-11-23); not yet implemented. Plan: `docs/implementation/timepoint-stop-names.md`.
+- Status: Accepted and implemented (2026-11-23; plan: `docs/implementation/timepoint-stop-names.md`; closeout: `docs/implementation/timepoint-stop-names-closeout.md`).
 - Date: 2026-11-23 (user design discussion)
 - Related: Decision 0080 (timepoint stop IDs per pattern), Decision 0085 (timepoint locations; its "Alternatives considered" deferred timepoint stop names), Decision 0084 (stop schedule export), Decision 0089 (GTFS import), Decision 0090 (GTFS export)
 

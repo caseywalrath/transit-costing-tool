@@ -1,7 +1,7 @@
 # Implementation Plan: Timepoint Stop Names
 
 - Decision: `docs/decisions/0092-timepoint-stop-names.md`
-- Status: Approved 2026-11-23; not started
+- Status: Implemented 2026-11-23 (closeout: `docs/implementation/timepoint-stop-names-closeout.md`)
 - Branch: `claude/timepoint-stop-names` from `main`, or the branch the session names
 - Orchestrator: Opus. Workers: Haiku (most cards). Card N4 is UI wiring and stays with Haiku `xhigh`, with Opus doing the visual check.
 
@@ -297,4 +297,6 @@ Gate G-N4 (Opus):
 
 Each sitting appends a hand-off: date, packages done, commit hashes, test summary lines, problems, and the next sitting.
 
-- (empty)
+- 2026-11-23, sitting 1 (user asked for the whole plan in one run). Baseline: typecheck passes, 2552 unit tests. N0 `3099e71` (documentation). N1 `0ff8566`: 2573 unit tests; browser specs backup-import, automatic-blocking-backup, database-migration, scenario-copy-recovery 11 passed. Problem: a blank stored name is refused by the backup shape check ("must be a non-blank string") before `assertRouteStopSets`; accepted.
+- 2026-11-23, sitting 2. N3 `693e521`: 2582 unit tests; golden unchanged; gtfs-export, gtfs-import, stop-schedule-export, stop-trips 26 passed. Round trip in `readBack.test.ts`. N2 `556ad37`: 2594 unit tests with N3 merged; Opus corrected the `nodeNames` comment. No placeholder plan literals were needed.
+- 2026-11-23, sitting 3. N4 `b4670fb`: build passes; route-stops, route-stop-wiring, route-stop-locations, route-stops-table, stop-trips, keyboard 45 passed, 1 skipped (screenshot-only test). G-N4 passed; screenshots sent. N5: see the closeout.

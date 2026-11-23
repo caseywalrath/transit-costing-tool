@@ -219,7 +219,7 @@ export function validateRouteStopSet(set: RouteStopSet, patterns: readonly Route
 }
 
 /**
- * Section 4.5. Returns the input array itself when nothing changed. A set left with no stops and no timepoint stop IDs is dropped, and so is
+ * Section 4.5. Returns the input array itself when nothing changed. A set left with no stops, timepoint stop IDs, timepoint locations or timepoint stop names is dropped, and so is
  * a set whose Route is missing. Timepoint stop IDs of a missing pattern or point are dropped (Decision 0080). Timepoint locations and stop
  * names follow the same rule (Decisions 0085 and 0092 item 2).
  */
