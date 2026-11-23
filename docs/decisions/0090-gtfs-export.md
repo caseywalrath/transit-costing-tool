@@ -2,6 +2,7 @@
 
 - Status: Accepted 2026-11-22 (gate answers in `docs/implementation/gtfs-export-phase-e.md`, Part 7: G-E1 to G-E8, Option A each). Implemented 2026-11-22 (closeout: `docs/implementation/gtfs-export-closeout.md`).
 - Date: 2026-11-22
+- Amended by: Decision 0092 items 6 and 8 (item 8: a timepoint's `stop_name` is its stop name, else its Node name; new warning `gtfsExport.stopNameDiffers`)
 - Plan: `docs/implementation/gtfs-export-phase-e.md`; sub-plan and work cards `docs/implementation/gtfs-export-phase-e-cards.md`
 - Related: Decisions 0080 (timepoint stop IDs), 0085 (locations), 0086 and 0087 (stop timing and the Stops table), 0089 (GTFS import)
 
