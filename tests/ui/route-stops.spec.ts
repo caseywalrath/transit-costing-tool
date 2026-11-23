@@ -3,7 +3,9 @@
 // layout. Real IndexedDB.
 import { expect, test, type Page } from '@playwright/test';
 import { createRouteWithPattern } from './support/tripsWorkspace';
-import { runInPage } from './support/dexieEnv';
+import { runInPage, seedSnapshot } from './support/dexieEnv';
+import { goldenRaw } from './support/goldenFixture';
+import { chooseScope } from './support/ui';
 
 test.setTimeout(120_000);
 
@@ -205,6 +207,81 @@ test('timepoint stop IDs are entered per pattern, filled from and copied to patt
   await expect(copy).toHaveCount(0);
   expect(await storedCodes(page, 'Branch')).toEqual(['B=B-1']);
   expect(await storedCodes(page, 'Reverse')).toEqual(['B=B-south']);
+});
+
+/** The stored timepoint stop names of a pattern, as "node name=stop name" in point order (Decision 0092). */
+async function storedNames(page: Page, patternName: string): Promise<string[]> {
+  return runInPage(page, `
+    const pattern = (await e.db.patterns.toArray()).find((candidate) => candidate.name === arg);
+    const set = await e.repository.getRouteStopSet(pattern.routeId);
+    const nodes = new Map((await e.db.nodes.toArray()).map((node) => [node.id, node.name]));
+    const names = set?.timepointStopNamesByPatternId?.[pattern.id] ?? {};
+    return [...pattern.points].sort((left, right) => left.sequence - right.sequence).filter((point) => names[point.id]).map((point) => nodes.get(point.nodeId) + '=' + names[point.id]);
+  `, patternName);
+}
+
+test('a timepoint stop name is typed, saved, shown after reopening, and removed when cleared (Decision 0092 item 10)', async ({ page }) => {
+  await threePatternRoute(page, 'Stop names typing');
+  await openStops(page, 'Main');
+  const field = drawerOf(page).getByRole('textbox', { name: 'Timepoint stop name, A', exact: true });
+  await expect(field).toHaveAttribute('placeholder', 'A');
+  await field.fill('Union Station Gate B');
+  await expect(drawerOf(page).getByRole('status').filter({ hasText: 'unsaved change' })).toHaveText('1 unsaved change');
+  await saveStops(page);
+  expect(await storedNames(page, 'Main')).toEqual(['A=Union Station Gate B']);
+
+  await page.reload();
+  await openStops(page, 'Main');
+  await expect(drawerOf(page).getByRole('textbox', { name: 'Timepoint stop name, A', exact: true })).toHaveValue('Union Station Gate B');
+  await drawerOf(page).getByRole('textbox', { name: 'Timepoint stop name, A', exact: true }).fill('');
+  await saveStops(page);
+  expect(await storedNames(page, 'Main')).toEqual([]);
+});
+
+test('Fill from another pattern of the same direction fills a timepoint stop name (Decision 0092 item 11)', async ({ page }) => {
+  await threePatternRoute(page, 'Stop names fill');
+  await openStops(page, 'Main');
+  await drawerOf(page).getByRole('textbox', { name: 'Timepoint stop name, A', exact: true }).fill('Union Station Gate B');
+  await saveStops(page);
+
+  await patternButton(page, 'Short').click();
+  await expect(page.getByRole('heading', { name: 'Short', exact: true })).toBeVisible();
+  await drawerOf(page).getByRole('button', { name: 'Stop actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Fill from other patterns…', exact: true }).click();
+  const fill = page.getByRole('dialog', { name: 'Fill stops from other patterns' });
+  await expect(fill.getByRole('table', { name: 'Timepoint stop names' }).getByRole('row')).toHaveText(['TimepointStop nameSource', 'AUnion Station Gate BMain']);
+  await fill.getByRole('button', { name: 'Fill stops', exact: true }).click();
+  await expect(drawerOf(page).getByRole('textbox', { name: 'Timepoint stop name, A', exact: true })).toHaveValue('Union Station Gate B');
+  await saveStops(page);
+  expect(await storedNames(page, 'Short')).toEqual(['A=Union Station Gate B']);
+});
+
+/** Federal BRT golden plus a stop name on the first timepoint of "Southbound: Wagon Road to Evans" (Decision 0092). */
+function goldenWithStopName() {
+  const backup = goldenRaw();
+  const evans = backup.patterns.find((candidate: any) => candidate.name === 'Southbound: Wagon Road to Evans');
+  const first = [...evans.points].sort((left: any, right: any) => left.sequence - right.sequence)[0];
+  const stamp = '2026-11-23T00:00:00.000Z';
+  const set = { id: 'stop-name-set', scenarioId: evans.scenarioId, routeId: evans.routeId, roundingSeconds: 60, stops: [], placementsByPatternId: {}, timepointStopNamesByPatternId: { [evans.id]: { [first.id]: 'Wagon Road Gate 2' } }, createdAt: stamp, updatedAt: stamp };
+  return { ...backup, routeStopSets: [set], generationSets: [] };
+}
+
+test('the Trips header keeps the Node name, and the Stop trips drawer shows the timepoint stop name (Decision 0092 items 4 and 5)', async ({ page }) => {
+  await seedSnapshot(page, goldenWithStopName());
+  await page.goto('/');
+  await expect(page.getByRole('textbox', { name: 'Weekday name' })).toBeVisible({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Trips', exact: true }).click();
+  await chooseScope(page, 'Day', { label: 'Weekday' });
+  await expect(page.locator('.trips-workspace .schedule-table tbody tr')).toHaveCount(138, { timeout: 30000 });
+  await expect(page.locator('.trips-workspace .schedule-table thead')).toContainText('Wagon Road');
+  await expect(page.locator('.trips-workspace')).not.toContainText('Wagon Road Gate 2');
+
+  await page.getByRole('button', { name: 'Trip actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Stop trips…', exact: true }).click();
+  const drawer = page.getByRole('complementary', { name: 'Stop trips' });
+  await expect(drawer.getByRole('table')).toBeVisible();
+  await drawer.getByLabel('Pattern').selectOption({ label: 'Southbound: Wagon Road to Evans' });
+  await expect(drawer.getByRole('rowheader', { name: /^Wagon Road Gate 2/ })).toBeVisible();
 });
 
 test('a stop ID typed on a new row that matches a saved stop of the Route links that stop instead of duplicating it', async ({ page }) => {

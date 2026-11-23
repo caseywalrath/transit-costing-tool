@@ -46,7 +46,7 @@ describe('Route stop sets in backups (Decision 0079)', () => {
   it('round trips a schema 14 file exactly: stop sets and timepoint stop IDs survive export and import', () => {
     const snapshot = goldenWithStops();
     const payload = exportProjectJson(snapshot);
-    expect(JSON.parse(payload).exportSchemaVersion).toBe(18);
+    expect(JSON.parse(payload).exportSchemaVersion).toBe(19);
     expect(JSON.parse(payload).routeStopSets).toEqual(snapshot.routeStopSets);
     const restored = importProjectJson(payload);
     expect(restored.routeStopSets).toEqual(snapshot.routeStopSets);
@@ -108,7 +108,7 @@ describe('Route stop sets in backups (Decision 0079)', () => {
       generationSets: [], trips: [], blocks: [],
     } as unknown as Parameters<typeof exportProjectJson>[0];
     const file = JSON.parse(exportProjectJson(source));
-    expect(file.exportSchemaVersion).toBe(18);
+    expect(file.exportSchemaVersion).toBe(19);
     file.exportSchemaVersion = 12;
     const restored = importProjectJson(JSON.stringify(file));
     expect(restored.costingAssumptions?.[0].routeEstimateFactors).toEqual(routeEntries);
@@ -190,7 +190,7 @@ describe('Route stop sets in backups (Decision 0079)', () => {
       timepointLocationsByPatternId: { [pattern.id]: { [first.id]: { latitude: 39.914169, longitude: -105.006705 }, [second.id]: { speedLimitMph: 25 } } },
     };
     const payload = exportProjectJson({ ...snapshot, routeStopSets: [located] });
-    expect(JSON.parse(payload).exportSchemaVersion).toBe(18);
+    expect(JSON.parse(payload).exportSchemaVersion).toBe(19);
     const restored = importProjectJson(payload);
     expect(restored.routeStopSets).toEqual([located]);
     expect(withoutExportedAt(exportProjectJson(restored))).toEqual(withoutExportedAt(payload));
@@ -236,5 +236,61 @@ describe('Route stop sets in backups (Decision 0079)', () => {
     const [copyPointId] = Object.keys(copySet.timepointLocationsByPatternId![copyPattern.id]);
     expect(sortedPoints(copyPattern.points)[0].id).toBe(copyPointId);
     expect(copySet.timepointLocationsByPatternId![copyPattern.id][copyPointId]).toEqual({ latitude: 39.9, longitude: -105 });
+  });
+});
+
+describe('timepoint stop names in backups (Decision 0092)', () => {
+  /** `goldenWithStops` with a stop name on the first and third timepoints of its pattern. */
+  function goldenWithNames(): ProjectSnapshot {
+    const snapshot = goldenWithStops();
+    const [set] = snapshot.routeStopSets!;
+    const pattern = snapshot.patterns.find((candidate) => candidate.routeId === set.routeId)!;
+    const points = sortedPoints(pattern.points);
+    return { ...snapshot, routeStopSets: [{ ...set, timepointStopNamesByPatternId: { [pattern.id]: { [points[0].id]: 'Union Station Gate B', [points[2].id]: 'Union Station Gate D' } } }] };
+  }
+
+  it('round trips timepoint stop names exactly: export and import give equal sets at schema 19', () => {
+    const snapshot = goldenWithNames();
+    const payload = exportProjectJson(snapshot);
+    expect(JSON.parse(payload).exportSchemaVersion).toBe(19);
+    expect(JSON.parse(payload).routeStopSets).toEqual(snapshot.routeStopSets);
+    const restored = importProjectJson(payload);
+    expect(restored.routeStopSets).toEqual(snapshot.routeStopSets);
+    expect(withoutExportedAt(exportProjectJson(restored))).toEqual(withoutExportedAt(payload));
+  });
+
+  it('a version 18 file imports with no timepoint stop names', () => {
+    const file = JSON.parse(exportProjectJson(goldenWithStops()));
+    file.exportSchemaVersion = 18;
+    const [set] = importProjectJson(JSON.stringify(file)).routeStopSets!;
+    expect(set.timepointStopNamesByPatternId).toBeUndefined();
+    expect(set.timepointStopCodesByPatternId).toEqual(goldenWithStops().routeStopSets![0].timepointStopCodesByPatternId);
+  });
+
+  it.each([
+    ['a blank timepoint stop name', (set: any) => { const patternId = Object.keys(set.timepointStopNamesByPatternId)[0]; const [pointId] = Object.keys(set.timepointStopNamesByPatternId[patternId]); set.timepointStopNamesByPatternId[patternId][pointId] = '  '; }, /must be a non-blank string/],
+    ['an untrimmed timepoint stop name', (set: any) => { const patternId = Object.keys(set.timepointStopNamesByPatternId)[0]; const [pointId] = Object.keys(set.timepointStopNamesByPatternId[patternId]); set.timepointStopNamesByPatternId[patternId][pointId] = ' Gate B '; }, /invalid timepoint stop name/],
+    ['a timepoint stop name of a missing point', (set: any) => { const patternId = Object.keys(set.timepointStopNamesByPatternId)[0]; set.timepointStopNamesByPatternId[patternId]['no-such-point'] = 'X'; }, /stop name for a missing timepoint/],
+    ['a timepoint stop name of a missing pattern', (set: any) => { set.timepointStopNamesByPatternId = { 'no-such-pattern': { 'no-such-point': 'X' } }; }, /stop names for a missing pattern/],
+  ])('refuses a stop set with %s (Decision 0092)', (_label, change, message) => {
+    const file = JSON.parse(exportProjectJson(goldenWithNames()));
+    change(file.routeStopSets[0]);
+    expect(() => importProjectJson(JSON.stringify(file))).toThrow(message);
+  });
+
+  it('import as copy remaps timepoint stop names to the copy\'s pattern and point', () => {
+    const source = importProjectJson(exportProjectJson(goldenWithNames()));
+    const copy = importProjectJson(exportProjectJson(cloneProjectSnapshot(source, stamp.createdAt)));
+    const [sourceSet] = source.routeStopSets!;
+    const sourcePattern = source.patterns.find((candidate) => candidate.id === Object.keys(sourceSet.timepointStopNamesByPatternId!)[0])!;
+    const copyPattern = copy.patterns.find((candidate) => candidate.routeId === copy.routes[0].id)!;
+    const [copySet] = copy.routeStopSets!;
+    const copyNames = copySet.timepointStopNamesByPatternId![copyPattern.id];
+    const indexIn = (points: Array<{ id: string; sequence: number }>, pointId: string) => sortedPoints(points).findIndex((point) => point.id === pointId);
+    const sourceNames = sourceSet.timepointStopNamesByPatternId![sourcePattern.id];
+    expect(Object.entries(copyNames).map(([pointId, name]) => [indexIn(copyPattern.points, pointId), name])).toEqual(
+      Object.entries(sourceNames).map(([pointId, name]) => [indexIn(sourcePattern.points, pointId), name]),
+    );
+    expect(Object.keys(copySet.timepointStopNamesByPatternId!)).toEqual([copyPattern.id]);
   });
 });

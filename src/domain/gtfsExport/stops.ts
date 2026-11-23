@@ -120,8 +120,8 @@ export function exportStops(input: ExportStopInput): ExportStopsResult {
           routeName: route.name,
           patternId: pattern.id,
           patternName: pattern.name,
-          // Decision 0090 item 8: a timepoint's stop name is its Node's name.
-          stopName: name,
+          // Decision 0090 item 8, as amended by Decision 0092 item 6: a timepoint's stop name is its stored stop name, else its Node's name.
+          stopName: blankToUndefined(point.stopName) ?? name,
           stopId,
           generated: enteredCode === undefined,
           generatedKey: enteredCode === undefined ? `timepoint|${route.id}|${node.id}|${directionDigit}` : undefined,
@@ -157,9 +157,17 @@ export function exportStops(input: ExportStopInput): ExportStopsResult {
     const first = group[0];
     stops.push({ stopId, name: first.stopName, latitude: first.location.latitude, longitude: first.location.longitude });
     // Each later record is compared with the stop's first record. Merged records keep the first record's name and location.
+    // Decision 0092 item 8: one warning per stop ID, for the first merged record whose stop name differs. A refusal is not compared.
+    let nameWarned = false;
     for (const other of group.slice(1)) {
       const distanceMeters = greatCircleMiles(first.location, other.location) * METERS_PER_MILE;
-      if (mayMerge(first, other) && distanceMeters <= STOP_MERGE_METERS) continue;
+      if (mayMerge(first, other) && distanceMeters <= STOP_MERGE_METERS) {
+        if (!nameWarned && other.stopName !== first.stopName) {
+          nameWarned = true;
+          warnings.push(issueOf('gtfsExport.stopNameDiffers', other));
+        }
+        continue;
+      }
       refusals.push({ ...issueOf('gtfsExport.stopIdConflict', other), distanceMeters });
     }
   }

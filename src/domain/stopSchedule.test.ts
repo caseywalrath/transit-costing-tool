@@ -174,6 +174,14 @@ describe('buildStopSchedule (Decision 0084, section 4.7)', () => {
     expect(southbound({ set }).rows.filter((row) => row.name === 'Alpha').map((row) => row.key)).toEqual(['code:200', 'code:100']);
   });
 
+  it('a timepoint row merged by stop ID takes the stop name of the spine pattern (Decision 0092 item 7)', () => {
+    // Full has the most rows, so it is the spine; its stop name wins over North's name for the same stop ID 100.
+    const set = stopSet();
+    set.timepointStopNamesByPatternId = { 'pat-north': { 'n-a': 'Gate D' }, 'pat-full': { 'f-a': 'Gate B' } };
+    const dir = southbound({ set });
+    expect(dir.rows.filter((row) => row.key === 'code:100')).toEqual([expect.objectContaining({ name: 'Gate B', isTimepoint: true, stopCode: '100' })]);
+  });
+
   it('drops a runtime band edge within 15 minutes of a plan edge, so no sliver column is made (Gate A)', () => {
     const profiles = runtimeProfiles().map((profile) => ({ ...profile, bands: [band('early', 'Early', hm(4), hm(4, 50)), band('peak', 'Peak', hm(4, 50), hm(10))] }));
     const north = columnsOf(southbound({ runtimeProfiles: profiles }), 'pat-north');

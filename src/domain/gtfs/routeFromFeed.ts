@@ -16,6 +16,7 @@ import type {
   RouteStopSet,
   TimepointLocations,
   TimepointStopCodes,
+  TimepointStopNames,
 } from '../types';
 import { commonShapeId, measurePattern, stopCoordinates } from './distancesFromFeed';
 import { commonHeadsign, directionNames, splitDirections } from './directionsFromFeed';
@@ -307,18 +308,25 @@ export function routeFromFeed(input: RouteFromFeedInput): RouteFromFeed {
   // Timepoint stop IDs and locations, per pattern point (Decisions 0080 and 0085).
   const timepointStopCodesByPatternId: Record<EntityId, TimepointStopCodes> = {};
   const timepointLocationsByPatternId: Record<EntityId, TimepointLocations> = {};
+  // Decision 0092 item 9: each timepoint stores the feed's stop_name (trimmed) when it is not blank.
+  const timepointStopNamesByPatternId: Record<EntityId, TimepointStopNames> = {};
   drafts.forEach((draft, index) => {
     const pattern = patterns[index];
     const codes: TimepointStopCodes = {};
     const locations: TimepointLocations = {};
+    const names: TimepointStopNames = {};
     pattern.points.forEach((point, position) => {
       const stopId = draft.timepointIds[position];
       codes[point.id] = stopId.trim();
       const at = locationOf(stopId);
       if (at) locations[point.id] = { latitude: at.latitude, longitude: at.longitude };
+      // Not the stopName helper: that one falls back to the stop ID, and only a feed name is stored here (Decision 0092 item 9).
+      const feedName = (stops.get(stopId)?.stop_name ?? '').trim();
+      if (feedName) names[point.id] = feedName;
     });
     timepointStopCodesByPatternId[pattern.id] = codes;
     if (Object.keys(locations).length > 0) timepointLocationsByPatternId[pattern.id] = locations;
+    if (Object.keys(names).length > 0) timepointStopNamesByPatternId[pattern.id] = names;
   });
 
   const stopSet: RouteStopSet | undefined = patterns.length === 0
@@ -332,6 +340,7 @@ export function routeFromFeed(input: RouteFromFeedInput): RouteFromFeed {
         placementsByPatternId,
         timepointStopCodesByPatternId,
         timepointLocationsByPatternId,
+        ...(Object.keys(timepointStopNamesByPatternId).length > 0 ? { timepointStopNamesByPatternId } : {}),
         interpolation: 'distance',
         ...metadata(now),
       };

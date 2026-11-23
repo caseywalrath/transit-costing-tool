@@ -236,6 +236,7 @@ const plural = (count: number, one: string, many: string): string => `${count.to
 
 const WARNING_TEXT: Partial<Record<GtfsExportIssueCode, (count: number) => string>> = {
   'gtfsExport.stopIdGenerated': (count) => `${plural(count, 'stop without an ID gets a generated ID.', 'stops without an ID get generated IDs.')}`,
+  'gtfsExport.stopNameDiffers': (count) => `${plural(count, 'stop ID is used with different stop names; the first name is exported.', 'stop IDs are used with different stop names; the first name of each is exported.')}`,
   'gtfsExport.routeSkipped': (count) => `${plural(count, 'Route has no trips on this Trip profile and is skipped.', 'Routes have no trips on this Trip profile and are skipped.')}`,
   'gtfsExport.daySkipped': (count) => `${plural(count, 'service day has no trips and is left out of the calendar.', 'service days have no trips and are left out of the calendar.')}`,
   'gtfsExport.ownCountsNotExpressed': (count) => `${plural(count, 'Route uses its own annual service days; the feed uses the Scenario calendar for it.', 'Routes use their own annual service days; the feed uses the Scenario calendar for them.')}`,

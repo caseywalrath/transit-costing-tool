@@ -48,6 +48,13 @@ describe('stop times CSV export', () => {
     expect(rows[6].at(-1)).toBe('Block 7');
   });
 
+  it('writes a timepoint\'s stored stop name in the Stop Name column, and keeps its stop ID and Timepoint cells (Decision 0092)', () => {
+    const named = { ...set(), timepointStopNamesByPatternId: { trunk: { p1: 'Union Gate B' } } };
+    const rows = csvRows(stopTimesCsv(input({ set: named })));
+    expect(rows[1]).toEqual(['1', 'Southbound', 'Southbound to C', '1', '1000', 'Union Gate B', 'Yes', '10:00', '']);
+    expect(rows[3]).toEqual(['1', 'Southbound', 'Southbound to C', '3', '', 'Bravo', 'Yes', '10:10', '']);
+  });
+
   it('quotes a stop name with a comma or quotes, and protects a stop name that starts with =', () => {
     const quoted = csvRows(stopTimesCsv(input({ set: set('Elm, "North" St') })));
     expect(quoted[2][5]).toBe('Elm, "North" St');
