@@ -11,6 +11,7 @@ import type {
   StopTimingRule,
   TimepointLocations,
   TimepointStopCodes,
+  TimepointStopNames,
   ValidationFinding,
   ValidationSeverity,
 } from './types';
@@ -54,6 +55,28 @@ export function normalizeTimepointStopCodes(pattern: RoutePattern, codes: Readon
     if (typeof code === 'string' && code.trim() !== '') result[point.id] = code.trim();
   }
   return result;
+}
+
+/**
+ * Decision 0092 item 2. A pattern's timepoint stop names as they are stored: trimmed, blank values left out, entries whose point is not on the
+ * pattern left out, in point order. A name equal to its Node's name is kept (Decision 0092 item 3).
+ */
+export function normalizeTimepointStopNames(pattern: RoutePattern, names: Readonly<TimepointStopNames> | undefined): TimepointStopNames {
+  const result: TimepointStopNames = {};
+  if (!names) return result;
+  for (const point of sortedPoints(pattern)) {
+    const name = names[point.id];
+    if (typeof name === 'string' && name.trim() !== '') result[point.id] = name.trim();
+  }
+  return result;
+}
+
+/**
+ * Decision 0092 item 4. The displayed stop name of a timepoint: its stored stop name when that is not blank, otherwise its Node's name.
+ */
+export function timepointStopName(storedName: string | undefined, nodeName: string | undefined): string {
+  if (typeof storedName === 'string' && storedName.trim() !== '') return storedName.trim();
+  return nodeName ?? '';
 }
 
 const finiteOrUndefined = (value: number | undefined): number | undefined => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
@@ -197,7 +220,8 @@ export function validateRouteStopSet(set: RouteStopSet, patterns: readonly Route
 
 /**
  * Section 4.5. Returns the input array itself when nothing changed. A set left with no stops and no timepoint stop IDs is dropped, and so is
- * a set whose Route is missing. Timepoint stop IDs of a missing pattern or point are dropped (Decision 0080).
+ * a set whose Route is missing. Timepoint stop IDs of a missing pattern or point are dropped (Decision 0080). Timepoint locations and stop
+ * names follow the same rule (Decisions 0085 and 0092 item 2).
  */
 export function pruneRouteStopSets(sets: RouteStopSet[], owners: { routes: readonly Route[]; patterns: readonly RoutePattern[] }): RouteStopSet[] {
   const routeIds = new Set(owners.routes.map((route) => route.id));
@@ -239,16 +263,27 @@ export function pruneRouteStopSets(sets: RouteStopSet[], owners: { routes: reado
       timepointLocationsByPatternId[patternId] = normalized;
     }
     const hasLocations = Object.keys(timepointLocationsByPatternId).length > 0;
-    if (stops.length === 0 && !hasCodes && !hasLocations) { changed = true; continue; }
-    if (!placementsChanged && !codesChanged && !locationsChanged && stops.length === set.stops.length) { next.push(set); continue; }
+    let namesChanged = false;
+    const timepointStopNamesByPatternId: Record<EntityId, TimepointStopNames> = {};
+    for (const [patternId, names] of Object.entries(set.timepointStopNamesByPatternId ?? {})) {
+      const pattern = patternById.get(patternId);
+      const normalized = pattern && pattern.routeId === set.routeId ? normalizeTimepointStopNames(pattern, names) : {};
+      if (Object.keys(normalized).length === 0) { namesChanged = true; continue; }
+      if (JSON.stringify(normalized) !== JSON.stringify(names)) namesChanged = true;
+      timepointStopNamesByPatternId[patternId] = normalized;
+    }
+    const hasNames = Object.keys(timepointStopNamesByPatternId).length > 0;
+    if (stops.length === 0 && !hasCodes && !hasLocations && !hasNames) { changed = true; continue; }
+    if (!placementsChanged && !codesChanged && !locationsChanged && !namesChanged && stops.length === set.stops.length) { next.push(set); continue; }
     changed = true;
-    const { timepointStopCodesByPatternId: _previousCodes, timepointLocationsByPatternId: _previousLocations, ...rest } = set;
+    const { timepointStopCodesByPatternId: _previousCodes, timepointLocationsByPatternId: _previousLocations, timepointStopNamesByPatternId: _previousNames, ...rest } = set;
     next.push({
       ...rest,
       stops,
       placementsByPatternId,
       ...(hasCodes ? { timepointStopCodesByPatternId } : {}),
       ...(hasLocations ? { timepointLocationsByPatternId } : {}),
+      ...(hasNames ? { timepointStopNamesByPatternId } : {}),
     });
   }
   return changed ? next : sets;
@@ -305,6 +340,20 @@ export function reconcileTimepointStopCodes(saved: RoutePattern, next: RoutePatt
   }
   const result = normalizeTimepointStopCodes(next, kept);
   return { codes: result, removedCount: Object.keys(normalizeTimepointStopCodes(saved, codes)).length - Object.keys(result).length };
+}
+
+/**
+ * Decision 0092 item 2. Reconciles a pattern's timepoint stop names with the pattern after an edit, by the same rule as Decision 0080: a name
+ * stays only while its point remains and still stands on the same Node.
+ */
+export function reconcileTimepointStopNames(saved: RoutePattern, next: RoutePattern, names: Readonly<TimepointStopNames>): { names: TimepointStopNames; removedCount: number } {
+  const savedNodeByPoint = new Map(saved.points.map((point) => [point.id, point.nodeId] as const));
+  const kept: TimepointStopNames = {};
+  for (const point of next.points) {
+    if (names[point.id] !== undefined && savedNodeByPoint.get(point.id) === point.nodeId) kept[point.id] = names[point.id];
+  }
+  const result = normalizeTimepointStopNames(next, kept);
+  return { names: result, removedCount: Object.keys(normalizeTimepointStopNames(saved, names)).length - Object.keys(result).length };
 }
 
 /**
@@ -403,7 +452,19 @@ export function remapRouteStopSet(
     }
     if (Object.keys(mapped).length > 0) timepointLocationsByPatternId[targetPatternId] = mapped;
   }
-  const { timepointStopCodesByPatternId: _sourceCodes, timepointLocationsByPatternId: _sourceLocations, ...rest } = set;
+  // Decision 0092 item 2: timepoint stop names follow their pattern and point, as the stop IDs do.
+  const timepointStopNamesByPatternId: Record<EntityId, TimepointStopNames> = {};
+  for (const [patternId, names] of Object.entries(set.timepointStopNamesByPatternId ?? {})) {
+    const targetPatternId = target.patternIds.get(patternId);
+    if (targetPatternId === undefined) continue;
+    const mapped: TimepointStopNames = {};
+    for (const [pointId, name] of Object.entries(names)) {
+      const targetPointId = target.pointIds.get(pointId);
+      if (targetPointId !== undefined) mapped[targetPointId] = name;
+    }
+    if (Object.keys(mapped).length > 0) timepointStopNamesByPatternId[targetPatternId] = mapped;
+  }
+  const { timepointStopCodesByPatternId: _sourceCodes, timepointLocationsByPatternId: _sourceLocations, timepointStopNamesByPatternId: _sourceNames, ...rest } = set;
   return {
     ...rest,
     id: target.id,
@@ -412,6 +473,7 @@ export function remapRouteStopSet(
     placementsByPatternId,
     ...(Object.keys(timepointStopCodesByPatternId).length ? { timepointStopCodesByPatternId } : {}),
     ...(Object.keys(timepointLocationsByPatternId).length ? { timepointLocationsByPatternId } : {}),
+    ...(Object.keys(timepointStopNamesByPatternId).length ? { timepointStopNamesByPatternId } : {}),
     stops: set.stops.map((stop): RouteStop => ({ ...stop })),
     createdAt: now,
     updatedAt: now,

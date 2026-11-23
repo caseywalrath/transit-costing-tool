@@ -40,8 +40,8 @@ import { remapEstimateFactorDays, remapRouteEstimateFactors, remapTripProfileEst
 import { remapGtfsExportSettings, remapImportNotes, remapOwnAnnualServiceDays } from '../domain/project';
 
 export const PROJECT_BACKUP_FORMAT = 'transit-costing-tool.project' as const;
-/** Version 10 adds `plannedFrequencies` (Decision 0058); versions 1 to 9 import with no plans. Version 12 adds `routeEstimateFactors` (Decision 0077). Version 13 adds `routeStopSets` and `Node.stopCode` (Decision 0079). Version 14 moves timepoint stop IDs from `Node.stopCode` to `RouteStopSet.timepointStopCodesByPatternId` (Decision 0080); a `Node.stopCode` in an older file is moved on import. Version 16 adds stop and timepoint locations, `interpolation`, and 1-second rounding (Decisions 0085, 0086). Version 17 adds the feed fields of Scenario and Route, and `provenance.creationMethod` `feed` (Decision 0089 items 38 to 42); versions 1 to 16 import with none of them. Version 18 adds `Scenario.gtfsExportSettings` (Decision 0090 item 16); versions 1 to 17 import with none. */
-export const PROJECT_BACKUP_SCHEMA_VERSION = 18 as const;
+/** Version 10 adds `plannedFrequencies` (Decision 0058); versions 1 to 9 import with no plans. Version 12 adds `routeEstimateFactors` (Decision 0077). Version 13 adds `routeStopSets` and `Node.stopCode` (Decision 0079). Version 14 moves timepoint stop IDs from `Node.stopCode` to `RouteStopSet.timepointStopCodesByPatternId` (Decision 0080); a `Node.stopCode` in an older file is moved on import. Version 16 adds stop and timepoint locations, `interpolation`, and 1-second rounding (Decisions 0085, 0086). Version 17 adds the feed fields of Scenario and Route, and `provenance.creationMethod` `feed` (Decision 0089 items 38 to 42); versions 1 to 16 import with none of them. Version 18 adds `Scenario.gtfsExportSettings` (Decision 0090 item 16); versions 1 to 17 import with none. Version 19 adds `RouteStopSet.timepointStopNamesByPatternId` (Decision 0092); versions 1 to 18 import with none. */
+export const PROJECT_BACKUP_SCHEMA_VERSION = 19 as const;
 export const LEGACY_PROJECT_BACKUP_SCHEMA_VERSION = 1 as const;
 
 /** Decision 0055: shape and rule checks for a stored `autoBlocking` record (backup version 8 and later; `maxVehicles` from version 9, Decision 0056). */
@@ -186,6 +186,14 @@ function validateRouteStopSets(values: unknown[], owners: { scenarioIds: Set<str
       for (const [patternId, codes] of Object.entries(value.timepointStopCodesByPatternId)) {
         if (!isRecord(codes)) throw new Error(`Invalid project backup: ${path}.timepointStopCodesByPatternId.${patternId} must be an object`);
         for (const [pointId, code] of Object.entries(codes)) if (typeof code !== 'string' || !code.trim()) throw new Error(`Invalid project backup: ${path}.timepointStopCodesByPatternId.${patternId}.${pointId} must be a non-blank string`);
+      }
+    }
+    // Decision 0092 (version 19): pattern ID → point ID → stop name. Points and pattern ownership are left to `assertRouteStopSets`.
+    if (value.timepointStopNamesByPatternId !== undefined) {
+      if (!isRecord(value.timepointStopNamesByPatternId)) throw new Error(`Invalid project backup: ${path}.timepointStopNamesByPatternId must be an object`);
+      for (const [patternId, names] of Object.entries(value.timepointStopNamesByPatternId)) {
+        if (!isRecord(names)) throw new Error(`Invalid project backup: ${path}.timepointStopNamesByPatternId.${patternId} must be an object`);
+        for (const [pointId, name] of Object.entries(names)) if (typeof name !== 'string' || !name.trim()) throw new Error(`Invalid project backup: ${path}.timepointStopNamesByPatternId.${patternId}.${pointId} must be a non-blank string`);
       }
     }
     // Decision 0085 (version 16): pattern ID → point ID → location. Ranges and completeness are left to `assertRouteStopSets`.
@@ -826,7 +834,7 @@ function parseValidatedBackup(payload: string): { snapshot: ProjectSnapshot; rep
     throw new Error('Invalid project backup: malformed JSON');
   }
   if (!isRecord(parsed)) throw new Error('Invalid project backup: root must be an object');
-  if (parsed.format !== PROJECT_BACKUP_FORMAT || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)) {
+  if (parsed.format !== PROJECT_BACKUP_FORMAT || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)) {
     throw new Error('Unsupported project backup format or schema version');
   }
   requiredString(parsed.exportedAt, 'exportedAt');
@@ -858,30 +866,30 @@ function parseValidatedBackup(payload: string): { snapshot: ProjectSnapshot; rep
   assertRuntimeGraph(runtimeProfiles, runtimeAssignments, patterns, serviceDays);
   // Current authoritative backups omit generationSets. A non-empty collection is
   // still accepted so historical Phase 2 files can be inspected and copied.
-  const suppliedTripProfiles = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTripProfiles(requiredArray(parsed.tripProfiles ?? [], 'tripProfiles'), scenarioIds) : [];
-  const generationSets = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+  const suppliedTripProfiles = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTripProfiles(requiredArray(parsed.tripProfiles ?? [], 'tripProfiles'), scenarioIds) : [];
+  const generationSets = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
     ? (parsed.generationSets === undefined ? [] : validateGenerationSets(requiredArray(parsed.generationSets, 'generationSets'), scenarioIds, routeById, patterns, serviceDays))
     : [];
-  const trips = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTrips(requiredArray(parsed.trips, 'trips'), scenarioIds, routeById, patterns, serviceDays, generationSets, runtimeProfiles) : [];
+  const trips = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? validateTrips(requiredArray(parsed.trips, 'trips'), scenarioIds, routeById, patterns, serviceDays, generationSets, runtimeProfiles) : [];
   const provisionalTripProfiles = suppliedTripProfiles.length ? suppliedTripProfiles : scenarios.map((scenario) => ({ id: newId(), scenarioId: scenario.id, name: 'Default', ...metadata() }));
-  const blockingScenarios = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
-    ? validateBlockingScenarios(requiredArray(parsed.blockingScenarios ?? [], 'blockingScenarios'), scenarioIds, provisionalTripProfiles, [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ?{ patterns, nodes, serviceDays } : undefined)
+  const blockingScenarios = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+    ? validateBlockingScenarios(requiredArray(parsed.blockingScenarios ?? [], 'blockingScenarios'), scenarioIds, provisionalTripProfiles, [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ?{ patterns, nodes, serviceDays } : undefined)
     : [];
-  const costingAssumptions = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
-    ? validateCostingAssumptions(requiredArray(parsed.costingAssumptions, 'costingAssumptions'), scenarioIds, serviceDays, provisionalTripProfiles, [11, 12, 13, 14, 15, 16, 17, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number), routes, [12, 13, 14, 15, 16, 17, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number))
+  const costingAssumptions = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+    ? validateCostingAssumptions(requiredArray(parsed.costingAssumptions, 'costingAssumptions'), scenarioIds, serviceDays, provisionalTripProfiles, [11, 12, 13, 14, 15, 16, 17, 18, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number), routes, [12, 13, 14, 15, 16, 17, 18, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number))
     : [];
-  const plannedFrequencies = [10, 11, 12, 13, 14, 15, 16, 17, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+  const plannedFrequencies = [10, 11, 12, 13, 14, 15, 16, 17, 18, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
     ? validatePlannedFrequencies(requiredArray(parsed.plannedFrequencies ?? [], 'plannedFrequencies'), { scenarioIds, routes, serviceDays, directions: directions ?? [], nodes })
     : [];
   // Decision 0079. Version 13 and later files; earlier files have no stop sets. Decision 0080: a Node's stop ID (version 13) moves to the
   // points of its Route's patterns, and the Nodes are kept without it.
-  const fileStopSets = [13, 14, 15, 16, 17, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
+  const fileStopSets = [13, 14, 15, 16, 17, 18, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number)
     ? validateRouteStopSets(requiredArray(parsed.routeStopSets ?? [], 'routeStopSets'), { scenarioIds, routes, patterns })
     : [];
   const movedCodes = moveNodeStopCodesToPatterns({ nodes, patterns, routeStopSets: fileStopSets, now: new Date().toISOString(), makeId: newId });
   const routeStopSets = movedCodes.routeStopSets;
   // Blocks without a Blocking Scenario are pre-Phase-4 placeholders (version 3 and 4 files hold only those). They are discarded and counted.
-  const blockValues = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? requiredArray(parsed.blocks, 'blocks') : [];
+  const blockValues = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, PROJECT_BACKUP_SCHEMA_VERSION].includes(parsed.exportSchemaVersion as number) ? requiredArray(parsed.blocks, 'blocks') : [];
   const keptBlockEntries = blockValues.map((value, index) => ({ value, index })).filter((entry) => !isPlaceholderBlock(entry.value));
   const validatedBlocks = validateBlocks(keptBlockEntries, scenarioIds, serviceDays, trips, blockingScenarios);
   // Files exported after a Scenario was duplicated by the older code name the source Scenario's Nodes in the copy's Blocks (Decision 0038).

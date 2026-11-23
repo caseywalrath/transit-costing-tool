@@ -10,10 +10,10 @@ import { normalizeServiceDayAbbreviation, sortServiceDays, validateServiceDayAbb
 import { applySegmentRuntimePlan, defaultBandPairs, planCopyToOthers, planFillFromOthers, planValueCopy, qualifyingProfiles, type BandPairs, type ValueCopyRequest, type SegmentRuntimePlan } from '../domain/segmentRuntimeMatching';
 import { formatServiceTime } from '../domain/time';
 import { copyRuntimeProfile, normalizeRuntimeProfile, reverseCopyRuntimeProfile, routeRuntimeCalculationMethod, unifyRouteRuntimeCalculationMethods, validateRuntimeProfile, withRuntimeCalculationRevision, RuntimeProfileDeletionError, type RuntimeCalculationMethod } from '../domain/runtime';
-import type { Block, BlockActivity, Node, PatternStopPlacement, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RouteOwnAnnualServiceDays, RoutePattern, RouteStop, RouteStopSet, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, StopInterpolation, StopTimeRoundingSeconds, TimepointLocations, TimepointStopCodes, ValidationFinding } from '../domain/types';
+import type { Block, BlockActivity, Node, PatternStopPlacement, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RouteOwnAnnualServiceDays, RoutePattern, RouteStop, RouteStopSet, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, StopInterpolation, StopTimeRoundingSeconds, TimepointLocations, TimepointStopCodes, TimepointStopNames, ValidationFinding } from '../domain/types';
 import { validateNodeDeletion, validateRouteDefinition } from '../domain/validation';
 import { adjustBlockReferences } from '../domain/trips';
-import { normalizePlacements, normalizeStopLocation, normalizeTimepointLocations, normalizeTimepointStopCodes, pruneRouteStopSets, reconcilePlacements, reconcileTimepointLocations, reconcileTimepointStopCodes, validateRouteStopSet } from '../domain/stops';
+import { normalizePlacements, normalizeStopLocation, normalizeTimepointLocations, normalizeTimepointStopCodes, normalizeTimepointStopNames, pruneRouteStopSets, reconcilePlacements, reconcileTimepointLocations, reconcileTimepointStopCodes, reconcileTimepointStopNames, validateRouteStopSet } from '../domain/stops';
 import { applyStopPlacementPlan, applyTimepointCodePlan, applyTimepointLocationPlan, planStopCopy, planStopFill, stopCopyCandidatePatternIds, type StopPlacementPlan } from '../domain/stopPlacementMatching';
 import { authoritativeTripsCsv, blockActivitiesCsv, blocksCsv, directionColumnsCsv, directionsCsv, generationSetsCsv, nodesCsv, patternPointsCsv, patternsCsv, routeCsv, runtimeBandsCsv, scheduledPointsCsv, tripsCsv } from '../persistence/csv';
 import type { BackupPort, LocalDataProtection, ProjectImportOptions, RouteDefinitionRepository, SaveStatus } from './ports';
@@ -331,6 +331,8 @@ export interface RouteStopsEdit {
   roundingSeconds: StopTimeRoundingSeconds;
   /** Decision 0085. The open pattern's timepoint locations by point ID. Absent keeps the stored ones, so an older caller cannot erase them. */
   timepointLocations?: TimepointLocations;
+  /** Decision 0092. The open pattern's timepoint stop names by point ID. Absent keeps the stored ones, so a caller that does not edit names cannot erase them. */
+  timepointStopNames?: TimepointStopNames;
   /** Decision 0086. Absent keeps the stored spacing; stored only when 'distance'. */
   interpolation?: StopInterpolation;
   /** `updatedAt` of the stop set the editor loaded; undefined when the Route had none. */
@@ -911,6 +913,13 @@ export class RouteDefinitionService {
         if (Object.keys(locations).length) timepointLocationsByPatternId[edit.patternId] = locations;
         else delete timepointLocationsByPatternId[edit.patternId];
       }
+      // Decision 0092: stop names are normalized and stored or deleted like the locations. An absent value keeps the stored ones.
+      const timepointStopNamesByPatternId: Record<string, TimepointStopNames> = { ...stored?.timepointStopNamesByPatternId };
+      if (edit.timepointStopNames !== undefined) {
+        const names = normalizeTimepointStopNames(pattern, edit.timepointStopNames);
+        if (Object.keys(names).length) timepointStopNamesByPatternId[edit.patternId] = names;
+        else delete timepointStopNamesByPatternId[edit.patternId];
+      }
       // Decision 0086: 'distance' is the only value stored; an absent value keeps the stored one.
       const interpolation = edit.interpolation ?? stored?.interpolation;
       const next: RouteStopSet = {
@@ -926,6 +935,7 @@ export class RouteDefinitionService {
         placementsByPatternId,
         ...(Object.keys(timepointStopCodesByPatternId).length ? { timepointStopCodesByPatternId } : {}),
         ...(Object.keys(timepointLocationsByPatternId).length ? { timepointLocationsByPatternId } : {}),
+        ...(Object.keys(timepointStopNamesByPatternId).length ? { timepointStopNamesByPatternId } : {}),
         ...(interpolation === 'distance' ? { interpolation } : {}),
         createdAt: stored?.createdAt ?? now,
         updatedAt: now,
@@ -1859,6 +1869,7 @@ export class RouteDefinitionService {
       let placementsByPatternId = set.placementsByPatternId;
       let codesByPatternId = set.timepointStopCodesByPatternId;
       let locationsByPatternId = set.timepointLocationsByPatternId;
+      let namesByPatternId = set.timepointStopNamesByPatternId;
       for (const change of changes) {
         const placements = set.placementsByPatternId[change.saved.id];
         if (placements) {
@@ -1877,10 +1888,16 @@ export class RouteDefinitionService {
           const reconciled = reconcileTimepointLocations(change.saved, change.next, locations).locations;
           if (JSON.stringify(reconciled) !== JSON.stringify(locations)) locationsByPatternId = { ...locationsByPatternId, [change.saved.id]: reconciled };
         }
+        // Decision 0092: a timepoint stop name goes with its point, by the same rule as a timepoint stop ID. An emptied entry is pruned below.
+        const names = set.timepointStopNamesByPatternId?.[change.saved.id];
+        if (names) {
+          const reconciled = reconcileTimepointStopNames(change.saved, change.next, names).names;
+          if (JSON.stringify(reconciled) !== JSON.stringify(names)) namesByPatternId = { ...namesByPatternId, [change.saved.id]: reconciled };
+        }
       }
-      return placementsByPatternId === set.placementsByPatternId && codesByPatternId === set.timepointStopCodesByPatternId && locationsByPatternId === set.timepointLocationsByPatternId
+      return placementsByPatternId === set.placementsByPatternId && codesByPatternId === set.timepointStopCodesByPatternId && locationsByPatternId === set.timepointLocationsByPatternId && namesByPatternId === set.timepointStopNamesByPatternId
         ? set
-        : withUpdatedAt({ ...set, placementsByPatternId, ...(codesByPatternId ? { timepointStopCodesByPatternId: codesByPatternId } : {}), ...(locationsByPatternId ? { timepointLocationsByPatternId: locationsByPatternId } : {}) }, now);
+        : withUpdatedAt({ ...set, placementsByPatternId, ...(codesByPatternId ? { timepointStopCodesByPatternId: codesByPatternId } : {}), ...(locationsByPatternId ? { timepointLocationsByPatternId: locationsByPatternId } : {}), ...(namesByPatternId ? { timepointStopNamesByPatternId: namesByPatternId } : {}) }, now);
     });
     return { ...next, routeStopSets: pruneRouteStopSets(sets, { routes: next.routes, patterns: next.patterns }) };
   }

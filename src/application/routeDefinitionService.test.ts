@@ -1419,6 +1419,51 @@ describe('route stops (Decision 0079)', () => {
     });
   });
 
+  describe('timepoint stop names (Decision 0092)', () => {
+    /** Saves one pattern's timepoint stop names, keeping its stored stops, placements and stop IDs. Absent locations are not passed, so they are kept. */
+    async function saveNames(service: RouteDefinitionService, routeId: string, patternId: string, timepointStopNames: Record<string, string>) {
+      const stored = await service.getRouteStopSet(routeId);
+      return service.saveRouteStops({ routeId, patternId, stops: stored?.stops ?? [], placements: stored?.placementsByPatternId[patternId] ?? [], timepointStopCodes: stored?.timepointStopCodesByPatternId?.[patternId] ?? {}, timepointStopNames, roundingSeconds: 60, baseUpdatedAt: stored?.updatedAt });
+    }
+
+    it('saves trimmed stop names per point, drops blank ones, stores a name equal to its Node name as entered, and keeps a set that holds only names', async () => {
+      const { service, routeId, trunk } = await stopRoute();
+      const [south, north, third] = pointIds(trunk);
+      const saved = await saveNames(service, routeId, trunk.id, { [south]: '  Union Station Gate B ', [north]: '   ', [third]: 'Third' });
+      expect(saved?.stops).toEqual([]);
+      expect(saved?.timepointStopNamesByPatternId).toEqual({ [trunk.id]: { [south]: 'Union Station Gate B', [third]: 'Third' } });
+    });
+
+    it('a save that passes no names keeps the stored ones, and a save with none removes them', async () => {
+      const { service, routeId, trunk } = await stopRoute();
+      const [south] = pointIds(trunk);
+      await saveNames(service, routeId, trunk.id, { [south]: 'Union Station Gate B' });
+      const kept = await saveStops(service, routeId, trunk.id, [placement('elm', south)]);
+      expect(kept?.timepointStopNamesByPatternId).toEqual({ [trunk.id]: { [south]: 'Union Station Gate B' } });
+      const cleared = await saveNames(service, routeId, trunk.id, {});
+      expect(cleared?.timepointStopNamesByPatternId).toBeUndefined();
+    });
+
+    it('keeps another pattern\'s names when one pattern is saved', async () => {
+      const { service, routeId, trunk, branch } = await stopRoute();
+      const [south] = pointIds(trunk);
+      await saveNames(service, routeId, trunk.id, { [south]: 'Union Station Gate B' });
+      const withBranch = await saveNames(service, routeId, branch.id, { [pointIds(branch)[0]]: 'Union Station Gate D' });
+      expect(withBranch?.timepointStopNamesByPatternId).toEqual({ [trunk.id]: { [south]: 'Union Station Gate B' }, [branch.id]: { [pointIds(branch)[0]]: 'Union Station Gate D' } });
+    });
+
+    it('a pattern edit drops the name of a removed point and of a point moved to another Node', async () => {
+      const { service, routeId, aggregate, trunk } = await stopRoute();
+      const [south, north, third] = pointIds(trunk);
+      await saveNames(service, routeId, trunk.id, { [south]: 'Gate S', [north]: 'Gate N', [third]: 'Gate T' });
+      const sorted = [...trunk.points].sort((left, right) => left.sequence - right.sequence);
+      const otherNode = aggregate.nodes.find((node) => node.id !== sorted[0].nodeId && node.id !== sorted[1].nodeId)!;
+      const preview = await service.previewPatternChange(routeId, trunk.id, { ...trunk, points: [sorted[0], { ...sorted[1], nodeId: otherNode.id }] });
+      await service.commitPatternChange(preview.previewToken);
+      expect((await service.getRouteStopSet(routeId))?.timepointStopNamesByPatternId).toEqual({ [trunk.id]: { [south]: 'Gate S' } });
+    });
+  });
+
   it('a Route rename leaves the stop set unchanged', async () => {
     const { service, routeId, aggregate, trunk } = await stopRoute();
     await saveStops(service, routeId, trunk.id, [placement('elm', pointIds(trunk)[0])]);
