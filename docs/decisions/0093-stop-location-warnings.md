@@ -27,3 +27,7 @@ A GTFS export of the Federal BRT scenario "2026 FD Nov 2026 US36 Littleton" was 
 
 - No stored-data, schema or backup change.
 - The export refusal stays; the drawer warning finds the same conflicts earlier, within one Route.
+
+## Amendment (2026-11-23): the page stays put after a save
+
+Saving the Stops drawer keeps the page behind it at its scroll position and moves focus to the drawer's Close button (the Save button held focus and is removed by the save). Reported as the page snapping to the top after a save when editing a pattern far down the Patterns list. Headless Chrome did not show the jump on a fresh project or on the Federal Boulevard backup (12 patterns), so the change is a guard; the browser spec checks the scroll position and the focus.

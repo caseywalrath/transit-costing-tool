@@ -326,9 +326,16 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
   async function save(): Promise<boolean> {
     if (unusableKeys.length) { setError('Some location fields are not numbers. Correct or clear them before saving.'); return false; }
     setBusy(true);
+    // A save rebuilds the Route and removes the Save button, which held focus. The page behind the drawer must stay where it was, so a
+    // planner editing a pattern far down the Patterns list is not sent back to the top.
+    const page = { left: window.scrollX, top: window.scrollY };
     try {
       const written = await service.saveRouteStops({ routeId: aggregate.route.id, patternId: pattern.id, stops: draft.stops, placements: draft.placements, timepointStopCodes: draft.codes, timepointLocations: draft.locations, timepointStopNames: draft.names, interpolation: loaded?.set?.interpolation ?? 'equal', roundingSeconds: loaded?.set?.roundingSeconds ?? DEFAULT_STOP_ROUNDING_SECONDS, baseUpdatedAt: loaded?.set?.updatedAt });
       accept(written);
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+        closeButton.current?.focus({ preventScroll: true });
+        if (window.scrollX !== page.left || window.scrollY !== page.top) window.scrollTo({ left: page.left, top: page.top, behavior: 'auto' });
+      }));
       return true;
     } catch (reason) {
       if (reason instanceof RouteStopValidationError) { setFindings(reason.findings); setError(reason.message); }
