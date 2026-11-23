@@ -103,12 +103,13 @@ export function RouteWorkspace({ service, aggregate, serviceDays, findings, sele
     : aggregate.patterns;
   const nodeById = new Map(aggregate.nodes.map((node) => [node.id, node]));
   const patternDirectionName = (pattern: RoutePattern) => aggregate.directions?.find((direction) => direction.id === pattern.directionId)?.name?.trim() || 'Outbound';
+  // Decision 0088: the group is the identity; the name is display text. Rank by group so a renamed direction ("Northbound") still sorts apart from the other.
+  const patternDirectionRank = (pattern: RoutePattern) => {
+    const group = aggregate.directions?.find((direction) => direction.id === pattern.directionId)?.group ?? 'outbound';
+    return group === 'inbound' ? 0 : 1;
+  };
   const sortedDisplayPatterns = [...displayPatterns].sort((left, right) => {
-    const leftDirection = patternDirectionName(left).toLocaleLowerCase();
-    const rightDirection = patternDirectionName(right).toLocaleLowerCase();
-    const leftDirectionRank = leftDirection === 'inbound' ? 0 : leftDirection === 'outbound' ? 1 : 2;
-    const rightDirectionRank = rightDirection === 'inbound' ? 0 : rightDirection === 'outbound' ? 1 : 2;
-    return leftDirectionRank - rightDirectionRank
+    return patternDirectionRank(left) - patternDirectionRank(right)
       || (left.name || 'Untitled pattern').localeCompare(right.name || 'Untitled pattern', undefined, { numeric: true, sensitivity: 'base' })
       || left.id.localeCompare(right.id);
   });
