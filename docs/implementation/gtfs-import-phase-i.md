@@ -507,7 +507,7 @@ Accepted: step 2 weekday trip counts come from calendars and trips without `stop
 
 - Additive options carried end to end: `timepointMode` ('feed' | 'suggested') and `timepointOverrides` through `routeFromFeed`, `translateFeed`, `scenarioFromFeed`, `FeedPlanOptions` and `addRoutes`. New `timepointReview.ts`.
 - Level C step 3 shows "Proposed days" (read-only) beside "Scenario days". Undo only for level C; levels A and B open the new Project or Scenario.
-- The "Feed" chip sits in the Pattern cell beside "Run times changed". The import note is the menu item's note line and the Cost summary footnote.
+- The "Feed" chip sits in the Pattern cell beside "Run times changed". The import note is the Cost summary footnote. (2026-11-23: the menu item's note line was removed as redundant; Decision 0089 item 39 is amended.)
 - Planned frequencies stay disabled ("Not available yet"): no seeding service exists. Backlog.
 - After a level A or B import with blocks, the "From feed" Blocking scenario is remembered for the new Scenario, so Costing opens on it.
 

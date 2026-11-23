@@ -120,7 +120,7 @@ Items 24–29 are amended by `docs/implementation/gtfs-import-phase-i.md` sectio
 ### J. Stored data (backup schema 17)
 
 38. **Route** gains optional `gtfsRouteId` (string), `gtfsRouteType` (whole number) and `color` (six hexadecimal digits, upper case, no "#"). `color` shows as the Route's identity dot in the Route switcher and in Costing route rows (5b S3); nothing else uses it.
-39. **Scenario** gains optional `importNotes`: a list, one entry per import into it, each with publisher (agency name), feed version, file name, the date used per service day, the number of Routes, and the import time. Shown in the Scenario switcher and the Cost summary footnote (5b S1, settled in I7).
+39. **Scenario** gains optional `importNotes`: a list, one entry per import into it, each with publisher (agency name), feed version, file name, the date used per service day, the number of Routes, and the import time. Shown in the Cost summary footnote (5b S1, settled in I7). Amended 2026-11-23: the Scenario switcher no longer shows it; repeated under every imported Scenario each time the menu opened, it was redundant.
 40. **Trip** `provenance.creationMethod` accepts `feed`.
 41. **Route** gains optional `ownAnnualServiceDays`: `{ enabled: boolean; countsByServiceDayId: Record<serviceDayId, number> }`.
     - Absent, or `enabled` false: the Route uses the Scenario's counts, exactly as today. The counts are kept while the switch is off, so turning it back on restores them.

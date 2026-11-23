@@ -1,4 +1,4 @@
-// The one-line import note shown under a Scenario's name in the Scenario menu and in the Cost summary footnote (Decision 0089 item 39).
+// The one-line import note shown in the Cost summary footnote (Decision 0089 item 39, amended 2026-11-23: no longer shown in the Scenario menu).
 // Pure: it reads the Scenario's notes and returns text.
 
 import type { Scenario, ScenarioImportNote } from '../../domain/types';

@@ -189,7 +189,7 @@ test('a level A import through the Project menu opens the Project, shows B1 on t
   await shot(page, 'after-import-trips');
 });
 
-test('a level B import adds a Scenario with its import note under the name in the Scenario menu', async ({ page }) => {
+test('a level B import adds a Scenario, and the Scenario menu does not repeat the import note', async ({ page }) => {
   await page.goto('/');
   await runCommand(page, 'project.newFromGtfs');
   await toOptions(page, MINI_FEED);
@@ -204,8 +204,8 @@ test('a level B import adds a Scenario with its import note under the name in th
   await expect(scenarioSwitcher(page)).toContainText('Existing service (2026-01-05)');
   await scenarioSwitcher(page).click();
   const menu = page.getByRole('menu', { name: 'Scenario actions', exact: true });
-  // The note is the item's description, shown under its name.
-  await expect(menu.getByText(/^From Mini Test Transit feed · imported \d{1,2} \w{3} \d{4} · 3 routes$/)).toHaveCount(2);
+  // The import note is not repeated under each Scenario name; it shows in the Cost summary footnote.
+  await expect(menu.getByText(/From Mini Test Transit feed/)).toHaveCount(0);
   await shot(page, 'after-import-scenario-menu');
   await page.keyboard.press('Escape');
   await chooseScenario(page, 'Existing service');
