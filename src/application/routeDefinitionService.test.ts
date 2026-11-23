@@ -1419,6 +1419,106 @@ describe('route stops (Decision 0079)', () => {
     });
   });
 
+  describe('timepoint stop names (Decision 0092)', () => {
+    /** Saves one pattern's timepoint stop names, keeping its stored stops, placements and stop IDs. Absent locations are not passed, so they are kept. */
+    async function saveNames(service: RouteDefinitionService, routeId: string, patternId: string, timepointStopNames: Record<string, string>) {
+      const stored = await service.getRouteStopSet(routeId);
+      return service.saveRouteStops({ routeId, patternId, stops: stored?.stops ?? [], placements: stored?.placementsByPatternId[patternId] ?? [], timepointStopCodes: stored?.timepointStopCodesByPatternId?.[patternId] ?? {}, timepointStopNames, roundingSeconds: 60, baseUpdatedAt: stored?.updatedAt });
+    }
+
+    it('saves trimmed stop names per point, drops blank ones, stores a name equal to its Node name as entered, and keeps a set that holds only names', async () => {
+      const { service, routeId, trunk } = await stopRoute();
+      const [south, north, third] = pointIds(trunk);
+      const saved = await saveNames(service, routeId, trunk.id, { [south]: '  Union Station Gate B ', [north]: '   ', [third]: 'Third' });
+      expect(saved?.stops).toEqual([]);
+      expect(saved?.timepointStopNamesByPatternId).toEqual({ [trunk.id]: { [south]: 'Union Station Gate B', [third]: 'Third' } });
+    });
+
+    it('a save that passes no names keeps the stored ones, and a save with none removes them', async () => {
+      const { service, routeId, trunk } = await stopRoute();
+      const [south] = pointIds(trunk);
+      await saveNames(service, routeId, trunk.id, { [south]: 'Union Station Gate B' });
+      const kept = await saveStops(service, routeId, trunk.id, [placement('elm', south)]);
+      expect(kept?.timepointStopNamesByPatternId).toEqual({ [trunk.id]: { [south]: 'Union Station Gate B' } });
+      const cleared = await saveNames(service, routeId, trunk.id, {});
+      expect(cleared?.timepointStopNamesByPatternId).toBeUndefined();
+    });
+
+    it('keeps another pattern\'s names when one pattern is saved', async () => {
+      const { service, routeId, trunk, branch } = await stopRoute();
+      const [south] = pointIds(trunk);
+      await saveNames(service, routeId, trunk.id, { [south]: 'Union Station Gate B' });
+      const withBranch = await saveNames(service, routeId, branch.id, { [pointIds(branch)[0]]: 'Union Station Gate D' });
+      expect(withBranch?.timepointStopNamesByPatternId).toEqual({ [trunk.id]: { [south]: 'Union Station Gate B' }, [branch.id]: { [pointIds(branch)[0]]: 'Union Station Gate D' } });
+    });
+
+    it('a pattern edit drops the name of a removed point and of a point moved to another Node', async () => {
+      const { service, routeId, aggregate, trunk } = await stopRoute();
+      const [south, north, third] = pointIds(trunk);
+      await saveNames(service, routeId, trunk.id, { [south]: 'Gate S', [north]: 'Gate N', [third]: 'Gate T' });
+      const sorted = [...trunk.points].sort((left, right) => left.sequence - right.sequence);
+      const otherNode = aggregate.nodes.find((node) => node.id !== sorted[0].nodeId && node.id !== sorted[1].nodeId)!;
+      const preview = await service.previewPatternChange(routeId, trunk.id, { ...trunk, points: [sorted[0], { ...sorted[1], nodeId: otherNode.id }] });
+      await service.commitPatternChange(preview.previewToken);
+      expect((await service.getRouteStopSet(routeId))?.timepointStopNamesByPatternId).toEqual({ [trunk.id]: { [south]: 'Gate S' } });
+    });
+
+    /** Adds Return, in the Route's other direction (the same helper as the Decision 0080 block). */
+    async function withReturn() {
+      const route = await stopRoute();
+      const directions = route.aggregate.directions ?? [];
+      const nodeIds = [...route.trunk.points].sort((left, right) => left.sequence - right.sequence).map((point) => point.nodeId).reverse();
+      const opposite = await savePattern(route.service, route.aggregate, { name: 'Return', directionId: directions[1].id, stops: nodeIds.map((nodeId, index) => ({ nodeId, miles: [0, 2.5, 4][index] })) });
+      expect(route.trunk.directionId).toBe(route.branch.directionId);
+      expect(opposite.pattern.directionId).not.toBe(route.trunk.directionId);
+      return { ...route, aggregate: opposite.aggregate, opposite: opposite.pattern };
+    }
+
+    it('fill takes names from same-direction patterns only, and copy writes them to same-direction patterns only, then undo restores the set', async () => {
+      const { service, routeId, aggregate, trunk, branch, opposite } = await withReturn();
+      const [south] = pointIds(trunk);
+      await saveNames(service, routeId, trunk.id, { [south]: 'Union Station Gate B' });
+      await saveNames(service, routeId, opposite.id, { [pointIds(opposite)[1]]: 'Union Station Gate D' });
+
+      const fill = service.previewStopFill(aggregate, await service.getRouteStopSet(routeId), branch, { placements: [], timepointStopCodes: {} });
+      expect(fill.nameChanges.map((change) => [change.patternPointId, change.next, change.sourcePatternIds])).toEqual([[pointIds(branch)[0], 'Union Station Gate B', [trunk.id]]]);
+      expect(fill.nodeNames).toEqual({ [trunk.points.find((point) => point.id === south)!.nodeId]: 'South' });
+      expect(service.applyStopFill(branch, { placements: [], timepointStopCodes: {} }, fill).timepointStopNames).toEqual({ [pointIds(branch)[0]]: 'Union Station Gate B' });
+
+      const copy = await service.previewStopCopy(trunk.id);
+      expect(copy.nameChanges.map((change) => [change.patternId, change.patternPointId, change.next])).toEqual([[branch.id, pointIds(branch)[0], 'Union Station Gate B']]);
+      const written = await service.applyStopCopy(copy);
+      expect(written.timepointStopNamesByPatternId?.[branch.id]).toEqual({ [pointIds(branch)[0]]: 'Union Station Gate B' });
+      expect(written.timepointStopNamesByPatternId?.[opposite.id]).toEqual({ [pointIds(opposite)[1]]: 'Union Station Gate D' });
+      expect(service.getStopCopyUndo()).toEqual({ routeId, patternCount: 1 });
+      expect((await service.undoStopCopy())?.timepointStopNamesByPatternId?.[branch.id]).toBeUndefined();
+    });
+
+    it('fill reports a name conflict when same-direction patterns disagree, and copy overwrites a different name', async () => {
+      const { service, routeId, aggregate, trunk, branch } = await stopRoute();
+      const third = await savePattern(service, aggregate, { name: 'Third', stops: trunk.points.map((point) => ({ nodeId: point.nodeId })) });
+      await saveNames(service, routeId, trunk.id, { [pointIds(trunk)[0]]: 'Gate A' });
+      await saveNames(service, routeId, branch.id, { [pointIds(branch)[0]]: 'Gate B' });
+      const fill = service.previewStopFill(third.aggregate, await service.getRouteStopSet(routeId), third.pattern, { placements: [], timepointStopCodes: {} });
+      expect(fill.nameChanges).toEqual([]);
+      expect(fill.nameSkips).toEqual([expect.objectContaining({ patternId: third.pattern.id, reason: 'conflict', candidates: [{ stopName: 'Gate A', patternIds: [trunk.id] }, { stopName: 'Gate B', patternIds: [branch.id] }] })]);
+      const copy = await service.previewStopCopy(trunk.id, [third.pattern.id]);
+      expect(copy.nameChanges).toEqual([expect.objectContaining({ patternId: branch.id, previous: 'Gate B', next: 'Gate A' })]);
+      expect(copy.affectedPatterns).toEqual([{ patternId: branch.id, changeCount: 1, overwriteCount: 1 }]);
+    });
+
+    it('refuses a copy when a name changed after the preview, and writes nothing', async () => {
+      const { service, repository, scenarioId, routeId, trunk } = await stopRoute();
+      const [south] = pointIds(trunk);
+      await saveNames(service, routeId, trunk.id, { [south]: 'Gate B' });
+      const preview = await service.previewStopCopy(trunk.id);
+      await saveNames(service, routeId, trunk.id, { [south]: 'Gate C' });
+      const before = JSON.stringify(await repository.getScenarioRecords(scenarioId));
+      await expect(service.applyStopCopy(preview)).rejects.toThrow('Stops changed after the preview. Review the changes again.');
+      expect(JSON.stringify(await repository.getScenarioRecords(scenarioId))).toBe(before);
+    });
+  });
+
   it('a Route rename leaves the stop set unchanged', async () => {
     const { service, routeId, aggregate, trunk } = await stopRoute();
     await saveStops(service, routeId, trunk.id, [placement('elm', pointIds(trunk)[0])]);

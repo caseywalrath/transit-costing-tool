@@ -1,9 +1,9 @@
 import { forwardRef, Fragment, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { RouteStopValidationError, STOPS_CHANGED_ELSEWHERE, type RouteDefinitionApplication, type StopDraft, type StopPlacementPreview } from '../../application/routeDefinitionService';
 import { matchStopLocations, readStopLocationFile, type StopLocationMatch, type StopLocationTarget } from '../../application/stopLocationImport';
-import { DEFAULT_STOP_ROUNDING_SECONDS, normalizePlacements, normalizeStopLocation, normalizeTimepointLocations, normalizeTimepointStopCodes, placementsBySegment, sameLocation, sortedPoints } from '../../domain/stops';
+import { DEFAULT_STOP_ROUNDING_SECONDS, normalizePlacements, normalizeStopLocation, normalizeTimepointLocations, normalizeTimepointStopCodes, normalizeTimepointStopNames, placementsBySegment, sameLocation, sortedPoints, timepointStopName } from '../../domain/stops';
 import { newId } from '../../domain/ids';
-import { type PatternStopPlacement, type RouteDefinitionAggregate, type RoutePattern, type RouteStop, type RouteStopSet, type StopLocation, type TimepointLocations, type TimepointStopCodes, type ValidationFinding } from '../../domain/types';
+import { type PatternStopPlacement, type RouteDefinitionAggregate, type RoutePattern, type RouteStop, type RouteStopSet, type StopLocation, type TimepointLocations, type TimepointStopCodes, type TimepointStopNames, type ValidationFinding } from '../../domain/types';
 import { readStoredRecord } from '../preferences';
 import { locationText, StopLocationImportDialog, type StopLocationImportReview } from './StopLocationImportDialog';
 import { userFacingError } from '../errorMessages';
@@ -23,10 +23,10 @@ const plural = (count: number, singular: string) => `${count} ${singular}${count
 /** The value a stop is offered under in the name suggestions; the stop ID tells apart stops with one name. */
 const suggestionValue = (stop: RouteStop) => stop.stopCode ? `${stop.name} · ${stop.stopCode}` : stop.name;
 
-/** `codes` holds the timepoint stop IDs as typed (Decision 0080); they are trimmed on save. */
-type Draft = { stops: RouteStop[]; placements: PatternStopPlacement[]; codes: TimepointStopCodes; locations: TimepointLocations };
-const EMPTY_DRAFT: Draft = { stops: [], placements: [], codes: {}, locations: {} };
-const draftOf = (pattern: RoutePattern, set: RouteStopSet | undefined): Draft => ({ stops: (set?.stops ?? []).map((stop) => ({ ...stop })), placements: normalizePlacements(pattern, set?.placementsByPatternId[pattern.id] ?? []), codes: normalizeTimepointStopCodes(pattern, set?.timepointStopCodesByPatternId?.[pattern.id]), locations: normalizeTimepointLocations(pattern, set?.timepointLocationsByPatternId?.[pattern.id]) });
+/** `codes` holds the timepoint stop IDs as typed (Decision 0080) and `names` the timepoint stop names (Decision 0092); both are trimmed on save. */
+type Draft = { stops: RouteStop[]; placements: PatternStopPlacement[]; codes: TimepointStopCodes; locations: TimepointLocations; names: TimepointStopNames };
+const EMPTY_DRAFT: Draft = { stops: [], placements: [], codes: {}, locations: {}, names: {} };
+const draftOf = (pattern: RoutePattern, set: RouteStopSet | undefined): Draft => ({ stops: (set?.stops ?? []).map((stop) => ({ ...stop })), placements: normalizePlacements(pattern, set?.placementsByPatternId[pattern.id] ?? []), codes: normalizeTimepointStopCodes(pattern, set?.timepointStopCodesByPatternId?.[pattern.id]), locations: normalizeTimepointLocations(pattern, set?.timepointLocationsByPatternId?.[pattern.id]), names: normalizeTimepointStopNames(pattern, set?.timepointStopNamesByPatternId?.[pattern.id]) });
 
 /** Decision 0085 item 5. Whether the drawer shows the location columns, remembered on this device. */
 export const STOP_LOCATIONS_OPEN_PREFERENCE_KEY = 'transit-costing-tool.stop-locations-open.v1';
@@ -41,7 +41,7 @@ const COORDINATE_PAIR = /^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/;
 const parseLocationText = (text: string): number | undefined => { const trimmed = text.trim(); if (!trimmed) return undefined; const value = Number(trimmed); return Number.isFinite(value) ? value : undefined; };
 const isUnusableText = (text: string) => text.trim() !== '' && !Number.isFinite(Number(text.trim()));
 
-/** Counts placements added, removed, or moved, stops renamed or given another stop ID or location, and timepoint stop IDs and locations changed. */
+/** Counts placements added, removed, or moved, stops renamed or given another stop ID or location, and timepoint stop IDs, stop names, and locations changed. */
 function changeCount(pattern: RoutePattern, base: Draft, draft: Draft): number {
   const basePlacements = new Map(base.placements.map((placement) => [placement.id, placement]));
   const draftIds = new Set(draft.placements.map((placement) => placement.id));
@@ -58,6 +58,9 @@ function changeCount(pattern: RoutePattern, base: Draft, draft: Draft): number {
   const baseCodes = normalizeTimepointStopCodes(pattern, base.codes);
   const draftCodes = normalizeTimepointStopCodes(pattern, draft.codes);
   for (const point of pattern.points) if ((baseCodes[point.id] ?? '') !== (draftCodes[point.id] ?? '')) count += 1;
+  const baseNames = normalizeTimepointStopNames(pattern, base.names);
+  const draftNames = normalizeTimepointStopNames(pattern, draft.names);
+  for (const point of pattern.points) if ((baseNames[point.id] ?? '') !== (draftNames[point.id] ?? '')) count += 1;
   for (const point of pattern.points) if (!sameLocation(base.locations[point.id], draft.locations[point.id])) count += 1;
   return count;
 }
@@ -100,7 +103,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
   // A field holding text that is not a number is an edit too, so the drawer cannot be closed without a prompt.
   const count = changeCount(pattern, base, draft) + unusableKeys.length;
   // The Fill preview reads the draft; one object per draft keeps the dialog from previewing again on every render.
-  const stopDraft = useMemo<StopDraft>(() => ({ placements: draft.placements, timepointStopCodes: draft.codes, timepointLocations: draft.locations }), [draft.placements, draft.codes, draft.locations]);
+  const stopDraft = useMemo<StopDraft>(() => ({ placements: draft.placements, timepointStopCodes: draft.codes, timepointLocations: draft.locations, timepointStopNames: draft.names }), [draft.placements, draft.codes, draft.locations, draft.names]);
   const dirty = count > 0;
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
@@ -216,6 +219,11 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
     const { [pointId]: _previous, ...codes } = draft.codes;
     edit({ ...draft, codes: value ? { ...codes, [pointId]: value } : codes });
   }
+  /** Decision 0092. A timepoint's stop name on this pattern. An empty field removes it. */
+  function updateName(pointId: string, value: string) {
+    const { [pointId]: _previous, ...names } = draft.names;
+    edit({ ...draft, names: value ? { ...names, [pointId]: value } : names });
+  }
 
   /** Decision 0085. The current location of a drawer row: `stop:<id>` from the Route stop, `point:<id>` from this pattern's timepoint. */
   function locationOf(key: string): StopLocation | undefined {
@@ -291,7 +299,8 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
     const targets: StopLocationTarget[] = [];
     const labels: Record<string, string> = {};
     points.forEach((point, index) => {
-      const name = nodeById.get(point.nodeId)?.name || 'Untitled node';
+      // Decision 0092 item 6: the import matches a timepoint by its displayed stop name, which is its Node name when it has none.
+      const name = timepointStopName(draft.names[point.id], nodeById.get(point.nodeId)?.name) || 'Untitled node';
       targets.push({ key: `point:${point.id}`, name, ...(draft.codes[point.id]?.trim() ? { stopCode: draft.codes[point.id].trim() } : {}) });
       labels[`point:${point.id}`] = name;
       if (index < points.length - 1) for (const placement of segments[index]) {
@@ -316,7 +325,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
     if (unusableKeys.length) { setError('Some location fields are not numbers. Correct or clear them before saving.'); return false; }
     setBusy(true);
     try {
-      const written = await service.saveRouteStops({ routeId: aggregate.route.id, patternId: pattern.id, stops: draft.stops, placements: draft.placements, timepointStopCodes: draft.codes, timepointLocations: draft.locations, interpolation: loaded?.set?.interpolation ?? 'equal', roundingSeconds: loaded?.set?.roundingSeconds ?? DEFAULT_STOP_ROUNDING_SECONDS, baseUpdatedAt: loaded?.set?.updatedAt });
+      const written = await service.saveRouteStops({ routeId: aggregate.route.id, patternId: pattern.id, stops: draft.stops, placements: draft.placements, timepointStopCodes: draft.codes, timepointLocations: draft.locations, timepointStopNames: draft.names, interpolation: loaded?.set?.interpolation ?? 'equal', roundingSeconds: loaded?.set?.roundingSeconds ?? DEFAULT_STOP_ROUNDING_SECONDS, baseUpdatedAt: loaded?.set?.updatedAt });
       accept(written);
       return true;
     } catch (reason) {
@@ -338,7 +347,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
 
   const undo = service.getStopCopyUndo();
   const undoApplies = undo?.routeId === aggregate.route.id;
-  const hasSavedPlacements = Boolean(loaded?.set?.placementsByPatternId[pattern.id]?.length) || Object.keys(loaded?.set?.timepointStopCodesByPatternId?.[pattern.id] ?? {}).length > 0 || Object.keys(loaded?.set?.timepointLocationsByPatternId?.[pattern.id] ?? {}).length > 0;
+  const hasSavedPlacements = Boolean(loaded?.set?.placementsByPatternId[pattern.id]?.length) || Object.keys(loaded?.set?.timepointStopCodesByPatternId?.[pattern.id] ?? {}).length > 0 || Object.keys(loaded?.set?.timepointLocationsByPatternId?.[pattern.id] ?? {}).length > 0 || Object.keys(loaded?.set?.timepointStopNamesByPatternId?.[pattern.id] ?? {}).length > 0;
   const hasOtherPatterns = aggregate.patterns.some((candidate) => candidate.id !== pattern.id);
   async function undoCopy() {
     setBusy(true);
@@ -376,7 +385,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
           const timepointLabel = `${node?.name || 'Untitled node'}${points.filter((other) => other.nodeId === point.nodeId).length > 1 ? ` (point ${index + 1})` : ''}`;
           const pointErrors = [...new Set([...messages(findings, point.id), ...textErrors(`point:${point.id}`)])];
           return <Fragment key={point.id}>
-            <tr className="pattern-stops-timepoint"><th scope="row" colSpan={1}><span className="pattern-stops-timepoint__name"><span className="pattern-stops-timepoint__mark" aria-hidden="true" />{node?.name || 'Untitled node'}</span></th><td><input className="pattern-stops-code" placeholder="—" value={draft.codes[point.id] ?? ''} aria-label={`Timepoint stop ID, ${timepointLabel}`} disabled={busy} onChange={(event) => updateCode(point.id, event.target.value)} /></td>{locationCells(`point:${point.id}`, `timepoint ${timepointLabel}`)}<td colSpan={3} /></tr>
+            <tr className="pattern-stops-timepoint"><th scope="row" colSpan={1}><span className="pattern-stops-timepoint__name"><span className="pattern-stops-timepoint__mark" aria-hidden="true" />{node?.name || 'Untitled node'}</span><div className="pattern-stops-name"><input value={draft.names[point.id] ?? ''} placeholder={node?.name || 'Untitled node'} aria-label={`Timepoint stop name, ${timepointLabel}`} disabled={busy} onChange={(event) => updateName(point.id, event.target.value)} /></div></th><td><input className="pattern-stops-code" placeholder="—" value={draft.codes[point.id] ?? ''} aria-label={`Timepoint stop ID, ${timepointLabel}`} disabled={busy} onChange={(event) => updateCode(point.id, event.target.value)} /></td>{locationCells(`point:${point.id}`, `timepoint ${timepointLabel}`)}<td colSpan={3} /></tr>
             {pointErrors.length > 0 && <tr className="pattern-stops-error pattern-stops-error--timepoint"><td colSpan={columns}><span className="field-error">{pointErrors.join(' ')}</span></td></tr>}
             {index < points.length - 1 && segment.map((placement, position) => {
               const stop = stopById.get(placement.stopId);
@@ -407,7 +416,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
     <footer className={dirty ? 'pattern-stops-drawer__footer pattern-stops-drawer__footer--dirty' : 'pattern-stops-drawer__footer'}>
       {dirty ? <SaveBar message={plural(count, 'unsaved change')} saveLabel="Save stops" busy={busy} onSave={() => void save()} onDiscard={discard} /> : <button type="button" onClick={onClose} disabled={busy}>Close</button>}
     </footer>
-    {dialog && <PatternStopsDialog service={service} mode={dialog} aggregate={aggregate} pattern={pattern} set={loaded?.set} draft={stopDraft} onFilled={(filled) => { edit({ ...draft, placements: filled.placements, codes: filled.timepointStopCodes, locations: filled.timepointLocations ?? draft.locations }); setDialog(undefined); }} onCopied={(set) => { accept(set); setDialog(undefined); }} onClose={() => setDialog(undefined)} />}
+    {dialog && <PatternStopsDialog service={service} mode={dialog} aggregate={aggregate} pattern={pattern} set={loaded?.set} draft={stopDraft} onFilled={(filled) => { edit({ ...draft, placements: filled.placements, codes: filled.timepointStopCodes, locations: filled.timepointLocations ?? draft.locations, names: filled.timepointStopNames ?? draft.names }); setDialog(undefined); }} onCopied={(set) => { accept(set); setDialog(undefined); }} onClose={() => setDialog(undefined)} />}
     {importReview && <StopLocationImportDialog review={importReview} onApply={applyImport} onClose={() => setImportReview(undefined)} />}
     {closePrompt && <DiscardRouteDraftDialog title="Discard unsaved stop changes?" onClose={() => setClosePrompt(false)} onDiscard={() => { setClosePrompt(false); onClose(); }} onSave={() => { setClosePrompt(false); void save().then((saved) => { if (saved) onClose(); }); }} />}
   </aside>;
@@ -416,6 +425,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
 const SKIP_TITLES = { ambiguous: 'Segment appears more than once in a pattern', conflict: 'Other patterns disagree' } as const;
 const CODE_SKIP_TITLES = { ambiguous: 'Timepoint appears more than once in a pattern', conflict: 'Other patterns disagree on a timepoint stop ID' } as const;
 const LOCATION_SKIP_TITLES = { ambiguous: 'Timepoint appears more than once in a pattern (location)', conflict: 'Other patterns disagree on a timepoint location' } as const;
+const NAME_SKIP_TITLES = { ambiguous: 'Timepoint appears more than once in a pattern (stop name)', conflict: 'Other patterns disagree on a timepoint stop name' } as const;
 
 /** Decision 0079 (model: `PatternDistanceDialog`, Decision 0065): preview, then confirm, a fill of this draft's empty segments or a copy of its saved stops. */
 function PatternStopsDialog({ service, mode, aggregate, pattern, set, draft, onFilled, onCopied, onClose }: { service: PatternStopsService; mode: 'fill' | 'copy'; aggregate: RouteDefinitionAggregate; pattern: RoutePattern; set: RouteStopSet | undefined; draft: StopDraft; onFilled: (draft: StopDraft) => void; onCopied: (set: RouteStopSet) => void; onClose: () => void }) {
@@ -460,7 +470,10 @@ function PatternStopsDialog({ service, mode, aggregate, pattern, set, draft, onF
   // Decision 0085: timepoint locations, matched like the stop IDs.
   const locationSkipGroups = (['ambiguous', 'conflict'] as const).map((reason) => ({ reason, skips: (preview?.locationSkips ?? []).filter((skip) => skip.reason === reason) })).filter((group) => group.skips.length);
   const locationSkipText = (skip: StopPlacementPreview['locationSkips'][number]) => [name(skip.patternId), nodeName(skip.nodeId), ...(skip.candidates ? [skip.candidates.map((candidate) => `${locationText(candidate.location)} (${candidate.patternIds.map(name).join(', ')})`).join(' vs ')] : [])].join(' · ');
-  const nothing = !preview || (preview.changes.length === 0 && preview.codeChanges.length === 0 && preview.locationChanges.length === 0);
+  // Decision 0092 item 11: timepoint stop names, matched like the stop IDs.
+  const nameSkipGroups = (['ambiguous', 'conflict'] as const).map((reason) => ({ reason, skips: (preview?.nameSkips ?? []).filter((skip) => skip.reason === reason) })).filter((group) => group.skips.length);
+  const nameSkipText = (skip: StopPlacementPreview['nameSkips'][number]) => [name(skip.patternId), nodeName(skip.nodeId), ...(skip.candidates ? [skip.candidates.map((candidate) => `${candidate.stopName} (${candidate.patternIds.map(name).join(', ')})`).join(' vs ')] : [])].join(' · ');
+  const nothing = !preview || (preview.changes.length === 0 && preview.codeChanges.length === 0 && preview.locationChanges.length === 0 && preview.nameChanges.length === 0);
   return <ModalDialog labelledBy="pattern-stops-dialog-title" className="confirm-dialog preview-dialog segment-runtime-dialog" onClose={onClose} busy={busy}>
     <h2 id="pattern-stops-dialog-title">{copy ? 'Copy stops to other patterns' : 'Fill stops from other patterns'}</h2>
     {!preview && !error && <p role="status">Loading preview…</p>}
@@ -493,6 +506,15 @@ function PatternStopsDialog({ service, mode, aggregate, pattern, set, draft, onF
           {!copy && <td>{change.sourcePatternIds.map(name).join(', ')}</td>}
         </tr>)}</tbody>
       </table></div>}
+      {preview.nameChanges.length > 0 && <div className="preview-times"><table aria-label="Timepoint stop names">
+        <thead><tr>{copy && <th scope="col">Pattern</th>}<th scope="col">Timepoint</th><th scope="col">Stop name</th>{!copy && <th scope="col">Source</th>}</tr></thead>
+        <tbody>{preview.nameChanges.map((change) => <tr key={`${change.patternId}:${change.patternPointId}`}>
+          {copy && <td>{name(change.patternId)}</td>}
+          <td>{nodeName(change.nodeId)}</td>
+          <td>{change.previous !== undefined ? `${change.previous} → ` : ''}{change.next}</td>
+          {!copy && <td>{change.sourcePatternIds.map(name).join(', ')}</td>}
+        </tr>)}</tbody>
+      </table></div>}
       {preview.locationChanges.length > 0 && <div className="preview-times"><table aria-label="Timepoint locations">
         <thead><tr>{copy && <th scope="col">Pattern</th>}<th scope="col">Timepoint</th><th scope="col">Location</th>{!copy && <th scope="col">Source</th>}</tr></thead>
         <tbody>{preview.locationChanges.map((change) => <tr key={`${change.patternId}:${change.patternPointId}`}>
@@ -506,6 +528,7 @@ function PatternStopsDialog({ service, mode, aggregate, pattern, set, draft, onF
       {skipGroups.map((group) => <div key={group.reason} className="segment-runtime-skips"><p><strong>{SKIP_TITLES[group.reason]}</strong></p><ul className="recalculation-candidates">{group.skips.map((skip, index) => <li key={index}>{skipText(skip)}</li>)}</ul></div>)}
       {codeSkipGroups.map((group) => <div key={`code-${group.reason}`} className="segment-runtime-skips"><p><strong>{CODE_SKIP_TITLES[group.reason]}</strong></p><ul className="recalculation-candidates">{group.skips.map((skip, index) => <li key={index}>{codeSkipText(skip)}</li>)}</ul></div>)}
       {locationSkipGroups.map((group) => <div key={`location-${group.reason}`} className="segment-runtime-skips"><p><strong>{LOCATION_SKIP_TITLES[group.reason]}</strong></p><ul className="recalculation-candidates">{group.skips.map((skip, index) => <li key={index}>{locationSkipText(skip)}</li>)}</ul></div>)}
+      {nameSkipGroups.map((group) => <div key={`name-${group.reason}`} className="segment-runtime-skips"><p><strong>{NAME_SKIP_TITLES[group.reason]}</strong></p><ul className="recalculation-candidates">{group.skips.map((skip, index) => <li key={index}>{nameSkipText(skip)}</li>)}</ul></div>)}
     </>}
     {error && <p className="field-error" role="alert">{error}</p>}
     <div className="dialog-actions"><button autoFocus={!copy} type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="primary" type="button" onClick={() => void apply()} disabled={nothing || busy}>{busy ? 'Saving…' : copy ? 'Replace stops' : 'Fill stops'}</button></div>

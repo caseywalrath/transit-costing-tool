@@ -113,6 +113,9 @@
 .pattern-stops-timepoint__name { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 /* Decision 0080: the timepoint's stop ID field reads like the stop rows' fields. */
 .pattern-stops-timepoint td .pattern-stops-code { font-size: var(--font-size-body); font-weight: var(--font-weight-regular); }
+/* Decision 0092: the timepoint stop name field sits in the row's th; it takes the stop rows' body type, not the th's label type. */
+.pattern-stops-timepoint th .pattern-stops-name { margin-top: var(--space-1); }
+.pattern-stops-timepoint th .pattern-stops-name input { font-size: var(--font-size-body); font-weight: var(--font-weight-regular); }
 .pattern-stops-timepoint__mark { flex: none; width: 10px; height: 10px; border: 2px solid var(--color-accent); border-radius: 50%; background: var(--color-surface); }
 .pattern-stops-stop td:first-child, .pattern-stops-add td, .pattern-stops-error td { padding-left: calc(var(--space-4) + 4px); }
 .pattern-stops-stop td:first-child, .pattern-stops-add td:first-child, .pattern-stops-error td:first-child { box-shadow: inset calc(var(--space-4) + 5px) 0 0 -1px var(--color-surface), inset calc(var(--space-4) + 6px) 0 0 0 var(--color-border); }

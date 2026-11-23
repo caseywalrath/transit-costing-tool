@@ -11,8 +11,9 @@ export interface RouteStopOwners {
 
 /**
  * Refuse a write that would store an invalid stop set (Decision 0079): a duplicate ID, a missing or foreign owner, a second
- * set for one Route, no stops, no timepoint stop IDs and no timepoint locations, a timepoint stop ID of a missing pattern or point or a blank one
+ * set for one Route, no stops, no timepoint stop IDs, no timepoint locations and no timepoint stop names, a timepoint stop ID of a missing pattern or point or a blank one
  * (Decision 0080), a timepoint location of a missing pattern or point, an empty one, or one with a non-numeric field (Decision 0085),
+ * a timepoint stop name of a missing pattern or point or a blank or untrimmed one (Decision 0092),
  * or any error finding of `validateRouteStopSet`. Warnings do not refuse.
  */
 export function assertRouteStopSets(sets: RouteStopSet[], owners: RouteStopOwners): void {
@@ -29,7 +30,8 @@ export function assertRouteStopSets(sets: RouteStopSet[], owners: RouteStopOwner
     routeIds.add(set.routeId);
     const codeEntries = Object.entries(set.timepointStopCodesByPatternId ?? {});
     const locationEntries = Object.entries(set.timepointLocationsByPatternId ?? {});
-    if (set.stops.length === 0 && codeEntries.length === 0 && locationEntries.length === 0) throw new Error(`Route stop set ${set.id} has no stops.`);
+    const nameEntries = Object.entries(set.timepointStopNamesByPatternId ?? {});
+    if (set.stops.length === 0 && codeEntries.length === 0 && locationEntries.length === 0 && nameEntries.length === 0) throw new Error(`Route stop set ${set.id} has no stops.`);
     // Decision 0080: each pattern entry holds stop IDs of that pattern's own points, as trimmed, non-blank strings.
     for (const [patternId, codes] of codeEntries) {
       const pattern = owners.patterns.find((candidate) => candidate.id === patternId);
@@ -49,6 +51,16 @@ export function assertRouteStopSets(sets: RouteStopSet[], owners: RouteStopOwner
         if (!pointIds.has(pointId)) throw new Error(`Route stop set ${set.id} has a location for a missing timepoint.`);
         const fields = LOCATION_FIELDS.filter((field) => location[field] !== undefined);
         if (fields.length === 0 || fields.some((field) => typeof location[field] !== 'number')) throw new Error(`Route stop set ${set.id} has an invalid timepoint location.`);
+      }
+    }
+    // Decision 0092 item 2: each pattern entry holds stop names of that pattern's own points, as trimmed, non-blank strings.
+    for (const [patternId, names] of nameEntries) {
+      const pattern = owners.patterns.find((candidate) => candidate.id === patternId);
+      if (!pattern || pattern.routeId !== set.routeId) throw new Error(`Route stop set ${set.id} has stop names for a missing pattern.`);
+      const pointIds = new Set(pattern.points.map((point) => point.id));
+      for (const [pointId, name] of Object.entries(names)) {
+        if (!pointIds.has(pointId)) throw new Error(`Route stop set ${set.id} has a stop name for a missing timepoint.`);
+        if (typeof name !== 'string' || name.trim() === '' || name !== name.trim()) throw new Error(`Route stop set ${set.id} has an invalid timepoint stop name.`);
       }
     }
     const errors = validateRouteStopSet(set, owners.patterns).filter((finding) => finding.severity === 'error');

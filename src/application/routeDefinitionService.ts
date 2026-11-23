@@ -10,11 +10,11 @@ import { normalizeServiceDayAbbreviation, sortServiceDays, validateServiceDayAbb
 import { applySegmentRuntimePlan, defaultBandPairs, planCopyToOthers, planFillFromOthers, planValueCopy, qualifyingProfiles, type BandPairs, type ValueCopyRequest, type SegmentRuntimePlan } from '../domain/segmentRuntimeMatching';
 import { formatServiceTime } from '../domain/time';
 import { copyRuntimeProfile, normalizeRuntimeProfile, reverseCopyRuntimeProfile, routeRuntimeCalculationMethod, unifyRouteRuntimeCalculationMethods, validateRuntimeProfile, withRuntimeCalculationRevision, RuntimeProfileDeletionError, type RuntimeCalculationMethod } from '../domain/runtime';
-import type { Block, BlockActivity, Node, PatternStopPlacement, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RouteOwnAnnualServiceDays, RoutePattern, RouteStop, RouteStopSet, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, StopInterpolation, StopTimeRoundingSeconds, TimepointLocations, TimepointStopCodes, ValidationFinding } from '../domain/types';
+import type { Block, BlockActivity, Node, PatternStopPlacement, Project, ProjectSnapshot, Route, RouteDefinitionAggregate, RouteDirection, RouteOwnAnnualServiceDays, RoutePattern, RouteStop, RouteStopSet, RuntimeAssignment, RuntimeProfile, Scenario, ServiceDayDefinition, StopInterpolation, StopTimeRoundingSeconds, TimepointLocations, TimepointStopCodes, TimepointStopNames, ValidationFinding } from '../domain/types';
 import { validateNodeDeletion, validateRouteDefinition } from '../domain/validation';
 import { adjustBlockReferences } from '../domain/trips';
-import { normalizePlacements, normalizeStopLocation, normalizeTimepointLocations, normalizeTimepointStopCodes, pruneRouteStopSets, reconcilePlacements, reconcileTimepointLocations, reconcileTimepointStopCodes, validateRouteStopSet } from '../domain/stops';
-import { applyStopPlacementPlan, applyTimepointCodePlan, applyTimepointLocationPlan, planStopCopy, planStopFill, stopCopyCandidatePatternIds, type StopPlacementPlan } from '../domain/stopPlacementMatching';
+import { normalizePlacements, normalizeStopLocation, normalizeTimepointLocations, normalizeTimepointStopCodes, normalizeTimepointStopNames, pruneRouteStopSets, reconcilePlacements, reconcileTimepointLocations, reconcileTimepointStopCodes, reconcileTimepointStopNames, validateRouteStopSet } from '../domain/stops';
+import { applyStopPlacementPlan, applyTimepointCodePlan, applyTimepointLocationPlan, applyTimepointNamePlan, planStopCopy, planStopFill, stopCopyCandidatePatternIds, type StopPlacementPlan } from '../domain/stopPlacementMatching';
 import { authoritativeTripsCsv, blockActivitiesCsv, blocksCsv, directionColumnsCsv, directionsCsv, generationSetsCsv, nodesCsv, patternPointsCsv, patternsCsv, routeCsv, runtimeBandsCsv, scheduledPointsCsv, tripsCsv } from '../persistence/csv';
 import type { BackupPort, LocalDataProtection, ProjectImportOptions, RouteDefinitionRepository, SaveStatus } from './ports';
 import { assertReviewCurrent, fingerprint } from './reviewToken';
@@ -331,6 +331,8 @@ export interface RouteStopsEdit {
   roundingSeconds: StopTimeRoundingSeconds;
   /** Decision 0085. The open pattern's timepoint locations by point ID. Absent keeps the stored ones, so an older caller cannot erase them. */
   timepointLocations?: TimepointLocations;
+  /** Decision 0092. The open pattern's timepoint stop names by point ID. Absent keeps the stored ones, so a caller that does not edit names cannot erase them. */
+  timepointStopNames?: TimepointStopNames;
   /** Decision 0086. Absent keeps the stored spacing; stored only when 'distance'. */
   interpolation?: StopInterpolation;
   /** `updatedAt` of the stop set the editor loaded; undefined when the Route had none. */
@@ -338,7 +340,8 @@ export interface RouteStopsEdit {
 }
 /** Decision 0080. The Stops drawer's draft of one pattern, as Fill reads and returns it. */
 /** Decision 0085: `timepointLocations` is optional so that a caller without locations plans as having none. */
-export interface StopDraft { placements: PatternStopPlacement[]; timepointStopCodes: TimepointStopCodes; timepointLocations?: TimepointLocations }
+/** Decision 0092: `timepointStopNames` is optional so that a caller without names plans as having none. */
+export interface StopDraft { placements: PatternStopPlacement[]; timepointStopCodes: TimepointStopCodes; timepointLocations?: TimepointLocations; timepointStopNames?: TimepointStopNames }
 export class RouteStopValidationError extends Error {
   constructor(readonly findings: ValidationFinding[]) { super('Resolve the highlighted stop problems before saving.'); this.name = 'RouteStopValidationError'; }
 }
@@ -351,7 +354,7 @@ export interface StopPlacementPreview extends StopPlacementPlan {
   segmentLabels: Record<string, string[]>;
   /** Stop ID → name, for every stop a change or skip names. */
   stopNames: Record<string, string>;
-  /** Node ID → name, for every timepoint a code change or skip names (Decision 0080). */
+  /** Node ID → name, for every timepoint a stop ID, location or stop name change or skip names (Decisions 0080, 0085, 0092). */
   nodeNames: Record<string, string>;
 }
 export const STOPS_CHANGED_ELSEWHERE = 'Stops changed after this editor opened. Close it and open it again.';
@@ -911,6 +914,13 @@ export class RouteDefinitionService {
         if (Object.keys(locations).length) timepointLocationsByPatternId[edit.patternId] = locations;
         else delete timepointLocationsByPatternId[edit.patternId];
       }
+      // Decision 0092: stop names are normalized and stored or deleted like the locations. An absent value keeps the stored ones.
+      const timepointStopNamesByPatternId: Record<string, TimepointStopNames> = { ...stored?.timepointStopNamesByPatternId };
+      if (edit.timepointStopNames !== undefined) {
+        const names = normalizeTimepointStopNames(pattern, edit.timepointStopNames);
+        if (Object.keys(names).length) timepointStopNamesByPatternId[edit.patternId] = names;
+        else delete timepointStopNamesByPatternId[edit.patternId];
+      }
       // Decision 0086: 'distance' is the only value stored; an absent value keeps the stored one.
       const interpolation = edit.interpolation ?? stored?.interpolation;
       const next: RouteStopSet = {
@@ -926,6 +936,7 @@ export class RouteDefinitionService {
         placementsByPatternId,
         ...(Object.keys(timepointStopCodesByPatternId).length ? { timepointStopCodesByPatternId } : {}),
         ...(Object.keys(timepointLocationsByPatternId).length ? { timepointLocationsByPatternId } : {}),
+        ...(Object.keys(timepointStopNamesByPatternId).length ? { timepointStopNamesByPatternId } : {}),
         ...(interpolation === 'distance' ? { interpolation } : {}),
         createdAt: stored?.createdAt ?? now,
         updatedAt: now,
@@ -1006,7 +1017,7 @@ export class RouteDefinitionService {
 
   /** Decision 0079 (model: Decision 0065). What "Fill stops from other patterns" would write into the draft. Synchronous; nothing is read or written. */
   previewStopFill(aggregate: RouteDefinitionAggregate, set: RouteStopSet | undefined, pattern: RoutePattern, draft: StopDraft): StopPlacementPreview {
-    const plan = planStopFill({ openPattern: pattern, openPlacements: draft.placements, openCodes: draft.timepointStopCodes, patterns: aggregate.patterns, placementsByPatternId: set?.placementsByPatternId ?? {}, codesByPatternId: set?.timepointStopCodesByPatternId ?? {}, openLocations: draft.timepointLocations, locationsByPatternId: set?.timepointLocationsByPatternId ?? {} });
+    const plan = planStopFill({ openPattern: pattern, openPlacements: draft.placements, openCodes: draft.timepointStopCodes, patterns: aggregate.patterns, placementsByPatternId: set?.placementsByPatternId ?? {}, codesByPatternId: set?.timepointStopCodesByPatternId ?? {}, openLocations: draft.timepointLocations, locationsByPatternId: set?.timepointLocationsByPatternId ?? {}, openNames: draft.timepointStopNames, namesByPatternId: set?.timepointStopNamesByPatternId ?? {} });
     return this.describeStopPlacementPlan(plan, { scenarioId: aggregate.route.scenarioId, routeId: aggregate.route.id, excludedPatternIds: [], copyCandidates: [], patterns: aggregate.patterns, nodes: aggregate.nodes, draft: pattern, set });
   }
 
@@ -1016,6 +1027,7 @@ export class RouteDefinitionService {
       placements: applyStopPlacementPlan([pattern], { [pattern.id]: draft.placements }, preview, newId)[pattern.id] ?? draft.placements,
       timepointStopCodes: applyTimepointCodePlan([pattern], { [pattern.id]: draft.timepointStopCodes }, preview)[pattern.id] ?? draft.timepointStopCodes,
       timepointLocations: applyTimepointLocationPlan([pattern], { [pattern.id]: draft.timepointLocations ?? {} }, preview)[pattern.id] ?? draft.timepointLocations ?? {},
+      timepointStopNames: applyTimepointNamePlan([pattern], { [pattern.id]: draft.timepointStopNames ?? {} }, preview)[pattern.id] ?? draft.timepointStopNames ?? {},
     };
   }
 
@@ -1030,8 +1042,9 @@ export class RouteDefinitionService {
     const placements = set?.placementsByPatternId[patternId] ?? [];
     const codes = set?.timepointStopCodesByPatternId?.[patternId] ?? {};
     const locations = set?.timepointLocationsByPatternId?.[patternId] ?? {};
-    if (placements.length === 0 && Object.keys(codes).length === 0 && Object.keys(locations).length === 0) throw new Error("Save this pattern's stops before copying them.");
-    const plan = planStopCopy({ openPattern: stored, openPlacements: placements, openCodes: codes, patterns, placementsByPatternId: set?.placementsByPatternId ?? {}, codesByPatternId: set?.timepointStopCodesByPatternId ?? {}, openLocations: locations, locationsByPatternId: set?.timepointLocationsByPatternId ?? {}, excludedPatternIds });
+    const names = set?.timepointStopNamesByPatternId?.[patternId] ?? {};
+    if (placements.length === 0 && Object.keys(codes).length === 0 && Object.keys(locations).length === 0 && Object.keys(names).length === 0) throw new Error("Save this pattern's stops before copying them.");
+    const plan = planStopCopy({ openPattern: stored, openPlacements: placements, openCodes: codes, patterns, placementsByPatternId: set?.placementsByPatternId ?? {}, codesByPatternId: set?.timepointStopCodesByPatternId ?? {}, openLocations: locations, locationsByPatternId: set?.timepointLocationsByPatternId ?? {}, openNames: names, namesByPatternId: set?.timepointStopNamesByPatternId ?? {}, excludedPatternIds });
     return this.describeStopPlacementPlan(plan, { scenarioId: stored.scenarioId, routeId: stored.routeId, excludedPatternIds, copyCandidates: stopCopyCandidatePatternIds(stored, patterns), patterns, nodes: records.nodes.filter((node) => node.routeId === stored.routeId), draft: stored, set });
   }
 
@@ -1040,7 +1053,7 @@ export class RouteDefinitionService {
    * preview, nothing is written. The set is validated, and one error aborts the whole write.
    */
   async applyStopCopy(preview: StopPlacementPreview): Promise<RouteStopSet> {
-    if (!preview.changes.length && !preview.codeChanges.length && !preview.locationChanges.length) throw new Error('No stops would change.');
+    if (!preview.changes.length && !preview.codeChanges.length && !preview.locationChanges.length && !preview.nameChanges.length) throw new Error('No stops would change.');
     const result: { set?: RouteStopSet; undo?: StopCopyUndo } = {};
     await this.updateScenarioRecords(preview.scenarioId, (current) => {
       const patterns = current.patterns.filter((pattern) => pattern.routeId === preview.routeId);
@@ -1050,16 +1063,19 @@ export class RouteDefinitionService {
       const placementsByPatternId = stored?.placementsByPatternId ?? {};
       const codesByPatternId = stored?.timepointStopCodesByPatternId ?? {};
       const locationsByPatternId = stored?.timepointLocationsByPatternId ?? {};
-      const plan = planStopCopy({ openPattern: open, openPlacements: placementsByPatternId[open.id] ?? [], openCodes: codesByPatternId[open.id] ?? {}, patterns, placementsByPatternId, codesByPatternId, openLocations: locationsByPatternId[open.id] ?? {}, locationsByPatternId, excludedPatternIds: preview.excludedPatternIds });
-      if (!stored || JSON.stringify([plan.changes, plan.codeChanges, plan.locationChanges]) !== JSON.stringify([preview.changes, preview.codeChanges, preview.locationChanges])) throw new Error(STOP_COPY_PREVIEW_STALE);
+      const namesByPatternId = stored?.timepointStopNamesByPatternId ?? {};
+      const plan = planStopCopy({ openPattern: open, openPlacements: placementsByPatternId[open.id] ?? [], openCodes: codesByPatternId[open.id] ?? {}, patterns, placementsByPatternId, codesByPatternId, openLocations: locationsByPatternId[open.id] ?? {}, locationsByPatternId, openNames: namesByPatternId[open.id] ?? {}, namesByPatternId, excludedPatternIds: preview.excludedPatternIds });
+      if (!stored || JSON.stringify([plan.changes, plan.codeChanges, plan.locationChanges, plan.nameChanges]) !== JSON.stringify([preview.changes, preview.codeChanges, preview.locationChanges, preview.nameChanges])) throw new Error(STOP_COPY_PREVIEW_STALE);
       const applied = applyStopPlacementPlan(patterns, placementsByPatternId, plan, newId);
       const appliedCodes = applyTimepointCodePlan(patterns, codesByPatternId, plan);
       const appliedLocations = applyTimepointLocationPlan(patterns, locationsByPatternId, plan);
+      const appliedNames = applyTimepointNamePlan(patterns, namesByPatternId, plan);
       const next = withUpdatedAt({
         ...stored,
         placementsByPatternId: { ...placementsByPatternId, ...applied },
         ...(plan.codeChanges.length ? { timepointStopCodesByPatternId: { ...codesByPatternId, ...appliedCodes } } : {}),
         ...(plan.locationChanges.length ? { timepointLocationsByPatternId: { ...locationsByPatternId, ...appliedLocations } } : {}),
+        ...(plan.nameChanges.length ? { timepointStopNamesByPatternId: { ...namesByPatternId, ...appliedNames } } : {}),
       }, this.now());
       const findings = validateRouteStopSet(next, patterns);
       if (findings.some((finding) => finding.severity === 'error')) throw new RouteStopValidationError(findings);
@@ -1115,7 +1131,7 @@ export class RouteDefinitionService {
       if (stop) stopNames[stop.id] = stop.name;
     }
     const nodeNames: Record<string, string> = {};
-    for (const item of [...plan.codeChanges, ...plan.codeSkips, ...plan.locationChanges, ...plan.locationSkips]) nodeNames[item.nodeId] = scope.nodes.find((node) => node.id === item.nodeId)?.name || 'Unnamed point';
+    for (const item of [...plan.codeChanges, ...plan.codeSkips, ...plan.locationChanges, ...plan.locationSkips, ...plan.nameChanges, ...plan.nameSkips]) nodeNames[item.nodeId] = scope.nodes.find((node) => node.id === item.nodeId)?.name || 'Unnamed point';
     return { ...plan, scenarioId: scope.scenarioId, routeId: scope.routeId, excludedPatternIds: plan.mode === 'copyToOthers' ? scope.excludedPatternIds : [], copyCandidates, patternNames, segmentLabels, stopNames, nodeNames };
   }
 
@@ -1859,6 +1875,7 @@ export class RouteDefinitionService {
       let placementsByPatternId = set.placementsByPatternId;
       let codesByPatternId = set.timepointStopCodesByPatternId;
       let locationsByPatternId = set.timepointLocationsByPatternId;
+      let namesByPatternId = set.timepointStopNamesByPatternId;
       for (const change of changes) {
         const placements = set.placementsByPatternId[change.saved.id];
         if (placements) {
@@ -1877,10 +1894,16 @@ export class RouteDefinitionService {
           const reconciled = reconcileTimepointLocations(change.saved, change.next, locations).locations;
           if (JSON.stringify(reconciled) !== JSON.stringify(locations)) locationsByPatternId = { ...locationsByPatternId, [change.saved.id]: reconciled };
         }
+        // Decision 0092: a timepoint stop name goes with its point, by the same rule as a timepoint stop ID. An emptied entry is pruned below.
+        const names = set.timepointStopNamesByPatternId?.[change.saved.id];
+        if (names) {
+          const reconciled = reconcileTimepointStopNames(change.saved, change.next, names).names;
+          if (JSON.stringify(reconciled) !== JSON.stringify(names)) namesByPatternId = { ...namesByPatternId, [change.saved.id]: reconciled };
+        }
       }
-      return placementsByPatternId === set.placementsByPatternId && codesByPatternId === set.timepointStopCodesByPatternId && locationsByPatternId === set.timepointLocationsByPatternId
+      return placementsByPatternId === set.placementsByPatternId && codesByPatternId === set.timepointStopCodesByPatternId && locationsByPatternId === set.timepointLocationsByPatternId && namesByPatternId === set.timepointStopNamesByPatternId
         ? set
-        : withUpdatedAt({ ...set, placementsByPatternId, ...(codesByPatternId ? { timepointStopCodesByPatternId: codesByPatternId } : {}), ...(locationsByPatternId ? { timepointLocationsByPatternId: locationsByPatternId } : {}) }, now);
+        : withUpdatedAt({ ...set, placementsByPatternId, ...(codesByPatternId ? { timepointStopCodesByPatternId: codesByPatternId } : {}), ...(locationsByPatternId ? { timepointLocationsByPatternId: locationsByPatternId } : {}), ...(namesByPatternId ? { timepointStopNamesByPatternId: namesByPatternId } : {}) }, now);
     });
     return { ...next, routeStopSets: pruneRouteStopSets(sets, { routes: next.routes, patterns: next.patterns }) };
   }

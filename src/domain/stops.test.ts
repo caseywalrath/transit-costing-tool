@@ -5,13 +5,16 @@ import {
   normalizePlacements,
   normalizeStopLocation,
   normalizeTimepointLocations,
+  normalizeTimepointStopNames,
   placementSegmentIndex,
   placementsBySegment,
   pruneRouteStopSets,
   reconcilePlacements,
   reconcileTimepointLocations,
+  reconcileTimepointStopNames,
   remapRouteStopSet,
   sameLocation,
+  timepointStopName,
   validateRouteStopSet,
 } from './stops';
 import type { PatternPoint, PatternStopPlacement, Route, RoutePattern, RouteStop, RouteStopSet, StopTimingRule } from './types';
@@ -403,5 +406,71 @@ describe('stop locations and spacing (Decisions 0085, 0086)', () => {
       expect(hasCoordinates({ latitude: Number.NaN, longitude: 2 })).toBe(false);
       expect(hasCoordinates(undefined)).toBe(false);
     });
+  });
+});
+
+describe('timepoint stop names (Decision 0092)', () => {
+  const routes: Route[] = [{ ...T, id: 'r', scenarioId: 's', name: 'R' }];
+
+  it('normalizeTimepointStopNames trims, drops blank values and points not on the pattern, and keeps point order', () => {
+    const normalized = normalizeTimepointStopNames(P, { pC: '  Gate C  ', pA: '   ', gone: 'X', pB: 'Gate B' });
+    expect(normalized).toEqual({ pB: 'Gate B', pC: 'Gate C' });
+    expect(Object.keys(normalizeTimepointStopNames(P, { pD: 'Gate D', pA: 'Gate A' }))).toEqual(['pA', 'pD']);
+    expect(normalizeTimepointStopNames(P, undefined)).toEqual({});
+  });
+
+  it('timepointStopName uses the stored name, falls back to the Node name on blank or absent, keeps a name equal to the Node name, and is empty with neither', () => {
+    expect(timepointStopName('  Gate B ', 'Downtown TC')).toBe('Gate B');
+    expect(timepointStopName('   ', 'Downtown TC')).toBe('Downtown TC');
+    expect(timepointStopName(undefined, 'Downtown TC')).toBe('Downtown TC');
+    expect(timepointStopName('Downtown TC', 'Downtown TC')).toBe('Downtown TC');
+    expect(timepointStopName(undefined, undefined)).toBe('');
+  });
+
+  it('pruneRouteStopSets keeps a set whose only content is names', () => {
+    const namesOnly = setOf({ stops: [], placementsByPatternId: {}, timepointStopNamesByPatternId: { P: { pB: 'Gate B' } } });
+    expect(pruneRouteStopSets([namesOnly], { routes, patterns: [P] })).toEqual([namesOnly]);
+  });
+
+  it('pruneRouteStopSets drops names of a missing pattern or point', () => {
+    const set = setOf({ timepointStopNamesByPatternId: { P: { pB: 'Gate B', gone: 'X' }, Q: { pA: 'Y' } } });
+    const [pruned] = pruneRouteStopSets([set], { routes, patterns: [P] });
+    expect(pruned.timepointStopNamesByPatternId).toEqual({ P: { pB: 'Gate B' } });
+  });
+
+  it('pruneRouteStopSets drops a set whose names all go and that has nothing else', () => {
+    const set = setOf({ stops: [], placementsByPatternId: {}, timepointStopNamesByPatternId: { P: { gone: 'X' } } });
+    expect(pruneRouteStopSets([set], { routes, patterns: [P] })).toEqual([]);
+  });
+
+  it('pruneRouteStopSets returns the same array when every name is valid', () => {
+    const sets = [setOf({ timepointStopNamesByPatternId: { P: { pB: 'Gate B' } } })];
+    expect(pruneRouteStopSets(sets, { routes, patterns: [P] })).toBe(sets);
+  });
+
+  it('reconcileTimepointStopNames keeps a name on a point that remains on the same Node', () => {
+    expect(reconcileTimepointStopNames(P, P, { pB: 'Gate B' })).toEqual({ names: { pB: 'Gate B' }, removedCount: 0 });
+  });
+
+  it('reconcileTimepointStopNames drops a name when its point now stands on another Node, and counts it', () => {
+    const moved = pattern('P', [pA, { ...pB, nodeId: 'X' }, pC, pD]);
+    expect(reconcileTimepointStopNames(P, moved, { pB: 'Gate B' })).toEqual({ names: {}, removedCount: 1 });
+  });
+
+  it('reconcileTimepointStopNames drops a name when its point is removed, and counts it', () => {
+    expect(reconcileTimepointStopNames(P, pattern('P', [pA, pC, pD]), { pB: 'Gate B' })).toEqual({ names: {}, removedCount: 1 });
+  });
+
+  it('remapRouteStopSet maps name keys and drops an unmapped point and an unmapped pattern', () => {
+    const named = setOf({ timepointStopNamesByPatternId: { P: { pA: 'Gate A', pB: 'Gate B', pC: 'Gate C' }, Q: { pA: 'Y' } } });
+    const target = {
+      id: 'new-set',
+      scenarioId: 's2',
+      routeId: 'r2',
+      patternIds: new Map([['P', 'P2']]),
+      pointIds: new Map([['pA', 'qA'], ['pC', 'qC']]),
+    };
+    const copy = remapRouteStopSet(named, target, '2026-02-02T00:00:00.000Z');
+    expect(copy.timepointStopNamesByPatternId).toEqual({ P2: { qA: 'Gate A', qC: 'Gate C' } });
   });
 });
