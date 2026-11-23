@@ -109,6 +109,16 @@ describe('stopTimeRows (Decision 0079, section 8.3)', () => {
     expect(rows[4]).toMatchObject({ stopId: 'S3', segmentIndex: 1, time: 29760 });
   });
 
+  it('shows a timepoint\'s stored stop name (Decision 0092), falls back to its Node name when blank or absent, and leaves stop rows unchanged', () => {
+    const named: RouteStopSet = { ...set, timepointStopNamesByPatternId: { P: { pA: 'Alpha Gate 1', pB: '   ' } } };
+    const rows = stopTimeRows({ pattern, set: named, nodes, trip });
+    expect(rows[0]).toMatchObject({ kind: 'timepoint', nodeId: 'nA', name: 'Alpha Gate 1', stopCode: '1001' });
+    expect(rows[2]).toMatchObject({ kind: 'timepoint', nodeId: 'nB', name: 'Bravo' });
+    expect(rows[5]).toMatchObject({ kind: 'timepoint', nodeId: 'nC', name: 'Charlie' });
+    expect(rows[1]).toMatchObject({ kind: 'stop', stopId: 'S1', name: 'Main St' });
+    expect(rows[3]).toMatchObject({ kind: 'stop', stopId: 'S2', name: 'Oak Ave' });
+  });
+
   it('returns only timepoints when there is no set', () => {
     const rows = stopTimeRows({ pattern, nodes, trip });
     expect(rows.map((row) => row.kind)).toEqual(['timepoint', 'timepoint', 'timepoint']);

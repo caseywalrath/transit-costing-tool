@@ -1,4 +1,4 @@
-// Decision 0092. Warnings that catch location typing errors (a missing minus sign, a shifted decimal, swapped values) while a pattern's
+// Decision 0093. Warnings that catch location typing errors (a missing minus sign, a shifted decimal, swapped values) while a pattern's
 // stops are edited. They never refuse a save: loops and odd alignments are real. Pure: no React, no storage.
 
 import { greatCircleMiles } from './geo';

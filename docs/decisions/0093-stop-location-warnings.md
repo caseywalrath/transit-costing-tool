@@ -1,8 +1,8 @@
-# Decision 0092: Stop Location Warnings and Naming Both Places of a Stop ID Conflict
+# Decision 0093: Stop Location Warnings and Naming Both Places of a Stop ID Conflict
 
 - Status: Accepted and implemented
 - Date: 2026-11-23 (user request: Federal BRT export refused for stop IDs 13703 and 26175)
-- Related: Decision 0080 (timepoint stop IDs per pattern), Decision 0085 (stop locations), Decision 0090 items 5 and 19 (GTFS export stops and refusals)
+- Related: Decision 0080 (timepoint stop IDs per pattern), Decision 0085 (stop locations), Decision 0090 items 5 and 19 (GTFS export stops and refusals), Decision 0092 (timepoint stop names, used in the warnings' labels)
 
 ## Context
 

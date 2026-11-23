@@ -1,4 +1,4 @@
-// Decision 0092: location warnings in the Stops drawer. A location out of line with its neighbours (a missing minus sign) is named on its
+// Decision 0093: location warnings in the Stops drawer. A location out of line with its neighbours (a missing minus sign) is named on its
 // own row only, and goes when corrected; a timepoint stop ID entered at a place more than 30 m from another pattern's place for the same
 // stop ID is named with that place. Warnings never block saving. Real IndexedDB.
 import { expect, test, type Page } from '@playwright/test';

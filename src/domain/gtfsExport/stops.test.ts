@@ -360,3 +360,54 @@ describe('exportStops: placement and unlocated stops (Decision 0090 item 7)', ()
     expect(result.stops.map((stop) => stop.stopId)).toEqual(FIXTURE_STOP_IDS);
   });
 });
+
+describe('exportStops: timepoint stop names (Decision 0092)', () => {
+  const nameDiffers = (result: ReturnType<typeof exportStops>) => result.warnings.filter((warning) => warning.code === 'gtfsExport.stopNameDiffers');
+
+  it('exports a named timepoint under its stored name, and an unnamed or blank one under its Node name', () => {
+    const route = fixtureRoute();
+    // pp-ac-alpha and pp-ca-alpha share stop 1001; both carry the name, so the merged stop has no conflict.
+    route.patterns[0].points[0].stopName = 'Alpha Gate 1';
+    route.patterns[1].points[2].stopName = 'Alpha Gate 1';
+    route.patterns[0].points[1].stopName = '   ';
+    const result = exportStops(inputOf([route]));
+
+    expect(result.refusals).toEqual([]);
+    expect(result.stops.find((stop) => stop.stopId === '1001')?.name).toBe('Alpha Gate 1');
+    expect(result.stops.find((stop) => stop.stopId === '1002')?.name).toBe('Bravo');
+    expect(result.stops.find((stop) => stop.stopId === '1003')?.name).toBe('Charlie');
+    expect(nameDiffers(result)).toEqual([]);
+  });
+
+  it('warns once per stop ID for the first merged record whose stop name differs, and keeps the first record\'s name', () => {
+    // 1001 is shared by pat-ac (named "Alpha Gate 1"), pat-ca (no name, so "Alpha") and route T2 (named "Alpha Gate 2", 20 m away).
+    const route = fixtureRoute();
+    route.patterns[0].points[0].stopName = 'Alpha Gate 1';
+    const second = routeWith('route-t2', 'T2', [onePoint('pat-t2', 'pp-t2', 'n-alpha', '1001', north(39.7, 20))]);
+    second.patterns[0].points[0].stopName = 'Alpha Gate 2';
+    const result = exportStops(inputOf([route, second]));
+
+    expect(result.refusals).toEqual([]);
+    expect(result.stops.find((stop) => stop.stopId === '1001')?.name).toBe('Alpha Gate 1');
+    expect(nameDiffers(result)).toEqual([
+      { code: 'gtfsExport.stopNameDiffers', routeId: 'route-t1', routeName: 'Test Line', patternId: 'pat-ca', patternName: 'C-A', stopName: 'Alpha', stopId: '1001' },
+    ]);
+  });
+
+  it('does not compare a refused record, so a 40 m record with another name gives a conflict and no name warning', () => {
+    const second = routeWith('route-t2', 'T2', [onePoint('pat-t2', 'pp-t2', 'n-alpha', '1001', north(39.7, 40))]);
+    second.patterns[0].points[0].stopName = 'Alpha Gate 2';
+    const result = exportStops(inputOf([fixtureRoute(), second]));
+
+    expect(result.refusals).toMatchObject([{ code: 'gtfsExport.stopIdConflict', routeId: 'route-t2', stopId: '1001' }]);
+    expect(nameDiffers(result)).toEqual([]);
+  });
+
+  it('gives no name warning when merged records have equal stop names', () => {
+    const route = fixtureRoute();
+    route.patterns[0].points[0].stopName = 'Alpha';
+    const second = routeWith('route-t2', 'T2', [onePoint('pat-t2', 'pp-t2', 'n-alpha', '1001', north(39.7, 20))]);
+    second.patterns[0].points[0].stopName = 'Alpha';
+    expect(nameDiffers(exportStops(inputOf([route, second])))).toEqual([]);
+  });
+});

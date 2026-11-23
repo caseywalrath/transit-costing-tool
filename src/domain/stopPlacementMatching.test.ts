@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { metadata } from './ids';
-import { applyStopPlacementPlan, applyTimepointLocationPlan, planStopCopy, planStopFill, stopCopyCandidatePatternIds } from './stopPlacementMatching';
+import { applyStopPlacementPlan, applyTimepointLocationPlan, applyTimepointNamePlan, planStopCopy, planStopFill, stopCopyCandidatePatternIds } from './stopPlacementMatching';
 import type { PatternPoint, PatternStopPlacement, RoutePattern, StopTimingRule } from './types';
 
 const T = metadata('2026-01-01T00:00:00.000Z');
@@ -241,5 +241,70 @@ describe('timepoint location fill (Decision 0085 item 6)', () => {
     const plan = planStopFill({ openPattern: DOUBLE, openPlacements: [], patterns: [OUT, DOUBLE], placementsByPatternId: {}, locationsByPatternId: { OUT: { 'OUT-0': LOCN, 'OUT-1': LOC2 } } });
     expect(plan.locationSkips).toContainEqual({ patternId: 'DBL', nodeId: 'N1', reason: 'ambiguous' });
     expect(plan.locationChanges).toEqual([{ patternId: 'DBL', patternPointId: 'DBL-1', nodeId: 'N2', next: LOC2, sourcePatternIds: ['OUT'] }]);
+  });
+});
+
+// Timepoint stop names (Decision 0092 item 11). Same fixtures and Node rules as the timepoint location tests above.
+describe('timepoint stop name fill (Decision 0092 item 11)', () => {
+  it('fills an empty draft point with the name that same-direction patterns agree on', () => {
+    const plan = planStopFill({ openPattern: OUT, openPlacements: [], patterns: [OUT, SAME, SAME2], placementsByPatternId: {}, namesByPatternId: { SAME: { 'SAME-1': 'Gate B' }, SAME2: { 'SAME2-1': 'Gate B' } } });
+    expect(plan.nameChanges).toEqual([{ patternId: 'OUT', patternPointId: 'OUT-1', nodeId: 'N2', next: 'Gate B', sourcePatternIds: ['SAME', 'SAME2'] }]);
+    expect(plan.nameSkips).toEqual([]);
+  });
+
+  it('reports a conflict when same-direction patterns disagree, with the candidate names sorted', () => {
+    const plan = planStopFill({ openPattern: OUT, openPlacements: [], patterns: [OUT, SAME, SAME2], placementsByPatternId: {}, namesByPatternId: { SAME: { 'SAME-1': 'Gate D' }, SAME2: { 'SAME2-1': 'Gate B' } } });
+    expect(plan.nameChanges).toEqual([]);
+    expect(plan.nameSkips).toEqual([{
+      patternId: 'OUT',
+      nodeId: 'N2',
+      reason: 'conflict',
+      candidates: [
+        { stopName: 'Gate B', patternIds: ['SAME2'] },
+        { stopName: 'Gate D', patternIds: ['SAME'] },
+      ],
+    }]);
+  });
+
+  it('ignores a pattern of the other direction', () => {
+    const plan = planStopFill({ openPattern: OUT, openPlacements: [], patterns: [OUT, REV], placementsByPatternId: {}, namesByPatternId: { REV: { 'REV-1': 'Gate X' } } });
+    expect(plan.nameChanges).toEqual([]);
+    expect(plan.nameSkips).toEqual([]);
+  });
+
+  it('does not overwrite a name already on the draft point', () => {
+    const plan = planStopFill({ openPattern: OUT, openPlacements: [], patterns: [OUT, SAME], placementsByPatternId: {}, openNames: { 'OUT-1': 'Own name' }, namesByPatternId: { SAME: { 'SAME-1': 'Gate B' } } });
+    expect(plan.nameChanges).toEqual([]);
+  });
+
+  it('reports an ambiguous Node in the draft and fills the other points', () => {
+    const plan = planStopFill({ openPattern: DOUBLE, openPlacements: [], patterns: [OUT, DOUBLE], placementsByPatternId: {}, namesByPatternId: { OUT: { 'OUT-0': 'Gate A', 'OUT-1': 'Gate B' } } });
+    expect(plan.nameSkips).toContainEqual({ patternId: 'DBL', nodeId: 'N1', reason: 'ambiguous' });
+    expect(plan.nameChanges).toEqual([{ patternId: 'DBL', patternPointId: 'DBL-1', nodeId: 'N2', next: 'Gate B', sourcePatternIds: ['OUT'] }]);
+  });
+});
+
+describe('timepoint stop name copy (Decision 0092 item 11)', () => {
+  it('copy replaces a different name on the same-direction point and counts it as an overwrite', () => {
+    const plan = planStopCopy({ openPattern: OUT, openPlacements: [], patterns: [OUT, SAME], placementsByPatternId: {}, openNames: { 'OUT-1': 'Gate B' }, namesByPatternId: { SAME: { 'SAME-1': 'Gate D' } } });
+    expect(plan.nameChanges).toEqual([{ patternId: 'SAME', patternPointId: 'SAME-1', nodeId: 'N2', previous: 'Gate D', next: 'Gate B', sourcePatternIds: ['OUT'] }]);
+    expect(plan.affectedPatterns).toEqual([{ patternId: 'SAME', changeCount: 1, overwriteCount: 1 }]);
+  });
+
+  it('copy never clears a name when the open pattern has none', () => {
+    const plan = planStopCopy({ openPattern: OUT, openPlacements: [], patterns: [OUT, SAME], placementsByPatternId: {}, openNames: {}, namesByPatternId: { SAME: { 'SAME-1': 'Gate D' } } });
+    expect(plan.nameChanges).toEqual([]);
+    expect(plan.affectedPatterns).toEqual([]);
+  });
+
+  it('reports an ambiguous Node on another pattern and writes nothing there', () => {
+    const plan = planStopCopy({ openPattern: OUT, openPlacements: [], patterns: [OUT, DOUBLE], placementsByPatternId: {}, openNames: { 'OUT-0': 'Gate A' } });
+    expect(plan.nameChanges).toEqual([]);
+    expect(plan.nameSkips).toContainEqual({ patternId: 'DBL', nodeId: 'N1', reason: 'ambiguous' });
+  });
+
+  it('applyTimepointNamePlan writes the new name and returns only the changed pattern', () => {
+    const plan = planStopCopy({ openPattern: OUT, openPlacements: [], patterns: [OUT, SAME], placementsByPatternId: {}, openNames: { 'OUT-1': 'Gate B' }, namesByPatternId: { SAME: { 'SAME-1': 'Gate D' } } });
+    expect(applyTimepointNamePlan([OUT, SAME], { SAME: { 'SAME-1': 'Gate D' } }, plan)).toEqual({ SAME: { 'SAME-1': 'Gate B' } });
   });
 });

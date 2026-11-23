@@ -12,7 +12,7 @@ export interface ExportStop {
 }
 
 /** Every refusal and warning of the export carries one of these codes (card E1, Decision 0090 item 19 and 20). */
-export type GtfsExportStopIssueCode = 'gtfsExport.stopIdConflict' | 'gtfsExport.stopUnlocated' | 'gtfsExport.stopIdGenerated';
+export type GtfsExportStopIssueCode = 'gtfsExport.stopIdConflict' | 'gtfsExport.stopUnlocated' | 'gtfsExport.stopIdGenerated' | 'gtfsExport.stopNameDiffers';
 
 /**
  * A refusal or warning about one stop record. `routeId` and `patternId` are the entity IDs (for navigation); the names are for display.
@@ -56,6 +56,8 @@ export interface ExportPatternPointInput {
   nodeId: string;
   sequence: number;
   stopCode?: string;
+  /** Decision 0092. The stored timepoint stop name; blank or absent uses the Node name. */
+  stopName?: string;
   latitude?: number;
   longitude?: number;
 }

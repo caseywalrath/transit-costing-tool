@@ -75,4 +75,27 @@ describe('read-back preview (Decision 0090; the full read-back is card E5)', () 
     expect(Object.fromEntries([...imported].sort())).toEqual({ 'HOL 0': 1, 'SAT 0': 1, 'WKD 0': 2, 'WKD 1': 1 });
     expect(route.trips.length).toBe(5);
   });
+
+  it('round trip (Decision 0092 item 9): a timepoint stop name that differs from its Node name is exported and stored on import', async () => {
+    const input = miniInput();
+    input.routeStopSets[0].timepointStopNamesByPatternId = { 'pattern-ac': { 'pp-ac-bravo': 'Union Gate B' } };
+    const result = buildGtfsExport(input);
+    expect(result.refusals).toEqual([]);
+    const tables = await tablesOf(result.files);
+    expect(tables.stops.find((row) => row.stop_id === '1002')?.stop_name).toBe('Union Gate B');
+
+    const translation = translateFeed({
+      tables,
+      routeIds: ['T1'],
+      scenarioId: 'scenario-readback',
+      tripProfileId: 'profile-readback',
+      serviceDays: [{ key: 'weekday', serviceDayId: 'day-wkd-readback', name: 'Weekday', date: '20270104' }],
+      blocks: { import: false },
+      now: '2027-01-01T00:00:00.000Z',
+    });
+    const [route] = translation.routes;
+    // Every imported timepoint stores its feed stop_name (item 9): six timepoints on two patterns, one of them "Union Gate B".
+    const storedNames = Object.values(route.stopSet?.timepointStopNamesByPatternId ?? {}).flatMap((names) => Object.values(names));
+    expect(storedNames.sort()).toEqual(['Alpha', 'Alpha', 'Bravo', 'Charlie', 'Charlie', 'Union Gate B']);
+  });
 });

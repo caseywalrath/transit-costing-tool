@@ -373,6 +373,28 @@ describe('built feeds for the remaining rules', () => {
     expect(result.nodes.map((node) => node.name).sort()).toEqual(['A', 'Beta']);
   });
 
+  it('stores each timepoint\'s feed stop_name (Decision 0092 item 9), and stores no name for a blank stop_name', () => {
+    const tables = builtTables({
+      stops: [stopRow('A', 'Alpha Gate 1', '39.74', '-104.99'), stopRow('B', '', '39.74', '-104.98')],
+      trips: [tripRow('T1')],
+      stopTimes: [stopTimeRow('T1', 'A', 1, '08:00:00', '08:00:00'), stopTimeRow('T1', 'B', 2, '08:10:00', '08:10:00')],
+    });
+    const result = run(tables, '20260105', 'X1');
+    const pattern = result.patterns[0];
+    const nodeA = result.nodes.find((node) => node.name === 'Alpha Gate 1');
+    const pointA = pattern.points.find((point) => point.nodeId === nodeA?.id);
+    const names = result.stopSet?.timepointStopNamesByPatternId?.[pattern.id] ?? {};
+    expect(names).toEqual({ [pointA?.id ?? '']: 'Alpha Gate 1' });
+    expect(errorsOf(result)).toEqual([]);
+
+    const blank = run(builtTables({
+      stops: [stopRow('A', '  ', '39.74', '-104.99'), stopRow('B', '', '39.74', '-104.98')],
+      trips: [tripRow('T1')],
+      stopTimes: [stopTimeRow('T1', 'A', 1, '08:00:00', '08:00:00'), stopTimeRow('T1', 'B', 2, '08:10:00', '08:10:00')],
+    }), '20260105', 'X1');
+    expect(blank.stopSet && 'timepointStopNamesByPatternId' in blank.stopSet).toBe(false);
+  });
+
   it('applies a planner override to the trips on the overridden pattern, and ignores an override stop the pattern does not serve', () => {
     const tables = loadFeedTables('edge-loop-variants');
     const result = run(tables, '20260105', 'L1', { timepointOverrides: { 'outbound:LA>LC>LA': ['LB', 'LC', 'XX'] } });
