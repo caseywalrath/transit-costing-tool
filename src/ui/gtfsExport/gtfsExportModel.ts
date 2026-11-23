@@ -181,7 +181,10 @@ export function refusalText(issue: GtfsExportIssue): string {
 export function stopCell(issue: GtfsExportIssue): string {
   const name = issue.stopName ?? '';
   if (issue.code === 'gtfsExport.stopIdConflict') {
-    const apart = issue.distanceMeters === undefined ? '' : `, ${Math.round(issue.distanceMeters)} m from the first`;
+    const first = issue.conflictWith;
+    // The first record of the stop ID: a timepoint names its pattern, a Route stop says so; another Route is named.
+    const where = first === undefined ? 'the first' : `${first.stopName} on ${first.patternName ?? 'the route stops'}${first.routeId !== issue.routeId ? ` of ${first.routeName}` : ''}`;
+    const apart = issue.distanceMeters === undefined ? '' : `, ${Math.round(issue.distanceMeters)} m from ${where}`;
     return `${name} (stop ID ${issue.stopId ?? ''}${apart})`;
   }
   return name;

@@ -23,7 +23,7 @@ Planners want to see this tool's schedules in the Analysis app and other GTFS to
 
 ### C. Stops (G-E1, G-E4)
 
-5. A stop record comes from each Route stop placed on an exported pattern and each timepoint of each pattern (its stop ID and location, Decisions 0080 and 0085). Records with the same stop ID within 30 m (great-circle) are one stop; the first in Route, pattern, sequence order gives name and location. Same ID farther apart: refused and listed.
+5. A stop record comes from each Route stop placed on an exported pattern and each timepoint of each pattern (its stop ID and location, Decisions 0080 and 0085). Records with the same stop ID within 30 m (great-circle) are one stop; the first in Route, pattern, sequence order gives name and location. Same ID farther apart: refused and listed. (Decision 0092: the refusal also names the first record's Route, pattern and stop.)
 6. A Route stop without an ID gets `<route_id>-<n>`, n counting such stops in Route stop order from 1; a timepoint without an ID gets `<route_id>-<node short name or name>-<direction 0/1>`. A generated timepoint id is shared by that Route's patterns of the same direction at the same Node, merged under the 30 m rule like any id; generated Route stop ids are never merged. Generated ids are listed as a warning.
 7. A stop or timepoint without a location refuses the export and is listed with Route and pattern.
 8. A timepoint stop's name is its Node's name; a Route stop's name is its own.

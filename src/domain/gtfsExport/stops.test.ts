@@ -239,6 +239,8 @@ describe('exportStops: generated stop IDs (Decision 0090 item 6)', () => {
     const result = exportStops(inputOf([route]));
 
     expect(result.refusals).toMatchObject([{ code: 'gtfsExport.stopIdConflict', routeId: 'route-t1', patternId: 'pat-2', stopId: 'T1-Bravo-0' }]);
+    // The refusal also names the first record, which gives the stop its location.
+    expect(result.refusals[0].conflictWith).toEqual({ routeId: 'route-t1', routeName: expect.any(String), patternId: 'pat-1', patternName: expect.any(String), stopName: 'Bravo' });
     expect(result.refusals[0].distanceMeters).toBeCloseTo(40, 3);
     expect(result.stops.map((stop) => stop.stopId)).toEqual(['T1-Bravo-0']);
   });

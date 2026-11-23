@@ -7,6 +7,7 @@ import type {
   ExportStopsResult,
   GtfsExportStopIssue,
   GtfsExportStopIssueCode,
+  GtfsExportStopPlace,
 } from './types';
 
 /** Decision 0090 item 5. Records with the same stop ID within this distance (great-circle) are one stop. */
@@ -160,7 +161,7 @@ export function exportStops(input: ExportStopInput): ExportStopsResult {
     for (const other of group.slice(1)) {
       const distanceMeters = greatCircleMiles(first.location, other.location) * METERS_PER_MILE;
       if (mayMerge(first, other) && distanceMeters <= STOP_MERGE_METERS) continue;
-      refusals.push({ ...issueOf('gtfsExport.stopIdConflict', other), distanceMeters });
+      refusals.push({ ...issueOf('gtfsExport.stopIdConflict', other), distanceMeters, conflictWith: placeOf(first) });
     }
   }
   stops.sort((left, right) => compareStopIds(left.stopId, right.stopId));
@@ -203,6 +204,15 @@ function isLocated(record: StopRecord): record is LocatedRecord {
 function mayMerge(first: StopRecord, other: StopRecord): boolean {
   if (!first.generated && !other.generated) return true;
   return first.mergeable === true && first.generatedKey !== undefined && first.generatedKey === other.generatedKey;
+}
+
+function placeOf(record: StopRecord): GtfsExportStopPlace {
+  return {
+    routeId: record.routeId,
+    routeName: record.routeName,
+    ...(record.patternId === undefined ? {} : { patternId: record.patternId, patternName: record.patternName }),
+    stopName: record.stopName,
+  };
 }
 
 function issueOf(code: GtfsExportStopIssueCode, record: StopRecord): GtfsExportStopIssue {

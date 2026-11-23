@@ -3,6 +3,7 @@ import { RouteStopValidationError, STOPS_CHANGED_ELSEWHERE, type RouteDefinition
 import { matchStopLocations, readStopLocationFile, type StopLocationMatch, type StopLocationTarget } from '../../application/stopLocationImport';
 import { DEFAULT_STOP_ROUNDING_SECONDS, normalizePlacements, normalizeStopLocation, normalizeTimepointLocations, normalizeTimepointStopCodes, placementsBySegment, sameLocation, sortedPoints } from '../../domain/stops';
 import { newId } from '../../domain/ids';
+import { locationWarningText, outOfLineWarnings, stopIdElsewhereWarnings, type LocationRow } from '../../domain/stopLocationChecks';
 import { type PatternStopPlacement, type RouteDefinitionAggregate, type RoutePattern, type RouteStop, type RouteStopSet, type StopLocation, type TimepointLocations, type TimepointStopCodes, type ValidationFinding } from '../../domain/types';
 import { readStoredRecord } from '../preferences';
 import { locationText, StopLocationImportDialog, type StopLocationImportReview } from './StopLocationImportDialog';
@@ -13,6 +14,7 @@ import { SaveBar } from '../shared/bars';
 import { DiscardRouteDraftDialog } from '../shared/dialogs';
 import { LinkIcon, TrashIcon } from '../shared/icons';
 import { messages } from '../shared/messages';
+import { InlineNote } from '../shared/surfaces';
 
 export type PatternStopsService = Pick<RouteDefinitionApplication, 'getRouteStopSet' | 'saveRouteStops' | 'previewStopFill' | 'applyStopFill' | 'previewStopCopy' | 'applyStopCopy' | 'getStopCopyUndo' | 'undoStopCopy'>;
 
@@ -349,6 +351,30 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
   const rowErrors = (placement: PatternStopPlacement) => [...new Set([...messages(findings, placement.stopId), ...messages(findings, placement.id)])];
 
   const columns = showLocations ? 8 : 5;
+  // Decision 0092. Location warnings: this pattern's rows in travel order (draft values), against the Route's other patterns (saved values)
+  // and the Route stops this pattern does not place.
+  const nodeName = (nodeId: string) => nodeById.get(nodeId)?.name || 'Untitled node';
+  const ownRows: LocationRow[] = locationRowKeys().map((key) => {
+    const [kind, id] = key.split(':');
+    if (kind === 'stop') { const stop = stopById.get(id); return { key, label: stop?.name.trim() || 'New stop', stopCode: stop?.stopCode, location: stop }; }
+    return { key, label: nodeName(points.find((point) => point.id === id)?.nodeId ?? ''), stopCode: draft.codes[id], location: draft.locations[id] };
+  });
+  const ownKeys = new Set(ownRows.map((row) => row.key));
+  const otherRows: LocationRow[] = [
+    ...aggregate.patterns.filter((other) => other.id !== pattern.id).flatMap((other) => other.points.map((point) => ({
+      key: `other:${other.id}:${point.id}`,
+      label: `${nodeName(point.nodeId)} on ${other.name || 'Untitled pattern'}`,
+      stopCode: loaded?.set?.timepointStopCodesByPatternId?.[other.id]?.[point.id],
+      location: loaded?.set?.timepointLocationsByPatternId?.[other.id]?.[point.id],
+    }))),
+    ...draft.stops.filter((stop) => !ownKeys.has(`stop:${stop.id}`)).map((stop) => ({ key: `stop:${stop.id}`, label: `${stop.name.trim() || 'Untitled stop'} (route stop)`, stopCode: stop.stopCode, location: stop })),
+  ];
+  const warningsByKey = new Map<string, string[]>();
+  for (const warning of [...outOfLineWarnings(ownRows), ...stopIdElsewhereWarnings(ownRows, otherRows)]) warningsByKey.set(warning.key, [...(warningsByKey.get(warning.key) ?? []), locationWarningText(warning)]);
+  const warningRow = (key: string) => {
+    const texts = warningsByKey.get(key);
+    return texts ? <tr className={key.startsWith('point:') ? 'pattern-stops-warning pattern-stops-warning--timepoint' : 'pattern-stops-warning'}><td colSpan={columns}>{texts.map((text) => <InlineNote key={text} kind="warn">{text}</InlineNote>)}</td></tr> : null;
+  };
   const toggleLocations = () => { const next = !showLocations; setShowLocations(next); rememberLocationsOpen(next); };
   return <aside className={showLocations ? 'shift-drawer pattern-stops-drawer pattern-stops-drawer--locations' : 'shift-drawer pattern-stops-drawer'} role="complementary" aria-labelledby="pattern-stops-title">
     <header>
@@ -377,6 +403,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
           const pointErrors = [...new Set([...messages(findings, point.id), ...textErrors(`point:${point.id}`)])];
           return <Fragment key={point.id}>
             <tr className="pattern-stops-timepoint"><th scope="row" colSpan={1}><span className="pattern-stops-timepoint__name"><span className="pattern-stops-timepoint__mark" aria-hidden="true" />{node?.name || 'Untitled node'}</span></th><td><input className="pattern-stops-code" placeholder="—" value={draft.codes[point.id] ?? ''} aria-label={`Timepoint stop ID, ${timepointLabel}`} disabled={busy} onChange={(event) => updateCode(point.id, event.target.value)} /></td>{locationCells(`point:${point.id}`, `timepoint ${timepointLabel}`)}<td colSpan={3} /></tr>
+            {warningRow(`point:${point.id}`)}
             {pointErrors.length > 0 && <tr className="pattern-stops-error pattern-stops-error--timepoint"><td colSpan={columns}><span className="field-error">{pointErrors.join(' ')}</span></td></tr>}
             {index < points.length - 1 && segment.map((placement, position) => {
               const stop = stopById.get(placement.stopId);
@@ -394,7 +421,7 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
                 <td className="pattern-stops-shared">{uses > 1 && <span className="pattern-stops-shared__mark" role="img" aria-label={`Used by ${uses} patterns of this route`} title={`Used by ${uses} patterns of this route`}><LinkIcon />{uses}</span>}</td>
                 <td className="pattern-stops-order"><button type="button" className="icon-button" disabled={busy || first} aria-label={`Move ${label} up`} title="Move up" onClick={() => moveStop(index, position, -1)}>↑</button><button type="button" className="icon-button" disabled={busy || last} aria-label={`Move ${label} down`} title="Move down" onClick={() => moveStop(index, position, 1)}>↓</button></td>
                 <td><button type="button" className="icon-button icon-button--danger" disabled={busy} aria-label={`Remove ${label}`} title={`Remove ${label}`} onClick={() => removeStop(placement.id)}><TrashIcon /></button></td>
-              </tr>{links[placement.id] && <tr className="pattern-stops-link"><td colSpan={columns}><span role="status">Linked to existing stop {stop?.name.trim() || 'Untitled stop'}{stop?.stopCode?.trim() ? ` (${stop.stopCode.trim()})` : ''}</span><button type="button" className="ghost" disabled={busy} onClick={() => undoLink(placement.id)}>Undo link</button></td></tr>}{errors.length > 0 && <tr className="pattern-stops-error"><td colSpan={columns}><span className="field-error" id={errorId}>{errors.join(' ')}</span></td></tr>}</Fragment>;
+              </tr>{links[placement.id] && <tr className="pattern-stops-link"><td colSpan={columns}><span role="status">Linked to existing stop {stop?.name.trim() || 'Untitled stop'}{stop?.stopCode?.trim() ? ` (${stop.stopCode.trim()})` : ''}</span><button type="button" className="ghost" disabled={busy} onClick={() => undoLink(placement.id)}>Undo link</button></td></tr>}{warningRow(`stop:${placement.stopId}`)}{errors.length > 0 && <tr className="pattern-stops-error"><td colSpan={columns}><span className="field-error" id={errorId}>{errors.join(' ')}</span></td></tr>}</Fragment>;
             })}
             {index < points.length - 1 && <tr className="pattern-stops-add"><td colSpan={columns}><button type="button" className="ghost" disabled={busy} aria-label={`Add stop between ${node?.name || 'this timepoint'} and ${nextNode?.name || 'the next timepoint'}`} onClick={() => addStop(index)}><span aria-hidden="true">+ </span>Add stop</button></td></tr>}
           </Fragment>;

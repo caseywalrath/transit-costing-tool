@@ -18,6 +18,15 @@ export type GtfsExportStopIssueCode = 'gtfsExport.stopIdConflict' | 'gtfsExport.
  * A refusal or warning about one stop record. `routeId` and `patternId` are the entity IDs (for navigation); the names are for display.
  * `stopId` is the stop ID the record takes, entered or generated.
  */
+/** Where a stop record is: its Route, its pattern for a timepoint (none for a Route stop), and its name. */
+export interface GtfsExportStopPlace {
+  routeId: string;
+  routeName: string;
+  patternId?: string;
+  patternName?: string;
+  stopName: string;
+}
+
 export interface GtfsExportStopIssue {
   code: GtfsExportStopIssueCode;
   routeId: string;
@@ -28,6 +37,8 @@ export interface GtfsExportStopIssue {
   stopId: string;
   /** Only for `gtfsExport.stopIdConflict`: metres between this record and the first record of the same stop ID. */
   distanceMeters?: number;
+  /** Only for `gtfsExport.stopIdConflict`: the first record of the same stop ID, which gives the stop its location. */
+  conflictWith?: GtfsExportStopPlace;
 }
 
 /** A Route stop as it is stored. `stopCode` is blank when the Route stop has no stop ID. */
@@ -133,6 +144,8 @@ export interface GtfsExportIssue {
   blockLabel?: string;
   /** Only for `gtfsExport.stopIdConflict`: metres between this record and the first record of the same stop ID. */
   distanceMeters?: number;
+  /** Only for `gtfsExport.stopIdConflict`: the first record of the same stop ID, which gives the stop its location. */
+  conflictWith?: GtfsExportStopPlace;
 }
 
 /** One file of the feed as text: LF line endings, no byte order mark (Decision 0090 item 4). */

@@ -13,6 +13,7 @@ import {
   requestOf,
   routesWithTrips,
   selectedRouteIds,
+  stopCell,
   warningGroups,
   weekdayLabel,
   willWriteText,
@@ -134,6 +135,16 @@ describe('problems', () => {
     { code: 'gtfsExport.stopIdConflict', routeId: 'r1', routeName: 'Federal BRT', patternId: 'p1', patternName: 'Northbound', stopName: 'Alameda', stopId: '1002', distanceMeters: 41.6 },
     { code: 'gtfsExport.agencyNameBlank' },
   ];
+
+  it('names the first record of a conflict: its stop and pattern, and its Route when it is another one', () => {
+    const conflict = refusals[1];
+    const samePattern = { ...conflict, conflictWith: { routeId: 'r1', routeName: 'Federal BRT', patternId: 'p0', patternName: 'Southbound', stopName: 'Alameda SB' } };
+    expect(stopCell(samePattern)).toBe('Alameda (stop ID 1002, 42 m from Alameda SB on Southbound)');
+    const routeStop = { ...conflict, conflictWith: { routeId: 'r1', routeName: 'Federal BRT', stopName: 'Alameda' } };
+    expect(stopCell(routeStop)).toBe('Alameda (stop ID 1002, 42 m from Alameda on the route stops)');
+    const otherRoute = { ...conflict, conflictWith: { routeId: 'r2', routeName: 'Route 31', patternId: 'p9', patternName: 'Northbound', stopName: 'Alameda' } };
+    expect(stopCell(otherRoute)).toBe('Alameda (stop ID 1002, 42 m from Alameda on Northbound of Route 31)');
+  });
 
   it('gives one plain message per code, and the stop ID and distance for a conflict', () => {
     const rows = problemRows(refusals);
