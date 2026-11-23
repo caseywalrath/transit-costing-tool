@@ -83,3 +83,24 @@ test('warns of a location out of line, and of a stop ID at two places, without b
   await drawer.getByRole('textbox', { name: 'Latitude, timepoint A', exact: true }).fill('39.70');
   await expect(warnings(page)).toHaveCount(0);
 });
+
+test('warns of a stop that goes backwards along its segment, and clears when the stops are put in order', async ({ page }) => {
+  await route(page, 'Stop order warnings');
+  const drawer = await openStops(page, 'Main');
+  await drawer.getByRole('button', { name: 'Show locations', exact: true }).click();
+  // Segment A to B is entered as 1 mi; its straight line is about 0.83 mi, so it counts as straight.
+  await drawer.getByRole('textbox', { name: 'Latitude, timepoint A', exact: true }).fill('39.700, -105.025');
+  await drawer.getByRole('textbox', { name: 'Latitude, timepoint B', exact: true }).fill('39.712, -105.025');
+  for (const [name, location] of [['First', '39.703, -105.025'], ['Second', '39.709, -105.025'], ['Third', '39.706, -105.025']]) {
+    await drawer.getByRole('button', { name: 'Add stop between A and B', exact: true }).click();
+    await page.keyboard.type(name);
+    await drawer.getByRole('textbox', { name: `Latitude, ${name}`, exact: true }).fill(location);
+  }
+  await expect(warnings(page)).toHaveCount(1);
+  await expect(warnings(page)).toContainText(/^.?This stop is 33\d m behind Second along the segment\. Check the order of the stops or their coordinates\.$/);
+  await expect(drawer.locator('tr', { has: page.getByRole('textbox', { name: 'Latitude, Third', exact: true }) }).locator('+ tr')).toHaveClass(/pattern-stops-warning/);
+  if (process.env.SLW_SHOTS) await drawer.screenshot({ path: `${process.env.SLW_SHOTS}/out-of-order.png` });
+  await drawer.getByRole('button', { name: 'Move Third up', exact: true }).click();
+  await expect(warnings(page)).toHaveCount(0);
+  await saveStops(page);
+});

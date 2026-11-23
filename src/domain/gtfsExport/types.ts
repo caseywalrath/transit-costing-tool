@@ -126,6 +126,7 @@ export type GtfsExportIssueCode =
   | 'gtfsExport.routeSkipped'
   | 'gtfsExport.daySkipped'
   | 'gtfsExport.ownCountsNotExpressed'
+  | 'gtfsExport.stopOutOfOrder'
   | 'gtfsExport.blockServesUnselectedRoute';
 
 /**
@@ -148,6 +149,8 @@ export interface GtfsExportIssue {
   distanceMeters?: number;
   /** Only for `gtfsExport.stopIdConflict`: the first record of the same stop ID, which gives the stop its location. */
   conflictWith?: GtfsExportStopPlace;
+  /** Only for `gtfsExport.stopOutOfOrder` (Decision 0093 rule A): the row this stop falls behind along its segment, and by how far. */
+  behind?: { stopName: string; meters: number };
 }
 
 /** One file of the feed as text: LF line endings, no byte order mark (Decision 0090 item 4). */

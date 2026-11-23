@@ -243,6 +243,7 @@ const WARNING_TEXT: Partial<Record<GtfsExportIssueCode, (count: number) => strin
   'gtfsExport.routeSkipped': (count) => `${plural(count, 'Route has no trips on this Trip profile and is skipped.', 'Routes have no trips on this Trip profile and are skipped.')}`,
   'gtfsExport.daySkipped': (count) => `${plural(count, 'service day has no trips and is left out of the calendar.', 'service days have no trips and are left out of the calendar.')}`,
   'gtfsExport.ownCountsNotExpressed': (count) => `${plural(count, 'Route uses its own annual service days; the feed uses the Scenario calendar for it.', 'Routes use their own annual service days; the feed uses the Scenario calendar for them.')}`,
+  'gtfsExport.stopOutOfOrder': (count) => `${plural(count, 'stop goes backwards along its segment; check the stop order or coordinates.', 'stops go backwards along their segments; check the stop order or coordinates.')}`,
   'gtfsExport.blockServesUnselectedRoute': (count) => `${plural(count, 'block also serves a Route that is not exported; its block ID is kept on the exported trips.', 'blocks also serve Routes that are not exported; their block IDs are kept on the exported trips.')}`,
 };
 

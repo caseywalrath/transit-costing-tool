@@ -5,7 +5,8 @@
 import { directionDisplayName, orderPatterns, patternDirectionGroups, type DirectionGroup } from '../directions';
 import { serviceDayAbbreviation } from '../serviceDays';
 import { stopTimeRows, type StopTimeRow } from '../stopTimes';
-import { sortedPoints } from '../stops';
+import { sortedPoints, timepointStopName } from '../stops';
+import { outOfOrderWarnings, patternLocationSegments } from '../stopLocationChecks';
 import type {
   BlockingBlock,
   EntityId,
@@ -151,6 +152,7 @@ export function buildGtfsExport(input: BuildGtfsExportInput): GtfsExportResult {
   });
   refusals.push(...stopResult.refusals);
   warnings.push(...stopResult.warnings);
+  warnings.push(...outOfOrderStops(exported));
 
   // Decision 0090 item 16: holidays name a service day of the Scenario, fall in the range and appear once. These are the settings' own rules,
   // so a breach throws instead of becoming a refusal.
@@ -302,6 +304,19 @@ function exportPatternInput(pattern: RoutePattern, direction: DirectionGroup, se
       longitude: locations[point.id]?.longitude,
     })),
   };
+}
+
+/** Decision 0093 rule A. Stops that go backwards along a fairly straight segment of an exported pattern, listed as warnings. */
+function outOfOrderStops(exported: readonly ExportedRoute[]): GtfsExportIssue[] {
+  return exported.flatMap(({ aggregate, set, patterns }) => patterns.flatMap(({ pattern }) => {
+    const nodeName = new Map(aggregate.nodes.map((node) => [node.id, node.name]));
+    const names = set?.timepointStopNamesByPatternId?.[pattern.id];
+    const pointNode = new Map(pattern.points.map((point) => [point.id, point.nodeId]));
+    const segments = patternLocationSegments(pattern, set?.stops ?? [], set?.placementsByPatternId[pattern.id] ?? [], set?.timepointLocationsByPatternId?.[pattern.id], (pointId) => timepointStopName(names?.[pointId], nodeName.get(pointNode.get(pointId) ?? '')));
+    return outOfOrderWarnings(segments).flatMap((warning) => warning.kind === 'outOfOrder'
+      ? [{ code: 'gtfsExport.stopOutOfOrder' as const, routeId: aggregate.route.id, routeName: aggregate.route.name, patternId: pattern.id, patternName: pattern.name, stopName: warning.label, behind: { stopName: warning.previousLabel, meters: warning.meters } }]
+      : []);
+  }));
 }
 
 function exportNodeInput(node: Node): ExportNodeInput {

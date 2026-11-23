@@ -3,7 +3,7 @@ import { RouteStopValidationError, STOPS_CHANGED_ELSEWHERE, type RouteDefinition
 import { matchStopLocations, readStopLocationFile, type StopLocationMatch, type StopLocationTarget } from '../../application/stopLocationImport';
 import { DEFAULT_STOP_ROUNDING_SECONDS, normalizePlacements, normalizeStopLocation, normalizeTimepointLocations, normalizeTimepointStopCodes, normalizeTimepointStopNames, placementsBySegment, sameLocation, sortedPoints, timepointStopName } from '../../domain/stops';
 import { newId } from '../../domain/ids';
-import { locationWarningText, outOfLineWarnings, stopIdElsewhereWarnings, type LocationRow } from '../../domain/stopLocationChecks';
+import { locationWarningText, outOfLineWarnings, outOfOrderWarnings, patternLocationSegments, stopIdElsewhereWarnings, type LocationRow } from '../../domain/stopLocationChecks';
 import { type PatternStopPlacement, type RouteDefinitionAggregate, type RoutePattern, type RouteStop, type RouteStopSet, type StopLocation, type TimepointLocations, type TimepointStopCodes, type TimepointStopNames, type ValidationFinding } from '../../domain/types';
 import { readStoredRecord } from '../preferences';
 import { locationText, StopLocationImportDialog, type StopLocationImportReview } from './StopLocationImportDialog';
@@ -379,7 +379,8 @@ export const PatternStopsDrawer = forwardRef<PatternStopsHandle, { service: Patt
     ...draft.stops.filter((stop) => !ownKeys.has(`stop:${stop.id}`)).map((stop) => ({ key: `stop:${stop.id}`, label: `${stop.name.trim() || 'Untitled stop'} (route stop)`, stopCode: stop.stopCode, location: stop })),
   ];
   const warningsByKey = new Map<string, string[]>();
-  for (const warning of [...outOfLineWarnings(ownRows), ...stopIdElsewhereWarnings(ownRows, otherRows)]) warningsByKey.set(warning.key, [...(warningsByKey.get(warning.key) ?? []), locationWarningText(warning)]);
+  const ownSegments = patternLocationSegments(pattern, draft.stops, draft.placements, draft.locations, (pointId) => timepointStopName(draft.names[pointId], nodeName(points.find((point) => point.id === pointId)?.nodeId ?? '')));
+  for (const warning of [...outOfLineWarnings(ownRows), ...outOfOrderWarnings(ownSegments), ...stopIdElsewhereWarnings(ownRows, otherRows)]) warningsByKey.set(warning.key, [...(warningsByKey.get(warning.key) ?? []), locationWarningText(warning)]);
   const warningRow = (key: string) => {
     const texts = warningsByKey.get(key);
     return texts ? <tr className={key.startsWith('point:') ? 'pattern-stops-warning pattern-stops-warning--timepoint' : 'pattern-stops-warning'}><td colSpan={columns}>{texts.map((text) => <InlineNote key={text} kind="warn">{text}</InlineNote>)}</td></tr> : null;

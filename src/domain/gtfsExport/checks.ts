@@ -50,6 +50,7 @@ export function describeIssue(issue: GtfsExportIssue): string {
   if (issue.stopName) parts.push(`stop ${issue.stopName}`);
   if (issue.stopId) parts.push(`stop ID ${issue.stopId}`);
   if (issue.distanceMeters !== undefined) parts.push(`${Math.round(issue.distanceMeters)} m apart`);
+  if (issue.behind) parts.push(`${Math.round(issue.behind.meters)} m behind ${issue.behind.stopName} along the segment`);
   if (issue.conflictWith) parts.push(`first at Route ${issue.conflictWith.routeName}${issue.conflictWith.patternName ? `, pattern ${issue.conflictWith.patternName}` : ', route stops'}, stop ${issue.conflictWith.stopName}`);
   return parts.join('; ');
 }

@@ -343,3 +343,27 @@ describe('buildGtfsExport: feed details (Decision 0090 items 9 to 12, 17 and 18)
     expect(() => buildGtfsExport(input)).toThrow(/export date/);
   });
 });
+
+describe('buildGtfsExport: stops out of order (Decision 0093 rule A)', () => {
+  /** The mini Scenario with Alpha to Bravo entered as 1.3 mi (its chord is about 1.24 mi, so the segment counts as straight). */
+  function inputWithMainAt(latitude: number): BuildGtfsExportInput {
+    const input = structuredClone(miniInput());
+    const ac = input.routes[0].patterns.find((pattern) => pattern.id === 'pattern-ac')!;
+    ac.points = ac.points.map((point) => point.id === 'pp-ac-bravo' ? { ...point, cumulativeMiles: 1.3 } : point.id === 'pp-ac-charlie' ? { ...point, cumulativeMiles: 3.2 } : point);
+    input.routeStopSets[0].stops = input.routeStopSets[0].stops.map((stop) => ({ ...stop, latitude }));
+    return input;
+  }
+
+  it('lists a stop placed behind its segment\'s opening timepoint as a warning, and still writes the feed', () => {
+    const result = buildGtfsExport(inputWithMainAt(39.695));
+    expect(result.refusals).toEqual([]);
+    const warning = result.warnings.find((item) => item.code === 'gtfsExport.stopOutOfOrder');
+    expect(warning).toMatchObject({ routeId: 'route-t1', patternId: 'pattern-ac', patternName: 'Alpha to Charlie', stopName: 'Main & 1st', behind: { stopName: 'Alpha' } });
+    expect(warning?.behind?.meters).toBeCloseTo(556, -1);
+    expect(result.files.length).toBeGreaterThan(0);
+  });
+
+  it('gives no such warning for a stop in order', () => {
+    expect(buildGtfsExport(inputWithMainAt(39.709)).warnings.map((item) => item.code)).not.toContain('gtfsExport.stopOutOfOrder');
+  });
+});
