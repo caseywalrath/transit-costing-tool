@@ -59,7 +59,7 @@ export function ContextCrumb({ children }: { children: ReactNode }) {
  * Costing render their own selectors into through a portal. Row 2 never wraps.
  */
 export function AppHeader({ tabs, activeTab, onTab, status, projectSwitcher, scenarioSwitcher, contextCrumbs, crumbSlotRef, scopeFields, scopeSlotRef }: {
-  tabs: HeaderTab[]; activeTab: string; onTab: (id: string) => void; status: HeaderStatus; projectSwitcher: ReactNode; scenarioSwitcher: ReactNode;
+  tabs: HeaderTab[]; activeTab: string; onTab: (id: string) => void; status: HeaderStatus; projectSwitcher: ReactNode; /** Left out on the Compare tab, which picks its own Scenarios. */ scenarioSwitcher?: ReactNode;
   /** The Trip profile and Blocking scenario levels the shell draws (Decision 0081, D6). */
   contextCrumbs?: ReactNode;
   /** Receives the element a workspace draws its own Blocking scenario level into, after `contextCrumbs`. */
@@ -69,7 +69,7 @@ export function AppHeader({ tabs, activeTab, onTab, status, projectSwitcher, sce
   return <div className="app-header">
     <AppBar tabs={tabs} activeTab={activeTab} onTab={onTab} status={status} />
     <section className="scope-bar" aria-label="Scope">
-      <div className="scope-switchers">{projectSwitcher}<span className="scope-switchers__sep" aria-hidden="true">›</span>{scenarioSwitcher}{contextCrumbs}<span className="scope-switchers__slot" ref={crumbSlotRef} /></div>
+      <div className="scope-switchers">{projectSwitcher}{scenarioSwitcher && <><span className="scope-switchers__sep" aria-hidden="true">›</span>{scenarioSwitcher}</>}{contextCrumbs}<span className="scope-switchers__slot" ref={crumbSlotRef} /></div>
       <span className="scope-bar__divider" aria-hidden="true" />
       {scopeFields && <div className="scope-bar__slot">{scopeFields}</div>}
       <div className="scope-bar__slot" ref={scopeSlotRef} />

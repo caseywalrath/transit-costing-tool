@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { goldenRaw } from './support/goldenFixture';
 import { runInPage, seedSnapshot } from './support/dexieEnv';
 import { createRouteWithPattern, createShiftReadySchedule, openGoldenTrips } from './support/tripsWorkspace';
+import { seedCompareExample } from './support/compareExample';
 import { chooseCostBasis, editGridCell, gridCell, openRuntimes, projectSwitcher, runCommand, chooseScope, scopeField, shiftBar } from './support/ui';
 
 test.setTimeout(150_000);
@@ -393,4 +394,33 @@ test('each workspace has one h1, there is one main landmark, the file input is l
   await expect(page.locator('input[type=file]').first()).toHaveAccessibleName('Restore project JSON file');
   for (const input of await page.locator('input[type=file]').all()) await expect(input).toHaveAttribute('tabindex', '-1');
   void runInPage; void createRouteWithPattern;
+});
+
+// Decision 0091, card V4: the Compare tab on the worked example. One h1, scoped table headers, the axe rules pass with the table, a route's
+// detail and the folded routes open, and a route opens and closes from the keyboard.
+test('the Compare tab has one h1 and no axe violations, and a route opens from the keyboard', async ({ page }) => {
+  await seedCompareExample(page);
+  await page.reload();
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Compare', exact: true }).click();
+  await expect(page.getByRole('button', { name: '1 Main St' })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('.cmp-result')).toHaveAttribute('aria-busy', 'false');
+  await expect(page.getByRole('heading', { level: 1, name: 'Compare scenarios' })).toHaveCount(1);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
+  await expect(page.getByRole('main')).toHaveCount(1);
+  expect(await page.locator('th:not([scope])').count()).toBe(0);
+  expect(await axeViolations(page)).toEqual([]);
+
+  const main = page.getByRole('button', { name: '1 Main St' });
+  await main.focus();
+  await page.keyboard.press('Enter');
+  await expect(main).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByRole('table', { name: '1 Main St, headway by time of day' })).toBeVisible();
+  expect(await page.locator('th:not([scope])').count()).toBe(0);
+  expect(await axeViolations(page)).toEqual([]);
+
+  await page.getByRole('button', { name: '1 unchanged route' }).click();
+  expect(await axeViolations(page)).toEqual([]);
+  await page.getByRole('radio', { name: 'Annual', exact: true }).click();
+  await expect(page.getByRole('group', { name: 'First-year cost' })).toBeVisible({ timeout: 30_000 });
+  expect(await axeViolations(page)).toEqual([]);
 });

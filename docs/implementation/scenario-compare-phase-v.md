@@ -1,6 +1,6 @@
 # Scenario comparison (phase V) — plan
 
-> **Status:** Approved 2026-11-22: gates G-V1 to G-V9 and mock-up questions A to C answered as recommended. Sitting 1 (V0) done: Decision 0091, cards `scenario-compare-phase-v-cards.md`, worked example `tests/fixtures/scenario-compare/`. Sitting 2 (V1, V2) done. Next: sitting 3 (V4, the tab). V-V is a later checkpoint.
+> **Status:** Approved 2026-11-22: gates G-V1 to G-V9 and mock-up questions A to C answered as recommended. Sitting 1 (V0) done: Decision 0091, cards `scenario-compare-phase-v-cards.md`, worked example `tests/fixtures/scenario-compare/`. Sitting 2 (V1, V2) done. Sitting 3 (V4, the tab) done. Next: sitting 4 (V5, V6). V-V is a later checkpoint.
 >
 > **Parent plan:** `docs/implementation/gtfs-interoperability.md`, Part 6 "V". This file expands that section. The parent's fixed decisions (Part 8) and run rules (Part 7) apply unless this file says otherwise.
 >

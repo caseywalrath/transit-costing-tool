@@ -199,3 +199,23 @@ As in the plan, Part 5. The worked-example test (V1) and the equality with Costi
 - screenshots at 1440 and 390 px, light and dark, saved to the scratchpad and inspected.
 
 **Files:** `src/ui/compare/**`, `src/ui/App.tsx`, `src/main.tsx`, `src/ui/preferences.ts`, `src/ui/styles/**`, `tests/ui/compare.spec.ts`, `tests/ui/keyboard.spec.ts`. Change `src/application/compare/` or `src/domain/compare/` only to fix a bug found here. Report any such fix.
+
+## 11. V4 as built (2026-11-23)
+
+- Code:
+  - `src/ui/compare/`: `CompareWorkspace.tsx`, `compareModel.ts`, 47 unit tests;
+  - `src/ui/styles/compare.css`;
+  - wiring in `App.tsx`, `AppHeader.tsx` (the Scenario switcher is optional), `main.tsx` and `preferences.ts` (`transit-costing-tool.compare.v1`, per Project);
+  - `tests/ui/compare.spec.ts` (9 tests) with `tests/ui/support/compareExample.ts`, and one Compare case in `keyboard.spec.ts`.
+- Test figures:
+  - The README's hours and cost are inputs to V1's pure tests, not Costing output.
+  - The spec checks trips, miles, peak and status literally, and checks hours and cost against a direct Costing estimate run in the page (V-D2).
+- Extras: a Show, Sort and Find row, and a swap-sides button.
+- Deferred to the backlog:
+  - the "Open on Trips/Costing tab" links;
+  - the detail's "day count used" line;
+  - the phone picker sheet (narrow windows use stacked menus).
+- Notes for V5 and V6:
+  - Under the blocked basis, hours on multi-route blocks sit in Unattributed, as on the Costing tab. A New route whose trips are all interlined shows 0.0 hours.
+  - The app has no dark theme yet. The tab uses tokens only.
+  - V6 runs the full browser suite.
