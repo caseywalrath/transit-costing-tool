@@ -285,6 +285,7 @@ function exportRouteInput(route: ExportedRoute): ExportRouteInput {
 
 function exportPatternInput(pattern: RoutePattern, direction: DirectionGroup, set: RouteStopSet | undefined): ExportPatternInput {
   const codes = set?.timepointStopCodesByPatternId?.[pattern.id] ?? {};
+  const names = set?.timepointStopNamesByPatternId?.[pattern.id] ?? {};
   const locations = set?.timepointLocationsByPatternId?.[pattern.id] ?? {};
   return {
     id: pattern.id,
@@ -296,6 +297,7 @@ function exportPatternInput(pattern: RoutePattern, direction: DirectionGroup, se
       nodeId: point.nodeId,
       sequence: point.sequence,
       stopCode: codes[point.id],
+      stopName: names[point.id],
       latitude: locations[point.id]?.latitude,
       longitude: locations[point.id]?.longitude,
     })),

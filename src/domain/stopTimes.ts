@@ -1,5 +1,5 @@
 import type { EntityId, Node, PatternStopPlacement, RoutePattern, RouteStopSet, ServiceSeconds, StopInterpolation, StopLocation, StopTimeRoundingSeconds, StopTimingRule, Trip } from './types';
-import { DEFAULT_STOP_ROUNDING_SECONDS, hasCoordinates, placementsBySegment, sortedPoints } from './stops';
+import { DEFAULT_STOP_ROUNDING_SECONDS, hasCoordinates, placementsBySegment, sortedPoints, timepointStopName } from './stops';
 import { greatCircleMiles } from './geo';
 
 export interface StopTimeRow {
@@ -10,7 +10,8 @@ export interface StopTimeRow {
   placementId?: EntityId;       // stops only
   stopId?: EntityId;            // stops only
   nodeId?: EntityId;            // timepoints only
-  name: string;                 // node name or stop name
+  /** Timepoint: its stop name, else its node name (Decision 0092). Stop: stop name. */
+  name: string;
   stopCode?: string;            // the timepoint's stop ID on this pattern (Decision 0080), or RouteStop.stopCode
   timing?: StopTimingRule;      // stops only
   /** Stops only. 'distance' when the segment's interpolated times were weighted by distance (Decision 0086), otherwise 'equal'. */
@@ -91,6 +92,7 @@ export function stopTimeRows(input: {
   const timeByPointId = new Map((trip?.stopTimes ?? []).map((item) => [item.patternPointId, item.time] as const));
 
   const timepointCodes = set?.timepointStopCodesByPatternId?.[pattern.id] ?? {};
+  const timepointNames = set?.timepointStopNamesByPatternId?.[pattern.id] ?? {};
   if (!set) {
     return points.map((point) => {
       const node = nodeById.get(point.nodeId);
@@ -111,7 +113,7 @@ export function stopTimeRows(input: {
   const rows: StopTimeRow[] = [];
   points.forEach((point, index) => {
     const node = nodeById.get(point.nodeId);
-    rows.push({ kind: 'timepoint', patternPointId: point.id, nodeId: point.nodeId, name: node?.name ?? '', stopCode: timepointCodes[point.id], time: timeByPointId.get(point.id) });
+    rows.push({ kind: 'timepoint', patternPointId: point.id, nodeId: point.nodeId, name: timepointStopName(timepointNames[point.id], node?.name), stopCode: timepointCodes[point.id], time: timeByPointId.get(point.id) });
     if (index >= points.length - 1) return;
     const segment = segments[index];
     const fractions = interpolation === 'distance'
