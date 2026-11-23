@@ -153,6 +153,15 @@ describe('rows (Decision 0091 item 17)', () => {
     expect(totalsTiles(comparison.totals).map((tile) => tile.id)).toEqual(['trips', 'revenueMiles', 'revenueHours', 'peakVehicles', 'cost']);
     expect(formatMeasure('whole', totalsTiles(comparison.totals)[0].measure.proposed)).toBe('10');
   });
+  it('shows "—" and no percent on every tile for a side that lacks the chosen day', () => {
+    const withDay = { ...proposedSide(), serviceDays: [...proposedSide().serviceDays, { ...proposedSide().serviceDays[0], id: 'p-hol', kind: 'custom' as const, name: 'Holiday Monday', annualServiceDays: 5, sequence: 3 }] };
+    const holiday = buildComparison({ ...prepareComparison(baselineSide(), withDay, 'baseline'), day: 'custom:holiday monday' });
+    for (const tile of totalsTiles(holiday.totals)) {
+      expect(fromTo(tile.kind, tile.measure, { tile: true }).from).toBe('—');
+      expect(formatChange(tile.kind, tile.measure.change, { tile: true }).text).toBe('—');
+      expect(formatPercentChange(tile.measure.percent)).toBe('—');
+    }
+  });
 });
 
 describe('headways and spans (Decision 0091 items 9 and 11)', () => {

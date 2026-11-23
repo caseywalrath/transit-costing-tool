@@ -46,6 +46,10 @@ export function CompareWorkspace({ compareService, projectId, appScenarioId, app
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
+  // The save stamp does not see writes from another browser tab, so each opening of the tab starts from fresh reads. This effect is
+  // declared before the comparing one, so it runs first.
+  useEffect(() => { compareService.clearCache(); }, [compareService]);
+
   useEffect(() => {
     let live = true;
     compareService.listChoices(projectId).then((next) => { if (live) setChoices(next); }).catch((error) => onErrorRef.current(error, 'Unable to list the scenarios to compare.'));
@@ -78,7 +82,8 @@ export function CompareWorkspace({ compareService, projectId, appScenarioId, app
     setProgress(undefined);
     compareService.compare(wanted, (next) => { if (current()) setProgress(next); })
       .then((outcome) => { if (!current()) return; setShown({ request: wanted, outcome }); setOpenKey(undefined); setBusy(false); })
-      .catch((error) => { if (!current()) return; setBusy(false); onErrorRef.current(error, 'Unable to compare these scenarios.'); });
+      // A failed comparison clears the result on screen: the old one would otherwise sit under the new choices, and could be downloaded.
+      .catch((error) => { if (!current()) return; setShown(undefined); setOpenKey(undefined); setBusy(false); onErrorRef.current(error, 'Unable to compare these scenarios.'); });
     return () => { /* A newer request makes this one stale through `latest`; nothing to cancel. */ };
   }, [key, compareService, latest]);
 
@@ -101,7 +106,9 @@ export function CompareWorkspace({ compareService, projectId, appScenarioId, app
   if (!choices) return <div className="cmp"><h1 className="visually-hidden">Compare scenarios</h1><p className="cmp-empty" role="status">Loading the scenarios of this project…</p></div>;
   if (!sides || !request) return <div className="cmp"><h1 className="visually-hidden">Compare scenarios</h1><section className="empty-state"><h2>Nothing to compare yet</h2><p>Each side needs a Scenario with a trip profile. Create a trip profile on the Trips tab, then come back.</p></section></div>;
 
-  const names = { baseline: scenarioOf(sides.baseline.scenarioId)?.name ?? '', proposed: scenarioOf(sides.proposed.scenarioId)?.name ?? '' };
+  // The names under the result are those of the request that made it, not of the choices made since.
+  const shownSides = shown?.request ?? request;
+  const names = { baseline: scenarioOf(shownSides.baseline.scenarioId)?.name ?? '', proposed: scenarioOf(shownSides.proposed.scenarioId)?.name ?? '' };
   const routeName = (id: string) => choices.map((scenario) => scenario.routes.find((route) => route.id === id)?.name).find(Boolean);
   const outcome = shown?.outcome;
   // The CSV is of the comparison on screen, so it names the sides, day and menus of the request that made it.
@@ -111,7 +118,7 @@ export function CompareWorkspace({ compareService, projectId, appScenarioId, app
     const baselineName = scenarioNameOf(choices, made.baseline);
     const proposedName = scenarioNameOf(choices, made.proposed);
     const sameNames = baselineName === proposedName;
-    const heading: ComparisonCsvHeading = { baselineName: sideLabel(choices, made.baseline), proposedName: sideLabel(choices, made.proposed), day: dayLabel(made.day, dayPairs), rates: CHOICE_LABELS[made.rates], counts: CHOICE_LABELS[made.counts], preparedOn: new Date().toISOString().slice(0, 10) };
+    const heading: ComparisonCsvHeading = { baselineName: sideLabel(choices, made.baseline), proposedName: sideLabel(choices, made.proposed), day: dayLabel(made.day, result.dayPairs), rates: CHOICE_LABELS[made.rates], counts: CHOICE_LABELS[made.counts], preparedOn: localDate(new Date()) };
     const fileName = comparisonFileName(sameNames ? heading.baselineName : baselineName, sameNames ? heading.proposedName : proposedName, heading.day);
     download(fileName, comparisonCsvText(result.comparison, heading), 'text/csv;charset=utf-8');
   }
@@ -138,6 +145,11 @@ export function CompareWorkspace({ compareService, projectId, appScenarioId, app
       openKey={openKey} onOpen={setOpenKey} foldOpen={foldOpen} onFold={setFoldOpen}
       onResetChoice={(menu) => update({ [menu]: 'baseline' })} onDownload={downloadCsv} />}
   </div>;
+}
+
+/** The date on this device as YYYY-MM-DD (not UTC, which can be tomorrow or yesterday in the evening or morning). */
+function localDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 const scenarioNameOf = (choices: readonly CompareScenarioChoice[], side: CompareSideRequest) => choices.find((item) => item.id === side.scenarioId)?.name ?? '';

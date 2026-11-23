@@ -127,6 +127,15 @@ describe('comparisonCsvText (Decision 0091 item 18)', () => {
   });
 });
 
+describe('comparisonCsvText route_id column', () => {
+  it('protects a Route ID that starts with a formula character, and leaves a plain one alone', () => {
+    const risky: Comparison = { ...comparison, rows: comparison.rows.map((row) => (row.routeCode === '5' ? { ...row, routeCode: '=cmd|x' } : row)) };
+    const out = comparisonCsvText(risky, heading);
+    expect(lines(out).some((line) => line.startsWith("'=cmd|x,5 Loop,Unchanged,"))).toBe(true);
+    expect(lines(out).some((line) => line.startsWith('1,1 Main St,Changed,'))).toBe(true);
+  });
+});
+
 describe('formula protection (moved to the domain; persistence re-exports it, and its own tests cover that)', () => {
   it('neutralizes a leading formula character, and restores it exactly', () => {
     for (const value of ['=1+1', '+x', '-y', '@z', "'=already", 'plain']) {

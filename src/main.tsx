@@ -104,6 +104,7 @@ async function start() {
   const compareCore = new CompareService(compareSources, compareStamp.stamp);
   const compare = {
     compare: (request: Parameters<CompareService['compare']>[0], onProgress?: Parameters<CompareService['compare']>[1]) => compareCore.compare(request, onProgress),
+    clearCache: () => compareCore.clearCache(),
     dispose: () => { compareCore.dispose(); compareStamp.stop(); },
     // The Scenarios of a Project with what each side picker offers: Trip profiles, Blocking scenarios and service days.
     listChoices: async (projectId: string) => {

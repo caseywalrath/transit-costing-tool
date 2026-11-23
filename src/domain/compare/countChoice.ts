@@ -23,13 +23,22 @@ function copySide(side: CountSide): CountSide {
 }
 
 /**
- * The own counts of a source Route, moved to the target side: the switch (on or off) and every count of a matched day, under the target
- * day's ID. A matched day the source has no count for stays without one, so the target Route uses its Scenario count there, which
- * the day replacement has already set to the source's.
+ * The own counts of a source Route, moved to the target side (Decision 0091 item 7): the switch (on or off) and every count of a matched
+ * day, under the target day's ID. A matched day the source has no count for stays without one, so the target Route uses its Scenario
+ * count there, which the day replacement has already set to the source's. Days only the target has are unmatched and keep the target
+ * Route's own counts, so they are the starting point and the matched days are laid over them.
  */
-function remapOwn(own: RouteOwnAnnualServiceDays | undefined, sourceToTarget: Map<EntityId, EntityId>): RouteOwnAnnualServiceDays | undefined {
+function remapOwn(
+  own: RouteOwnAnnualServiceDays | undefined,
+  targetOwn: RouteOwnAnnualServiceDays | undefined,
+  sourceToTarget: Map<EntityId, EntityId>,
+): RouteOwnAnnualServiceDays | undefined {
   if (!own) return undefined;
+  const matchedTargetDayIds = new Set(sourceToTarget.values());
   const countsByServiceDayId: Record<EntityId, number> = {};
+  for (const [dayId, count] of Object.entries(targetOwn?.countsByServiceDayId ?? {})) {
+    if (!matchedTargetDayIds.has(dayId)) countsByServiceDayId[dayId] = count;
+  }
   for (const [sourceDayId, targetDayId] of sourceToTarget) {
     if (Object.prototype.hasOwnProperty.call(own.countsByServiceDayId, sourceDayId)) countsByServiceDayId[targetDayId] = own.countsByServiceDayId[sourceDayId];
   }
@@ -83,7 +92,7 @@ export function applyCountChoice(
   }
   const targetRoutes = targetCopy.routes.map((route) => {
     const sourceRoute = sourceRouteForTarget.get(route.id);
-    return sourceRoute ? withOwn(route, remapOwn(sourceRoute.ownAnnualServiceDays, sourceToTargetDay)) : route;
+    return sourceRoute ? withOwn(route, remapOwn(sourceRoute.ownAnnualServiceDays, route.ownAnnualServiceDays, sourceToTargetDay)) : route;
   });
 
   const replaced: CountSide = { serviceDays: targetDays, routes: targetRoutes };

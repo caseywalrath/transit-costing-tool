@@ -273,6 +273,20 @@ describe('Caching (Decision 0091 item 2 of card V2)', () => {
     expect(spy.inputs).toHaveLength(2);
   });
 
+  it('clearCache drops every cached side even when the save stamp is the same (a write made in another tab)', async () => {
+    const records = goldenRecords();
+    const counts: ReadCounts = { listTrips: 0, listBlockingBlocks: 0 };
+    const { service, spy } = serviceOf(records, { stamp: () => '1', counts });
+    await compare(service, request(records));
+    await compare(service, request(records, { day: 'saturday' }));
+    expect(spy.inputs).toHaveLength(1);
+    expect(counts.listTrips).toBe(1);
+    service.clearCache();
+    await compare(service, request(records));
+    expect(spy.inputs).toHaveLength(2);
+    expect(counts.listTrips).toBe(2);
+  });
+
   it('an overridden side is keyed on the override: Proposed\'s rate change recosts the Baseline only when the Baseline uses it', async () => {
     const base = goldenRecords();
     const baseId = base.scenarios[0].id;

@@ -38,6 +38,11 @@ export interface CompareSources extends CostingContextSources {
 
 export interface CompareCommands {
   compare(request: CompareRequest, onProgress?: (progress: CompareProgress) => void): Promise<CompareOutcome>;
+  /**
+   * Forgets every cached side, so the next comparison reads the Project again. The save stamp only sees writes made by this tab; a write
+   * made in another browser tab does not change it, so the Compare tab calls this each time it opens.
+   */
+  clearCache(): void;
   /** Stops the worker and forgets every cached side. */
   dispose(): void;
 }
@@ -78,6 +83,11 @@ export class CompareService implements CompareCommands {
     private readonly createEngine: () => CompareEngine = () => createCompareEngine(),
     private readonly now: () => string = () => new Date().toISOString(),
   ) {}
+
+  clearCache(): void {
+    this.cache.clear();
+    this.cacheStamp = undefined;
+  }
 
   dispose(): void {
     this.engine?.dispose();

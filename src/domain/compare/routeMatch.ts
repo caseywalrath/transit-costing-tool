@@ -1,5 +1,5 @@
 import type { Route } from '../types';
-import type { AmbiguousRouteKey, RouteMatch, RoutePair } from './types';
+import type { AmbiguousRouteKey, CompareSide, RouteMatch, RoutePair } from './types';
 
 /**
  * Decision 0091 item 4. The keys in the order they are tried. Each key is tried only on the Routes that no earlier key has matched, so a
@@ -35,14 +35,20 @@ function holdersByKey(routes: Route[], keyFor: (route: Route) => string | undefi
 
 /**
  * Pairs the Routes of the Baseline with those of the Proposed (Decision 0091 item 4). A key held by more than one Route on either side
- * matches none of them at that step, and each such key is reported in `ambiguous` (the `compare.ambiguousRoute` warning). Routes that
+ * matches none of them at that step. Such a key is reported once in `ambiguous` (the `compare.ambiguousRoute` warning), and only if any
+ * of its Routes is still unmatched after every step (naming those Routes), so a repeated short name that the name step then resolves gives no warning. Routes that
  * are left over are unmatched: Discontinued when on the Baseline only, New when on the Proposed only. Pairs follow the Baseline's order,
  * then the Proposed-only Routes in their order.
  */
 export function matchRoutes(baseline: Route[], proposed: Route[]): RouteMatch {
   const partnerOfBaseline = new Map<Route, Route>();
   const matchedProposed = new Set<Route>();
-  const ambiguous: AmbiguousRouteKey[] = [];
+  // Repeated keys seen at any step, by side and normalized key (so a key repeated at two steps is one entry). Whether to report one is
+  // decided after the last step: a later key can still match its Routes.
+  const repeated = new Map<string, { side: CompareSide; holders: Holders }>();
+  const noteRepeated = (side: CompareSide, key: string, holders: Holders) => {
+    if (holders.routes.length > 1 && !repeated.has(`${side}\u0000${key}`)) repeated.set(`${side}\u0000${key}`, { side, holders });
+  };
 
   for (const keyFor of MATCH_KEYS) {
     const unmatchedBaseline = baseline.filter((route) => !partnerOfBaseline.has(route));
@@ -50,12 +56,8 @@ export function matchRoutes(baseline: Route[], proposed: Route[]): RouteMatch {
     const holdersBaseline = holdersByKey(unmatchedBaseline, keyFor);
     const holdersProposed = holdersByKey(unmatchedProposed, keyFor);
 
-    for (const [, entry] of holdersBaseline) {
-      if (entry.routes.length > 1) ambiguous.push({ side: 'baseline', key: entry.text, routeIds: entry.routes.map((route) => route.id) });
-    }
-    for (const [, entry] of holdersProposed) {
-      if (entry.routes.length > 1) ambiguous.push({ side: 'proposed', key: entry.text, routeIds: entry.routes.map((route) => route.id) });
-    }
+    for (const [key, entry] of holdersBaseline) noteRepeated('baseline', key, entry);
+    for (const [key, entry] of holdersProposed) noteRepeated('proposed', key, entry);
 
     for (const [key, entry] of holdersBaseline) {
       const counterpart = holdersProposed.get(key);
@@ -63,6 +65,13 @@ export function matchRoutes(baseline: Route[], proposed: Route[]): RouteMatch {
       partnerOfBaseline.set(entry.routes[0], counterpart.routes[0]);
       matchedProposed.add(counterpart.routes[0]);
     }
+  }
+
+  // Report a repeated key only when none of its Routes ended up matched by any step.
+  const ambiguous: AmbiguousRouteKey[] = [];
+  for (const { side, holders } of repeated.values()) {
+    const leftOver = holders.routes.filter((route) => (side === 'baseline' ? !partnerOfBaseline.has(route) : !matchedProposed.has(route)));
+    if (leftOver.length) ambiguous.push({ side, key: holders.text, routeIds: leftOver.map((route) => route.id) });
   }
 
   const pairs: RoutePair[] = baseline.map((route) => {

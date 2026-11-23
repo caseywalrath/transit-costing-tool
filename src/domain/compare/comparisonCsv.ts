@@ -65,8 +65,8 @@ function totalsRecord(totals: ComparisonTotals): Record<string, CsvCell> {
 
 function rowRecord(row: ComparisonRow): Record<string, CsvCell> {
   return {
-    // Identifiers and numbers are not formula-protected (Decision 0091 item 18); the free-text name is.
-    route_id: row.routeCode,
+    // The Route ID and name are free text from the feed and are protected; numbers are not (Decision 0091 item 18).
+    route_id: neutralizeFormulaText(row.routeCode),
     route: neutralizeFormulaText(row.name),
     status: STATUS_LABEL[row.status],
     ...measureCells('trips', row.trips),

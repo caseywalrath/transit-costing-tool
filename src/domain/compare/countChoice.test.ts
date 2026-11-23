@@ -85,6 +85,19 @@ describe('applyCountChoice (Decision 0091 item 7)', () => {
     expect(result.proposed.routes.find((item) => item.id === 'p-r3')?.ownAnnualServiceDays).toEqual({ enabled: true, countsByServiceDayId: { 'p-wd': 30 } });
   });
 
+  it('a Route keeps its own counts on days the other side does not have, and the matched days take the chosen side\'s', () => {
+    const baselineRoutes = [{ ...baselineSide().routes[0], ownAnnualServiceDays: { enabled: true, countsByServiceDayId: { 'b-wd': 240 } } }, ...baselineSide().routes.slice(1)];
+    const proposedRoutes = [
+      { ...proposedSide().routes[0], ownAnnualServiceDays: { enabled: true, countsByServiceDayId: { 'p-wd': 180, 'p-sat': 40, 'p-event': 30 } } },
+      ...proposedSide().routes.slice(1),
+    ];
+    const input = setup({ baselineRoutes, proposedRoutes, proposedDays: [...proposedSide().serviceDays, serviceDay(S, 'p-event', 'custom', 'Event', 7, 3)] });
+    const result = applyCountChoice('baseline', input.baseline, input.proposed, input.routePairs, input.dayPairs);
+    // Weekday takes the Baseline's 240; Saturday (matched, no Baseline own count) is dropped; the Proposed-only Event day keeps 30.
+    expect(result.proposed.routes.find((item) => item.id === 'p-r1')?.ownAnnualServiceDays).toEqual({ enabled: true, countsByServiceDayId: { 'p-wd': 240, 'p-event': 30 } });
+    expect(input.proposed.routes[0].ownAnnualServiceDays?.countsByServiceDayId).toEqual({ 'p-wd': 180, 'p-sat': 40, 'p-event': 30 });
+  });
+
   it('after the Baseline\'s choice, every matched Route-day has the same count as the Baseline\'s (the invariant Costing relies on)', () => {
     const baselineRoutes = [{ ...baselineSide().routes[0], ownAnnualServiceDays: { enabled: true, countsByServiceDayId: { 'b-wd': 240 } } }, ...baselineSide().routes.slice(1)];
     const input = setup({ baselineRoutes });

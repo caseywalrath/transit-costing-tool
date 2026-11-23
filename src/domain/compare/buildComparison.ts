@@ -197,12 +197,19 @@ function routeCode(route: Route): string {
 
 /** Decision 0091 item 12 (system figure) for one side on one day: the system peak, undefined when the side is not blocked. */
 function systemPeakOf(side: SideDay | undefined): number | undefined {
-  if (side === undefined) return 0;
+  // A side without the day has no figure for it (shown "—"), not a peak of 0.
+  if (side === undefined) return undefined;
   return side.peaks === 'notBlocked' ? undefined : side.peaks.system;
 }
 
-function sumDefined(values: Array<number | undefined>): number | undefined {
-  const defined = values.filter((value): value is number => value !== undefined);
+/**
+ * A side's total of one measure over the rows. It is unknown (undefined, shown "—") when any Route row lacks the measure, because a sum
+ * that skips a Route's figure would read as complete. The Unattributed row is the exception: it has no miles at all (item 9), so it adds
+ * what it has and never makes the total unknown.
+ */
+function sumRows(entries: Array<{ unattributed: boolean; value: number | undefined }>): number | undefined {
+  if (entries.some((entry) => !entry.unattributed && entry.value === undefined)) return undefined;
+  const defined = entries.flatMap((entry) => (entry.value === undefined ? [] : [entry.value]));
   return defined.length === 0 ? undefined : defined.reduce((sum, value) => sum + value, 0);
 }
 
@@ -319,15 +326,16 @@ function unattributedRow(baseline: Cell, proposed: Cell, status: RouteStatus, an
  * the highest day's, with that day named.
  */
 function totalsOf(
-  built: Array<{ baseline: Cell; proposed: Cell }>,
+  built: Array<{ row: ComparisonRow; baseline: Cell; proposed: Cell }>,
   days: ServiceDayPair[],
   annual: boolean,
   sideDay: (side: 'baseline' | 'proposed', day: ServiceDayPair) => SideDay | undefined,
 ): ComparisonTotals {
-  const total = (pick: (cell: Cell) => number | undefined) => ({
-    baseline: sumDefined(built.map((entry) => pick(entry.baseline))),
-    proposed: sumDefined(built.map((entry) => pick(entry.proposed))),
-  });
+  // A side that has none of the shown days has no totals at all: "—", never 0 (the rows' absent cells count as 0 only inside a change).
+  const hasDay = (side: 'baseline' | 'proposed') => days.some((day) => sideDay(side, day) !== undefined);
+  const totalOf = (side: 'baseline' | 'proposed', pick: (cell: Cell) => number | undefined) =>
+    hasDay(side) ? sumRows(built.map((entry) => ({ unattributed: entry.row.unattributed, value: pick(entry[side]) }))) : undefined;
+  const total = (pick: (cell: Cell) => number | undefined) => ({ baseline: totalOf('baseline', pick), proposed: totalOf('proposed', pick) });
   const sumsOf = (pick: (cell: Cell) => number | undefined) => {
     const { baseline, proposed } = total(pick);
     return totalMeasure(baseline, proposed);

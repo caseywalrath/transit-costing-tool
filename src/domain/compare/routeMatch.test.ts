@@ -29,6 +29,23 @@ describe('matchRoutes (Decision 0091 item 4)', () => {
     expect(match.ambiguous).toEqual([{ side: 'proposed', key: 'S', routeIds: ['p1', 'p2'] }]);
   });
 
+  it('a repeated short name gives no warning when the name step then matches those Routes', () => {
+    const baseline = [route(S, 'a1', 'Alpha', 'S'), route(S, 'a2', 'Beta', 'S')];
+    const proposed = [route(S, 'p1', 'alpha', 'S'), route(S, 'p2', 'Beta', 'S')];
+    const match = matchRoutes(baseline, proposed);
+    expect(match.pairs).toEqual([{ baseline: baseline[0], proposed: proposed[0] }, { baseline: baseline[1], proposed: proposed[1] }]);
+    expect(match.ambiguous).toEqual([]);
+  });
+
+  it('a key repeated at two steps is reported once', () => {
+    // Short name "X" and name "X" are both held twice on the Baseline, and nothing matches at either step.
+    const baseline = [route(S, 'a1', 'X', 'X'), route(S, 'a2', 'x', 'x')];
+    const proposed = [route(S, 'p', 'X', 'X')];
+    const match = matchRoutes(baseline, proposed);
+    expect(match.pairs.some((pair) => pair.baseline && pair.proposed)).toBe(false);
+    expect(match.ambiguous).toEqual([{ side: 'baseline', key: 'X', routeIds: ['a1', 'a2'] }]);
+  });
+
   it('a key held twice on the Baseline matches none of its holders, and is reported for the Baseline', () => {
     const match = matchRoutes([route(S, 'a', 'Alpha', '4'), route(S, 'b', 'Beta', '4')], [route(S, 'p', 'Gamma', '4')]);
     expect(match.pairs.some((pair) => pair.baseline && pair.proposed)).toBe(false);

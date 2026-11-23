@@ -333,6 +333,39 @@ describe('a custom day, a day only one side has, and a Route with its own counts
   });
 });
 
+describe('totals that cannot be known are "—", not a partial sum or 0', () => {
+  it('a Route row without revenue miles or platform hours makes that side\'s total of the measure undefined, with no change or percent', () => {
+    const weekday = prepared.proposed.get('weekday')!;
+    const r1Id = example.proposed.routes[0].id;
+    const figures = weekday.routes.get(r1Id)!;
+    const without: typeof prepared = {
+      ...prepared,
+      proposed: new Map([...prepared.proposed, ['weekday', { ...weekday, routes: new Map([...weekday.routes, [r1Id, { ...figures, platformHoursPerDay: undefined, measures: { ...figures.measures, revenueMiles: undefined } }]]) }]]),
+    };
+    const result = buildComparison({ ...without, day: 'weekday' });
+    expect(result.totals.revenueMiles).toMatchObject({ baseline: expect.closeTo(49, 6), proposed: undefined, change: undefined, percent: undefined });
+    expect(result.totals.platformHours).toMatchObject({ proposed: undefined, change: undefined, percent: undefined });
+    // The other measures are complete, and the Unattributed row (which never has miles) does not make a total unknown.
+    expect(result.totals.revenueHours.proposed).toBeCloseTo(4.85, 6);
+    expect(compare('weekday').totals.revenueMiles.proposed).toBeCloseTo(72, 6);
+    expect(compare('weekday').totals.revenueMiles.percent).toBeDefined();
+  });
+
+  it('a side without the chosen day has undefined totals (not 0), and no change or percent', () => {
+    const proposedWithHoliday: ExampleSide = { ...proposedSide(), serviceDays: [...proposedSide().serviceDays, serviceDay('scn-redesign', 'p-hol', 'custom', 'Holiday Monday', 5, 3)] };
+    const holiday = buildComparison({ ...prepareComparison(baselineSide(), proposedWithHoliday, 'baseline'), day: 'custom:holiday monday' });
+    for (const measure of [holiday.totals.trips, holiday.totals.revenueMiles, holiday.totals.revenueHours, holiday.totals.platformHours, holiday.totals.peakVehicles, holiday.totals.cost]) {
+      expect(measure.baseline).toBeUndefined();
+      expect(measure.change).toBeUndefined();
+      expect(measure.percent).toBeUndefined();
+    }
+    expect(holiday.totals.trips.proposed).toBe(0);
+    const swapped = buildComparison({ ...prepareComparison(proposedWithHoliday, baselineSide(), 'baseline'), day: 'custom:holiday monday' });
+    expect(swapped.totals.peakVehicles).toMatchObject({ proposed: undefined, change: undefined, percent: undefined });
+    expect(swapped.totals.cost).toMatchObject({ proposed: undefined, change: undefined, percent: undefined });
+  });
+});
+
 describe('warnings (Decision 0091 item 4)', () => {
   it('an ambiguous short name gives no match and one compare.ambiguousRoute warning', () => {
     const baseline: ExampleSide = { ...baselineSide(), routes: [route('scn-existing', 'b-s', 'Alpha', 'S')] };
